@@ -16,7 +16,6 @@
 # CRLF: Git Bash then chokes on the shebang, and the `\n`-anchored dispatch
 # assertions over bin/nrv stopped matching.
 bin/nrv         text eol=lf
-bin/nrv-gemini  text eol=lf
 bin/nrv-hermes  text eol=lf
 
 # The Windows CLI launcher must stay CRLF so cmd.exe parses it.

@@ -120,7 +120,7 @@ describe("judge — runtime-rules consultation", () => {
   test("no session host: the placeholder default is the first INSTALLED runtime, never a vendor literal", async () => {
     const captured: Array<Record<string, unknown>> = [];
     const decideCalls: Array<Record<string, unknown>> = [];
-    const driver = { ...fakeDriver(captured, ["gemini-cli"]), listRuntimes: () => [{ name: "claude-code" }, { name: "gemini-cli" }] };
+    const driver = { ...fakeDriver(captured, ["kimi-cli"]), listRuntimes: () => [{ name: "claude-code" }, { name: "kimi-cli" }] };
     await judge(input("julgue isto"), {
       __testDriver: driver,
       __testRuntimeRules: {
@@ -129,7 +129,7 @@ describe("judge — runtime-rules consultation", () => {
         decideRuntime: (o: Record<string, unknown>) => { decideCalls.push(o); return { runtime: o.defaultRuntime, source: "default" }; },
       },
     });
-    expect(decideCalls[0].defaultRuntime).toBe("gemini-cli");
+    expect(decideCalls[0].defaultRuntime).toBe("kimi-cli");
     expect(captured[0].preferredHost).toBeUndefined();   // a default without a host is no signal
   });
 

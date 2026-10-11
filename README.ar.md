@@ -33,7 +33,7 @@ irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
 
 ## أنت تتحدث إلى وكيلك. ووكيلك يشغّل Nirvana.
 
-أنت تعمل بالفعل مع وكيل في الطرفية: Claude Code أو Codex أو Gemini CLI أو Antigravity أو Pi أو Grok أو غيرها. موجّه واحد يعطي جواباً جيداً واحداً. العمل الحقيقي يتطلب باحثاً وكاتباً ومراجعاً ومشغّلاً، مع سجل يبيّن من فعل ماذا.
+أنت تعمل بالفعل مع وكيل في الطرفية: Claude Code أو Codex أو Antigravity أو Pi أو Grok أو غيرها. موجّه واحد يعطي جواباً جيداً واحداً. العمل الحقيقي يتطلب باحثاً وكاتباً ومراجعاً ومشغّلاً، مع سجل يبيّن من فعل ماذا.
 
 يمنح Nirvana-OS وكيلك هذا التنظيم. تطلب بلغة بسيطة، فيستخدم الوكيل Nirvana لاختيار الشركات وsquads وmind-clones المناسبة، وتوزيعها، والتحقق مما يعود منها، وعرض الإيصال عليك. لا تتعلم واجهة جديدة ولا تكتب أوامر في عملك اليومي. الأوامر الواردة أدناه هي المرجع الذي يستخدمه وكيلك، وهي متاحة لك متى أردتها.
 
@@ -56,9 +56,9 @@ Nirvana-OS نظام متعدد الوكلاء، أصيل في Bun ومستقل �
 ما يغيّره على جهازك:
 
 - المحرك في `~/.nirvana/skills`؛
-- الـ skill المسماة `nirvana`، مربوطة بكل بيئة تشغيل وكلاء يعثر عليها: `~/.claude/skills` و`~/.codex/skills` و`~/.gemini/skills` و`~/.gemini/config/skills` (Antigravity) و`~/.pi/agent/skills` و`~/.agents/skills` (OpenClaw)؛
-- `nrv` و`nrv-gemini` و`nrv-hermes` في `~/.local/bin`، مع سطر PATH واحد في ملف تعريف الصدفة لديك (PATH الخاص بالمستخدم على Windows)؛
-- خطافات تدقيق في Claude Code وGemini CLI وAntigravity وCodex؛
+- الـ skill المسماة `nirvana`، مربوطة بكل بيئة تشغيل وكلاء يعثر عليها: `~/.claude/skills` و`~/.codex/skills` و`~/.gemini/config/skills` (Antigravity) و`~/.pi/agent/skills` و`~/.agents/skills` (OpenClaw)؛
+- `nrv` و`nrv-hermes` في `~/.local/bin`، مع سطر PATH واحد في ملف تعريف الصدفة لديك (PATH الخاص بالمستخدم على Windows)؛
+- خطافات تدقيق في Claude Code وAntigravity وCodex؛
 - مجلدات المحتوى الفارغة `~/squads` و`~/businesses` و`~/businesses/_library/dna`.
 
 إعادة تشغيله آمنة. افتح طرفية جديدة بعد ذلك ليصبح `nrv` على PATH لديك، ثم اطلب من وكيلك: *"تحقق من أن Nirvana-OS مثبّت بشكل صحيح."* فيشغّل `nrv doctor`. رمز الخروج 1 يعني تحذيرات فقط؛ والرمز 2 يسرد ما فشل.
@@ -206,7 +206,7 @@ Remove-Item Env:NIRVANA_ENGINE_URL
 
 **هل أحتاج إلى معرفة البرمجة؟** لا. تصف النتائج بلغة بسيطة؛ ووكيلك يشغّل Nirvana، والشركات وsquads تكتب وتتحقق وتسلّم.
 
-**هل يحل محل وكيلي؟** لا. يعمل فوقه. العمل الموزَّع يجري على بيئة تشغيل جلستك ما لم تسمِّ غيرها: Claude Code أو Codex أو Gemini CLI أو Antigravity أو Pi أو Kimi أو Grok أو Qwen Code أو OpenCode.
+**هل يحل محل وكيلي؟** لا. يعمل فوقه. العمل الموزَّع يجري على بيئة تشغيل جلستك ما لم تسمِّ غيرها: Claude Code أو Codex أو Antigravity أو Pi أو Kimi أو Grok أو Qwen Code أو OpenCode.
 
 **أين يعيش عملي؟** على جهازك: المحتوى في `~/businesses` و`~/squads` و`~/businesses/_library/dna`، والمخرجات في `outputs/` الخاص بكل مشروع. لا توجد سحابة Nirvana في الحلقة.
 

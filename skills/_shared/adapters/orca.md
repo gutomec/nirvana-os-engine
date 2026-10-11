@@ -1,7 +1,7 @@
 # Adapter · Orca (host)
 
 > Orca is a **host**, not a runtime: it manages workspaces and the terminals the
-> agents run in (claude, codex, gemini, antigravity, grok, kimi, pi, opencode and
+> agents run in (claude, codex, antigravity, grok, kimi, pi, opencode and
 > others). This document says what the engine does when it finds itself inside
 > one of Orca's terminals, and why nothing changes anywhere else. Decision record:
 > `docs/architecture/adrs/ADR-009-orca-host.md`. Measured against Orca 1.4.198
@@ -52,7 +52,7 @@ An Orca terminal exports `TERM_PROGRAM=Orca`, `ORCA_WORKTREE_ID` (`<repoId>::<pa
 1. Write the brief file: the autonomous directive, the prompt the headless runner would have sent, and one reporting paragraph. The prompt travels **by reference** — Orca's inject types the task spec into the TUI, and a seat prompt is tens of kilobytes.
 2. `orchestration run-create --objective "nirvana · <label>"` — one Run per dispatch, so its mailbox is this dispatch's alone.
 3. `orchestration task-create --run <R> --spec "Read the file <brief> and execute every instruction in it…" --task-title <label>`.
-4. Record workspace trust for `<cwd>` the way the runtime itself does (`~/.claude.json` `projects[cwd].hasTrustDialogAccepted`, `~/.codex/config.toml` `[projects."cwd"] trust_level = "trusted"`, `~/.gemini/trustedFolders.json`), then `terminal create --worktree <selector> --title "<label> · <agent>" --command "cd <cwd> && env NIRVANA_… <agent argv>"` — operator-started, with the engine's own autonomy flags (`claude --dangerously-skip-permissions`, `codex --dangerously-bypass-approvals-and-sandbox`, `gemini --approval-mode yolo`, `agy --dangerously-skip-permissions`, `grok --always-approve`; `--safe` drops them). PowerShell syntax on Windows. The headless runner already runs the agent there with every permission bypassed and no dialog; the record makes the same decision visible in the runtime's own file.
+4. Record workspace trust for `<cwd>` the way the runtime itself does (`~/.claude.json` `projects[cwd].hasTrustDialogAccepted`, `~/.codex/config.toml` `[projects."cwd"] trust_level = "trusted"`, `~/.qwen/trustedFolders.json`), then `terminal create --worktree <selector> --title "<label> · <agent>" --command "cd <cwd> && env NIRVANA_… <agent argv>"` — operator-started, with the engine's own autonomy flags (`claude --dangerously-skip-permissions`, `codex --dangerously-bypass-approvals-and-sandbox`, `agy --dangerously-skip-permissions`, `grok --always-approve`; `--safe` drops them). PowerShell syntax on Windows. The headless runner already runs the agent there with every permission bypassed and no dialog; the record makes the same decision visible in the runtime's own file.
 5. `terminal wait --for tui-idle --timeout-ms 120000`, then `terminal read`: a TUI parked on a first-run trust dialog is idle too, and deaf to the preamble (measured: the inject call sat until its timeout). A screen that still shows one is a fallback, not a hang.
 6. `orchestration dispatch --run <R> --task <T> --to <handle> --inject` — Orca types its preamble plus the spec; the worker learns its task and dispatch ids and how to report.
 7. `orchestration check --run <R> --wait --types worker_done,escalation,question --timeout-ms <window>` in a loop, acknowledging each delivery; a `question` is answered with `orchestration reply` and the zero-human policy; silence past the caller's deadline, a failed dispatch or a vanished terminal ends the wait as a failure.
@@ -71,7 +71,6 @@ Orca reports an operator-started worker as `unsupervised`, which is exact: the e
 |---|---|---|
 | `claude-code` | `claude` | `claude --dangerously-skip-permissions [--model M] [--add-dir D…]` |
 | `codex` | `codex` | `codex --dangerously-bypass-approvals-and-sandbox [-m M] [--add-dir D…]` |
-| `gemini-cli` | `gemini` | `gemini --approval-mode yolo [-m M]` |
 | `antigravity-cli` | `antigravity` | `agy --dangerously-skip-permissions [--model M]` |
 | `grok-cli` | `grok` | `grok --always-approve [-m M]` |
 | `kimi-cli` | `kimi` | `kimi [-m M]` |
@@ -88,7 +87,7 @@ Hermes and OpenClaw are not Orca agents; they run as plain commands in an Orca t
 - **Experimental toggle.** The orchestration layer is off until a human enables it in Orca's Settings. Off, every dispatch keeps the headless child; the card, the audit block, the doctor line and the browser tab still work.
 - **Cost.** A worker's cost is not reported; the spend tracker reads `costUnavailable`.
 - **Windows shell.** The worker command is PowerShell; an Orca terminal configured for cmd.exe would not run it (the agent then never reaches its prompt and the dispatch falls back).
-- **Trust records.** Pre-accepting trust is known for Claude Code, Codex, Gemini and Qwen; Antigravity, Grok, Kimi, Pi and OpenCode rely on the screen check and fall back if they ask.
+- **Trust records.** Pre-accepting trust is known for Claude Code, Codex and Qwen; Antigravity, Grok, Kimi, Pi and OpenCode rely on the screen check and fall back if they ask.
 - **Attribution of plain children.** Orca's hooks attribute a `claude -p` that inherits the pane variables to that pane. The engine strips them; a script that spawns an agent by itself inside an Orca terminal does not get that courtesy.
 
 ## 7. Measured

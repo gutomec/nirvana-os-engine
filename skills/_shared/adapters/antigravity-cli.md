@@ -4,7 +4,7 @@
 > Covers the 3 protocols in a single doc. Canonical sections per Squad Protocol v6 §18.5.
 > System identity + capabilities (what Nirvana-OS is and can do): see `../NIRVANA-OS.md` (single source).
 
-> **Successor to gemini-cli.** Announced at Google I/O 2026, Antigravity 2.0 **replaces gemini-cli** on the consumer tier from 2026-06-18. Same Google backend (Gemini models), different binary and flag conventions (`agy`). See [`gemini-cli.md`](./gemini-cli.md) (legacy).
+> **Google's agent CLI.** Announced at Google I/O 2026, Antigravity 2.0 replaced the Gemini CLI on the consumer tier from 2026-06-18: same Google backend (Gemini models), different binary and flag conventions (`agy`). The Gemini CLI is no longer a Nirvana runtime; agy is how Nirvana reaches Gemini models directly.
 
 ---
 
@@ -152,7 +152,7 @@ agy -p "Review this offer: ..." \
 
 Real flags used by the driver:
 - `-p "<prompt>"`: headless prompt (one-shot). `-p` / `--print` / `--prompt` take the prompt as an argv value.
-- `--output-format json`: a single JSON object (parity with `runGemini`/`runClaudeCode`). `stream-json` (NDJSON) also exists.
+- `--output-format json`: a single JSON object (parity with `runClaudeCode`). `stream-json` (NDJSON) also exists.
 - `--resume <id>`: resumes the session (passed when `opts.sessionId` is set).
 - `--model <id>`: model override (passed when `opts.model` is set).
 

@@ -43,7 +43,6 @@ This directory exists so that the three skills don't drift. When you change a JS
 ├── adapters/
 │   ├── claude-code.md                  ← runtime-neutral spec for Claude Code (15 sections)
 │   ├── codex.md                        ← Codex sub-process spawn pattern
-│   ├── gemini-cli.md                   ← Gemini-CLI MCP integration
 │   └── README.md                       ← comparison matrix across runtimes
 ├── SCRIPT_CONTRACT.md                  ← shell + Bun cross-platform contract
 └── SCOPE_CONTRACT.md                   ← project/global/merge scope contract
@@ -190,7 +189,7 @@ Test: `cd ~/.nirvana/skills/_shared/validators && python3 -m pytest validators.p
 
 ## Adapters (runtime-neutral specs)
 
-`adapters/{claude-code,codex,gemini-cli}.md` describe how each runtime adapter implements the 15 canonical sections of the protocol:
+`adapters/{claude-code,codex,antigravity-cli}.md` describe how each runtime adapter implements the 15 canonical sections of the protocol:
 
 1. Skill discovery
 2. Subagent spawning
@@ -264,7 +263,7 @@ Never copy these into a skill's own dir. Always import via path absolute.
 ## Adding a new runtime adapter
 
 1. Copy `adapters/claude-code.md` as the structural template (15 canonical sections).
-2. For each section, document the runtime's native primitive (e.g., for Codex: sub-process spawn with stdin/stdout JSON; for Gemini-CLI: MCP client).
+2. For each section, document the runtime's native primitive (e.g., for Codex: sub-process spawn with stdin/stdout JSON; for Hermes: `hermes -z` sub-process).
 3. Add to `adapters/README.md` the feature matrix row.
 4. Add the runtime id (e.g., `cursor`, `aider`) to the `Runtime` enum in `validators.ts` AND `validators.py`.
 5. Run smoke + pytest.

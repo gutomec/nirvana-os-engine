@@ -80,8 +80,8 @@ dispatches them and reports what came back.
 
 - Claude Code: `Skill("nirvana", "<the user's request>")`, or let the
   description match activate it.
-- Any runtime that reads files (Codex, Gemini CLI, Antigravity, Pi, OpenClaw,
-  Cursor): read `~/.nirvana/skills/harness/SKILL.md` and follow it.
+- Any runtime that reads files (Codex, Antigravity, Pi, OpenClaw, Cursor):
+  read `~/.nirvana/skills/harness/SKILL.md` and follow it.
 - Shell-only runtimes (Hermes, headless): `nrv dispatch --auto --exec "<the user's request>"`.
 
 ## 2. Looking around

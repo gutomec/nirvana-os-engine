@@ -45,7 +45,6 @@ import { RUN_WORKSPACE_ENV } from "./run-workspace.ts";
 export const ORCA_AGENT_ID: Partial<Record<Runtime, string>> = {
   "claude-code": "claude",
   codex: "codex",
-  "gemini-cli": "gemini",
   "antigravity-cli": "antigravity",
   "kimi-cli": "kimi",
   "grok-cli": "grok",
@@ -63,7 +62,7 @@ const INJECT_MS = 90_000;
 
 /** What a first-run workspace trust dialog looks like on screen. Claude Code
  *  ("Accessing workspace … Is this a project you created or one you trust?"),
- *  Codex ("Do you trust the files in this folder?"), Gemini ("Do you trust
+ *  Codex ("Do you trust the files in this folder?"), qwen-code ("Do you trust
  *  this folder?"). A TUI parked on one is idle to `terminal wait` and deaf to
  *  the injected preamble — measured: the inject call sat until its timeout. */
 const TRUST_PROMPT = /Accessing workspace|trust (the files|this (folder|project|directory|workspace))|Is this a project you created|Do you trust/i;
@@ -80,7 +79,7 @@ const TRUST_PROMPT = /Accessing workspace|trust (the files|this (folder|project|
  * Records, verified on the installed CLIs on 2026-09-09:
  *   claude-code  ~/.claude.json            projects["<cwd>"].hasTrustDialogAccepted = true
  *   codex        ~/.codex/config.toml      [projects."<cwd>"] trust_level = "trusted"
- *   gemini-cli / qwen-code  ~/.gemini/trustedFolders.json  { "<cwd>": "TRUST_FOLDER" }
+ *   qwen-code    ~/.qwen/trustedFolders.json  { "<cwd>": "TRUST_FOLDER" }
  */
 export function preTrustWorkspace(runtime: Runtime, cwd: string, env: NodeJS.ProcessEnv = process.env): string[] {
   const written: string[] = [];
@@ -109,8 +108,8 @@ export function preTrustWorkspace(runtime: Runtime, cwd: string, env: NodeJS.Pro
         fs.writeFileSync(file, text + (text && !text.endsWith("\n") ? "\n" : "") + block, "utf8");
         written.push(file);
       }
-    } else if (runtime === "gemini-cli" || runtime === "qwen-code") {
-      const file = path.join(home, runtime === "qwen-code" ? ".qwen" : ".gemini", "trustedFolders.json");
+    } else if (runtime === "qwen-code") {
+      const file = path.join(home, ".qwen", "trustedFolders.json");
       const doc = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : {};
       let changed = false;
       for (const d of dirs) if (doc[d] !== "TRUST_FOLDER") { doc[d] = "TRUST_FOLDER"; changed = true; }
@@ -142,8 +141,7 @@ export interface OrcaWorkerHooks {
  * The interactive command for a runtime, as argv. Autonomy flags match the
  * headless runners' (audited against the installed CLIs on 2026-09-09:
  * `claude --dangerously-skip-permissions`, `codex
- * --dangerously-bypass-approvals-and-sandbox`, `gemini --approval-mode yolo`,
- * `agy --dangerously-skip-permissions`, `grok --always-approve`); `--safe`
+ * --dangerously-bypass-approvals-and-sandbox`, `agy --dangerously-skip-permissions`, `grok --always-approve`); `--safe`
  * (yolo false) drops them, and claude takes `--permission-mode acceptEdits`
  * like its headless twin. Null for a runtime Orca has no agent id for.
  */
@@ -189,8 +187,6 @@ export function interactiveArgv(opts: Pick<RunHeadlessOpts, "runtime" | "yolo" |
       for (const d of dirs) a.push("--add-dir", d);
       return a;
     }
-    case "gemini-cli":
-      return ["gemini", "--approval-mode", yolo ? "yolo" : "auto_edit", ...(model ? ["-m", model] : [])];
     case "antigravity-cli":
       return ["agy", ...(yolo ? ["--dangerously-skip-permissions"] : []), ...(model ? ["--model", model] : [])];
     case "grok-cli":

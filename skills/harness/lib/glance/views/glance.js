@@ -1221,8 +1221,6 @@ function glance() {
       const icons = {
         'claude-code': 'sparkles',
         'claude-code-hook': 'sparkles',
-        'gemini-cli': 'gem',
-        'gemini-cli-hook': 'gem',
         'codex': 'code-2',
         'fs-watch': 'folder-search',
       };
@@ -1676,7 +1674,7 @@ function glance() {
      */
     ruleSuffixes() {
       const ALIASES = {
-        CLAUDE: 'claude-code', GEMINI: 'gemini-cli',
+        CLAUDE: 'claude-code',
         ANTIGRAVITY: 'antigravity-cli', AGY: 'antigravity-cli',
         KIMI: 'kimi-cli', KIMI_CODE: 'kimi-cli', GROK: 'grok-cli',
         PI_CLI: 'pi', PI_DEV: 'pi', PI_CODING_AGENT: 'pi',
@@ -1712,7 +1710,7 @@ function glance() {
       for (const r of this.rulesDraft) {
         if (!r.text.trim()) continue;
         // A row nobody edited keeps the exact key it was read from, so an
-        // existing `USE_GEMINI` is not churned into `USE_GEMINI_CLI` for free.
+        // existing `USE_AGY` is not churned into `USE_ANTIGRAVITY_CLI` for free.
         const sameRuntime = r.rawKey && r.runtime === r.rawRuntime;
         const sameMode = r.rawKey && (r.mode === 'not') === r.rawKey.startsWith('NOT_USE_');
         if (sameRuntime && sameMode) { out[r.rawKey] = r.text.trim(); continue; }
@@ -2247,7 +2245,7 @@ function glance() {
         if (kind === 'concierge') {
           // Streaming: asst.text was already assembled from the tokens; done
           // carries the canonical reply (and the session_id to continue). Runtimes
-          // without a token-stream (codex/gemini/agy/hermes) send it all at once in done.
+          // without a token-stream (codex/agy/hermes) send it all at once in done.
           const answer = (doneData && doneData.result) || (asst.text || '').trim();
           asst.text = answer || errText || '(no response)';
           if (doneData && doneData.session_id) this.chatResumeSession = doneData.session_id;

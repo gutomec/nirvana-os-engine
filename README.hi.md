@@ -33,7 +33,7 @@ irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
 
 ## आप अपने एजेंट से बात करते हैं। आपका एजेंट Nirvana चलाता है।
 
-आप पहले से एक टर्मिनल एजेंट के साथ काम करते हैं: Claude Code, Codex, Gemini CLI, Antigravity, Pi, Grok या कोई और। एक प्रॉम्प्ट से एक अच्छा जवाब मिलता है। असली काम के लिए एक शोधकर्ता, एक लेखक, एक समीक्षक और एक ऑपरेटर चाहिए, साथ में इसका रिकॉर्ड कि किसने क्या किया।
+आप पहले से एक टर्मिनल एजेंट के साथ काम करते हैं: Claude Code, Codex, Antigravity, Pi, Grok या कोई और। एक प्रॉम्प्ट से एक अच्छा जवाब मिलता है। असली काम के लिए एक शोधकर्ता, एक लेखक, एक समीक्षक और एक ऑपरेटर चाहिए, साथ में इसका रिकॉर्ड कि किसने क्या किया।
 
 Nirvana-OS आपके एजेंट को वह संगठन देता है। आप सादी भाषा में माँगते हैं, और एजेंट Nirvana का उपयोग करके सही कंपनियाँ, squads और mind-clones चुनता है, उन्हें डिस्पैच करता है, जो लौटकर आता है उसे जाँचता है और आपको रसीद दिखाता है। आपको कोई नया इंटरफ़ेस नहीं सीखना पड़ता और रोज़मर्रा में कमांड टाइप नहीं करनी पड़तीं। नीचे दी गई कमांड वह संदर्भ हैं जिसका आपका एजेंट उपयोग करता है, और जब आप चाहें तब वे आपके लिए भी मौजूद हैं।
 
@@ -56,9 +56,9 @@ Nirvana-OS एक Bun-नेटिव, रनटाइम-अज्ञेय म
 यह आपकी मशीन पर क्या बदलता है:
 
 - इंजन, `~/.nirvana/skills` में;
-- `nirvana` skill, उसे मिलने वाले हर एजेंट रनटाइम से जोड़ी गई: `~/.claude/skills`, `~/.codex/skills`, `~/.gemini/skills`, `~/.gemini/config/skills` (Antigravity), `~/.pi/agent/skills` और `~/.agents/skills` (OpenClaw);
-- `nrv`, `nrv-gemini` और `nrv-hermes`, `~/.local/bin` में, साथ में आपकी shell प्रोफ़ाइल में PATH की एक लाइन (Windows पर यूज़र PATH);
-- Claude Code, Gemini CLI, Antigravity और Codex में ऑडिट hooks;
+- `nirvana` skill, उसे मिलने वाले हर एजेंट रनटाइम से जोड़ी गई: `~/.claude/skills`, `~/.codex/skills`, `~/.gemini/config/skills` (Antigravity), `~/.pi/agent/skills` और `~/.agents/skills` (OpenClaw);
+- `nrv` और `nrv-hermes`, `~/.local/bin` में, साथ में आपकी shell प्रोफ़ाइल में PATH की एक लाइन (Windows पर यूज़र PATH);
+- Claude Code, Antigravity और Codex में ऑडिट hooks;
 - खाली कंटेंट फ़ोल्डर `~/squads`, `~/businesses` और `~/businesses/_library/dna`।
 
 इसे दोबारा चलाना सुरक्षित है। बाद में एक नया टर्मिनल खोलें ताकि `nrv` आपके PATH पर हो, फिर अपने एजेंट से कहें: *"जाँचो कि Nirvana-OS सही तरह से इंस्टॉल हुआ है।"* वह `nrv doctor` चलाता है। Exit 1 का मतलब सिर्फ़ चेतावनियाँ है; exit 2 बताता है कि क्या फ़ेल हुआ।
@@ -206,7 +206,7 @@ Beta पर आने के बाद `nrv update` और हर pack setup आ
 
 **क्या मुझे कोड करना आना चाहिए?** नहीं। आप सादी भाषा में परिणाम बताते हैं; आपका एजेंट Nirvana चलाता है, और कंपनियाँ और squads लिखते, जाँचते और डिलिवर करते हैं।
 
-**क्या यह मेरे एजेंट की जगह लेता है?** नहीं। यह उसके ऊपर चलता है। डिस्पैच किया गया काम आपके सत्र के रनटाइम पर चलता है, जब तक आप कोई दूसरा न बताएँ: Claude Code, Codex, Gemini CLI, Antigravity, Pi, Kimi, Grok, Qwen Code या OpenCode।
+**क्या यह मेरे एजेंट की जगह लेता है?** नहीं। यह उसके ऊपर चलता है। डिस्पैच किया गया काम आपके सत्र के रनटाइम पर चलता है, जब तक आप कोई दूसरा न बताएँ: Claude Code, Codex, Antigravity, Pi, Kimi, Grok, Qwen Code या OpenCode।
 
 **मेरा काम कहाँ रहता है?** आपकी मशीन पर: कंटेंट `~/businesses`, `~/squads` और `~/businesses/_library/dna` में, डिलिवरेबल हर प्रोजेक्ट के `outputs/` में। लूप में कोई Nirvana क्लाउड नहीं है।
 

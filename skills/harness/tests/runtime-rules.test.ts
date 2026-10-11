@@ -19,7 +19,7 @@ import {
 const RULES: RuntimeRule[] = [
   { runtime: "codex", rule: "Quando precisar gerar imagens ou refinar visuais", envKey: "USE_CODEX", sourceFile: null, negate: false },
   { runtime: "antigravity-cli", rule: "Quando for fazer deep research na internet", envKey: "USE_ANTIGRAVITY", sourceFile: null, negate: false },
-  { runtime: "gemini-cli", rule: "Quando o contexto for gigante, um milhão de tokens", envKey: "USE_GEMINI", sourceFile: null, negate: false },
+  { runtime: "kimi-cli", rule: "Quando o contexto for gigante, um milhão de tokens", envKey: "USE_KIMI", sourceFile: null, negate: false },
   { runtime: "hermes", rule: "Quando precisar interagir com o usuário via mensageria", envKey: "USE_HERMES", sourceFile: null, negate: false },
 ];
 
@@ -29,7 +29,7 @@ describe("loadRuntimeRules (parser + cadeia de .env)", () => {
     writeFileSync(join(root, ".env"), [
       'USE_CODEX="Quando precisar gerar imagens"',
       "USE_AGY='Deep research na internet'",
-      "USE_GEMINI_CLI=Contexto gigante",
+      "USE_KIMI_CLI=Contexto gigante",
       'USE_PI="Rodar modelos locais via Ollama"',
       'USE_FOO="runtime que não existe"',
       'USE_HERMES=""',
@@ -39,7 +39,7 @@ describe("loadRuntimeRules (parser + cadeia de .env)", () => {
     expect(byKey.USE_CODEX.runtime).toBe("codex");
     expect(byKey.USE_CODEX.rule).toBe("Quando precisar gerar imagens");
     expect(byKey.USE_AGY.runtime).toBe("antigravity-cli");
-    expect(byKey.USE_GEMINI_CLI.runtime).toBe("gemini-cli");
+    expect(byKey.USE_KIMI_CLI.runtime).toBe("kimi-cli");
     expect(byKey.USE_PI.runtime).toBe("pi");
     expect(byKey.USE_FOO).toBeUndefined();      // unknown → warn, ignore
     expect(byKey.USE_HERMES).toBeUndefined();   // empty value → ignore
@@ -48,11 +48,11 @@ describe("loadRuntimeRules (parser + cadeia de .env)", () => {
   test("projeto sobrepõe global; process.env é último recurso", () => {
     const root = mkdtempSync(join(tmpdir(), "rr-"));
     writeFileSync(join(root, ".env"), 'USE_CODEX="regra do projeto"');
-    const rules = loadRuntimeRules(root, { USE_CODEX: "regra do process.env", USE_GEMINI: "só no env" });
+    const rules = loadRuntimeRules(root, { USE_CODEX: "regra do process.env", USE_KIMI: "só no env" });
     const byKey = Object.fromEntries(rules.map(r => [r.envKey, r]));
     expect(byKey.USE_CODEX.rule).toBe("regra do projeto");
-    expect(byKey.USE_GEMINI.rule).toBe("só no env");
-    expect(byKey.USE_GEMINI.sourceFile).toBeNull();
+    expect(byKey.USE_KIMI.rule).toBe("só no env");
+    expect(byKey.USE_KIMI.sourceFile).toBeNull();
   });
 });
 
@@ -65,9 +65,9 @@ describe("resolveRuntimeByRules (BM25, modo fast)", () => {
     const hit = resolveRuntimeByRules("faça um deep research na internet sobre o mercado", RULES);
     expect(hit?.rule.runtime).toBe("antigravity-cli");
   });
-  test("brief de contexto gigante → gemini", () => {
+  test("brief de contexto gigante → kimi", () => {
     const hit = resolveRuntimeByRules("analise este repositório gigante, um milhão de tokens de contexto", RULES);
-    expect(hit?.rule.runtime).toBe("gemini-cli");
+    expect(hit?.rule.runtime).toBe("kimi-cli");
   });
   test("sem match → null", () => {
     const hit = resolveRuntimeByRules("escreva um poema sobre montanhas", RULES);
@@ -96,9 +96,9 @@ describe("decideRuntime (precedência)", () => {
     expect(d.method).toBe("bm25");
   });
   test("sem match → default (o runtime que o usuário está usando)", () => {
-    const d = decideRuntime({ brief: "escreva um poema", explicitRuntime: null, defaultRuntime: "gemini-cli", rules: RULES, mode: "fast" });
+    const d = decideRuntime({ brief: "escreva um poema", explicitRuntime: null, defaultRuntime: "kimi-cli", rules: RULES, mode: "fast" });
     expect(d.source).toBe("default");
-    expect(d.runtime).toBe("gemini-cli");
+    expect(d.runtime).toBe("kimi-cli");
   });
   test("runtime da regra indisponível → próximo do ranking → default", () => {
     const d = decideRuntime({
@@ -110,24 +110,24 @@ describe("decideRuntime (precedência)", () => {
 });
 
 describe("vetos NOT_USE_* (regras negativas)", () => {
-  // Client case: giant context attracts gemini, BUT codebase analysis vetoes it.
+  // Client case: giant context attracts kimi, BUT codebase analysis vetoes it.
   const WITH_VETO: RuntimeRule[] = [
     ...RULES,
-    { runtime: "gemini-cli", rule: "Quando for análise de codebase", envKey: "NOT_USE_GEMINI", sourceFile: null, negate: true },
+    { runtime: "kimi-cli", rule: "Quando for análise de codebase", envKey: "NOT_USE_KIMI", sourceFile: null, negate: true },
   ];
 
   test("parser lê NOT_USE_* com negate=true e aliases", () => {
     const root = mkdtempSync(join(tmpdir(), "rr-"));
     writeFileSync(join(root, ".env"), [
-      'USE_GEMINI="Quando o contexto for gigante"',
-      'NOT_USE_GEMINI="Quando for análise de codebase"',
+      'USE_KIMI="Quando o contexto for gigante"',
+      'NOT_USE_KIMI="Quando for análise de codebase"',
       'NOT_USE_AGY="Quando envolver dados sensíveis do cliente"',
     ].join("\n"));
     const rules = loadRuntimeRules(root, {});
     const byKey = Object.fromEntries(rules.map(r => [r.envKey, r]));
-    expect(byKey.USE_GEMINI.negate).toBe(false);
-    expect(byKey.NOT_USE_GEMINI.negate).toBe(true);
-    expect(byKey.NOT_USE_GEMINI.runtime).toBe("gemini-cli");
+    expect(byKey.USE_KIMI.negate).toBe(false);
+    expect(byKey.NOT_USE_KIMI.negate).toBe(true);
+    expect(byKey.NOT_USE_KIMI.runtime).toBe("kimi-cli");
     expect(byKey.NOT_USE_AGY.negate).toBe(true);
     expect(byKey.NOT_USE_AGY.runtime).toBe("antigravity-cli");
   });
@@ -135,17 +135,17 @@ describe("vetos NOT_USE_* (regras negativas)", () => {
   test("matchedVetoes casa o brief contra as negativas", () => {
     const v = matchedVetoes("faça a análise de codebase do repositório", WITH_VETO);
     expect(v.length).toBe(1);
-    expect(v[0].rule.envKey).toBe("NOT_USE_GEMINI");
+    expect(v[0].rule.envKey).toBe("NOT_USE_KIMI");
   });
 
-  test("VETO VENCE regra positiva: brief casa com as duas → não usa gemini", () => {
+  test("VETO VENCE regra positiva: brief casa com as duas → não usa kimi", () => {
     const d = decideRuntime({
       brief: "análise de codebase gigante, um milhão de tokens de contexto",
       explicitRuntime: null, defaultRuntime: "claude-code",
       rules: WITH_VETO, mode: "fast", available: () => true,
     });
-    expect(d.runtime).not.toBe("gemini-cli");
-    expect(d.vetoes?.some(v => v.envKey === "NOT_USE_GEMINI")).toBe(true);
+    expect(d.runtime).not.toBe("kimi-cli");
+    expect(d.vetoes?.some(v => v.envKey === "NOT_USE_KIMI")).toBe(true);
   });
 
   test("veto vale para o DEFAULT: default vetado → próximo disponível", () => {
@@ -162,10 +162,10 @@ describe("vetos NOT_USE_* (regras negativas)", () => {
   });
 
   test("TUDO vetado → ignora vetos com aviso, nunca brica", () => {
-    const rules: RuntimeRule[] = (["claude-code", "codex", "gemini-cli", "antigravity-cli", "kimi-cli", "grok-cli", "pi"] as const)
+    const rules: RuntimeRule[] = (["claude-code", "codex", "antigravity-cli", "kimi-cli", "grok-cli", "pi"] as const)
       .map((rt, i) => ({ runtime: rt, rule: "Quando for análise de codebase", envKey: `NOT_USE_X${i}`, sourceFile: null, negate: true }));
     // synthetic envKeys: forces ALL exec runtimes to be vetoed
-    rules.forEach((r, i) => (r.envKey = ["NOT_USE_CLAUDE", "NOT_USE_CODEX", "NOT_USE_GEMINI", "NOT_USE_AGY", "NOT_USE_KIMI", "NOT_USE_GROK", "NOT_USE_PI"][i]));
+    rules.forEach((r, i) => (r.envKey = ["NOT_USE_CLAUDE", "NOT_USE_CODEX", "NOT_USE_AGY", "NOT_USE_KIMI", "NOT_USE_GROK", "NOT_USE_PI"][i]));
     const d = decideRuntime({
       brief: "análise de codebase do repositório",
       explicitRuntime: null, defaultRuntime: "claude-code",
@@ -177,16 +177,16 @@ describe("vetos NOT_USE_* (regras negativas)", () => {
   test("flag explícita vence até o veto", () => {
     const d = decideRuntime({
       brief: "análise de codebase",
-      explicitRuntime: "gemini-cli", defaultRuntime: "claude-code",
+      explicitRuntime: "kimi-cli", defaultRuntime: "claude-code",
       rules: WITH_VETO, mode: "fast", available: () => true,
     });
-    expect(d.runtime).toBe("gemini-cli");
+    expect(d.runtime).toBe("kimi-cli");
     expect(d.source).toBe("flag");
   });
 
   test("formatadores incluem os vetos como NUNCA", () => {
-    expect(formatRulesForRouterPrompt(WITH_VETO)).toContain("NEVER use gemini-cli");
-    expect(formatRulesForDirective(WITH_VETO)).toContain("NEVER use gemini-cli");
+    expect(formatRulesForRouterPrompt(WITH_VETO)).toContain("NEVER use kimi-cli");
+    expect(formatRulesForDirective(WITH_VETO)).toContain("NEVER use kimi-cli");
   });
 });
 
@@ -197,7 +197,7 @@ describe("menção de runtime no brief (detectRuntimeMention)", () => {
   });
   test("variações PT/EN de cue", () => {
     expect(detectRuntimeMention("faça o site usando o codex")?.runtime).toBe("codex");
-    expect(detectRuntimeMention("rode pelo gemini a análise")?.runtime).toBe("gemini-cli");
+    expect(detectRuntimeMention("rode pelo kimi a análise")?.runtime).toBe("kimi-cli");
     expect(detectRuntimeMention("build this using claude code")?.runtime).toBe("claude-code");
     expect(detectRuntimeMention("despache via antigravity cli")?.runtime).toBe("antigravity-cli");
     expect(detectRuntimeMention("rode via pi o refactor do módulo")?.runtime).toBe("pi");
@@ -208,7 +208,7 @@ describe("menção de runtime no brief (detectRuntimeMention)", () => {
     expect(detectRuntimeMention("calcule o valor de pi com 100 casas decimais")).toBeNull();
   });
   test("dois runtimes citados → ambíguo → null", () => {
-    expect(detectRuntimeMention("use o codex ou use o gemini, tanto faz")).toBeNull();
+    expect(detectRuntimeMention("use o codex ou use o kimi, tanto faz")).toBeNull();
   });
   test("menção VENCE regra e veto; perde para flag", () => {
     const withVeto: RuntimeRule[] = [
@@ -235,7 +235,7 @@ describe("menção de runtime no brief (detectRuntimeMention)", () => {
     expect(detectRuntimeMention("use o codex para revisar")?.runtime).toBe("codex");
     expect(detectRuntimeMention("rode no agy")?.runtime).toBe("antigravity-cli");
     expect(detectRuntimeMention("use `codex` como exemplo")).toBeNull();
-    const brief = "## Context\nuse o codex na etapa anterior\n\n## Request (verbatim)\nescreva o post\n\n## Done when\nuse o gemini\n";
+    const brief = "## Context\nuse o codex na etapa anterior\n\n## Request (verbatim)\nescreva o post\n\n## Done when\nuse o kimi\n";
     expect(detectRuntimeMention(brief)).toBeNull();
     expect(detectRuntimeMention("## Request (verbatim)\nrode no agy\n## Done when\nx\n")?.runtime).toBe("antigravity-cli");
   });
@@ -248,13 +248,13 @@ describe("menção de runtime no brief (detectRuntimeMention)", () => {
 
 describe("a runtime request in a split brief belongs to its part", () => {
   const six = (req: string, dec: string, part: string) => `## Request (verbatim)\n${req}\n\n## Decisions\n${dec}\n\n## Your part\n${part}\n`;
-  const REQ = "Crie a copy de venda e use o gemini para criar o html";
+  const REQ = "Crie a copy de venda e use o kimi para criar o html";
   test("the user's words travel in every part's brief and choose no runtime there", () => {
     expect(detectRuntimeMention(six(REQ, "- squad copywriting-infoprodutos", "Entregar a copy."))).toBeNull();
   });
   test("the orchestrator's words for this part choose it: a marker or an instruction", () => {
-    expect(detectRuntimeMention(six(REQ, "- runtime gemini\n- squad brandcraft", "Construir o HTML."))?.runtime).toBe("gemini-cli");
-    expect(detectRuntimeMention(six("x", "- None.", "Use o gemini para construir o HTML."))?.runtime).toBe("gemini-cli");
+    expect(detectRuntimeMention(six(REQ, "- runtime kimi\n- squad brandcraft", "Construir o HTML."))?.runtime).toBe("kimi-cli");
+    expect(detectRuntimeMention(six("x", "- None.", "Use o kimi para construir o HTML."))?.runtime).toBe("kimi-cli");
   });
   test("a raw brief, with no orchestrator in between, is the user's words", () => {
     expect(detectRuntimeMention("use o codex para revisar o código")?.runtime).toBe("codex");
@@ -266,7 +266,7 @@ describe("detectCurrentHost", () => {
   test("marcadores de sessão de cada CLI", () => {
     expect(detectCurrentHost({ CLAUDECODE: "1" })).toBe("claude-code");
     expect(detectCurrentHost({ CODEX_SANDBOX: "seatbelt" })).toBe("codex");
-    expect(detectCurrentHost({ GEMINI_SESSION_ID: "x" })).toBe("gemini-cli");
+    expect(detectCurrentHost({ KIMI_SESSION_ID: "x" })).toBe("kimi-cli");
     expect(detectCurrentHost({ PI_CODING_AGENT: "true" })).toBe("pi");
     expect(detectCurrentHost({ PI_SESSION_ID: "abc" })).toBe("pi");
     expect(detectCurrentHost({})).toBeNull();

@@ -20,7 +20,7 @@
  *   <target>/.nirvana/{squads,businesses,mind-clones}/
  *
  * Universal agents (Antigravity, Codex, Cursor, Copilot, OpenCode, Cline,
- * Replit, Warp, Amp, Gemini CLI, Deep Agents, Firebender, Dexto, Kimi CLI)
+ * Replit, Warp, Amp, Deep Agents, Firebender, Dexto, Kimi CLI)
  * already read from .agents/skills directly — no symlink needed.
  *
  * Usage:
@@ -92,7 +92,7 @@ const PER_AGENT_SYMLINKS: Array<{ name: string; rel: string }> = [
 // Universal agents: read directly from .agents/skills, no symlink needed
 const UNIVERSAL_AGENTS = [
   "antigravity", "codex", "cursor", "github-copilot", "opencode",
-  "cline", "replit", "warp", "amp", "gemini-cli", "deepagents",
+  "cline", "replit", "warp", "amp", "deepagents",
   "firebender", "dexto", "kimi-cli", "universal",
 ];
 
@@ -268,11 +268,11 @@ CREATES (default — minimal)
   <target>/README.md             quickstart pointer
   <target>/AGENTS.md             universal agent contract (canonical)
   <target>/CLAUDE.md             same content — Claude Code reads this
-  <target>/GEMINI.md             same content — Gemini-CLI reads this
+  <target>/GEMINI.md             same content — Antigravity (agy) reads it beside AGENTS.md
   <target>/.nirvana/             squads/ businesses/ mind-clones/
 
   Note: by default the project does NOT create .agents/skills/ or per-agent
-  symlinks. Every modern agent runtime (Gemini-CLI, Cursor, Codex, OpenCode,
+  symlinks. Every modern agent runtime (Cursor, Codex, OpenCode,
   Cline, Warp, …) reads from your HOME (~/.agents/skills which links to
   ~/.nirvana/skills), so duplicating in the project would only trigger
   "skill conflict" warnings.
@@ -349,8 +349,8 @@ async function main() {
   const linkOnly = !!flags.link;
   const useCopy = !!flags.copy;
   // Skills materialization is opt-in. By default we do NOT create
-  // `<project>/.agents/skills` because every modern agent runtime (Gemini-CLI,
-  // Cursor, Codex, etc.) already reads from `~/.agents/skills` (which we link
+  // `<project>/.agents/skills` because every modern agent runtime (Cursor,
+  // Codex, etc.) already reads from `~/.agents/skills` (which we link
   // to ~/.nirvana/skills globally). Creating both would cause "skill conflict"
   // warnings — the project would shadow the home library with the same files.
   // Use `--with-skills` (or `--copy`) when you need a portable client delivery
@@ -509,7 +509,7 @@ async function main() {
   // Canonical source-of-truth dir — OPT-IN ONLY.
   //
   // Default behavior (no --with-skills, no --copy): we do NOT create
-  // `<project>/.agents/skills`. Every modern agent runtime (Gemini-CLI, Cursor,
+  // `<project>/.agents/skills`. Every modern agent runtime (Cursor,
   // Codex, OpenCode, Cline, Warp, Antigravity, …) already reads from
   // `~/.agents/skills` (which links to ~/.nirvana/skills globally), so the
   // project would only duplicate the same paths and trigger "skill conflict"
@@ -666,12 +666,12 @@ async function main() {
     const result = require("node:child_process").spawnSync("bun", [path.join(SKILLS_ROOT, "_shared", "scripts", "install.ts"), "--check"], { windowsHide: true, encoding: "utf8" });
     if (result.status !== 0) {
       log.warn(`Audit hooks are NOT yet wired into your agents. Run: nrv setup`);
-      log.info(`(this configures Claude Code + Gemini-CLI to emit audit events automatically)`);
+      log.info(`(this configures Claude Code and Codex to emit audit events automatically, and Antigravity to load the Nirvana context)`);
     } else {
       log.ok(`Audit hooks active across installed agents — runs auto-track in 'nrv glance'.`);
     }
   } catch { /* check is best-effort */ }
-  // The claws. Claude, Codex, Gemini and Hermes work where they are started, so
+  // The claws. Claude, Codex, Antigravity and Hermes work where they are started, so
   // "open it here" is the whole recipe. OpenClaw works in an agent's workspace,
   // and the way this directory becomes that agent's home is one command — said
   // here, once, because nothing in OpenClaw will ever say it.

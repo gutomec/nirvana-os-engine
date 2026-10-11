@@ -9,7 +9,7 @@
  *   - Audit emission of `stall_detected` and `stall_retry` events.
  *
  * Host-agnostic: delegates to `callHostAgentAsync` which already handles
- * Claude Code, Codex, Gemini CLI, Qwen, OpenCode, etc.
+ * Claude Code, Codex, Antigravity, Qwen, OpenCode, etc.
  *
  * Usage:
  *   const r = await callWithRetryOnStall(persona, userMsg, {

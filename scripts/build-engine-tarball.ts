@@ -9,7 +9,7 @@
  *
  * Layout inside the tarball (extract root):
  *   skills/{harness,businesses,squads,_shared,nirvana} + VERSION + EDITION
- *   bin/{nrv,nrv-gemini,nrv-hermes}
+ *   bin/{nrv,nrv-hermes}
  *   scripts/install.ts
  *   package.json (engine deps + version)  +  bun.lock
  *
@@ -38,7 +38,7 @@ const OUT = resolve(process.argv[2] ?? join(SRC, "dist"));
 const STAGE = join(OUT, "engine-stage");
 const TARBALL = join(OUT, "nirvana-os-engine.tar.gz");
 
-const BINARIES = ["nrv", "nrv-gemini", "nrv-hermes"];
+const BINARIES = ["nrv", "nrv-hermes"];
 const COPY_FILTER = (s: string): boolean =>
   !s.split(/[\\/]/).includes("node_modules") && !s.endsWith(".DS_Store") && !/\.bak\./.test(s);
 

@@ -22,9 +22,7 @@ runtime_requirements:
   compatible:
   - runtime: codex
     version: '>=0.20.0'
-  - runtime: gemini-cli
-    version: '>=0.4.0'
-  - runtime: antigravity-cli  # +antigravity-cli (successor; gemini-cli consumer sunset 2026-06-18)
+  - runtime: antigravity-cli
     version: '>=0.4.0'
 features_required:
 - max_turns

@@ -45,7 +45,7 @@ export interface WorkerSession {
   projectDir: string;
   projectRoot: string;
   outputsRoot: string;
-  /** The folder the session was started in (claude and gemini resume only from there). */
+  /** The folder the session was started in (claude resumes only from there). */
   workspace: string | null;
   manifest?: string | null;
 }

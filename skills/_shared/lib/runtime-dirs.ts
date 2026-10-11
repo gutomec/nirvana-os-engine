@@ -43,7 +43,6 @@ export interface RuntimeTarget {
 export const RUNTIME_TARGETS: RuntimeTarget[] = [
   { name: "claude-code", bin: "claude", skillsDir: join(homedir(), ".claude/skills") },
   { name: "codex", bin: "codex", skillsDir: join(homedir(), ".codex/skills") },
-  { name: "gemini-cli", bin: "gemini", skillsDir: join(homedir(), ".gemini/skills") },
   // Antigravity CLI reads global skills from ~/.gemini/config/skills (the one
   // path the agy CLI, the agy IDE and plain agy all honour; the CLI docs also
   // name ~/.gemini/antigravity-cli/skills) and .agents/skills in the workspace.
@@ -77,15 +76,20 @@ export const RUNTIME_SKILL_DIRS = RUNTIME_TARGETS.map((t) => t.skillsDir);
  *  installer and the uninstaller sweep OUR entries out of them (a symlink to
  *  the engine tree, live or dangling, or a copy carrying COPY_MARKER); anything
  *  else there is the user's and stays. */
-export const LEGACY_RUNTIME_SKILL_DIRS: Array<{ runtime: string; skillsDir: string }> = [
-  { runtime: "antigravity-cli", skillsDir: join(homedir(), ".antigravity/skills") },
+export const LEGACY_RUNTIME_SKILL_DIRS: Array<{ runtime: string; skillsDir: string; why?: string }> = [
+  { runtime: "antigravity-cli", skillsDir: join(homedir(), ".antigravity/skills"), why: "a directory that runtime never read" },
+  // The Gemini CLI's own skills dir. Gemini CLI is no longer a runtime; agy
+  // does not read this directory (its skills live in ~/.gemini/config/skills).
+  { runtime: "gemini-cli", skillsDir: join(homedir(), ".gemini/skills"), why: "Gemini CLI is no longer supported" },
 ];
 
 /**
  * The instruction files agent runtimes read from a project root. `nrv init`
  * writes all three so every supported adapter finds one: AGENTS.md serves
  * antigravity, codex, grok, kimi and pi; CLAUDE.md serves claude-code;
- * GEMINI.md serves gemini-cli. Checking for any ONE of them is how you ask
+ * GEMINI.md is read by antigravity next to AGENTS.md (agy's rules doc: "the
+ * system walks up from the current working directory ... and loads these
+ * files", GEMINI.md / AGENTS.md). Checking for any ONE of them is how you ask
  * "was this project initialised?" without assuming a runtime.
  */
 export const PROJECT_CONTRACT_FILES = ["AGENTS.md", "CLAUDE.md", "GEMINI.md"];

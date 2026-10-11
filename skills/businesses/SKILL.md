@@ -19,7 +19,7 @@ metadata:
 
 > Requires the Nirvana-OS engine (`nrv` on PATH). If it is absent, use the `nirvana` skill, which installs it. This skill is not standalone.
 
-Business lifecycle and structure following `BUSINESS_PROTOCOL_V2.md`. Runtime-agnostic (Claude Code, Codex, Gemini-CLI). Zero external dependencies beyond the runtime and the centralized validators in `~/.nirvana/skills/_shared/`.
+Business lifecycle and structure following `BUSINESS_PROTOCOL_V2.md`. Runtime-agnostic (Claude Code, Codex, Antigravity). Zero external dependencies beyond the runtime and the centralized validators in `~/.nirvana/skills/_shared/`.
 
 ---
 

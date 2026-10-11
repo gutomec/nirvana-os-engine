@@ -11,7 +11,7 @@
  *
  * What a profile never sets: the model. `execution.model` reaches every
  * runtime's `--model` unchanged (only codex filters non-OpenAI ids), so one id
- * cannot be right for claude, codex and gemini at once. Each runtime keeps the
+ * cannot be right for claude, codex and agy at once. Each runtime keeps the
  * model its own configuration names; a profile tunes what is runtime-neutral:
  * effort, the context ceiling of a worker, the review policy, routing and the
  * judge.

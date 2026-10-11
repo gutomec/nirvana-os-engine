@@ -1,6 +1,6 @@
 /**
  * quality-judge.js — LLM-as-judge gate runner. Uses host-agent-driver
- * (agnostic across Claude Code, Codex, Gemini CLI, etc.) to evaluate an
+ * (agnostic across Claude Code, Codex, Antigravity, etc.) to evaluate an
  * artifact against a markdown rubric and return a structured verdict.
  *
  * Calling pattern (see ~/.nirvana/skills/_shared/rubrics/*.md for shapes):

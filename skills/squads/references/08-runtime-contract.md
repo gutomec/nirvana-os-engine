@@ -153,7 +153,6 @@ Every adapter follows this contract. See each adapter for its specific implement
 | Runtime | Adapter |
 |---------|---------|
 | Claude Code | [_shared/adapters/claude-code.md](../../_shared/adapters/claude-code.md) |
-| Gemini CLI | [_shared/adapters/gemini-cli.md](../../_shared/adapters/gemini-cli.md) |
 | Codex | [_shared/adapters/codex.md](../../_shared/adapters/codex.md) |
 | Antigravity | [_shared/adapters/antigravity-cli.md](../../_shared/adapters/antigravity-cli.md) |
 | Kimi | [_shared/adapters/kimi-cli.md](../../_shared/adapters/kimi-cli.md) |

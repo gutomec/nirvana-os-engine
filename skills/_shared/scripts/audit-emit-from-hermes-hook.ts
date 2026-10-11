@@ -3,7 +3,7 @@
  * audit-emit-from-hermes-hook.ts — bridge between Hermes Agent shell hooks
  * (pre_tool_call / post_tool_call) and the harness audit log.
  *
- * Hermes hooks speak a different wire protocol than Claude Code / Gemini-CLI:
+ * Hermes hooks speak a different wire protocol than Claude Code / Codex:
  * the payload tool names are `terminal` (shell) and `file` (write/edit), not
  * `Bash`/`Write`/`Edit`. This shim reads the Hermes envelope on stdin,
  * normalizes it to the Claude Code hook contract, and delegates to the canonical

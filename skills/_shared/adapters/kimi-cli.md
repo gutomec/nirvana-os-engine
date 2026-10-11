@@ -179,14 +179,14 @@ The driver defensively extracts the assistant's final text from the NDJSON event
 
 **Authentication (not a shell env var).** Kimi **does not read** `MOONSHOT_API_KEY`/shell env automatically. The credential comes from one of two routes:
 
-- **Free OAuth**: `kimi` → `/login` with a Kimi.com account (no API key). A **free, agentic** route; tracked cost = **$0** (the driver reports `costUsd: null`, like gemini/agy). Quota: rolling ~5h window, ~300-1200 calls; check `/usage`.
+- **Free OAuth**: `kimi` → `/login` with a Kimi.com account (no API key). A **free, agentic** route; tracked cost = **$0** (the driver reports `costUsd: null`, like agy). Quota: rolling ~5h window, ~300-1200 calls; check `/usage`.
 - **`~/.kimi-code/config.toml` (paid)**: a `[providers.<id>] type="openai" base_url=... api_key=...` block pointing to Moonshot (`https://api.moonshot.ai/v1`, key `MOONSHOT_API_KEY`) or OpenRouter. Cost = the provider's pay-per-token.
 
 ---
 
 ## 9. Context Window & Compaction
 
-- Window: **1M tokens** (Kimi K3), larger than Claude/Codex, comparable to Gemini/Antigravity.
+- Window: **1M tokens** (Kimi K3), larger than Claude/Codex, comparable to Antigravity.
 - Compaction: the large window reduces compaction pressure in long-running businesses.
 - **Advantage:** a brief that consumes >100K tokens (large code analysis, extensive document review) runs without aggressive truncation.
 

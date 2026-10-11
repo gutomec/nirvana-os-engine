@@ -43,10 +43,10 @@ describe("the sentence is the owner's closed form", () => {
 });
 
 describe("the markdown surfaces carry the English sentence verbatim", () => {
-  test("all seven agent-x personas, inside the hard limits", () => {
+  test("all six agent-x personas, inside the hard limits", () => {
     const dir = path.join(ROOT, "skills/_shared/agents");
     const personas = fs.readdirSync(dir).filter(f => /^agent-x\..+\.md$/.test(f));
-    expect(personas.length).toBeGreaterThanOrEqual(7);
+    expect(personas.length).toBeGreaterThanOrEqual(6);
     const missing: string[] = [];
     for (const f of personas) {
       const text = fs.readFileSync(path.join(dir, f), "utf8");

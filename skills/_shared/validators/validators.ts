@@ -58,6 +58,9 @@ const REQUIRES_REF = /^(?:[a-z][a-z0-9-]{1,63}:)?[a-z][a-z0-9_]*(\.[a-z][a-z0-9_
  *  published; only the `required` lists change. */
 export const JSON_SCHEMA_OPTIONS = { unrepresentable: "any", io: "input" } as const;
 
+// Declarable runtimes. `gemini-cli` is no longer a runtime the engine drives,
+// but manifests written while it was one still declare it: it stays accepted
+// so they keep validating, and a run never selects it.
 const Runtime = z.enum([
   'claude-code', 'codex', 'antigravity-cli', 'antigravity', 'gemini-cli', 'pi',
   'kimi-cli', 'grok-cli', 'qwen-code', 'opencode', 'cursor', 'openclaw',

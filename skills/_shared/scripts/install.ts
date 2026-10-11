@@ -8,7 +8,6 @@
  *
  * Currently configures:
  *   - Claude Code   → ~/.claude/settings.json      (PreToolUse + PostToolUse)
- *   - Gemini-CLI    → ~/.gemini/settings.json       (BeforeTool + AfterTool + SessionStart)
  *   - Antigravity   → ~/.gemini/config/hooks.json   (named hook "nirvana-os": PreInvocation context)
  *
  *   - Codex         → ~/.codex/hooks.json           (PreToolUse + PostToolUse, matcher Bash|apply_patch)
@@ -68,6 +67,27 @@ interface AgentInstallSpec {
   hookName?: string;
 }
 
+// Settings files an earlier engine wrote hooks into and this one no longer
+// does. Install, update and uninstall take OUR handlers out of them (the
+// NIRVANA_TOKENS match) and leave every other key and handler as it was.
+const RETIRED_HOOK_FILES: Array<AgentInstallSpec & { why: string }> = [
+  {
+    // Antigravity's hooks used to go to ~/.antigravity/settings.json, which
+    // the agy CLI does not read.
+    name: "Antigravity (old location)", why: "Antigravity does not read it",
+    settingsPath: path.join(os.homedir(), ".antigravity", "settings.json"),
+    groups: { BeforeTool: [], AfterTool: [], SessionStart: [] },
+  },
+  {
+    // The Gemini CLI is no longer a runtime. Its own settings.json carried our
+    // audit and SessionStart hooks; agy's ~/.gemini/config/hooks.json is a
+    // different file and is installed below, untouched by this cleanup.
+    name: "Gemini CLI", why: "Gemini CLI is no longer supported",
+    settingsPath: path.join(os.homedir(), ".gemini", "settings.json"),
+    groups: { BeforeTool: [], AfterTool: [], SessionStart: [] },
+  },
+];
+
 const AGENTS_TO_INSTALL: AgentInstallSpec[] = [
   {
     name: "Claude Code",
@@ -91,38 +111,6 @@ const AGENTS_TO_INSTALL: AgentInstallSpec[] = [
           command: `bun "${HOOK_SCRIPT}" post claude-code`,
           async: true,
           timeout: 5,
-        }],
-      }],
-    },
-  },
-  {
-    name: "Gemini-CLI",
-    settingsPath: path.join(os.homedir(), ".gemini", "settings.json"),
-    groups: {
-      BeforeTool: [{
-        matcher: "write_file|replace|run_shell_command",
-        hooks: [{
-          name: "nirvana-audit-pre",
-          type: "command",
-          command: `bun "${HOOK_SCRIPT}" pre gemini-cli`,
-          timeout: 5000,
-        }],
-      }],
-      AfterTool: [{
-        matcher: "write_file|replace|run_shell_command",
-        hooks: [{
-          name: "nirvana-audit-post",
-          type: "command",
-          command: `bun "${HOOK_SCRIPT}" post gemini-cli`,
-          timeout: 5000,
-        }],
-      }],
-      SessionStart: [{
-        hooks: [{
-          name: "nirvana-session-start",
-          type: "command",
-          command: `bun "${SESSION_START_SCRIPT}"`,
-          timeout: 5000,
         }],
       }],
     },
@@ -653,7 +641,9 @@ WHAT IT DOES
   1. Verifies toolchain (bun installed, PATH includes ~/.local/bin)
   2. Patches every agent's settings.json with audit hooks, idempotent
        - Claude Code: ~/.claude/settings.json (PreToolUse + PostToolUse)
-       - Gemini-CLI:  ~/.gemini/settings.json  (BeforeTool/AfterTool/SessionStart)
+       - Codex:       ~/.codex/hooks.json     (PreToolUse + PostToolUse)
+       - Antigravity: ~/.gemini/config/hooks.json (PreInvocation context)
+     and removes the hooks it once wrote for the Gemini CLI (~/.gemini/settings.json)
   3. Creates timestamped backups before modifying any file
   4. Smoke-tests the audit pipe (writes a sentinel event)
 
@@ -663,7 +653,7 @@ ENVIRONMENT
                                only. Set by every test that installs into a
                                temporary HOME.
 
-After install, every Write/Edit/Bash by Claude Code OR Gemini-CLI lands in
+After install, every Write/Edit/Bash by Claude Code or Codex lands in
 ~/.harness-logs/<today>/audit.jsonl automatically. Watch with 'nrv watch'.
 
 Then create projects with 'nrv init <dir>' — without it a brief is answered
@@ -724,22 +714,23 @@ inline, with no dispatch, no quality gate and no audit trail.
 
   // Per-agent
   console.log("\nAgents");
-  // Antigravity's hooks used to go to ~/.antigravity/settings.json, which the
-  // agy CLI does not read: take ours out of it.
-  const oldAntigravity: AgentInstallSpec = {
-    name: "Antigravity (old location)", settingsPath: path.join(os.homedir(), ".antigravity", "settings.json"),
-    groups: { BeforeTool: [], AfterTool: [], SessionStart: [] },
-  };
-  if (!check && !dryRun && fs.existsSync(oldAntigravity.settingsPath)) {
-    const old = patchSettings(oldAntigravity, "uninstall");
-    if (!old.error && old.changed) {
-      publishSettings(oldAntigravity.settingsPath, old.existed, old.raw, old.after);
-      console.log(`  ✓ removed Nirvana hooks from ${oldAntigravity.settingsPath} (Antigravity does not read it)`);
-    }
-  }
   let anyChange = false;
   let failures = false;
   let installedCount = 0;
+  // Hooks an earlier engine left where no supported runtime reads them: ours
+  // come out, the user's stay.
+  for (const retired of RETIRED_HOOK_FILES) {
+    if (!fs.existsSync(retired.settingsPath)) continue;
+    const old = patchSettings(retired, "uninstall");
+    if (old.error || !old.changed) continue;
+    if (check || dryRun) {
+      console.log(`  ⚠ ${retired.name} — Nirvana hooks left in ${retired.settingsPath} (${retired.why}); ${check ? "needs setup" : "would remove them"}`);
+      anyChange = true;
+      continue;
+    }
+    publishSettings(retired.settingsPath, old.existed, old.raw, old.after);
+    console.log(`  ✓ removed Nirvana hooks from ${retired.settingsPath} (${retired.why})`);
+  }
   for (const spec of AGENTS_TO_INSTALL) {
     const exists = fs.existsSync(spec.settingsPath);
     if (!exists) {

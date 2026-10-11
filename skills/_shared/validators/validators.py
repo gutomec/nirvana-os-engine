@@ -107,15 +107,17 @@ SelfScoreCriterionId = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_
 
 
 class Runtime(str, Enum):
-    """Keep in sync with `Runtime` in validators.ts: the nine runtimes
+    """Keep in sync with `Runtime` in validators.ts: the eight runtimes
     the driver executes, plus the two declarable hosts that are not execution
-    targets (`cursor`, `openclaw`) and the short name `antigravity`."""
+    targets (`cursor`, `openclaw`), the short name `antigravity` and
+    `gemini-cli`, no longer a runtime but still accepted in manifests written
+    while it was one."""
 
     claude_code = "claude-code"
     codex = "codex"
-    antigravity_cli = "antigravity-cli"  # canonical name used across squads/businesses (gemini-cli successor)
+    antigravity_cli = "antigravity-cli"  # canonical name used across squads/businesses
     antigravity = "antigravity"
-    gemini_cli = "gemini-cli"
+    gemini_cli = "gemini-cli"  # no longer a runtime; still declarable so existing manifests validate
     pi = "pi"
     kimi_cli = "kimi-cli"
     grok_cli = "grok-cli"

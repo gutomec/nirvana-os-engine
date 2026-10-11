@@ -1,6 +1,6 @@
 # Installing Nirvana-OS
 
-The engine is free and installs the same way on macOS, Linux and Windows. Once it is installed you do not drive it by hand: you talk to your agent (Claude Code, Codex, Gemini CLI, Antigravity, Pi…) and the agent runs Nirvana. The commands on this page are for the install itself and for anyone who wants them.
+The engine is free and installs the same way on macOS, Linux and Windows. Once it is installed you do not drive it by hand: you talk to your agent (Claude Code, Codex, Antigravity, Pi…) and the agent runs Nirvana. The commands on this page are for the install itself and for anyone who wants them.
 
 ## Install
 
@@ -26,7 +26,7 @@ Open a new terminal when it finishes, so `~/.local/bin` is on your PATH. Then as
 
 - `curl` or `wget`, and `tar`. macOS, Linux and Windows 10+ ship them.
 - **Bun** 1.0 or newer. The installer installs it when it is missing.
-- At least one agent CLI: [Claude Code](https://claude.com/claude-code), [Codex](https://github.com/openai/codex), [Gemini CLI](https://github.com/google-gemini/gemini-cli), [Antigravity CLI](https://antigravity.google/docs/cli-features) (`agy`), Pi, Kimi, Grok, Qwen Code or OpenCode. Dispatched work runs on the runtime of your session unless you name another.
+- At least one agent CLI: [Claude Code](https://claude.com/claude-code), [Codex](https://github.com/openai/codex), [Antigravity CLI](https://antigravity.google/docs/cli-features) (`agy`), Pi, Kimi, Grok, Qwen Code or OpenCode. Dispatched work runs on the runtime of your session unless you name another.
 - **Python** 3.10+ only for squads that declare Python packages, and for the zip that `nrv export` builds.
 
 Node is not needed.
@@ -34,13 +34,12 @@ Node is not needed.
 ## What the installer does
 
 1. Copies the engine to `~/.nirvana/skills/` and installs the engine's own libraries in `~/.nirvana/node_modules`.
-2. Puts `nrv`, `nrv-gemini` and `nrv-hermes` in `~/.local/bin` (`.cmd` launchers on Windows) and adds `~/.local/bin` to your PATH: one line in `~/.zshrc`, or `~/.bashrc` and `~/.bash_profile`, plus `~/.profile`; on Windows, the user PATH in the registry.
+2. Puts `nrv` and `nrv-hermes` in `~/.local/bin` (`.cmd` launchers on Windows) and adds `~/.local/bin` to your PATH: one line in `~/.zshrc`, or `~/.bashrc` and `~/.bash_profile`, plus `~/.profile`; on Windows, the user PATH in the registry.
 3. Wires audit hooks into the runtimes it finds:
    - Claude Code: `~/.claude/settings.json` (PreToolUse, PostToolUse);
-   - Gemini CLI: `~/.gemini/settings.json` (BeforeTool, AfterTool, SessionStart);
    - Antigravity: `~/.gemini/config/hooks.json`;
    - Codex: `~/.codex/hooks.json`, plus a trust record in `~/.codex/config.toml`.
-4. Links the `nirvana` skill into every runtime whose folder or binary it finds: `~/.claude/skills`, `~/.codex/skills` (always a copy), `~/.gemini/skills`, `~/.gemini/config/skills` (Antigravity), `~/.pi/agent/skills` and `~/.agents/skills` (OpenClaw). On Windows, or with `--copy-skills`, the entries are copies. A folder of yours with the same name is moved to `~/.nirvana/backups/runtime-skills/`, never deleted.
+4. Links the `nirvana` skill into every runtime whose folder or binary it finds: `~/.claude/skills`, `~/.codex/skills` (always a copy), `~/.gemini/config/skills` (Antigravity), `~/.pi/agent/skills` and `~/.agents/skills` (OpenClaw). On Windows, or with `--copy-skills`, the entries are copies. A folder of yours with the same name is moved to `~/.nirvana/backups/runtime-skills/`, never deleted.
 5. Creates the empty content folders `~/squads`, `~/businesses` and `~/businesses/_library/dna`. It never deletes content.
 6. Rebuilds the registries (`nrv index`).
 7. In a terminal, asks once for a performance profile (`max`, `balanced`, `economy`) and records it in `~/.nirvana/config.yaml`. Through `curl | bash` there is no terminal to ask in, so nothing is recorded unless you pass `--profile=<name>`. An update never asks again.
@@ -173,6 +172,8 @@ The repair rewrites the value with the kind it had (a `REG_EXPAND_SZ` stays unex
 
 **Hooks not firing in Claude Code.** Restart it; hook configuration is read at startup.
 
-**Hooks not firing in Gemini CLI or Antigravity.** Run `nrv install --check`. If it reports ready and hooks still do not fire, check that the runtime's settings file is valid JSON.
+**Hooks not firing in Antigravity.** Run `nrv install --check`. If it reports ready and hooks still do not fire, check that `~/.gemini/config/hooks.json` is valid JSON.
+
+**You used the Gemini CLI with Nirvana.** The Gemini CLI is no longer a supported runtime. The next install or update takes Nirvana's hooks out of `~/.gemini/settings.json` and its skill link out of `~/.gemini/skills`, and leaves everything else in them alone. A setting, a `USE_GEMINI` rule or an `LLM_CASCADE` entry that still names `gemini-cli` is skipped with "Gemini CLI is no longer supported; pick another runtime", and the next runtime takes over. Gemini models stay available through Antigravity (`agy`).
 
 **A squad fails on a missing package or program.** Ask your agent to activate that squad (`nrv activate <squad>`). It lists each failure with the command that fixes it.

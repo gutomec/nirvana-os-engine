@@ -38,10 +38,20 @@ describe("an unidentified host is declared, never assumed", () => {
 describe("the session hook speaks the contract", () => {
   const hook = readFileSync(join(REPO, "skills", "_shared", "scripts", "gemini-session-start.ts"), "utf8");
 
-  test("it injects additionalContext, not only an audit event", () => {
-    expect(hook).toContain("hookSpecificOutput");
-    expect(hook).toContain("additionalContext");
-    expect(hook).toContain('hookEventName: "SessionStart"');
+  test("it injects the context into agy (PreInvocation ephemeral message)", () => {
+    expect(hook).toContain("injectSteps");
+    expect(hook).toContain("ephemeralMessage");
+  });
+
+  test("without --agy (a stale Gemini CLI entry) it writes nothing and exits 0", async () => {
+    const { spawnSync } = await import("node:child_process");
+    const script = join(REPO, "skills", "_shared", "scripts", "gemini-session-start.ts");
+    const stale = spawnSync(process.execPath, [script], { input: JSON.stringify({ session_id: "s", cwd: REPO }), encoding: "utf8" });
+    expect(stale.status).toBe(0);
+    expect(stale.stdout).toBe("");
+    const agy = spawnSync(process.execPath, [script, "--agy"], { input: JSON.stringify({ workspacePaths: [REPO] }), encoding: "utf8" });
+    expect(agy.status).toBe(0);
+    expect(JSON.parse(agy.stdout).injectSteps[0].ephemeralMessage).toContain("Nirvana-OS");
   });
 
   test("on-demand, the default, keeps Nirvana out of the way; always makes it the orchestrator", async () => {

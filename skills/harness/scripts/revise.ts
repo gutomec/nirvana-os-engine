@@ -289,7 +289,7 @@ const res = runWithCascade({
   // names files under it, and claude-code and agy refuse an ungranted path.
   addDirs: [projDir, oroot, ...squadDirs()],
   // The folder the session was started in (absent on runs from before runs
-  // had one): claude and gemini resume a session only from its own folder.
+  // had one): claude resumes a session only from its own folder.
   workspace: session.workspace || undefined,
   // The same squad packages and Python the run had, on the revision's child only.
   env: squadRunEnv(envSquads()),

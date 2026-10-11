@@ -319,7 +319,7 @@ export function agentsDirCandidates(): string[] {
 /**
  * Resolve the agent-x persona file for a runtime. The dir ships
  * agent-x.<flavor>.md where flavor is the runtime without the -cli suffix
- * (claude-code, codex, gemini, antigravity, kimi, grok, pi). Fallback order:
+ * (claude-code, codex, antigravity, kimi, grok, pi). Fallback order:
  * exact flavor → agent-x.claude-code.md → first agent-x.*.md present.
  */
 export function resolveAgentXPromptPath(runtime: Runtime, agentsDir?: string): string | null {

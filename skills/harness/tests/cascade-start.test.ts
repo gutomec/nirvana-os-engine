@@ -33,9 +33,9 @@ describe("cascade-runner starts on the requested runtime", () => {
   beforeAll(() => {
     fs.mkdirSync(BIN, { recursive: true });
     delete process.env.LLM_CASCADE;
-    writeFakeCli(BIN, "gemini", `
+    writeFakeCli(BIN, "codex", `
       try { await Bun.stdin.text(); } catch {}
-      console.error("Error authenticating: IneligibleTierError: no longer supported");
+      console.error("Error authenticating: 401 Unauthorized");
       process.exit(1);
     `);
     writeFakeCli(BIN, "agy", `
@@ -55,7 +55,7 @@ describe("cascade-runner starts on the requested runtime", () => {
   });
 
   test("a runtime that is not in LLM_CASCADE is not replaced by the cascade head", () => {
-    const proj = project("not-in-cascade", "gemini-cli");
+    const proj = project("not-in-cascade", "codex");
     const res = run(proj, "antigravity-cli");
     expect(res.ok).toBe(true);
     expect(res.finalRuntime).toBe("antigravity-cli");
@@ -63,7 +63,7 @@ describe("cascade-runner starts on the requested runtime", () => {
   }, spawnBudgetMs(4));
 
   test("the user's runtime in cooldown still runs, instead of moving to another vendor", () => {
-    const proj = project("cooldown", "gemini-cli,antigravity-cli");
+    const proj = project("cooldown", "codex,antigravity-cli");
     markCooldown(proj, "antigravity-cli", 3600, "old quota hit", "unknown");
     const res = run(proj, "antigravity-cli");
     expect(res.ok).toBe(true);
@@ -72,18 +72,18 @@ describe("cascade-runner starts on the requested runtime", () => {
   }, spawnBudgetMs(4));
 
   test("a classified auth failure hands off to the next entry (unpinned)", () => {
-    const proj = project("handoff", "gemini-cli,antigravity-cli");
-    const res = run(proj, "gemini-cli");
+    const proj = project("handoff", "codex,antigravity-cli");
+    const res = run(proj, "codex");
     expect(res.ok).toBe(true);
     expect(res.finalRuntime).toBe("antigravity-cli");
-    expect(res.handoffs.map(h => `${h.from}->${h.to}`)).toEqual(["gemini-cli->antigravity-cli"]);
+    expect(res.handoffs.map(h => `${h.from}->${h.to}`)).toEqual(["codex->antigravity-cli"]);
   }, spawnBudgetMs(6));
 
   test("a pinned run (flag or brief mention) never hands off, failure included", () => {
-    const proj = project("pinned", "gemini-cli,antigravity-cli");
-    const res = run(proj, "gemini-cli", { pinned: true });
+    const proj = project("pinned", "codex,antigravity-cli");
+    const res = run(proj, "codex", { pinned: true });
     expect(res.ok).toBe(false);
-    expect(res.finalRuntime).toBe("gemini-cli");
+    expect(res.finalRuntime).toBe("codex");
     expect(res.handoffs).toEqual([]);
   }, spawnBudgetMs(4));
 
@@ -100,8 +100,8 @@ describe("cascade-runner starts on the requested runtime", () => {
 
   test("a handoff target that is missing gets a SHORT cooldown, which clears once the CLI is back", () => {
     if (runtimeAvailable("kimi-cli")) return;
-    const proj = project("missing-target", "gemini-cli,kimi-cli,antigravity-cli");
-    const res = run(proj, "gemini-cli");
+    const proj = project("missing-target", "codex,kimi-cli,antigravity-cli");
+    const res = run(proj, "codex");
     expect(res.finalRuntime).toBe("antigravity-cli");
     const cd = getCooldown(proj, "kimi-cli");
     expect(cd).not.toBeNull();

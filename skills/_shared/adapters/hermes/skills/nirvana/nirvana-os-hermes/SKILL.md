@@ -65,7 +65,7 @@ The harness emits an audit chain under `~/.harness-logs/<date>/audit.jsonl` for 
 
 ## Honest limits in Hermes
 
-Full in-process multi-agent dispatch is richest inside Claude Code (native subagent primitive). In Hermes, the maestro reasoning still works and `nrv` carries the deterministic pieces (routing, list, inspect, verify, quality-gate); employee dispatch degrades to sub-process, the same way it does in the Codex and Gemini adapters. For read-only queries (list / inspect / search) there is no degradation — they work fully here.
+Full in-process multi-agent dispatch is richest inside Claude Code (native subagent primitive). In Hermes, the maestro reasoning still works and `nrv` carries the deterministic pieces (routing, list, inspect, verify, quality-gate); employee dispatch degrades to sub-process, the same way it does in the Codex adapter. For read-only queries (list / inspect / search) there is no degradation — they work fully here.
 
 ## Notes
 

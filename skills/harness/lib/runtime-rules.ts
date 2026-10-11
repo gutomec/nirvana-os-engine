@@ -3,7 +3,6 @@
 //
 //   USE_CODEX="When you need to generate images or refine visuals"
 //   USE_ANTIGRAVITY="When doing deep research on the internet"
-//   USE_GEMINI="When the context is huge (1M tokens)"
 //   USE_HERMES="When you need to interact with the user through messaging"
 //
 // A rule only picks the PREFERRED runtime (head of the queue) for the dispatch
@@ -27,7 +26,7 @@
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { listRuntimes, runtimeAvailable, type Runtime } from "../../_shared/lib/host-agent-driver.ts";
+import { listRuntimes, retiredRuntimeMessage, runtimeAvailable, type Runtime } from "../../_shared/lib/host-agent-driver.ts";
 import { resolveSetting } from "../../_shared/lib/settings.ts";
 import { globalEnvFiles, readEnvFile, resolveCascadeRoot } from "./cascade.ts";
 
@@ -39,7 +38,7 @@ export type RoutableRuntime = Runtime | "hermes";
 export interface RuntimeRule {
   runtime: RoutableRuntime;
   rule: string;              // the rule text, verbatim
-  envKey: string;            // e.g. "USE_CODEX" | "NOT_USE_GEMINI"
+  envKey: string;            // e.g. "USE_CODEX" | "NOT_USE_ANTIGRAVITY"
   sourceFile: string | null; // source .env (null = process.env)
   /** true = NEGATIVE rule (NOT_USE_*): VETOES the runtime for matching briefs.
    *  Veto beats positive rule; explicit flag beats everything. */
@@ -105,11 +104,6 @@ const RUNTIME_IDENTITY: Record<Runtime, RuntimeIdentity> = {
     mention: "agy|antigravity(?:[- ]cli)?",
     fork: true,   // Google, Gemini family
   },
-  "gemini-cli": {
-    aliases: ["GEMINI"],
-    markers: ["GEMINI_SESSION_ID", "GEMINI_CLI"],
-    mention: "gemini(?:[- ]cli)?",
-  },
   pi: {
     aliases: ["PI_CLI", "PI_DEV", "PI_CODING_AGENT"],
     markers: ["PI_CODING_AGENT", "PI_SESSION_ID"],
@@ -138,7 +132,7 @@ const RUNTIME_IDENTITY: Record<Runtime, RuntimeIdentity> = {
   },
 };
 
-/** The canonical USE_ suffix for a runtime: `gemini-cli` → `GEMINI_CLI`. */
+/** The canonical USE_ suffix for a runtime: `antigravity-cli` → `ANTIGRAVITY_CLI`. */
 const envSuffix = (r: Runtime): string => r.toUpperCase().replace(/-/g, "_");
 
 // USE_<suffix> → canonical runtime. Unknown suffix → warn, never breaks.
@@ -251,7 +245,7 @@ function cliBasename(token: string): string {
  * chain. Some hosts export no session marker (Antigravity's `agy` exports
  * none), but `nrv` still runs as their descendant. The first two tokens of each
  * ancestor's command line are matched by basename against the runtimes' CLIs,
- * so `node /opt/homebrew/bin/gemini` counts as gemini. POSIX only; null when
+ * so `node /opt/homebrew/bin/codex` counts as codex. POSIX only; null when
  * no ancestor is a known CLI.
  */
 export function hostFromAncestors(lookup?: ProcessLookup, start: number = process.ppid): Runtime | null {
@@ -266,7 +260,7 @@ export function hostFromAncestors(lookup?: ProcessLookup, start: number = proces
       const hit = byCli.get(cliBasename(token));
       if (hit) return hit;
     }
-    // `node <pkg>\\gemini-cli\\dist\\index.js`: the CLI is the package directory.
+    // `node <pkg>\\grok-cli\\dist\\index.js`: the CLI is the package directory.
     if (tokens[1]) {
       for (const segment of tokens[1].toLowerCase().split(/[\\/]/)) {
         const m = segment.match(/^(.+)-cli$/);
@@ -292,9 +286,9 @@ export function detectSessionHost(env: NodeJS.ProcessEnv = process.env): Runtime
   return hostFromAncestors();
 }
 
-/** Roster order, with the derivatives moved to the front: a `qwen-code` session
- *  exports the gemini-cli vars it forked, so testing gemini first would answer
- *  with the parent's name for a runtime that is not it. */
+/** Roster order, with the derivatives moved to the front: a derivative session
+ *  (`qwen-code` forked the Gemini CLI) may export its parent's vars, so testing
+ *  it last could answer with another runtime's name. */
 function detectionOrder(): Runtime[] {
   const names = listRuntimes().map((r) => r.name);
   return [...names.filter((n) => RUNTIME_IDENTITY[n]?.fork), ...names.filter((n) => !RUNTIME_IDENTITY[n]?.fork)];
@@ -318,7 +312,11 @@ export function resolveDefaultRuntime(input: {
   firstAvailable: () => Runtime | null;
 }): { runtime: Runtime; from: "host" | "env" | "path-scan" | "fallback" } {
   if (input.detectedHost) return { runtime: input.detectedHost, from: "host" };
-  if (input.envDefault) return { runtime: input.normalize(input.envDefault), from: "env" };
+  // A default naming a retired runtime (gemini-cli) is skipped, never run: the
+  // next source (first runtime on PATH) takes over, and the user is told why.
+  const retired = input.envDefault ? retiredRuntimeMessage(input.envDefault) : null;
+  if (retired) console.error(`[runtime-rules] default runtime '${input.envDefault}': ${retired} — using the next available one.`);
+  if (input.envDefault && !retired) return { runtime: input.normalize(input.envDefault), from: "env" };
   const scanned = input.firstAvailable();
   if (scanned) return { runtime: scanned, from: "path-scan" };
   return { runtime: "claude-code", from: "fallback" };
@@ -383,6 +381,8 @@ export function resolveRunRuntime(opts: {
 /** The sentence a caller prints when the runtime the user named is not here. */
 export function unavailableRuntimeMessage(choice: { runtime: Runtime; installed: Runtime[] }): string {
   const green = choice.installed.length ? choice.installed.join(", ") : "none";
+  const retired = retiredRuntimeMessage(choice.runtime);
+  if (retired) return `runtime '${choice.runtime}': ${retired}. Installed right now: ${green}.`;
   return `runtime '${choice.runtime}' was requested but is not installed on this machine. `
     + `Installed right now: ${green}. `
     + `Install it, or name one of those instead — the work is not silently moved to another vendor.`;
@@ -417,7 +417,10 @@ export function loadRuntimeRules(projectRoot: string | null, env: NodeJS.Process
         // which is alarming, useless and (measured on this repo's own CI) real.
         // A typo inside a .env is still worth saying, because that file exists
         // to hold these rules and nothing else claims the prefix there.
-        if (sourceFile) {
+        const retired = retiredRuntimeMessage(m[2]);
+        if (retired) {
+          console.error(`[runtime-rules] ${key}${sourceFile ? ` (${sourceFile})` : ""}: ${retired} — rule ignored.`);
+        } else if (sourceFile) {
           console.error(`[runtime-rules] unknown runtime in ${key} (${sourceFile}) — rule ignored. Known: ${Object.keys(RUNTIME_ALIASES).join(", ")}`);
         }
         claimed.add(key);
@@ -482,7 +485,7 @@ function briefSection(brief: string, name: string): string | null {
 
 /**
  * Where a runtime request is read. A six-section brief is one part of a request
- * the orchestrator split ("write the copy, and use gemini for the html"): the
+ * the orchestrator split ("write the copy, and use codex for the html"): the
  * user's verbatim words are copied into every part's brief, so they cannot say
  * which part runs where. The orchestrator's own words for THIS part (Decisions,
  * Your part) can. A raw brief (the shell path, no orchestrator) is the user's

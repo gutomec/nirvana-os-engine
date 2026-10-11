@@ -6,12 +6,10 @@
 // .env format (advanced, with model hints):
 //   LLM_CASCADE=claude-code:claude-opus-4-7,codex:gpt-5.3-codex,antigravity-cli:gemini-3-pro,antigravity-cli:gemini-3-flash
 //
-// Note: gemini-cli's individual tier is RETIRED. The CLI still authenticates and
-// is then refused with IneligibleTierError, pointing at Antigravity — confirmed
-// live on 2026-08-05. Its successor is antigravity-cli (binary `agy`), same
-// Google backend. The gemini-cli entry stays valid for anyone on an eligible
-// (enterprise / API-key) tier, but no default or example leads with it, and a
-// refusal is classified as auth_failed so the cascade hands off (quota-detector).
+// Note: Gemini CLI (`gemini-cli`, `gemini`) is no longer a runtime. An entry
+// that still names it is dropped with "Gemini CLI is no longer supported; pick
+// another runtime" and the cascade moves on to the next entry. Google models
+// stay reachable through antigravity-cli (`agy`) and the multi-provider CLIs.
 //
 // .env format (full, with provider hint for CLIs that support multi-provider —
 // codex / qwen-code / pi via the @provider suffix; on pi the @provider maps to
@@ -36,7 +34,7 @@
 // to do — by default the harness falls through to its currently-configured
 // runtime and lets it fail naturally).
 
-import { listRuntimes } from "../../_shared/lib/host-agent-driver.ts";
+import { listRuntimes, retiredRuntimeMessage } from "../../_shared/lib/host-agent-driver.ts";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -81,7 +79,12 @@ function parseCascadeString(s: string): CascadeEntry[] {
     // `claude`, `agy`, `codex-cli` … resolve through the same alias table as USE_*.
     const runtime = canonicalRuntimeName(name);
     if (!(VALID_RUNTIMES as ReadonlyArray<string>).includes(runtime)) {
-      if (!warnedDropped.has(raw)) console.error(`[cascade] LLM_CASCADE entry '${raw}' names an unknown runtime — entry dropped. Known: ${VALID_RUNTIMES.join(", ")}`);
+      if (!warnedDropped.has(raw)) {
+        const retired = retiredRuntimeMessage(name);
+        console.error(retired
+          ? `[cascade] LLM_CASCADE entry '${raw}': ${retired} — entry dropped. Known: ${VALID_RUNTIMES.join(", ")}`
+          : `[cascade] LLM_CASCADE entry '${raw}' names an unknown runtime — entry dropped. Known: ${VALID_RUNTIMES.join(", ")}`);
+      }
       warnedDropped.add(raw);
       continue;
     }

@@ -25,7 +25,7 @@ beforeEach(() => {
   _resetSettingsCache();
 });
 
-const CLI: Partial<Record<Runtime, string>> = { "claude-code": "claude", codex: "codex", "gemini-cli": "gemini" };
+const CLI: Partial<Record<Runtime, string>> = { "claude-code": "claude", codex: "codex", "qwen-code": "qwen" };
 
 /** Run a dispatch against a fake CLI; return its argv and the ceiling variable it saw. */
 function spawnOf(runtime: Runtime): { argv: string[]; envWindow: string | null } {
@@ -80,7 +80,7 @@ describe("a ceiling configured", () => {
 
   test("a runtime without the concept gets nothing", () => {
     process.env.NIRVANA_CONTEXT_WINDOW = "200000";
-    const { argv } = spawnOf("gemini-cli");
+    const { argv } = spawnOf("qwen-code");
     expect(argv.some((a) => a.includes("200000"))).toBe(false);
   }, 60_000);
 

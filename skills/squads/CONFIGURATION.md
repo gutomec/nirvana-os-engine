@@ -88,7 +88,7 @@ The manifest is defined by `SQUAD_PROTOCOL_V6.md` §5.1 and §22; the generated 
 | `capabilities[].fidelity.status` | `validated`, `experimental`, `drifted`, `retired`; also scales the score |
 | `capabilities[].acceptance[]` | What the judge charges (§29); at most 12 |
 
-Runtimes accepted in `runtime_requirements`: `claude-code`, `codex`, `antigravity-cli`, `antigravity`, `gemini-cli`, `pi`, `kimi-cli`, `grok-cli`, `qwen-code`, `opencode`, `cursor`, `openclaw`.
+Runtimes accepted in `runtime_requirements`: `claude-code`, `codex`, `antigravity-cli`, `antigravity`, `gemini-cli`, `pi`, `kimi-cli`, `grok-cli`, `qwen-code`, `opencode`, `cursor`, `openclaw`. `gemini-cli` is still accepted in existing manifests, but it is no longer a runtime.
 
 ## 5. Settings and limits
 

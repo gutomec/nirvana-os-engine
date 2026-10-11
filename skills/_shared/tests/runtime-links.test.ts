@@ -159,7 +159,7 @@ test("install links every installed runtime and backs up a colliding third-party
   expect(isOurs(path.join(home, ".pi", "agent", "skills", "nirvana"))).toBe(true);
   for (const s of RUNTIME_ENTRIES) {
     expect(isOurs(path.join(home, ".claude", "skills", s))).toBe(true);
-    expect(isOurs(path.join(home, ".gemini", "skills", s))).toBe(true);
+    expect(isOurs(path.join(home, ".gemini", "config", "skills", s))).toBe(true);
     // Codex always gets a COPY, marker included.
     const codex = path.join(home, ".codex", "skills", s);
     expect(isLink(codex)).toBe(false);
@@ -173,14 +173,14 @@ test("install links every installed runtime and backs up a colliding third-party
 });
 
 test("an engine up to 0.13.9 linked the internal trees beside the door: the next install unlinks OUR entries, keeps foreign ones", () => {
-  const home = freshHome("home-unlink-internals", [".claude", ".gemini"]);
+  const home = freshHome("home-unlink-internals", [".claude", path.join(".gemini", "config")]);
   const tree = path.join(home, ".nirvana", "skills");
   fs.mkdirSync(tree, { recursive: true });
   for (const s of ENGINE_INTERNAL_SKILLS) {
     fs.mkdirSync(path.join(tree, s), { recursive: true });
     plantOurs(path.join(home, ".claude", "skills", s), path.join(tree, s));
   }
-  const foreign = path.join(home, ".gemini", "skills", "harness");   // someone else's harness
+  const foreign = path.join(home, ".gemini", "config", "skills", "harness");   // someone else's harness
   fs.mkdirSync(foreign, { recursive: true });
   fs.writeFileSync(path.join(foreign, "KEEP.txt"), "not ours");
 
@@ -228,7 +228,7 @@ test("a NEW third-party dir over an existing backup is skipped, never deleted", 
   // The original backup is untouched too.
   expect(fs.readFileSync(path.join(parkedBackupPath(target, home), "THIRD-PARTY.txt"), "utf8")).toContain("não é do Nirvana");
   // Every other runtime still got the door normally.
-  expect(isOurs(path.join(home, ".gemini", "skills", "nirvana"))).toBe(true);
+  expect(isOurs(path.join(home, ".gemini", "config", "skills", "nirvana"))).toBe(true);
 });
 
 test("uninstall removes our links AND our copies, cleans dangling links, keeps what is not ours", () => {
@@ -240,7 +240,7 @@ test("uninstall removes our links AND our copies, cleans dangling links, keeps w
   // (install.ts:320), so removing the engine tree leaves a full directory, not a
   // broken link. Same for the foreign symlink below: creating a directory
   // symlink on Windows needs admin, which CI does not have.
-  const dangling = path.join(home, ".gemini", "skills", "nirvana");
+  const dangling = path.join(home, ".gemini", "config", "skills", "nirvana");
   const foreignTarget = path.join(home, "elsewhere");
   const foreignLink = path.join(home, ".antigravity", "skills", "nirvana");
   if (!IS_WINDOWS) {
@@ -265,7 +265,7 @@ test("uninstall removes our links AND our copies, cleans dangling links, keeps w
     expect(exists(path.join(home, ".codex", "skills", s))).toBe(false);
     expect(exists(path.join(home, ".pi", "agent", "skills", s))).toBe(false);
   }
-  expect(exists(path.join(home, ".gemini", "skills", "nirvana"))).toBe(false);
+  expect(exists(path.join(home, ".gemini", "config", "skills", "nirvana"))).toBe(false);
 
   // (c) the third-party directory and its backup survived untouched.
   const claudeDoor = path.join(home, ".claude", "skills", "nirvana");
@@ -284,8 +284,8 @@ test("uninstall removes our links AND our copies, cleans dangling links, keeps w
 });
 
 test("backups are restored when the entry removed WAS ours", () => {
-  const home = freshHome("home-restore", [".gemini"]);
-  const target = path.join(home, ".gemini", "skills", "nirvana");
+  const home = freshHome("home-restore", [path.join(".gemini", "config")]);
+  const target = path.join(home, ".gemini", "config", "skills", "nirvana");
   fs.mkdirSync(target, { recursive: true });
   fs.writeFileSync(path.join(target, "MINE.txt"), "diretório do usuário");
 
@@ -299,8 +299,8 @@ test("backups are restored when the entry removed WAS ours", () => {
 });
 
 test("a legacy .pre-nirvana.bak beside the entry (installs up to 0.13.9) is still restored", () => {
-  const home = freshHome("home-restore-legacy", [".gemini"]);
-  const target = path.join(home, ".gemini", "skills", "nirvana");
+  const home = freshHome("home-restore-legacy", [path.join(".gemini", "config")]);
+  const target = path.join(home, ".gemini", "config", "skills", "nirvana");
   expect(install(home).code).toBe(0);
   fs.mkdirSync(`${target}.pre-nirvana.bak`, { recursive: true });
   fs.writeFileSync(path.join(`${target}.pre-nirvana.bak`, "OLD.txt"), "parked by an older install");
@@ -311,7 +311,7 @@ test("a legacy .pre-nirvana.bak beside the entry (installs up to 0.13.9) is stil
 });
 
 test("content roots follow NIRVANA_HOME / SQUADS_DIR / BUSINESSES_DIR / DNA_LIBRARY, like the pack overlay", () => {
-  const home = freshHome("home-content-roots", [".gemini"]);
+  const home = freshHome("home-content-roots", [path.join(".gemini", "config")]);
   const elsewhere = path.join(home, "elsewhere");
   const { code } = install(home, [], {
     SQUADS_DIR: path.join(elsewhere, "my-squads"),
@@ -323,34 +323,34 @@ test("content roots follow NIRVANA_HOME / SQUADS_DIR / BUSINESSES_DIR / DNA_LIBR
   expect(fs.existsSync(path.join(home, "squads"))).toBe(false);
   expect(fs.existsSync(path.join(home, "businesses"))).toBe(false);
 
-  const home2 = freshHome("home-content-roots-nh", [".gemini"]);
+  const home2 = freshHome("home-content-roots-nh", [path.join(".gemini", "config")]);
   expect(install(home2, [], { NIRVANA_HOME: path.join(home2, "nh") }).code).toBe(0);
   expect(fs.existsSync(path.join(home2, "nh", "businesses", "_library", "dna"))).toBe(true);
   expect(fs.existsSync(path.join(home2, "businesses"))).toBe(false);
 });
 
 test("copy-mode install is removed by uninstall (the Windows / Codex path)", () => {
-  const home = freshHome("home-copy", [".gemini", ".antigravity"]);
+  const home = freshHome("home-copy", [path.join(".gemini", "config"), ".antigravity"]);
   expect(install(home, ["--copy-skills"]).code).toBe(0);
 
   for (const s of RUNTIME_ENTRIES) {
-    const p = path.join(home, ".gemini", "skills", s);
+    const p = path.join(home, ".gemini", "config", "skills", s);
     expect(isLink(p)).toBe(false);
     expect(fs.existsSync(path.join(p, COPY_MARKER))).toBe(true);
   }
 
   expect(uninstall(home).code).toBe(0);
   for (const s of SKILLS) {
-    expect(exists(path.join(home, ".gemini", "skills", s))).toBe(false);
+    expect(exists(path.join(home, ".gemini", "config", "skills", s))).toBe(false);
     expect(exists(path.join(home, ".antigravity", "skills", s))).toBe(false);
   }
 });
 
 test("no runtime is a prerequisite: a HOME without ~/.claude never gets one", () => {
-  const home = freshHome("home-no-claude", [".gemini"]);
+  const home = freshHome("home-no-claude", [path.join(".gemini", "config")]);
 
   // No agent binary on PATH: the only install signal in this HOME is the
-  // ~/.gemini dir. Without pinning PATH the assertion below reads the
+  // ~/.gemini/config dir (Antigravity). Without pinning PATH the assertion below reads the
   // developer's machine instead of the fixture.
   const { code, out } = install(home, [], { PATH: BARE_PATH, Path: BARE_PATH });
   expect(code).toBe(0);
@@ -361,8 +361,8 @@ test("no runtime is a prerequisite: a HOME without ~/.claude never gets one", ()
 
   // The canonical tree is still complete, and the installed runtime got the door.
   for (const s of SKILLS) expect(fs.existsSync(path.join(home, ".nirvana", "skills", s, "SKILL.md"))).toBe(true);
-  for (const s of RUNTIME_ENTRIES) expect(isOurs(path.join(home, ".gemini", "skills", s))).toBe(true);
-  expect(out).toContain(path.join(home, ".gemini", "skills"));
+  for (const s of RUNTIME_ENTRIES) expect(isOurs(path.join(home, ".gemini", "config", "skills", s))).toBe(true);
+  expect(out).toContain(path.join(home, ".gemini", "config", "skills"));
 });
 
 test("install and uninstall share ONE runtime-dir list", async () => {
@@ -377,7 +377,7 @@ test("install and uninstall share ONE runtime-dir list", async () => {
     expect(src).not.toMatch(/^const SKILLS\s*=/m);
     expect(src).not.toMatch(/^const COPY_MARKER\s*=/m);
   }
-  expect(mod.RUNTIME_SKILL_DIRS).toHaveLength(6);
+  expect(mod.RUNTIME_SKILL_DIRS).toHaveLength(5);
   expect(mod.RUNTIME_SKILL_DIRS.some((d: string) => d.includes(path.join(".pi", "agent")))).toBe(true);
   // OpenClaw. Added with the adapter and missed here, which is how the count
   // drifted: assert the dir, not just the length, so the next runtime says why.
@@ -408,7 +408,7 @@ test("a retired name is removed from ~/.nirvana and from every runtime dir; a fo
   const ours = [".claude", ".codex", ".antigravity", path.join(".pi", "agent")]
     .map((rt) => path.join(home, rt, "skills", "nirvana-os"));
   for (const p of ours) plantOurs(p, oldTree);
-  const foreign = path.join(home, ".gemini", "skills", "nirvana-os");
+  const foreign = path.join(home, ".gemini", "config", "skills", "nirvana-os");
   fs.mkdirSync(foreign, { recursive: true });
   fs.writeFileSync(path.join(foreign, "FOREIGN.txt"), "not ours");
 
@@ -420,17 +420,17 @@ test("a retired name is removed from ~/.nirvana and from every runtime dir; a fo
   expect(fs.readFileSync(path.join(foreign, "FOREIGN.txt"), "utf8")).toBe("not ours");
   expect(out).toContain("is not Nirvana's");
   // The current name is wired everywhere the old one was.
-  for (const rt of [".claude", ".gemini", path.join(".gemini", "config")]) expect(isOurs(path.join(home, rt, "skills", "nirvana"))).toBe(true);
+  for (const rt of [".claude", path.join(".gemini", "config")]) expect(isOurs(path.join(home, rt, "skills", "nirvana"))).toBe(true);
   // ~/.antigravity/skills is legacy now: our old door there is swept, nothing new lands.
   expect(exists(path.join(home, ".antigravity", "skills", "nirvana"))).toBe(false);
   expect(fs.existsSync(path.join(home, ".codex", "skills", "nirvana", COPY_MARKER))).toBe(true);
 });
 
 test("retiring our entry restores the pre-Nirvana backup parked beside it, leaving no .bak", () => {
-  const home = freshHome("home-retire-restore", [".gemini"]);
+  const home = freshHome("home-retire-restore", [path.join(".gemini", "config")]);
   const oldTree = path.join(home, ".nirvana", "skills", "nirvana-os");
   fs.mkdirSync(oldTree, { recursive: true });
-  const entry = path.join(home, ".gemini", "skills", "nirvana-os");
+  const entry = path.join(home, ".gemini", "config", "skills", "nirvana-os");
   plantOurs(entry, oldTree);
   fs.mkdirSync(`${entry}.pre-nirvana.bak`, { recursive: true });   // legacy location, installs up to 0.13.9
   fs.writeFileSync(path.join(`${entry}.pre-nirvana.bak`, "MINE.txt"), "the user's directory");
@@ -439,7 +439,7 @@ test("retiring our entry restores the pre-Nirvana backup parked beside it, leavi
 
   expect(fs.readFileSync(path.join(entry, "MINE.txt"), "utf8")).toBe("the user's directory");
   expect(exists(`${entry}.pre-nirvana.bak`)).toBe(false);
-  expect(fs.readdirSync(path.join(home, ".gemini", "skills")).filter((e) => /\.bak$/i.test(e))).toEqual([]);
+  expect(fs.readdirSync(path.join(home, ".gemini", "config", "skills")).filter((e) => /\.bak$/i.test(e))).toEqual([]);
 });
 
 // ── Coexistence with the same skill installed by skills.sh ───────────────────
@@ -451,7 +451,7 @@ test("retiring our entry restores the pre-Nirvana backup parked beside it, leavi
 // deleting. Same skill, same name: it stays, and the log says who provides it.
 
 test("the same skill installed by skills.sh is kept, not parked as a backup", () => {
-  const home = freshHome("home-coexist", [".claude", ".gemini"]);
+  const home = freshHome("home-coexist", [".claude", path.join(".gemini", "config")]);
   const canonical = path.join(home, ".agents", "skills", "nirvana");
   fs.mkdirSync(canonical, { recursive: true });
   fs.writeFileSync(path.join(canonical, "SKILL.md"), "---\nname: nirvana\n---\nfrom skills.sh\n");
@@ -472,7 +472,7 @@ test("the same skill installed by skills.sh is kept, not parked as a backup", ()
   }
   expect(out).toContain("provided by another installer");
   // A dir with no foreign entry gets our door; the internal trees are linked nowhere.
-  expect(isOurs(path.join(home, ".gemini", "skills", "nirvana"))).toBe(true);
+  expect(isOurs(path.join(home, ".gemini", "config", "skills", "nirvana"))).toBe(true);
   expect(exists(path.join(home, ".claude", "skills", "harness"))).toBe(false);
 });
 
@@ -498,8 +498,8 @@ test("a skills.sh copy of this engine's own skill is refreshed in place to the e
 });
 
 test("a foreign dir named nirvana whose SKILL.md declares another name is still parked", () => {
-  const home = freshHome("home-coexist-other", [".gemini"]);
-  const foreign = path.join(home, ".gemini", "skills", "nirvana");
+  const home = freshHome("home-coexist-other", [path.join(".gemini", "config")]);
+  const foreign = path.join(home, ".gemini", "config", "skills", "nirvana");
   fs.mkdirSync(foreign, { recursive: true });
   fs.writeFileSync(path.join(foreign, "SKILL.md"), "---\nname: something-else\n---\n");
 
@@ -521,11 +521,11 @@ test("uninstall leaves the skills.sh copy and its links alone", () => {
   expect(fs.readFileSync(path.join(canonical, "SKILLS_SH.txt"), "utf8")).toBe("installed by npx skills add");
   if (!IS_WINDOWS) expect(isLink(claudeLink)).toBe(true);
   expect(out).toContain("provided by another installer");
-  expect(exists(path.join(home, ".gemini", "skills", "nirvana"))).toBe(false);
+  expect(exists(path.join(home, ".gemini", "config", "skills", "nirvana"))).toBe(false);
 });
 
 test("Antigravity is wired where it reads (~/.gemini/config/skills); our entry in the legacy ~/.antigravity/skills is swept, a foreign one stays", () => {
-  const home = freshHome("home-antigravity", [".gemini", path.join(".gemini", "config"), ".antigravity"]);
+  const home = freshHome("home-antigravity", [path.join(".gemini", "config"), ".antigravity"]);
   // An engine up to 0.13.10 linked the door here. Ours: a symlink into the engine tree.
   const legacyOurs = path.join(home, ".antigravity", "skills", "nirvana");
   const legacyForeign = path.join(home, ".antigravity", "skills", "someone-elses");
@@ -544,4 +544,29 @@ test("Antigravity is wired where it reads (~/.gemini/config/skills); our entry i
   expect(uninstall(home).code).toBe(0);
   expect(exists(path.join(home, ".gemini", "config", "skills", "nirvana"))).toBe(false);
   expect(fs.existsSync(path.join(legacyForeign, "SKILL.md"))).toBe(true);
+});
+
+test("Gemini CLI is no longer a runtime: our door in ~/.gemini/skills is swept, the user's own skills there stay, agy's stays wired", () => {
+  const home = freshHome("home-gemini-cli-retired", [path.join(".gemini", "config")]);
+  // An engine that still drove the Gemini CLI linked the door here.
+  const geminiSkills = path.join(home, ".gemini", "skills");
+  const oldDoor = path.join(geminiSkills, "nirvana");
+  const usersOwn = path.join(geminiSkills, "my-own-skill");
+  fs.mkdirSync(usersOwn, { recursive: true });
+  fs.writeFileSync(path.join(usersOwn, "SKILL.md"), "---\nname: my-own-skill\n---\n");
+  if (IS_WINDOWS) {
+    fs.mkdirSync(oldDoor, { recursive: true });
+    fs.writeFileSync(path.join(oldDoor, COPY_MARKER), "");
+  } else {
+    fs.mkdirSync(geminiSkills, { recursive: true });
+    fs.symlinkSync(path.join(home, ".nirvana", "skills", "nirvana"), oldDoor);
+  }
+
+  const { code, out } = install(home);
+  expect(code, out).toBe(0);
+  expect(exists(oldDoor)).toBe(false);
+  expect(fs.existsSync(path.join(usersOwn, "SKILL.md"))).toBe(true);
+  expect(out).toContain("Gemini CLI is no longer supported");
+  // Antigravity reads ~/.gemini/config/skills, a different directory: still wired.
+  for (const s of RUNTIME_ENTRIES) expect(isOurs(path.join(home, ".gemini", "config", "skills", s))).toBe(true);
 });

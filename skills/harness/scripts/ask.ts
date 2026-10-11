@@ -2,7 +2,7 @@
 // ask.ts — interactive REPL with a Nirvana mind-clone.
 //
 // Loads the canonical DNA of a mind-clone and creates a prompt that the user
-// can copy into Claude Code / Codex / Gemini, OR pipes through a runtime if
+// can copy into Claude Code / Codex / Antigravity, OR pipes through a runtime if
 // stdin is a TTY.
 //
 // Two modes:

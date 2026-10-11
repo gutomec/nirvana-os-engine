@@ -76,13 +76,13 @@ describe("pure helpers", () => {
   test("routerRuntimeAllowed: only a runtime a USE_* rule names, and never one a matching NOT_USE_* vetoes", () => {
     const rule = (runtime: string, text: string, negate = false): RuntimeRule =>
       ({ runtime: runtime as RuntimeRule["runtime"], rule: text, envKey: `${negate ? "NOT_USE_" : "USE_"}${runtime.toUpperCase()}`, sourceFile: null, negate });
-    const rules = [rule("codex", "code refactors and test suites"), rule("gemini-cli", "legal contracts and compliance reviews", true)];
+    const rules = [rule("codex", "code refactors and test suites"), rule("grok-cli", "legal contracts and compliance reviews", true)];
     expect(routerRuntimeAllowed(null, "anything", rules)).toEqual({ allowed: false, reason: "no runtime suggested" });
     expect(routerRuntimeAllowed("kimi-cli", "anything", rules)).toEqual({ allowed: false, reason: "no USE_* rule names kimi-cli" });
     expect(routerRuntimeAllowed("codex", "refactor the test suites", rules)).toMatchObject({ allowed: true, rule: { envKey: "USE_CODEX" } });
-    const vetoed = [...rules, rule("gemini-cli", "long documents")];
-    expect(routerRuntimeAllowed("gemini-cli", "review the legal contracts for compliance", vetoed))
-      .toEqual({ allowed: false, reason: "NOT_USE_GEMINI-CLI vetoes gemini-cli for this brief" });
+    const vetoed = [...rules, rule("grok-cli", "long documents")];
+    expect(routerRuntimeAllowed("grok-cli", "review the legal contracts for compliance", vetoed))
+      .toEqual({ allowed: false, reason: "NOT_USE_GROK-CLI vetoes grok-cli for this brief" });
   });
 });
 
@@ -157,6 +157,8 @@ describe("refused before anything exists (exit 4)", () => {
     ["an unknown --exec=<runtime>", ["--agent-x", "x", "--exec=nope"], {}, /unknown runtime 'nope' \(--exec=\)/],
     ["an unknown NIRVANA_HOST_RUNTIME", ["--agent-x", "x", "--exec"], { NIRVANA_HOST_RUNTIME: "bogus" }, /unknown runtime 'bogus' \(NIRVANA_HOST_RUNTIME\)/],
     ["an unknown execution.default_runtime", ["--agent-x", "x", "--exec"], { NIRVANA_DEFAULT_RUNTIME: "bogus" }, /unknown runtime 'bogus' \(execution\.default_runtime/],
+    ["--runtime naming the Gemini CLI (no longer a runtime)", ["--agent-x", "x", "--exec", "--runtime", "gemini-cli"], {}, /runtime 'gemini-cli' \(--runtime\): Gemini CLI is no longer supported; pick another runtime/],
+    ["--exec=gemini", ["--agent-x", "x", "--exec=gemini"], {}, /Gemini CLI is no longer supported; pick another runtime/],
     ["a squad that tries to dispatch", ["--agent-x", "x", "--exec"], { NIRVANA_DISPATCH_ROLE: "squad" }, /a squad executes, it never dispatches/],
     ["a solo business that tries to dispatch a squad", ["--squad", "any", "x", "--exec"], { NIRVANA_DISPATCH_ROLE: "solo" }, /a solo executes, it never dispatches/],
     ["a chain past the depth ceiling", ["--agent-x", "x", "--exec"], { NIRVANA_DISPATCH_DEPTH: "9" }, /at depth 9 and the chain ceiling is 4/],
@@ -166,6 +168,18 @@ describe("refused before anything exists (exit 4)", () => {
     const r = fx.dispatch(args.map((a) => a.replace("<root>", fx.root)), extra);
     expect(r.status, r.stdout + r.stderr).toBe(4);
     expect(r.stderr).toMatch(expected);
+    expect(fx.created()).toEqual([]);
+  }, spawnBudgetMs(1));
+
+  test("a default runtime left on the Gemini CLI is skipped with the reason, never refused as unknown", () => {
+    const fx = fixture();
+    const r = spawnSync(process.execPath, [DISPATCH, "--agent-x", "x", "--exec"], {
+      cwd: fx.projectRoot, encoding: "utf8", env: { ...fx.env, PATH: fx.emptyBin, NIRVANA_DEFAULT_RUNTIME: "gemini-cli", NIRVANA_HOST_RUNTIME: "gemini-cli" },
+    });
+    expect(r.stderr).toContain("Gemini CLI is no longer supported; pick another runtime");
+    expect(r.stderr).not.toContain("unknown runtime 'gemini-cli'");
+    // No runtime is on this PATH, so the run still stops — on "not installed", with nothing created.
+    expect(r.stderr).toContain("is not installed on this machine");
     expect(fx.created()).toEqual([]);
   }, spawnBudgetMs(1));
 

@@ -1,5 +1,5 @@
 // judge-x.test.ts — the engine's Gauntlet judge: its identity is independent of every
-// producer, its persona exists for the seven shipped runtimes and carries the scope guard
+// producer, its persona exists for the six shipped runtimes and carries the scope guard
 // without a recruiting instruction, its persona resolution is strict, its prompt is the
 // persona plus the evaluation brief and nothing else (measured against the agent-x first
 // turn on the same brief), the headless run is seamed, and the child's outcome is the
@@ -22,7 +22,7 @@ import type { TargetRef } from "../lib/run-kernel/types.ts";
 
 const AGENTS_DIR = path.resolve(import.meta.dir, "..", "..", "_shared", "agents");
 const RUNTIMES: Array<{ runtime: Runtime; flavor: string }> = [
-  { runtime: "claude-code", flavor: "claude-code" }, { runtime: "codex", flavor: "codex" }, { runtime: "gemini-cli", flavor: "gemini" },
+  { runtime: "claude-code", flavor: "claude-code" }, { runtime: "codex", flavor: "codex" },
   { runtime: "antigravity-cli", flavor: "antigravity" }, { runtime: "grok-cli", flavor: "grok" }, { runtime: "kimi-cli", flavor: "kimi" }, { runtime: "pi", flavor: "pi" },
 ];
 

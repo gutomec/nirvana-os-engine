@@ -142,7 +142,7 @@ add(
   runtimesOnPath > 0 ? "PASS" : headlessCI ? "WARN" : "FAIL",
   runtimesOnPath > 0
     ? `${runtimesOnPath}/${listRuntimes().length} agent runtime(s) on PATH`
-    : `no agent runtime on PATH — dispatch cannot run; install one (claude, codex, gemini, …)${headlessCI ? " (CI environment: reported as warning)" : ""}`,
+    : `no agent runtime on PATH — dispatch cannot run; install one (claude, codex, agy, …)${headlessCI ? " (CI environment: reported as warning)" : ""}`,
 );
 
 // SECTION 1a-bis: WHICH ONE WILL RUN — the roster above says what EXISTS; this
@@ -630,8 +630,8 @@ for (const s of requiredSkills) {
 }
 
 // A runtime that honors BOTH the cross-runtime convention dir (~/.agents/skills)
-// and its own (~/.gemini/skills, …) loads the same SKILL.md twice and logs
-// "Skill conflict detected" for every skill — seen live on gemini-cli. Nothing
+// and its own (~/.codex/skills, …) loads the same SKILL.md twice and logs
+// "Skill conflict detected" for every skill — seen live on the Gemini CLI. Nothing
 // breaks (both paths resolve to the same file) but the noise reads like a real
 // problem, so name it precisely. Compared by realpath so a dir reachable under
 // two names is not mistaken for two dirs.
@@ -815,7 +815,7 @@ try {
     declared++;
     mcpDeclared += pre.mcps.length;
     if (pre.missingRequired.length) { credWarn++; lines.push([`credentials: ${slug}`, `required and not set: ${pre.missingRequired.map((v) => v.name).join(", ")}`]); }
-    for (const m of pre.mcpsNotConfigured) { mcpWarn++; lines.push([`mcp: ${slug}`, `declares '${m.name}'${m.purpose ? ` (${m.purpose})` : ""}; no host config names it — configure it in the runtime that runs the squad (~/.claude.json, ~/.codex/config.toml, ~/.gemini/settings.json or .mcp.json)`]); }
+    for (const m of pre.mcpsNotConfigured) { mcpWarn++; lines.push([`mcp: ${slug}`, `declares '${m.name}'${m.purpose ? ` (${m.purpose})` : ""}; no host config names it — configure it in the runtime that runs the squad (~/.claude.json, ~/.codex/config.toml or .mcp.json)`]); }
   }
   const CAP = 20;
   for (const [name, note] of lines.slice(0, CAP)) add(name, "WARN", note);

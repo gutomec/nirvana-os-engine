@@ -145,7 +145,6 @@ Adapter invocation and registration specifics live in each adapter's §11:
 | Runtime | See |
 |---------|-----|
 | Claude Code | [_shared/adapters/claude-code.md §11](../../_shared/adapters/claude-code.md#11-invocation-examples) |
-| Gemini CLI | [_shared/adapters/gemini-cli.md §11](../../_shared/adapters/gemini-cli.md#11-invocation-examples) |
 | Codex | [_shared/adapters/codex.md §11](../../_shared/adapters/codex.md#11-invocation-examples) |
 | Antigravity | [_shared/adapters/antigravity-cli.md §11](../../_shared/adapters/antigravity-cli.md#11-invocation-examples) |
 | Kimi | [_shared/adapters/kimi-cli.md §11](../../_shared/adapters/kimi-cli.md#11-invocation-examples) |

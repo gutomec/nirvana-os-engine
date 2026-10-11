@@ -75,8 +75,8 @@ describe("the signals", () => {
   });
 
   test("with `other`, a runtime a NOT_USE_* rule vetoes is skipped", () => {
-    const available = (rt: string) => ["codex", "claude-code", "gemini-cli"].includes(rt);
-    expect(pickReviewRuntime("other", "claude-code", available, (rt) => rt === "codex")).toBe("gemini-cli");
+    const available = (rt: string) => ["codex", "claude-code", "antigravity-cli"].includes(rt);
+    expect(pickReviewRuntime("other", "claude-code", available, (rt) => rt === "codex")).toBe("antigravity-cli");
     expect(pickReviewRuntime("other", "claude-code", available, (rt) => rt !== "claude-code")).toBe("claude-code");
   });
 
@@ -375,11 +375,11 @@ describe("runSoloReviewStage", () => {
     const runtimes: string[] = [];
     runSoloReviewStage(args({
       policy: "always", maxRounds: 0, runtimePref: "other",
-      available: (rt) => ["codex", "claude-code", "gemini-cli"].includes(rt),
+      available: (rt) => ["codex", "claude-code", "antigravity-cli"].includes(rt),
       rules: [{ runtime: "codex", rule: "PRD tables monthly cost estimate", envKey: "NOT_USE_CODEX", sourceFile: null, negate: true }],
       runImpl: (o: any) => { runtimes.push(o.runtime); return ok("{}"); },
     }));
-    expect(runtimes).toEqual(["gemini-cli"]);
+    expect(runtimes).toEqual(["antigravity-cli"]);
   });
 
   test("corrections run as the solo worker, with the solo directive, the budget and the ledger", () => {

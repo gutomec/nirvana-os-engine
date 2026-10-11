@@ -374,6 +374,6 @@ that is safe (it rejects more, never less).
 - **schemas/{business,capability,core-schemas,dna}.schema.json**
 - **validators/{validators.ts, validators.py, limits.ts, limits.py}**
 - **~/.claude/nirvana-limits.yaml**: user-level limits override
-- **adapters/{claude-code,codex,gemini-cli}.md** + `adapters/README.md`
+- **adapters/{claude-code,codex,antigravity-cli}.md** + `adapters/README.md`
 - **~/.nirvana/skills/businesses/CONFIGURATION.md**: downstream consumer
 - **~/.nirvana/skills/squads/CONFIGURATION.md**: downstream consumer

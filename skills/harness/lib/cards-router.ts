@@ -159,8 +159,8 @@ export interface CardsAnswer {
   reason: string;
 }
 
-/** The answer text of a runtime result. gemini hands back its whole JSON
- *  envelope, with the model's text in `response`; the others the text itself. */
+/** The answer text of a runtime result. A runtime that hands back a JSON
+ *  envelope carries the model's text in `response`; the others the text itself. */
 function answerText(result: string): string {
   const txt = (result || "").trim();
   try {

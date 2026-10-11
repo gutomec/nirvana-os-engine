@@ -1,34 +1,23 @@
 #!/usr/bin/env bun
 /**
- * gemini-session-start.ts — Gemini-CLI SessionStart hook.
+ * gemini-session-start.ts — Antigravity (`agy`) session-context hook.
  *
- * Triggered when a new Gemini-CLI session begins. Reads the most recent
- * session-*.jsonl in the current project's chat dir, captures the first
- * user prompt, and emits a `brief_received` audit event so we have intent
- * captured even when the agent itself doesn't emit it.
+ * agy reads its hooks from ~/.gemini/config/hooks.json; the installer writes
+ * one named `nirvana-os` that runs this script with `--agy` before every model
+ * call (see agyMain). The file keeps its old name because that command line
+ * already sits in every user's hooks.json: renaming it would leave their agy
+ * hook pointing at a file that is gone until the next install.
  *
- * Stdin envelope (Gemini hook contract): a JSON object with at least
- * { session_id, project, ... }. We're tolerant if fields are missing.
- *
- * Strategy:
- *   1. Read stdin (Gemini hook payload). Parse session_id and project (cwd).
- *   2. If session_id is missing, fall back to ENV (GEMINI_SESSION_ID).
- *   3. Find ~/.gemini/tmp/<project-hash>/chats/session-<id>.jsonl  (Gemini's session dir).
- *   4. If no file yet (SessionStart fires before first user message), write a
- *      placeholder marker: emit `session_started` with cwd + session_id.
- *      The first BeforeTool hook will emit `brief_received` from the prompt
- *      preceding it (read via tail of session JSONL). For now, just announce.
+ * The Gemini CLI SessionStart hook this script also served is gone with the
+ * Gemini CLI runtime. Called without `--agy` (a stale entry the installer has
+ * not cleaned from ~/.gemini/settings.json yet) it does nothing and exits 0.
  *
  * Failure mode: never block. Exit 0 silently on any error.
  */
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import * as os from "node:os";
-import { harnessLogsDir } from "../lib/log-paths.ts";
 import { findProjectRoot } from "../lib/project-root.js";
-
-const NIRVANA_PROJECT_ROOT = process.env.NIRVANA_PROJECT_ROOT || "";
 
 /** What the agent is told at the start of a session, by the project's mode
  *  (`.nirvana/project.yaml` orchestration_mode). On-demand, the default and
@@ -70,23 +59,6 @@ export function sessionContext(cwd: string): string {
   ].join("\n");
 }
 
-function todayDir(): string {
-  const d = new Date();
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
-}
-
-// Same resolver as audit-emit-from-hook.ts: HARNESS_LOGS_DIR wins if pinned,
-// else the project found from NIRVANA_PROJECT_ROOT or by walking up from the
-// session's cwd, else ~/.harness-logs. This hook used to hardcode the last
-// branch only — the same split-audit-root defect, in the Gemini-CLI path.
-function appendEvent(root: string, ev: Record<string, any>): void {
-  try {
-    const dir = path.join(root, todayDir());
-    fs.mkdirSync(dir, { recursive: true });
-    fs.appendFileSync(path.join(dir, "audit.jsonl"), JSON.stringify(ev) + "\n", "utf8");
-  } catch { /* never block */ }
-}
-
 function readStdin(timeoutMs = 500): Promise<string> {
   return new Promise((resolve) => {
     let buf = "";
@@ -95,46 +67,6 @@ function readStdin(timeoutMs = 500): Promise<string> {
     process.stdin.on("end", () => resolve(buf));
     setTimeout(() => resolve(buf), timeoutMs);
   });
-}
-
-// Gemini stores chats under ~/.gemini/tmp/<projectHash>/chats/session-*.jsonl.
-// projectHash is a slugified cwd. We search for the most recent session file
-// matching the session_id, or fall back to most-recent overall.
-function findSessionFile(sessionId: string | null, cwd: string): string | null {
-  const root = path.join(os.homedir(), ".gemini", "tmp");
-  if (!fs.existsSync(root)) return null;
-  const candidates: string[] = [];
-  for (const proj of fs.readdirSync(root)) {
-    const chats = path.join(root, proj, "chats");
-    if (!fs.existsSync(chats)) continue;
-    for (const f of fs.readdirSync(chats)) {
-      if (!f.startsWith("session-") || !f.endsWith(".jsonl")) continue;
-      candidates.push(path.join(chats, f));
-    }
-  }
-  if (!candidates.length) return null;
-  // Filter by session_id if available
-  if (sessionId) {
-    const exact = candidates.find(p => p.includes(sessionId.slice(0, 8)));
-    if (exact) return exact;
-  }
-  // Fall back to most recent
-  candidates.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
-  return candidates[0] || null;
-}
-
-function extractFirstUserPrompt(jsonlPath: string): string | null {
-  try {
-    const lines = fs.readFileSync(jsonlPath, "utf8").split("\n").filter(Boolean);
-    for (const line of lines) {
-      const obj = JSON.parse(line);
-      if (obj.type === "user" && Array.isArray(obj.content)) {
-        const text = obj.content.map((c: any) => c?.text || "").filter(Boolean).join("\n");
-        if (text.trim()) return text.slice(0, 2000);
-      }
-    }
-  } catch { /* skip */ }
-  return null;
 }
 
 /** Antigravity CLI (`agy`) has no SessionStart: a `PreInvocation` hook in
@@ -152,67 +84,7 @@ async function agyMain() {
   process.exit(0);
 }
 
-async function main() {
-  const raw = await readStdin();
-  let payload: any = {};
-  try { payload = raw ? JSON.parse(raw) : {}; } catch { /* tolerate empty/malformed */ }
-
-  const sessionId = payload.session_id || process.env.GEMINI_SESSION_ID || null;
-  const cwd = payload.cwd || process.env.PWD || process.cwd();
-  const traceId = sessionId ? sessionId.slice(0, 36) : `gemini-${Date.now()}`;
-  const logsRoot = harnessLogsDir({ cwd, projectRoot: NIRVANA_PROJECT_ROOT || undefined });
-
-  appendEvent(logsRoot, {
-    ts: new Date().toISOString(),
-    trace_id: traceId,
-    host: "gemini-cli-hook",
-    event: "session_started",
-    cwd,
-  });
-
-  // Try to extract the first user prompt from the session JSONL (if it already
-  // has content — sometimes SessionStart fires before any messages, in which
-  // case we'll emit brief_received later when an Edit/Write hook fires and
-  // sees the prompt).
-  const sessionFile = findSessionFile(sessionId, cwd);
-  if (sessionFile) {
-    const prompt = extractFirstUserPrompt(sessionFile);
-    if (prompt) {
-      appendEvent(logsRoot, {
-        ts: new Date().toISOString(),
-        trace_id: traceId,
-        host: "gemini-cli-hook",
-        event: "brief_received",
-        brief: prompt,
-        cwd,
-        session_file: sessionFile,
-      });
-    }
-  }
-
-  // ── the contract, spoken where the agent can hear it ─────────────────────
-  //
-  // Everything the installer wires into gemini and antigravity is
-  // SURVEILLANCE: two tool hooks that emit audit events, and this one, which
-  // recorded a session_started and exited. Meanwhile the instruction telling
-  // an agent to reach for the harness lives inside SKILL.md — unreachable to
-  // anyone who has not already loaded the skill. That bootstrap paradox is
-  // why a production brief on agy (2026-08-23) was answered inline: the
-  // runtime had a skill nobody told it to open and hooks that only watched.
-  //
-  // The hook runner injects `hookSpecificOutput.additionalContext` into the
-  // session, so this is the one channel that reaches the agent BEFORE it
-  // thinks, on every session, without touching a single user file.
-  try {
-    console.log(JSON.stringify({
-      hookSpecificOutput: {
-        hookEventName: "SessionStart",
-        additionalContext: sessionContext(cwd),
-      },
-    }));
-  } catch { /* a hook must never break the session it announces */ }
-
-  process.exit(0);
+if (import.meta.main) {
+  if (process.argv.includes("--agy")) agyMain().catch(() => process.exit(0));
+  else process.exit(0);
 }
-
-if (import.meta.main) (process.argv.includes("--agy") ? agyMain() : main()).catch(() => process.exit(0));

@@ -246,13 +246,12 @@ describe("nrv install — existing JSON settings are preserved", () => {
   // Each JSON harness and the file it reads hooks from.
   const HARNESS_FILES: Array<[string, string[]]> = [
     ["Claude Code", [".claude", "settings.json"]],
-    ["Gemini-CLI", [".gemini", "settings.json"]],
     ["Antigravity", [".gemini", "config", "hooks.json"]],
   ];
   const fileOf = (root: string, parts: string[]) => join(root, ...parts);
   const dirOf = (root: string, parts: string[]) => join(root, ...parts.slice(0, -1));
 
-  test("is byte-idempotent for Claude Code, Gemini-CLI and Antigravity", () => {
+  test("is byte-idempotent for Claude Code and Antigravity", () => {
     const root = home();
     for (const [, parts] of HARNESS_FILES) mkdirSync(dirOf(root, parts), { recursive: true });
     expect(run([], root).code).toBe(0);
@@ -356,5 +355,89 @@ describe("Antigravity: the hook goes where agy reads it", () => {
     const root = home();
     expect(run([], root).code).toBe(0);
     expect(existsSync(join(root, ".gemini", "config", "hooks.json"))).toBe(false);
+  }, 30_000);
+});
+
+describe("Gemini CLI is no longer a runtime: the hooks an older engine wrote come out", () => {
+  // Engines that drove the Gemini CLI wrote three hooks into its own
+  // ~/.gemini/settings.json. Install, update and uninstall take OURS out; the
+  // user's keys and handlers stay, and agy's ~/.gemini/config/hooks.json (a
+  // different file) keeps its nirvana-os entry.
+  const ORCA = { "orca-status": { PreInvocation: [{ type: "command", command: "sh orca-hook.sh", timeout: 10 }] } };
+  const userHandler = { name: "mine", type: "command", command: "echo mine" };
+  const geminiSettings = {
+    theme: "dark",
+    mcpServers: { files: { command: "files-mcp" } },
+    hooks: {
+      BeforeTool: [{ matcher: "write_file|replace|run_shell_command", hooks: [
+        { name: "nirvana-audit-pre", type: "command", command: 'bun "/x/_shared/scripts/audit-emit-from-hook.ts" pre gemini-cli', timeout: 5000 },
+        userHandler,
+      ] }],
+      AfterTool: [{ matcher: "write_file|replace|run_shell_command", hooks: [
+        { name: "nirvana-audit-post", type: "command", command: 'bun "/x/_shared/scripts/audit-emit-from-hook.ts" post gemini-cli', timeout: 5000 },
+      ] }],
+      SessionStart: [{ hooks: [
+        { name: "nirvana-session-start", type: "command", command: 'bun "/x/_shared/scripts/gemini-session-start.ts"', timeout: 5000 },
+      ] }],
+      Notification: [{ hooks: [{ name: "user-notify", type: "command", command: "say done" }] }],
+    },
+  };
+
+  test("--check flags them, install removes only ours and keeps agy wired, uninstall leaves the user's intact", () => {
+    const root = home();
+    mkdirSync(join(root, ".gemini", "config"), { recursive: true });
+    const settingsFile = join(root, ".gemini", "settings.json");
+    const hooksFile = join(root, ".gemini", "config", "hooks.json");
+    writeFileSync(settingsFile, JSON.stringify(geminiSettings, null, 2));
+    writeFileSync(hooksFile, JSON.stringify(ORCA, null, 2));
+
+    const check = run(["--check"], root);
+    expect(check.code).toBe(1);
+    expect(check.out).toContain("Gemini CLI is no longer supported");
+    // --check writes nothing.
+    expect(JSON.parse(readFileSync(settingsFile, "utf8"))).toEqual(geminiSettings);
+
+    const install = run([], root);
+    expect(install.code, install.out).toBe(0);
+    expect(install.out).toContain("removed Nirvana hooks from");
+    const after = JSON.parse(readFileSync(settingsFile, "utf8"));
+    expect(after.theme).toBe("dark");
+    expect(after.mcpServers).toEqual(geminiSettings.mcpServers);
+    expect(after.hooks.BeforeTool).toEqual([{ matcher: "write_file|replace|run_shell_command", hooks: [userHandler] }]);
+    expect(after.hooks.AfterTool).toBeUndefined();
+    expect(after.hooks.SessionStart).toBeUndefined();
+    expect(after.hooks.Notification).toEqual(geminiSettings.hooks.Notification);
+    expect(JSON.stringify(after)).not.toContain("audit-emit-from-hook.ts");
+    expect(JSON.stringify(after)).not.toContain("gemini-session-start.ts");
+
+    // agy's file: the user's hook untouched, ours present and pointing at --agy.
+    const hooks = JSON.parse(readFileSync(hooksFile, "utf8"));
+    expect(hooks["orca-status"]).toEqual(ORCA["orca-status"]);
+    expect(hooks["nirvana-os"].PreInvocation[0].command).toContain("--agy");
+
+    // Idempotent: a second install changes neither file, and --check is clean.
+    const settingsRaw = readFileSync(settingsFile, "utf8");
+    const hooksRaw = readFileSync(hooksFile, "utf8");
+    expect(run([], root).code).toBe(0);
+    expect(readFileSync(settingsFile, "utf8")).toBe(settingsRaw);
+    expect(readFileSync(hooksFile, "utf8")).toBe(hooksRaw);
+    const recheck = run(["--check"], root);
+    expect(recheck.out).not.toContain("Gemini CLI is no longer supported");
+
+    expect(run(["--uninstall"], root).code).toBe(0);
+    expect(readFileSync(settingsFile, "utf8")).toBe(settingsRaw);
+    expect(JSON.parse(readFileSync(hooksFile, "utf8"))).toEqual(ORCA);
+  }, 90_000);
+
+  test("uninstall alone also takes the old Gemini CLI hooks out", () => {
+    const root = home();
+    mkdirSync(join(root, ".gemini"), { recursive: true });
+    const settingsFile = join(root, ".gemini", "settings.json");
+    writeFileSync(settingsFile, JSON.stringify(geminiSettings, null, 2));
+    expect(run(["--uninstall"], root).code).toBe(0);
+    const after = JSON.parse(readFileSync(settingsFile, "utf8"));
+    expect(JSON.stringify(after)).not.toContain("audit-emit-from-hook.ts");
+    expect(after.hooks.BeforeTool[0].hooks).toEqual([userHandler]);
+    expect(after.theme).toBe("dark");
   }, 30_000);
 });

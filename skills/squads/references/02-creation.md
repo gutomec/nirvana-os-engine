@@ -191,7 +191,7 @@ runtime_requirements:
     - { runtime: claude-code, version: ">=1.0.0" }
   compatible:
     - { runtime: codex, version: ">=0.20.0" }
-    - { runtime: gemini-cli, version: ">=0.4.0" }
+    - { runtime: antigravity-cli, version: ">=0.4.0" }
 
 features_required:
   - max_turns
@@ -438,7 +438,6 @@ nrv validate squad ${SQUADS_DIR}/<name>
 |---------|---------|
 | Claude Code | `~/.nirvana/skills/_shared/adapters/claude-code.md` |
 | Codex | `~/.nirvana/skills/_shared/adapters/codex.md` |
-| Gemini CLI | `~/.nirvana/skills/_shared/adapters/gemini-cli.md` |
 
 Each adapter declares: tool name mapping, frontmatter dialect, supported
 hooks, and which `features_required` features are honored.

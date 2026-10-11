@@ -40,7 +40,7 @@ export const DEFAULT_TIMEOUT_MS = 15 * 60_000;
 
 /** Every runtime the driver knows, in the order a default pick prefers them. */
 export const RUNTIME_PREFERENCE: Runtime[] = [
-  "claude-code", "codex", "gemini-cli", "antigravity-cli", "kimi-cli", "grok-cli", "pi", "qwen-code", "opencode",
+  "claude-code", "codex", "antigravity-cli", "kimi-cli", "grok-cli", "pi", "qwen-code", "opencode",
 ];
 
 /** The gate needs a spend confirmed before it runs. Exit 2, never a silent bill. */

@@ -76,7 +76,7 @@ export function businessWantsReview(bizDir: string): boolean {
 }
 
 /** Runtimes in the order a different reviewer is preferred. */
-const REVIEW_ORDER: Runtime[] = ["codex", "claude-code", "gemini-cli", "antigravity-cli", "grok-cli", "pi", "kimi-cli", "qwen-code", "opencode"];
+const REVIEW_ORDER: Runtime[] = ["codex", "claude-code", "antigravity-cli", "grok-cli", "pi", "kimi-cli", "qwen-code", "opencode"];
 
 /** The reviewer's runtime: the worker's own (the session's) by default; with
  *  `other`, the first installed runtime that is not the worker's and that no

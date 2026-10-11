@@ -203,7 +203,7 @@ export const CONFIG_SCHEMA: ConfigGroup[] = [
   {
     id: "host_agents",
     label: "Host agent runtimes",
-    description: "Defaults for AI host (claude/codex/gemini/qwen/opencode)",
+    description: "Defaults for AI host (claude/codex/agy/qwen/opencode)",
     fields: [
       {
         key: "NIRVANA_DEFAULT_HOST",
@@ -247,8 +247,8 @@ export const CONFIG_SCHEMA: ConfigGroup[] = [
         key: "LLM_CASCADE",
         type: "string",
         label: "LLM cascade (quota failover)",
-        description: "Ordered, comma-separated chain of runtime:model@provider$budget. If one runs out of quota, the next takes over. E.g.: claude-code:opus,codex:gpt-5.5$10,gemini-cli:gemini-3-flash",
-        placeholder: "claude-code,codex,gemini-cli",
+        description: "Ordered, comma-separated chain of runtime:model@provider$budget. If one runs out of quota, the next takes over. E.g.: claude-code:opus,codex:gpt-5.5$10,antigravity-cli:gemini-3-flash",
+        placeholder: "claude-code,codex,antigravity-cli",
         recommendedScope: "global",
       },
       {

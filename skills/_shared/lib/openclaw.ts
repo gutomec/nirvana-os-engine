@@ -2,7 +2,7 @@
 // have a Nirvana project as their home.
 //
 // OpenClaw inverts the model every other runtime here follows. Claude, Codex,
-// Gemini and Hermes work in the directory they were started in, so "run it
+// Antigravity and Hermes work in the directory they were started in, so "run it
 // inside the project" is the whole recipe. An OpenClaw agent works in its
 // WORKSPACE: that is where AGENTS.md/SOUL.md/IDENTITY.md are read from at every
 // session start, where relative paths resolve, and where skills under

@@ -213,7 +213,6 @@ export function resumeCommand(runtime: Runtime, sessionId: string): string {
   switch (runtime) {
     case "claude-code": return `claude --resume ${sessionId}`;
     case "codex": return `codex resume ${sessionId}`;
-    case "gemini-cli": return `gemini -r ${sessionId}`;
     case "pi": return `pi --session ${sessionId}`;
     default: return `${runtime}: session ${sessionId}`;
   }
@@ -507,7 +506,7 @@ export class MaestroTurnQueue {
       clearTimeout(timer);
       watcher.stop();
       item.child = null;
-      // Runtimes prune their sessions (claude cleanupPeriodDays, gemini maxAge): a resume the
+      // Runtimes prune their sessions (claude cleanupPeriodDays, for one): a resume the
       // runtime no longer has ends with no result. The turn then starts a NEW session for the same
       // conversation, with a short recap of the visible transcript, instead of failing for good.
       const staleSession = !outcome.ok && sessionId && !outcome.result.trim() && !item.cancelRequested && !item.timedOut && !outcome.signal;

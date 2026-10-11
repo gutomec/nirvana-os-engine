@@ -126,7 +126,7 @@ Squad Protocol                         capabilities the business reads and works
         |  orchestrated by
 Harness                                routes requests, writes briefs, dispatches, reviews, gates, delivers
         |  implemented by
-Runtime adapters                       claude-code, codex, gemini-cli, and the others
+Runtime adapters                       claude-code, codex, antigravity-cli, and the others
 ```
 
 The core is runtime-agnostic: the business agent needs to read files, run commands and write files, nothing more. Adapters decide how a headless session is started, resumed and bounded; they live in `skills/_shared/adapters/`.
@@ -242,7 +242,7 @@ features_required: [audit_trail]        # from the closed Feature enum of the va
 features_optional: [hooks]              # free strings
 ```
 
-`runtime` is one of `claude-code`, `codex`, `antigravity-cli`, `antigravity`, `gemini-cli`, `pi`, `kimi-cli`, `grok-cli`, `qwen-code`, `opencode`, `cursor`, `openclaw`. A template that still lists `runtime_requirements` as the skeleton gets `runtime_requirements_default`.
+`runtime` is one of `claude-code`, `codex`, `antigravity-cli`, `antigravity`, `gemini-cli`, `pi`, `kimi-cli`, `grok-cli`, `qwen-code`, `opencode`, `cursor`, `openclaw`. `gemini-cli` is still accepted so manifests written while it was a runtime keep validating, but it is no longer a runtime and a run never selects it. A template that still lists `runtime_requirements` as the skeleton gets `runtime_requirements_default`.
 
 ### 6.6 Environment
 

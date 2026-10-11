@@ -45,7 +45,7 @@ import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { runHeadless, runtimeAvailable, AUTONOMOUS_DIRECTIVE, LEDGER_DEFAULT_TIMEOUT_MS, type Runtime } from "../lib/host-agent-driver.ts";
-import { listRuntimes } from "../../_shared/lib/host-agent-driver.ts";
+import { listRuntimes, retiredRuntimeMessage } from "../../_shared/lib/host-agent-driver.ts";
 import { amplify } from "../lib/amplifier.ts";
 import { proxyEnrichBrief } from "../lib/brief-proxy.ts";
 import { resolveRoutingMode, routingModeOrigin } from "../../_shared/lib/routing-mode.ts";
@@ -668,7 +668,13 @@ for (const [value, origin] of [
   // hermes is a host that delegates but does not execute: a valid value here.
   [/^hermes$/i.test((process.env.NIRVANA_HOST_RUNTIME ?? "").trim()) ? "" : (process.env.NIRVANA_HOST_RUNTIME ?? "").trim(), "NIRVANA_HOST_RUNTIME"],
 ] as const) {
-  if (value && !knownRuntimes.includes(canonicalRuntimeName(value))) refuse(`unknown runtime '${value}' (${origin}). Valid: ${knownRuntimes.join(", ")}`);
+  if (!value || knownRuntimes.includes(canonicalRuntimeName(value))) continue;
+  const retired = retiredRuntimeMessage(value);
+  // A flag is the user's choice right now: a retired runtime there stops the
+  // run with the reason. A setting or an env var is config left from before:
+  // it is skipped with the same reason and the next runtime takes over.
+  if (retired && !origin.startsWith("--")) { console.error(c("yellow", `⚠ runtime '${value}' (${origin}): ${retired} — ignored.`)); continue; }
+  refuse(retired ? `runtime '${value}' (${origin}): ${retired}. Valid: ${knownRuntimes.join(", ")}` : `unknown runtime '${value}' (${origin}). Valid: ${knownRuntimes.join(", ")}`);
 }
 
 // The named target exists. Resolved the way the prep scripts resolve it, so
@@ -2418,7 +2424,7 @@ if (wantExec) {
     session_id: res.sessionId, project_dir: projDir, project_root: projectRoot,
     outputs_root: oroot, zip_path: null, created_at: new Date().toISOString(),
     // Where the session was started: `nrv revise` resumes from the same folder,
-    // since claude and gemini keep a session under its working directory.
+    // since claude keeps a session under its working directory.
     workspace: runWorkspace ?? null,
     // The manifest travels with the session: without it `nrv revise` loses the
     // one completeness proof the system has (promised paths vs disk truth) and

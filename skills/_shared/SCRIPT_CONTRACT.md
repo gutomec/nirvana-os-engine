@@ -1,6 +1,6 @@
 # Nirvana Script Contract
 
-> **Bash (`.sh`) is no longer accepted in this system.** All scripts must be Bun TypeScript (`.ts`). Bun is OS-agnostic AND agent-runtime-agnostic (Claude Code / Codex / Gemini CLI / Cursor / Antigravity all run identical `.ts` code). New `.sh` files are forbidden; existing ones are tracked for removal — see "Legacy debt" section below.
+> **Bash (`.sh`) is no longer accepted in this system.** All scripts must be Bun TypeScript (`.ts`). Bun is OS-agnostic AND agent-runtime-agnostic (Claude Code / Codex / Cursor / Antigravity all run identical `.ts` code). New `.sh` files are forbidden; existing ones are tracked for removal — see "Legacy debt" section below.
 
 This is the system-wide contract every script in the Nirvana framework (skills/businesses, skills/squads, skills/harness, skills/_shared, business-nirvana-maestro) must obey. The contract exists so the system runs identically across:
 
@@ -133,7 +133,7 @@ The `.sh` delegator and `.cmd` wrapper both prefer Bun. Falls back to Node 22+ (
 **New rule:** `.sh` files are forbidden in this system. Every script must be `.ts` (Bun runtime). Rationale:
 
 - **OS-agnostic**: Bun runs identically on macOS, Linux, Windows, WSL2, Alpine. No `bash` dependency on Windows. No subtle differences between `bash` 3.2 (macOS default) and 5.x.
-- **Agent-runtime-agnostic**: Bun scripts run unchanged whether the host is Claude Code, Codex, Gemini CLI, Cursor, Antigravity, or any other runtime that has Bun on PATH.
+- **Agent-runtime-agnostic**: Bun scripts run unchanged whether the host is Claude Code, Codex, Cursor, Antigravity, or any other runtime that has Bun on PATH.
 - **One language**: TS is the canonical language for libs (`*.js`/`*.ts`), validators (`validators.ts`), tests (`*.test.ts`). Removing `.sh` removes a parallel world.
 - **No more `_delegator.sh`**: the bridge between `.sh` callers and `.ts` implementations is no longer needed. `.cmd` Windows wrappers stay (they're 5 lines and pure passthrough).
 

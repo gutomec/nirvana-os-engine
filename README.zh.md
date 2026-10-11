@@ -33,7 +33,7 @@ irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
 
 ## 你和你的 agent 对话。你的 agent 运行 Nirvana。
 
-你已经在用一个终端 agent：Claude Code、Codex、Gemini CLI、Antigravity、Pi、Grok 或其他。一个提示词换来一个好答案。真正的工作需要一位研究员、一位写手、一位审稿人和一位操作员，还要记录谁做了什么。
+你已经在用一个终端 agent：Claude Code、Codex、Antigravity、Pi、Grok 或其他。一个提示词换来一个好答案。真正的工作需要一位研究员、一位写手、一位审稿人和一位操作员，还要记录谁做了什么。
 
 Nirvana-OS 给你的 agent 提供这样的组织。你用平实的语言提出要求，agent 就用 Nirvana 挑选合适的公司、squad 和 mind-clone，派遣它们，检查返回的结果，并把凭据拿给你看。你不用学新的界面，日常也不用敲命令。下面的命令是你的 agent 使用的参考，你想用的时候它们也在那里。
 
@@ -56,9 +56,9 @@ Nirvana-OS 是一个 Bun 原生、与运行时无关的多 agent 系统。它运
 它在你的机器上改动的内容：
 
 - 引擎，位于 `~/.nirvana/skills`；
-- `nirvana` skill，链接到它找到的每一个 agent 运行时：`~/.claude/skills`、`~/.codex/skills`、`~/.gemini/skills`、`~/.gemini/config/skills`（Antigravity）、`~/.pi/agent/skills` 和 `~/.agents/skills`（OpenClaw）；
-- `~/.local/bin` 中的 `nrv`、`nrv-gemini` 和 `nrv-hermes`，外加你 shell 配置文件中的一行 PATH（在 Windows 上是用户 PATH）；
-- Claude Code、Gemini CLI、Antigravity 和 Codex 中的审计 hook；
+- `nirvana` skill，链接到它找到的每一个 agent 运行时：`~/.claude/skills`、`~/.codex/skills`、`~/.gemini/config/skills`（Antigravity）、`~/.pi/agent/skills` 和 `~/.agents/skills`（OpenClaw）；
+- `~/.local/bin` 中的 `nrv` 和 `nrv-hermes`，外加你 shell 配置文件中的一行 PATH（在 Windows 上是用户 PATH）；
+- Claude Code、Antigravity 和 Codex 中的审计 hook；
 - 空的内容文件夹 `~/squads`、`~/businesses` 和 `~/businesses/_library/dna`。
 
 再次运行是安全的。之后打开一个新终端，让 `nrv` 出现在你的 PATH 上，然后对你的 agent 说：*“检查 Nirvana-OS 是否安装正确。”* 它会运行 `nrv doctor`。退出码 1 表示只有警告；退出码 2 会列出失败的项目。
@@ -205,7 +205,7 @@ Remove-Item Env:NIRVANA_ENGINE_URL
 
 **我需要会写代码吗？** 不需要。你用平实的语言描述结果；你的 agent 运行 Nirvana，公司和 squad 负责撰写、检查和交付。
 
-**它会取代我的 agent 吗？** 不会。它运行在你的 agent 之上。被派遣的工作在你会话所用的运行时上运行，除非你指定另一个：Claude Code、Codex、Gemini CLI、Antigravity、Pi、Kimi、Grok、Qwen Code 或 OpenCode。
+**它会取代我的 agent 吗？** 不会。它运行在你的 agent 之上。被派遣的工作在你会话所用的运行时上运行，除非你指定另一个：Claude Code、Codex、Antigravity、Pi、Kimi、Grok、Qwen Code 或 OpenCode。
 
 **我的工作存放在哪里？** 在你的机器上：内容在 `~/businesses`、`~/squads` 和 `~/businesses/_library/dna`，交付物在每个项目的 `outputs/`。整个流程中没有任何 Nirvana 云。
 

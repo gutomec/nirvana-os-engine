@@ -199,7 +199,7 @@ export const SETTINGS = {
 
   "execution.default_runtime": stringSetting("execution.default_runtime",
     "Runtime used when the session is not identified; empty = first one available on PATH.",
-    { env: "NIRVANA_DEFAULT_RUNTIME", type: z.string().regex(/^[A-Za-z0-9._-]*$/), expects: "runtime name (claude-code, codex, gemini-cli, ...) or empty" }),
+    { env: "NIRVANA_DEFAULT_RUNTIME", type: z.string().regex(/^[A-Za-z0-9._-]*$/), expects: "runtime name (claude-code, codex, antigravity-cli, ...) or empty" }),
   // Empty is the default, and empty means PASS NOTHING: the child CLI uses what
   // its own configuration says, which is the user's default. Dispatching codex
   // is running `codex` with no `--model` and no effort; dispatching claude is a

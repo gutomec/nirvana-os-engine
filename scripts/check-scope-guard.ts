@@ -165,14 +165,14 @@ for (const surface of SURFACES) {
     results.push({ label: surface.label, ok: false, detail: `render failed: ${e?.message || e}` });
   }
 }
-// The seven shipped personas are seven surfaces; one fewer means a persona
+// The six shipped personas are six surfaces; one fewer means a persona
 // was removed and the executor of that runtime gets no guard at all.
-if (personas.length < 7) {
-  results.push({ label: `agent-x personas (${AGENTS_DIR})`, ok: false, detail: `${personas.length} persona file(s), expected the seven shipped runtimes` });
+if (personas.length < 6) {
+  results.push({ label: `agent-x personas (${AGENTS_DIR})`, ok: false, detail: `${personas.length} persona file(s), expected the six shipped runtimes` });
 }
 // Same for the judge: a runtime without judge-x.<flavor>.md has no agentic evaluator and its Gauntlet does not start.
-if (judgePersonas.length < 7) {
-  results.push({ label: `judge-x personas (${AGENTS_DIR})`, ok: false, detail: `${judgePersonas.length} persona file(s), expected the seven shipped runtimes` });
+if (judgePersonas.length < 6) {
+  results.push({ label: `judge-x personas (${AGENTS_DIR})`, ok: false, detail: `${judgePersonas.length} persona file(s), expected the six shipped runtimes` });
 }
 fs.rmSync(TMP, { recursive: true, force: true });
 

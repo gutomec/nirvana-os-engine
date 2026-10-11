@@ -35,7 +35,7 @@ describe("writeWorkerSession", () => {
   test("a runtime that returned no session id is recorded as null, never invented", () => {
     const run = runFolder();
     const { data } = writeWorkerSession({
-      projectId: "p2", kind: "agent-x", slug: "agent-x", runtime: "gemini-cli", sessionId: null,
+      projectId: "p2", kind: "agent-x", slug: "agent-x", runtime: "qwen-code", sessionId: null,
       projectDir: path.join(run, "agent-x"), projectRoot: run, outputsRoot: path.join(run, "deliverables"), workspace: null,
     });
     expect(data.session_id).toBeNull();

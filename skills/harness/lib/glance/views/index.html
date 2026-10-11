@@ -732,7 +732,7 @@
           <div class="runs-empty">
             <i data-lucide="users" class="runs-empty-icon"></i>
             <p>No active agents.</p>
-            <p class="runs-empty-hint">Cards appear here in real time when Claude Code, Gemini-CLI, or Codex emit audit events. Make sure the auto-emit hooks are wired in <code>~/.claude/settings.json</code> and <code>~/.gemini/settings.json</code>.</p>
+            <p class="runs-empty-hint">Cards appear here in real time when Claude Code or Codex emit audit events. Make sure the auto-emit hooks are wired in <code>~/.claude/settings.json</code> and <code>~/.codex/hooks.json</code> (<code>nrv setup</code>).</p>
           </div>
         </template>
         <template x-for="agent in visibleAgents" :key="agent.trace_id">
@@ -1596,7 +1596,7 @@
         <div class="cost-empty-body">
           <div class="cost-empty-title">No cost telemetry recorded yet</div>
           <div class="cost-empty-hint">
-            The host-agent-driver auto-emits <code>cost_emission</code> on every LLM call (Claude Code reports usage; Codex/Gemini do not yet).
+            The host-agent-driver auto-emits <code>cost_emission</code> on every LLM call (Claude Code reports usage; Codex/Antigravity do not yet).
             Run any agent invocation through <code>callHostAgent</code>/<code>callHostAgentAsync</code> and the dashboard will populate.
           </div>
           <div class="cost-empty-hint cost-empty-muted">
@@ -1926,7 +1926,7 @@
 
         <!-- ══ Painel de REGRAS USE_*/NOT_USE_* ══ -->
         <div class="settings-body" x-show="settingsData && settingsActiveGroup === '__rules__'">
-          <p class="text-caption" style="margin-bottom:10px">Say when each CLI should be used. E.g.: <em>use codex when you need to generate images</em>, <em>never gemini for codebase analysis</em>. Precedence: explicit flag &gt; mention in the brief &gt; veto (never) &gt; rule (use) &gt; current runtime.</p>
+          <p class="text-caption" style="margin-bottom:10px">Say when each CLI should be used. E.g.: <em>use codex when you need to generate images</em>, <em>never agy for codebase analysis</em>. Precedence: explicit flag &gt; mention in the brief &gt; veto (never) &gt; rule (use) &gt; current runtime.</p>
           <div class="rules-list">
             <template x-for="(r, i) in rulesDraft" :key="i">
               <div class="rule-row">

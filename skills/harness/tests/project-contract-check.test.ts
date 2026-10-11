@@ -33,7 +33,7 @@ describe("the contract check", () => {
   }, 20_000);
 
   test("each contract file alone is enough — no runtime is privileged", () => {
-    // A gemini-cli project has GEMINI.md and no CLAUDE.md; it is initialised.
+    // An agy project may have GEMINI.md and no CLAUDE.md; it is initialised.
     for (const f of PROJECT_CONTRACT_FILES) {
       const dir = path.join(TMP, `only-${f}`);
       fs.mkdirSync(path.join(dir, ".git"), { recursive: true });

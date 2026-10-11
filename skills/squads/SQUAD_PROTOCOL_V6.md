@@ -58,7 +58,7 @@ This document names no runtime-specific memory file, tool name, CLI flag or toke
 | **Admission gate** | `nrv validate squad`, the check a squad passes to enter the library (§34). |
 | **Contract surface** | `.nirvana-surface.json`: the stable identifiers of a squad and a hash of each body, so change between versions is computed, not narrated (§5.4). |
 
-The **harness** or **orchestrator** is the software that routes a brief, dispatches work and judges results. A **runtime** is the LLM environment that runs an agent (Claude Code, Codex, Gemini CLI and others).
+The **harness** or **orchestrator** is the software that routes a brief, dispatches work and judges results. A **runtime** is the LLM environment that runs an agent (Claude Code, Codex, Antigravity and others).
 
 ---
 
@@ -471,7 +471,7 @@ runtime_requirements:
   policy: active                   # active (default) | declared
   minimum:    [{ runtime: claude-code, version: ">=2.0.0" }]
   compatible: [{ runtime: codex }]
-  incompatible: [{ runtime: gemini-cli, reason: "needs the Agent tool" }]
+  incompatible: [{ runtime: kimi-cli, reason: "needs the Agent tool" }]
 ```
 
 Under `declared`, `minimum` is required and the run is restricted to `minimum` plus `compatible`. Under `active`, the host runtime is used without allowlist membership, and `features_required` must be provable by a registered adapter or an explicit runtime bridge. `incompatible` denies under both. The fixer for a missing policy never pins `minimum: claude-code`.

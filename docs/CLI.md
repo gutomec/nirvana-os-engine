@@ -1,6 +1,6 @@
 # `nrv` — CLI reference
 
-Nobody needs to type these day to day. You talk to the agent you already use (Claude Code, Codex, Gemini CLI, Antigravity, Pi…) in plain language, and the agent runs `nrv`: *"what squads do I have?"*, *"use Nirvana to write the launch copy"*, *"stop that run"*, *"update Nirvana"*. This page is the reference underneath, for agents and for anyone who wants the direct commands.
+Nobody needs to type these day to day. You talk to the agent you already use (Claude Code, Codex, Antigravity, Pi…) in plain language, and the agent runs `nrv`: *"what squads do I have?"*, *"use Nirvana to write the launch copy"*, *"stop that run"*, *"update Nirvana"*. This page is the reference underneath, for agents and for anyone who wants the direct commands.
 
 Run `nrv help` for the live reference, and `nrv <subcommand> --help` for any command's full options.
 
@@ -14,7 +14,7 @@ nrv <subcommand> [args]
 
 | Command | What it does |
 |---|---|
-| `nrv install --bootstrap` | Wire the audit hooks into Claude Code, Gemini CLI, Antigravity and Codex (the installer already does it; idempotent). `nrv setup` is the same repair. |
+| `nrv install --bootstrap` | Wire the audit hooks into Claude Code, Antigravity and Codex (the installer already does it; idempotent). `nrv setup` is the same repair. |
 | `nrv install --check` | Report the hook and PATH wiring; exit 0 if ready, 1 if it needs setup. |
 | `nrv install --repair-path` | Windows: list temporary `nrv-*` entries left on the user PATH (nothing written); `--apply` removes exactly those. |
 | `nrv doctor` | Full system diagnostic: binaries and runtimes, skills links, hooks, dependencies, registries, pack licenses, and the `config` section with every setting's effective value and origin. Exit 0 healthy, 1 warnings only, 2 a `FAIL` line. |
@@ -44,7 +44,7 @@ Precedence, always: environment variable > `<project>/.nirvana/config.yaml` > `~
 | `nrv ask <clone> "<question>"` | Talk directly to a single specialist (mind-clone), DNA injected. |
 | `nrv multi-target plan\|run\|status <plan.json>` | Multi-target engine by plan file (alias `nrv mt`): `plan` compiles the waves, `run` executes them over the Run Kernel (`nrv config set multi_target.enabled false` or `NIRVANA_MULTI_TARGET_KILL_SWITCH=1` turns it off), `status` reads the projection. |
 
-Useful flags on `dispatch` / `run` / `auto`: `--project <YYYYMMDD>-<subject>-<part>` (the run's name; default `<YYYYMMDD>-<HHMM>-<target>`), `--review` / `--no-review` (ask for or decline the delivery review; otherwise `review.policy` decides), `--zip` / `--pdf` / `--html` (bundle the deliverables or build a report, only on request), `--runtime=claude-code|codex|antigravity-cli|gemini-cli|pi|kimi-cli|grok-cli|qwen-code|opencode`, `--max-budget=<usd>` (only when the user named a number), `--timeout=<min>`, `--mode=agentic|cards` (how `--auto` routes), `--execution-mode=standard|gauntlet|auto` (default `standard`), `--gauntlet-intensity=light|balanced|exhaustive` (a Business target needs `NIRVANA_BUSINESS_GAUNTLET_ALLOWLIST=<slug>`), `--run-id=<runId>` (adopt a Run already prepared in the project's kernel, the way Glance does), `--safe` (restricted tools instead of the permission bypass Claude Code workers run with by default).
+Useful flags on `dispatch` / `run` / `auto`: `--project <YYYYMMDD>-<subject>-<part>` (the run's name; default `<YYYYMMDD>-<HHMM>-<target>`), `--review` / `--no-review` (ask for or decline the delivery review; otherwise `review.policy` decides), `--zip` / `--pdf` / `--html` (bundle the deliverables or build a report, only on request), `--runtime=claude-code|codex|antigravity-cli|pi|kimi-cli|grok-cli|qwen-code|opencode`, `--max-budget=<usd>` (only when the user named a number), `--timeout=<min>`, `--mode=agentic|cards` (how `--auto` routes), `--execution-mode=standard|gauntlet|auto` (default `standard`), `--gauntlet-intensity=light|balanced|exhaustive` (a Business target needs `NIRVANA_BUSINESS_GAUNTLET_ALLOWLIST=<slug>`), `--run-id=<runId>` (adopt a Run already prepared in the project's kernel, the way Glance does), `--safe` (restricted tools instead of the permission bypass Claude Code workers run with by default).
 
 ## See it happen
 

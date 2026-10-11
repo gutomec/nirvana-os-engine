@@ -6,7 +6,7 @@
 //
 // What it is NOT: a router for API keys (use LiteLLM/OpenRouter for that).
 // This is for OAuth-backed CLI subscriptions (Claude Pro/Max, ChatGPT Plus,
-// Gemini Advanced) where the user "pays" with their plan and we want to
+// Google AI plans through Antigravity) where the user "pays" with their plan and we want to
 // stretch dispatches across multiple plans the user already has.
 
 import * as fs from "node:fs";

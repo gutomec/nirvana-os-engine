@@ -45,7 +45,6 @@ beforeAll(() => {
   const fake = (name: string, body: string) => writeFakeCli(BIN, name, CAPTURE_PRELUDE + body);
   fake("claude", `await stdinLen(); process.stdout.write(JSON.stringify({ type: "result", is_error: false, result: "ok", session_id: "s1", total_cost_usd: 0.01 }));`);
   fake("codex", `await stdinLen(); const oi = argv.indexOf("-o"); if (oi >= 0) fs.writeFileSync(argv[oi + 1], "ok"); console.log(JSON.stringify({ type: "turn.completed" }));`);
-  fake("gemini", `await stdinLen(); process.stdout.write(JSON.stringify({ response: "ok", session_id: "g1" }));`);
   fake("agy", `process.stdout.write(JSON.stringify({ response: "ok", session_id: "a1" }));`);
   fake("kimi", `console.log(JSON.stringify({ type: "result", is_error: false, session_id: "k1" }));`);
   fake("grok", `process.stdout.write(JSON.stringify({ text: "ok", session_id: "gk1" }));`);
@@ -99,7 +98,6 @@ describe("light layer — buildCall argv per adapter", () => {
       ["-p", "--no-session-persistence", "--output-format", "json", "--dangerously-skip-permissions", "--append-system-prompt", "persona"],
       ["-p", "--no-session-persistence", "--output-format", "json", "--append-system-prompt", "persona"]],
     ["codex", ["exec", "--dangerously-bypass-approvals-and-sandbox"], ["exec"]],
-    ["gemini-cli", ["-p", "", "--approval-mode", "yolo"], ["-p", ""]],
     ["antigravity-cli", ["-p", MERGED, "--dangerously-skip-permissions"], ["-p", MERGED]],
     ["grok-cli", ["--prompt-file", "<file>", "--always-approve"], ["--prompt-file", "<file>"]],
   ])("%s passes its documented autonomy flag by default and drops it under =0", (name, byDefault, restricted) => {
@@ -201,11 +199,6 @@ describe("headless layer — runHeadless argv per runtime", () => {
     // paired with -s ("cannot be used with '--approve-for-me'").
     expect(restricted).toContain("--approve-for-me");
     expect(restricted).not.toContain("-s");
-  });
-
-  test("gemini-cli: --approval-mode yolo by default; auto_edit under =0", () => {
-    expect(hasPair(argv("gemini-cli", "gemini", undefined), ["--approval-mode", "yolo"])).toBeTrue();
-    expect(hasPair(argv("gemini-cli", "gemini", "0", true), ["--approval-mode", "auto_edit"])).toBeTrue();
   });
 
   test("antigravity-cli: --dangerously-skip-permissions by default; nothing under =0", () => {
@@ -405,10 +398,6 @@ describe("an answer-only call runs without tools where the CLI can say so", () =
     expect(hasPair(args, ["-s", "read-only"])).toBeTrue();
     expect(args).not.toContain("--dangerously-bypass-approvals-and-sandbox");
     expect(args).not.toContain("--approve-for-me");
-  });
-
-  test("gemini-cli: plan, its read-only approval mode", () => {
-    expect(hasPair(argvNoTools("gemini-cli", "gemini"), ["--approval-mode", "plan"])).toBeTrue();
   });
 
   test("antigravity-cli has no such switch and runs as before", () => {

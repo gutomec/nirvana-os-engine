@@ -57,7 +57,7 @@ This document is the visual reference. For the legal details of the contract:
 │  │                                                                           │
 │  ├── .agents/skills/               ← canonical "skills.sh" (15+ runtimes    │
 │  │                                   read it directly: Codex, Cursor,       │
-│  │                                   OpenCode, Cline, Gemini CLI, Warp,     │
+│  │                                   OpenCode, Cline, Warp,                 │
 │  │                                   Amp, …)                                │
 │  ├── .claude/skills        ─────→ symlink → ../.agents/skills              │
 │  ├── .continue/skills      ─────→ symlink → ../.agents/skills              │

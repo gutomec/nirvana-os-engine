@@ -1,6 +1,6 @@
 # Agent quickstart: drive Nirvana-OS in one page
 
-You are a terminal agent (Claude Code, Codex, Gemini CLI, Antigravity, Pi, …)
+You are a terminal agent (Claude Code, Codex, Antigravity, Pi, …)
 on a machine where Nirvana-OS may be installed. The user talks to you in plain
 language; you run Nirvana for them. This page is enough to do that correctly.
 The full protocol is `~/.nirvana/skills/harness/SKILL.md`; the entry skill is

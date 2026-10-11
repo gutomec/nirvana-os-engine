@@ -71,8 +71,8 @@ Nirvana-OS bootstrap will change this machine:
   - Bun in user space ($HOME_DIR/.bun) if it is missing, no sudo
   - the engine in $HOME_DIR/.nirvana (skills + shared node_modules)
   - the nrv launcher in $HOME_DIR/.local/bin, plus one PATH line in the shell rc
-  - audit hooks in the settings of the agent runtimes it finds (~/.claude, ~/.gemini, ~/.codex, ~/.antigravity)
-  - runtime skill links in ~/.claude/skills, ~/.codex/skills, ~/.gemini/skills, ~/.antigravity/skills, ~/.pi/agent/skills, ~/.agents/skills
+  - audit hooks in the settings of the agent runtimes it finds (~/.claude, ~/.codex, ~/.gemini/config for Antigravity)
+  - runtime skill links in ~/.claude/skills, ~/.codex/skills, ~/.gemini/config/skills, ~/.pi/agent/skills, ~/.agents/skills
   - the empty content roots ~/squads, ~/businesses, ~/businesses/_library/dna
   Source: ${NIRVANA_ENGINE_TARBALL:-$URL}
   Reversible with: nrv uninstall --engine

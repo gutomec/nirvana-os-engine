@@ -33,7 +33,7 @@ irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
 
 ## Tú hablas con tu agente. Tu agente ejecuta Nirvana.
 
-Ya trabajas con un agente de terminal: Claude Code, Codex, Gemini CLI, Antigravity, Pi, Grok u otro. Un prompt da una buena respuesta. El trabajo real necesita un investigador, un redactor, un revisor y un operador, con un registro de quién hizo qué.
+Ya trabajas con un agente de terminal: Claude Code, Codex, Antigravity, Pi, Grok u otro. Un prompt da una buena respuesta. El trabajo real necesita un investigador, un redactor, un revisor y un operador, con un registro de quién hizo qué.
 
 Nirvana-OS le da esa organización a tu agente. Pides en lenguaje simple, y el agente usa Nirvana para elegir las empresas, squads y mind-clones adecuados, despacharlos, revisar lo que vuelve y mostrarte el comprobante. No aprendes una interfaz nueva ni escribes comandos en el día a día. Los comandos de más abajo son la referencia que usa tu agente, y están ahí para ti cuando los quieras.
 
@@ -56,9 +56,9 @@ Ejecuta el comando de una línea del principio de esta página. Necesita `curl` 
 Lo que cambia en tu máquina:
 
 - el motor en `~/.nirvana/skills`;
-- la skill `nirvana` enlazada en cada runtime de agente que encuentra: `~/.claude/skills`, `~/.codex/skills`, `~/.gemini/skills`, `~/.gemini/config/skills` (Antigravity), `~/.pi/agent/skills` y `~/.agents/skills` (OpenClaw);
-- `nrv`, `nrv-gemini` y `nrv-hermes` en `~/.local/bin`, más una línea de PATH en el perfil de tu shell (el PATH del usuario en Windows);
-- hooks de auditoría en Claude Code, Gemini CLI, Antigravity y Codex;
+- la skill `nirvana` enlazada en cada runtime de agente que encuentra: `~/.claude/skills`, `~/.codex/skills`, `~/.gemini/config/skills` (Antigravity), `~/.pi/agent/skills` y `~/.agents/skills` (OpenClaw);
+- `nrv` y `nrv-hermes` en `~/.local/bin`, más una línea de PATH en el perfil de tu shell (el PATH del usuario en Windows);
+- hooks de auditoría en Claude Code, Antigravity y Codex;
 - las carpetas de contenido vacías `~/squads`, `~/businesses` y `~/businesses/_library/dna`.
 
 Volver a ejecutarlo es seguro. Después abre una terminal nueva para que `nrv` esté en tu PATH, y pídele a tu agente: *"Comprueba que Nirvana-OS está bien instalado."* Ejecuta `nrv doctor`. La salida 1 significa solo avisos; la salida 2 lista lo que falló.
@@ -206,7 +206,7 @@ Para agentes y usuarios avanzados. `nrv help` lo lista todo; `nrv <command> --he
 
 **¿Necesito saber programar?** No. Describes resultados en lenguaje simple; tu agente ejecuta Nirvana, y las empresas y squads escriben, revisan y entregan.
 
-**¿Reemplaza a mi agente?** No. Funciona encima de él. El trabajo despachado corre en el runtime de tu sesión a menos que nombres otro: Claude Code, Codex, Gemini CLI, Antigravity, Pi, Kimi, Grok, Qwen Code u OpenCode.
+**¿Reemplaza a mi agente?** No. Funciona encima de él. El trabajo despachado corre en el runtime de tu sesión a menos que nombres otro: Claude Code, Codex, Antigravity, Pi, Kimi, Grok, Qwen Code u OpenCode.
 
 **¿Dónde vive mi trabajo?** En tu máquina: el contenido en `~/businesses`, `~/squads` y `~/businesses/_library/dna`, los entregables en el `outputs/` de cada proyecto. No hay ninguna nube de Nirvana en el circuito.
 
