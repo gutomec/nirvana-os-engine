@@ -1,4 +1,4 @@
-<!-- nirvana-os:invocation-contract:v3 -->
+<!-- nirvana-os:invocation-contract:v4 -->
 # Project guidelines (any agent runtime)
 
 Every agent reads this file before doing anything here. `CLAUDE.md` and

@@ -28,6 +28,14 @@ The install pass is unchanged; what comes after a failure now depends on who is 
 
 The READMEs in six languages, `INSTALL.md`, `AGENT-QUICKSTART.md`, `docs/` (the Pages site included), the project contracts, the skill files, the dependency template and the installer's factual strings were rewritten to match this line's code: install with the one-line `install.sh` / `install.ps1`, talk to the agent first, per-squad environments, the release channel, betas, and the pack flow.
 
+### Projects get the rewritten contract the next time `nrv init` runs there
+
+The project contract template now describes the per-squad environments under `~/.nirvana/envs` instead of the shared store, and its marker moves from `invocation-contract:v3` to `v4`. `nrv init` rewrites a managed block only when its marker is older than the engine's, so a project initialised under v3 would have kept the old dependency text. Running `nrv init .` again in a project replaces the v3 block in `AGENTS.md`, `CLAUDE.md` and `GEMINI.md` with the current text; the user's lines above it, the writing contract and everything after it stay. A project on the full contract needs `--orchestrators=always`, because a run without the flag moves it to on-demand. Install and update never touch a project.
+
+### `nrv find` is in the main help
+
+The harness runs `nrv find` as its shortlist step, yet `nrv help` filed it under ADVANCED / DEV as a keyword-router diagnostic. It is now listed beside `nrv search`, as the shortlist of businesses and squads (with capability ids) that fit a request, made without a model call, for the caller to read and decide from. The command itself is unchanged.
+
 ## 0.15.0-beta.5 — 2026-10-10
 
 ### Each squad installs into its own environment, prepared when it runs

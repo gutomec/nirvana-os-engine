@@ -112,7 +112,7 @@ describe("on-demand mode leaves the project's behavior alone", () => {
     expect(agents).toContain("nirvana-os:on-demand-contract:v3");
     expect(agents).toContain("The request calls for it when it");
     expect(agents).toContain("as the model to follow");
-    expect(agents).not.toContain("nirvana-os:invocation-contract:v3");
+    expect(agents).not.toContain("nirvana-os:invocation-contract:v4");
     expect(agents).not.toContain("nirvana-os:writing-contract:v2");
     expect(agents).not.toMatch(/invoke the .?harness.? skill for any concrete artifact/i);
   }, INIT_TIMEOUT_MS);
@@ -122,7 +122,7 @@ describe("on-demand mode leaves the project's behavior alone", () => {
     runInitWith(dir, "--orchestrators=on-demand");
     const claude = fs.readFileSync(path.join(dir, "CLAUDE.md"), "utf8");
     expect(claude).toContain("nirvana-os:on-demand-contract:v3");
-    expect(claude).not.toContain("nirvana-os:invocation-contract:v3");
+    expect(claude).not.toContain("nirvana-os:invocation-contract:v4");
   }, INIT_TIMEOUT_MS);
 
   test("on-demand is idempotent", () => {
@@ -145,7 +145,7 @@ describe("on-demand mode leaves the project's behavior alone", () => {
     runInit(dir);
     const claude = fs.readFileSync(path.join(dir, "CLAUDE.md"), "utf8");
     expect(claude).toContain("nirvana-os:on-demand-contract:v3");
-    expect(claude).not.toContain("nirvana-os:invocation-contract:v3");
+    expect(claude).not.toContain("nirvana-os:invocation-contract:v4");
     const manifest = JSON.parse(fs.readFileSync(path.join(dir, ".nirvana", "project.yaml"), "utf8"));
     expect(manifest.orchestration_mode).toBe("on-demand");
   }, INIT_TIMEOUT_MS);
@@ -161,16 +161,16 @@ describe("on-demand mode leaves the project's behavior alone", () => {
     let c = fs.readFileSync(path.join(dir, "CLAUDE.md"), "utf8");
     expect(c).toContain("KEEP-ABOVE");
     expect(c).toContain("nirvana-os:on-demand-contract:v3");
-    expect(c).not.toContain("nirvana-os:invocation-contract:v3");
+    expect(c).not.toContain("nirvana-os:invocation-contract:v4");
     expect(c.match(/nirvana-os:on-demand-contract/g)!.length).toBe(1);
     expect(manifest().orchestration_mode).toBe("on-demand");
     // and back
     runInit(dir, ALWAYS);
     c = fs.readFileSync(path.join(dir, "CLAUDE.md"), "utf8");
     expect(c).toContain("KEEP-ABOVE");
-    expect(c).toContain("nirvana-os:invocation-contract:v3");
+    expect(c).toContain("nirvana-os:invocation-contract:v4");
     expect(c).not.toContain("nirvana-os:on-demand-contract");
-    expect(c.match(/nirvana-os:invocation-contract:v3/g)!.length).toBe(1);
+    expect(c.match(/nirvana-os:invocation-contract:v4/g)!.length).toBe(1);
     expect(manifest().orchestration_mode).toBe("always");
   }, INIT_TIMEOUT_MS);
 
@@ -248,7 +248,7 @@ describe("a contract written by an earlier engine is refreshed in place", () => 
     ].join("\n");
     const dir = project("refresh-v1", { "AGENTS.md": v1, "CLAUDE.md": v1 });
     const r = runInit(dir, ALWAYS);
-    expect(`${r.stdout}`).toContain("refreshed invocation contract (v1 → v3)");
+    expect(`${r.stdout}`).toContain("refreshed invocation contract (v1 → v4)");
     for (const f of ["AGENTS.md", "CLAUDE.md"]) {
       const c = fs.readFileSync(path.join(dir, f), "utf8");
       expect(c).toContain("KEEP-ME-ABOVE");
@@ -257,10 +257,10 @@ describe("a contract written by an earlier engine is refreshed in place", () => 
       expect(c).not.toContain("OLD-WRITING-LINE-MUST-GO");
       expect(c.indexOf("Gate flags = build fails")).toBeLessThan(c.indexOf("KEEP-ME-BELOW"));
       expect(c).not.toContain("nirvana-os:invocation-contract:v1");
-      expect(c).toContain("nirvana-os:invocation-contract:v3");
+      expect(c).toContain("nirvana-os:invocation-contract:v4");
       expect(c).toMatch(/Skill\("nirvana"/);
-      expect(c.indexOf("KEEP-ME-ABOVE")).toBeLessThan(c.indexOf("nirvana-os:invocation-contract:v3"));
-      expect(c.indexOf("nirvana-os:invocation-contract:v3")).toBeLessThan(c.indexOf("KEEP-ME-BELOW"));
+      expect(c.indexOf("KEEP-ME-ABOVE")).toBeLessThan(c.indexOf("nirvana-os:invocation-contract:v4"));
+      expect(c.indexOf("nirvana-os:invocation-contract:v4")).toBeLessThan(c.indexOf("KEEP-ME-BELOW"));
       expect(c.match(/nirvana-os:writing-contract:v2/g)!.length).toBe(1);
       expect(c).not.toContain("nirvana-os:writing-contract:v1");
       expect(c).toContain("is not a deliverable and is not judged by it");
@@ -272,25 +272,47 @@ describe("a contract written by an earlier engine is refreshed in place", () => 
   }, INIT_TIMEOUT_MS);
 });
 
-describe("a v2 contract is refreshed to the lean v3", () => {
+describe("a v2 contract is refreshed to the current text", () => {
   test("the old orchestration text goes, the user's lines and the writing contract stay", () => {
     const v2 = ["## Mine", "KEEP-ME-ABOVE", "", "<!-- nirvana-os:invocation-contract:v2 -->", "# old contract", "## 3. Inside a business", "Employees execute work by calling squads.", "",
       "---", "", "<!-- nirvana-os:writing-contract:v2 -->", "## Writing contract (for any prose deliverable)", "Gate flags = build fails. No auto-rewrite.", ""].join("\n");
     const dir = project("refresh-v2", { "AGENTS.md": v2 });
     const r = runInit(dir, ALWAYS);
-    expect(`${r.stdout}`).toContain("refreshed invocation contract (v2 → v3)");
+    expect(`${r.stdout}`).toContain("refreshed invocation contract (v2 → v4)");
     const c = fs.readFileSync(path.join(dir, "AGENTS.md"), "utf8");
     expect(c).toContain("KEEP-ME-ABOVE");
-    expect(c).toContain("nirvana-os:invocation-contract:v3");
+    expect(c).toContain("nirvana-os:invocation-contract:v4");
     expect(c).not.toContain("Employees execute work by calling squads.");
     expect(c.match(/nirvana-os:writing-contract:v2/g)!.length).toBe(1);
+  }, INIT_TIMEOUT_MS);
+});
+
+describe("a v3 contract is refreshed to v4 (per-squad environments)", () => {
+  test("the shared-store text goes, the envs text arrives, the user's lines above and below stay", () => {
+    const v3 = ["## Mine", "KEEP-ME-ABOVE", "", "<!-- nirvana-os:invocation-contract:v3 -->", "# Project guidelines (any agent runtime)",
+      "## Dependencies: one home, `~/.nirvana`", "nrv deps link <squad-slug|dir>     # point a directory at the store", "",
+      "---", "", "<!-- nirvana-os:writing-contract:v2 -->", "## Writing contract (for any prose deliverable)", "Gate flags = build fails. No auto-rewrite.", "",
+      "## The user's own section", "KEEP-ME-BELOW", ""].join("\n");
+    const dir = project("refresh-v3", { "CLAUDE.md": v3 });
+    const r = runInit(dir, ALWAYS);
+    expect(`${r.stdout}`).toContain("refreshed invocation contract (v3 → v4)");
+    const c = fs.readFileSync(path.join(dir, "CLAUDE.md"), "utf8");
+    expect(c).toContain("KEEP-ME-ABOVE");
+    expect(c).toContain("KEEP-ME-BELOW");
+    expect(c).not.toContain("nirvana-os:invocation-contract:v3");
+    expect(c.match(/nirvana-os:invocation-contract:v4/g)!.length).toBe(1);
+    expect(c).not.toContain("point a directory at the store");
+    expect(c).toContain("~/.nirvana/envs/<squad>");
+    expect(c.match(/nirvana-os:writing-contract:v2/g)!.length).toBe(1);
+    expect(c.indexOf("KEEP-ME-ABOVE")).toBeLessThan(c.indexOf("nirvana-os:invocation-contract:v4"));
+    expect(c.indexOf("Gate flags = build fails")).toBeLessThan(c.indexOf("KEEP-ME-BELOW"));
   }, INIT_TIMEOUT_MS);
 });
 
 describe("a duplicated old block is collapsed by the refresh", () => {
   test("two v1 writing contracts become one v2, and the user's lines after them survive", () => {
     const block = ["<!-- nirvana-os:writing-contract:v1 -->", "## Writing contract (for any prose deliverable)", "OLD-W", "Gate flags = build fails. No auto-rewrite.", ""].join("\n");
-    const src = ["<!-- nirvana-os:invocation-contract:v3 -->", "# current contract", "", "---", "", block, "", "---", "", block, "## Mine", "KEEP-ME-LAST", ""].join("\n");
+    const src = ["<!-- nirvana-os:invocation-contract:v4 -->", "# current contract", "", "---", "", block, "", "---", "", block, "## Mine", "KEEP-ME-LAST", ""].join("\n");
     const dir = project("dup-writing", { "AGENTS.md": src });
     runInit(dir, ALWAYS);
     const c = fs.readFileSync(path.join(dir, "AGENTS.md"), "utf8");

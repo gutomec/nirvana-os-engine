@@ -391,14 +391,15 @@ async function main() {
     const writingContractSnippet = path.join(SKILLS_ROOT, "_shared", "templates", "writing-contract-snippet.md");
     const onDemandSnippet = path.join(SKILLS_ROOT, "_shared", "templates", "on-demand-contract-snippet.md");
     const WRITING_CONTRACT_MARKER = "<!-- nirvana-os:writing-contract:v2 -->";
-    const INVOCATION_CONTRACT_MARKER = "<!-- nirvana-os:invocation-contract:v3 -->";
+    const INVOCATION_CONTRACT_MARKER = "<!-- nirvana-os:invocation-contract:v4 -->";
     // Markers of earlier contracts. A project initialised under one of them
     // kept the old text forever: the marker check made init skip the file, so
     // the fix that renamed the entry skill and added the discovery commands
     // reached new projects only. The block under an older marker (up to the
     // next nirvana-os marker, or the end of the file) is replaced by the
     // current template; the user's own lines above it and the other contracts
-    // below it stay where they are.
+    // below it stay where they are. v4: the dependency section names the
+    // per-squad environments (~/.nirvana/envs/<squad>), not the shared store.
     const refreshManagedBlock = (dst: string, label: string, olderMarkers: string[], currentMarker: string, templatePath: string, endSentinel?: string): boolean => {
       if (!fs.existsSync(dst) || !fs.existsSync(templatePath)) return false;
       const existing = fs.readFileSync(dst, "utf8");
@@ -435,11 +436,11 @@ async function main() {
       return true;
     };
     const refreshInvocationContract = (dst: string) =>
-      refreshManagedBlock(dst, "invocation contract", ["<!-- nirvana-os:invocation-contract:v1 -->", "<!-- nirvana-os:invocation-contract:v2 -->"], INVOCATION_CONTRACT_MARKER, agentsTemplate);
+      refreshManagedBlock(dst, "invocation contract", ["<!-- nirvana-os:invocation-contract:v1 -->", "<!-- nirvana-os:invocation-contract:v2 -->", "<!-- nirvana-os:invocation-contract:v3 -->"], INVOCATION_CONTRACT_MARKER, agentsTemplate);
     const refreshWritingContract = (dst: string) =>
       refreshManagedBlock(dst, "writing contract", ["<!-- nirvana-os:writing-contract:v1 -->"], WRITING_CONTRACT_MARKER, writingContractSnippet, "Gate flags = build fails. No auto-rewrite.");
     const ON_DEMAND_MARKER = "<!-- nirvana-os:on-demand-contract:v3 -->";
-    const INVOCATION_MARKERS = ["<!-- nirvana-os:invocation-contract:v1 -->", "<!-- nirvana-os:invocation-contract:v2 -->", INVOCATION_CONTRACT_MARKER];
+    const INVOCATION_MARKERS = ["<!-- nirvana-os:invocation-contract:v1 -->", "<!-- nirvana-os:invocation-contract:v2 -->", "<!-- nirvana-os:invocation-contract:v3 -->", INVOCATION_CONTRACT_MARKER];
     const ON_DEMAND_MARKERS = ["<!-- nirvana-os:on-demand-contract:v1 -->", "<!-- nirvana-os:on-demand-contract:v2 -->", ON_DEMAND_MARKER];
 
     // How Nirvana behaves in THIS project:

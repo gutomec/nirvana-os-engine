@@ -54,8 +54,16 @@ describe("the decider's CLI is not in the user-facing help", () => {
   const visibilityOf = (name: string): string | null =>
     commands.match(new RegExp(`\\{ name: "${name}",[^}]*visibility: "(\\w+)"`))?.[1] ?? null;
 
-  test.each(["route", "find"])("`nrv %s` is a dev diagnostic", (cmd) => {
-    expect(visibilityOf(cmd)).toBe("dev");
+  test("`nrv route` is a dev diagnostic", () => {
+    expect(visibilityOf("route")).toBe("dev");
+  });
+
+  test("`nrv find` is the orchestrator's shortlist step, so it is in the user-facing help", () => {
+    // The 0.15 harness runs `nrv find` first and reads what it returns; the
+    // choice stays the orchestrator's. A command the protocol calls on every
+    // request cannot be filed under ADVANCED.
+    expect(visibilityOf("find")).toBe("user");
+    expect(commands.match(/\{ name: "find",[^}]*category: "(\w+)"/)?.[1]).not.toBe("dev");
   });
 
   test("the RETRIEVER stays, because Phase 3 surveys with it", () => {

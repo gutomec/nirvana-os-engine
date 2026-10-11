@@ -28,6 +28,14 @@ A passada de instalação não mudou; o que vem depois de uma falha agora depend
 
 Os READMEs nos seis idiomas, o `INSTALL.md`, o `AGENT-QUICKSTART.md`, o `docs/` (incluindo o site do Pages), os contratos de projeto, os arquivos de skill, o template de dependências e as mensagens factuais do instalador foram reescritos para bater com o código desta linha: instalação pelo `install.sh` / `install.ps1` de uma linha, conversa com o agente primeiro, ambientes por squad, canal de release, betas e o fluxo dos packs.
 
+### Projetos recebem o contrato reescrito na próxima vez que `nrv init` roda neles
+
+O modelo do contrato de projeto agora descreve os ambientes por squad em `~/.nirvana/envs` no lugar do store compartilhado, e o marcador passa de `invocation-contract:v3` para `v4`. O `nrv init` reescreve um bloco gerenciado só quando o marcador é mais antigo que o do engine, então um projeto iniciado na v3 manteria o texto antigo de dependências. Rodar `nrv init .` de novo no projeto troca o bloco v3 em `AGENTS.md`, `CLAUDE.md` e `GEMINI.md` pelo texto atual; as linhas do usuário acima dele, o contrato de escrita e tudo o que vem depois ficam. Um projeto no contrato completo precisa de `--orchestrators=always`, porque uma execução sem a flag o leva para on-demand. Instalação e atualização nunca mexem em projeto.
+
+### `nrv find` está na ajuda principal
+
+O harness roda `nrv find` como etapa de pré-seleção, mas o `nrv help` o listava em ADVANCED / DEV como diagnóstico do roteador por palavra-chave. Agora ele aparece ao lado de `nrv search`, como a pré-seleção de empresas e squads (com os ids de capacidade) que servem a um pedido, feita sem chamar modelo, para quem chamou ler e decidir. O comando em si não mudou.
+
 ## 0.15.0-beta.5 — 2026-10-10
 
 ### Cada squad instala no próprio ambiente, preparado quando ela roda

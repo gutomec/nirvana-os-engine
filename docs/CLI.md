@@ -60,7 +60,7 @@ Useful flags on `dispatch` / `run` / `auto`: `--project <YYYYMMDD>-<subject>-<pa
 | Command | What it does |
 |---|---|
 | `nrv route "<brief>"` | Route a brief and show the decision (HIGH / AMBIGUOUS / NO_MATCH). |
-| `nrv find "<query>"` | Ranked candidates (businesses, squads with their capability ids) for a request, zero tokens. The orchestrator's shortlist; listed under ADVANCED in `nrv help`. |
+| `nrv find "<query>"` | Ranked candidates (businesses, squads with their capability ids) for a request, zero tokens. The orchestrator's shortlist; listed under QUALITY OF LIFE in `nrv help`. |
 | `nrv search "<query>" [--kind=business\|squad\|mind-clone]` | Keyword + BM25 search across your libraries. |
 | `nrv list-businesses` / `nrv list-squads` / `nrv list-clones` | List what's in your libraries (`--format=table\|json`). |
 | `nrv inspect-clone <slug> [--commands\|--dna]` | Inspect a single specialist. |
