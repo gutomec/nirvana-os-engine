@@ -36,13 +36,13 @@
 | `tool_whitelist` | ✓ | ✓ | ✓ | `-t/--toolsets` restringe o universo de tools por invocação; `disabled_toolsets` no config |
 | `subagent_spawning` | ~ | ~ | ~ | `delegation` nativo é mono-nível (`max_spawn_depth: 1`); fan-out multi-nível via sub-process `hermes -z` (= padrão Codex) |
 | `audit_trail` | ~ | ~ | ~ | Shell hooks `pre/post_tool_call` → `audit-emit-from-hermes-hook.ts` → jsonl; + fs-watch. Não nativo |
-| `scheduled_invocation` | ✓ | ✓ | ✓ | **`hermes cron` nativo** — vantagem sobre Codex/Gemini |
+| `scheduled_invocation` | ✓ | ✓ | ✓ | **`hermes cron` nativo** — vantagem sobre Codex/Antigravity |
 | `event_bus` | ~ | ~ | ~ | Mentions/tickets via file-system (`.handoffs/`); sem broker |
 | `hooks` | ~ | ~ | ~ | `pre/post_tool_call`, `on_session_start/end`, `transform_*`, etc. — shell-based, consent-gated; sem granularidade por-arg do Claude |
 | `sandboxing` | ✓ | ✓ | ✓ | 6 terminal backends (local, Docker, SSH, Daytona, Modal, Singularity); scanner Tirith pré-execução |
 | `session_memory` | ✓ | ✓ | ✓ | Contexto por sessão + compressão automática |
 | `project_memory` | ✓ | ✓ | ✓ | `AGENTS.md` do CWD carregado automaticamente (inclusive em `hermes -z`) |
-| `global_memory` | ✓ | ✓ | ✓ | SOUL.md/USER.md + SQLite+FTS5 + Honcho (mais rico que Codex/Gemini) |
+| `global_memory` | ✓ | ✓ | ✓ | SOUL.md/USER.md + SQLite+FTS5 + Honcho (mais rico que Codex/Antigravity) |
 | `handoff_artifacts` | ✓ | ✓ | ✓ | JSON em `.handoffs/` (texto→JSON parse; ver §7) |
 | `fork_context` | ~ | ~ | ~ | Sub-process spawn cria fork; isolation por profile/toolset |
 | `teammate_primitive` | ~ | ~ | ~ | `delegation.orchestrator_enabled` (mono-nível); teams multi-nível são convenção via file-system |

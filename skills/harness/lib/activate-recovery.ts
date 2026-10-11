@@ -355,7 +355,6 @@ export function buildFixPrompt(issues: ActivationIssue[], ctx: { platform: NodeJ
 const RUNTIME_LABEL: Record<Runtime, string> = {
   "claude-code": "Claude Code",
   codex: "Codex",
-  "gemini-cli": "Gemini CLI",
   "antigravity-cli": "Antigravity",
   "kimi-cli": "Kimi CLI",
   "grok-cli": "Grok CLI",

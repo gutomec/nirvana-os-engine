@@ -26,12 +26,12 @@
 //   3. Its cost is recorded. An errand that leaves no trace is how a bill
 //      becomes a mystery.
 //
-//   nrv exec "what changed in the Gemini CLI this month"
-//   nrv exec --runtime=gemini-cli "search the web for agent frameworks"
+//   nrv exec "what changed in the Codex CLI this month"
+//   nrv exec --runtime=antigravity-cli "search the web for agent frameworks"
 //   cat long-question.md | nrv exec --runtime=codex
 //   nrv exec --json "one sentence on X" | jq -r .result
 import { EXIT } from "../../_shared/lib/bun-helpers.ts";
-import { runHeadless, runtimeAvailable, listRuntimes, type Runtime } from "../../_shared/lib/host-agent-driver.ts";
+import { runHeadless, runtimeAvailable, listRuntimes, retiredRuntimeMessage, type Runtime } from "../../_shared/lib/host-agent-driver.ts";
 import { resolveRunRuntime } from "../lib/runtime-rules.ts";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -74,8 +74,8 @@ function usage(code: number = EXIT.INVALID_ARGS): never {
   console.error("  --quiet              do not print the no-gate notice");
   console.error("");
   console.error("Examples:");
-  console.error("  nrv exec \"what changed in the Gemini CLI this month\"");
-  console.error("  nrv exec --runtime=gemini-cli \"search the web for agent frameworks\"");
+  console.error("  nrv exec \"what changed in the Codex CLI this month\"");
+  console.error("  nrv exec --runtime=antigravity-cli \"search the web for agent frameworks\"");
   console.error("  cat question.md | nrv exec --runtime=codex");
   console.error("");
   console.error("  To produce something, dispatch it: nrv dispatch --auto --exec \"<brief>\"");
@@ -93,7 +93,7 @@ const budget = val("max-budget") ? Number(val("max-budget")) : undefined;
 
 // The prompt: positional words, or stdin when it is piped. Parsed by INDEX and
 // never by value — `indexOf` finds the first occurrence, so a prompt that
-// repeats a word ("codex, compare codex and gemini") would lose a piece of
+// repeats a word ("codex, compare codex and claude") would lose a piece of
 // itself to the flag it happened to match.
 const VALUE_FLAGS = new Set(["--runtime", "--timeout", "--max-budget"]);
 const positional: string[] = [];
@@ -109,7 +109,10 @@ if (!prompt) usage();
 
 const explicit = val("runtime") as Runtime | undefined;
 if (explicit && !listRuntimes().some((r) => r.name === explicit)) {
-  console.error(c("red", `✗ unknown runtime '${explicit}'. Known: ${listRuntimes().map((r) => r.name).join(", ")}`));
+  const retired = retiredRuntimeMessage(explicit);
+  console.error(c("red", retired
+    ? `✗ runtime '${explicit}': ${retired}. Known: ${listRuntimes().map((r) => r.name).join(", ")}`
+    : `✗ unknown runtime '${explicit}'. Known: ${listRuntimes().map((r) => r.name).join(", ")}`));
   process.exit(EXIT.INVALID_ARGS);
 }
 if (explicit && !runtimeAvailable(explicit)) {

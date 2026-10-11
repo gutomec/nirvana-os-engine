@@ -12,8 +12,8 @@
 // asserting on a resolver's return value. `resolveSystemModel` read
 // `ANTHROPIC_MODEL` — a vendor variable set on many machines, nothing to do
 // with Nirvana — before it checked which runtime it was answering for.
-// Measured with it exported: the resolver answered `opus` for all nine
-// runtimes, so the driver ran `gemini --model opus`, `agy --model opus`,
+// Measured with it exported: the resolver answered `opus` for every
+// runtime, so the driver ran `agy --model opus`,
 // `pi --model opus`, `qwen --model opus`. Only the codex adapter guarded
 // itself. It also read `~/.claude/settings.json`, which a `claude` child reads
 // on its own, so the engine was re-stating a decision that was never its.
@@ -37,7 +37,7 @@ afterAll(() => { process.env = { ...saved }; });
 
 /** The CLI name each runtime actually spawns. */
 const CLI: Partial<Record<Runtime, string>> = {
-  "claude-code": "claude", codex: "codex", "gemini-cli": "gemini",
+  "claude-code": "claude", codex: "codex",
   "antigravity-cli": "agy", "kimi-cli": "kimi", "grok-cli": "grok",
   pi: "pi", "qwen-code": "qwen", opencode: "opencode",
 };
@@ -85,7 +85,7 @@ describe("no pin, no flag: the CLI is run bare", () => {
 
   test("a vendor env var does not become a dispatch flag — the nine-runtime leak", () => {
     process.env.ANTHROPIC_MODEL = "claude-opus-5";
-    for (const runtime of ["gemini-cli", "pi", "qwen-code", "kimi-cli", "grok-cli"] as Runtime[]) {
+    for (const runtime of ["antigravity-cli", "pi", "qwen-code", "kimi-cli", "grok-cli"] as Runtime[]) {
       const argv = argvOf(runtime);
       expect(hasModelFlag(argv), `${runtime} got a model from ANTHROPIC_MODEL: ${argv.join(" ")}`).toBe(false);
     }

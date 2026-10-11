@@ -54,7 +54,7 @@ Descoberta (read-only, sem degradação em nenhum runtime):
 
 Orquestração:
 - **in-process** (Claude Code, Codex, Antigravity): a inteligência é a skill `harness` — **invoque-a** (não `nrv dispatch`).
-- **sub-process** (Hermes, Gemini legado): `nrv dispatch "<brief verbatim>"`.
+- **sub-process** (Hermes): `nrv dispatch "<brief verbatim>"`.
 
 Toda dispatch emite cadeia de auditoria em `~/.harness-logs/<date>/audit.jsonl`.
 

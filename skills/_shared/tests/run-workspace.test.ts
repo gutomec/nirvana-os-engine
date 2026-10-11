@@ -188,7 +188,7 @@ describe("confineToWorkspace", () => {
     const store = path.join(TMP, "store-like", "outputs");
     const run = path.join(store, "proj-9");
     fs.mkdirSync(run, { recursive: true });
-    const { opts } = confineToWorkspace({ runtime: "gemini-cli", cwd: os.homedir(), workspace: run, addDirs: [] });
+    const { opts } = confineToWorkspace({ runtime: "qwen-code", cwd: os.homedir(), workspace: run, addDirs: [] });
     expect(opts.cwd).toBe(run);
     expect(opts.addDirs).toEqual([]);
   });

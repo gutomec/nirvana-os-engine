@@ -1,5 +1,5 @@
 <!-- nirvana-os:invocation-contract:v3 -->
-# Project guidelines (universal — Claude Code · Gemini-CLI · Codex · Cursor · Antigravity · any agent runtime)
+# Project guidelines (universal — Claude Code · Codex · Cursor · Antigravity · any agent runtime)
 
 This file is the contract every agent must read **before doing anything**.
 Copies named `CLAUDE.md` and `GEMINI.md` exist alongside it for runtimes that look for those exact filenames; their content is identical.
@@ -110,8 +110,8 @@ You don't pre-route by shell. You don't decide the cascade in your own head. You
 How invocation looks per runtime:
 
 - Claude Code / Anthropic SDK: `Skill("nirvana", "<user's brief verbatim>")` (or trust the auto-activation by description match); the door reads the harness.
-- Any runtime that can read a file (Codex, Gemini-CLI, Antigravity, Pi, OpenClaw, Cursor…): read `~/.nirvana/skills/harness/SKILL.md` and follow it as your operating instructions for this brief (its `../_shared/…` references resolve against `~/.nirvana/skills/harness/`).
-- Shell-only runtimes (Hermes, legacy gemini-cli, headless): `nrv dispatch --auto --exec "<user's brief verbatim>"` (`--exec=<runtime>` pins one; without `--exec` the command only scaffolds).
+- Any runtime that can read a file (Codex, Antigravity, Pi, OpenClaw, Cursor…): read `~/.nirvana/skills/harness/SKILL.md` and follow it as your operating instructions for this brief (its `../_shared/…` references resolve against `~/.nirvana/skills/harness/`).
+- Shell-only runtimes (Hermes, headless): `nrv dispatch --auto --exec "<user's brief verbatim>"` (`--exec=<runtime>` pins one; without `--exec` the command only scaffolds).
 
 Pass the user's brief verbatim. Don't reformulate before invocation — the harness handles amplification, briefing, and clarification on its own.
 
@@ -320,7 +320,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 Install never touches the user's global config, and neither do you unprompted. The rules in this contract load only inside projects created with `nrv init`. When the user explicitly asks to "make this work everywhere", "improve my setup", or "adjust my global", you may install them globally for the runtime in use.
 
-Write a single MARKED, IDEMPOTENT block into the global instructions file your runtime reads. For Claude Code that is `~/.claude/CLAUDE.md`; for Gemini-CLI, Codex, or any other runtime, the global instructions file that runtime documents (you are that runtime — use your own global path). Use these exact markers so the block stays removable and never duplicates:
+Write a single MARKED, IDEMPOTENT block into the global instructions file your runtime reads. For Claude Code that is `~/.claude/CLAUDE.md`; for Antigravity, Codex, or any other runtime, the global instructions file that runtime documents (you are that runtime — use your own global path). Use these exact markers so the block stays removable and never duplicates:
 
 ```
 <!-- BEGIN nirvana-os (managed) -->

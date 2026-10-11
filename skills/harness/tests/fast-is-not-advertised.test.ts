@@ -35,7 +35,7 @@ describe("no agent-facing surface offers it", () => {
     ["skills/harness/SKILL.md", "the orchestrator protocol, description included"],
     ["AGENTS.md", "the project contract"],
     ["CLAUDE.md", "the same contract, Claude's filename"],
-    ["GEMINI.md", "the same contract, Gemini's filename"],
+    ["GEMINI.md", "the same contract, the filename agy also reads"],
     ["skills/_shared/templates/AGENTS.md", "what `nrv init` writes into a project"],
     ["skills/businesses/lib/employee-prompt.ts", "a seat's prompt"],
   ])("%s — %s", (file) => {

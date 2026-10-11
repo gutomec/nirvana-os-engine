@@ -126,7 +126,7 @@ export function revisionFixes(critique: { severity: string; suggested_fix: strin
 
 // --with-revisions: run the nirvana-evolution LLM judge + revision loop
 // instead of the heuristic rubrics. The judge selects a domain rubric (.md)
-// by --produces, calls the host LLM runtime (codex/claude/gemini via
+// by --produces, calls the host LLM runtime (codex/claude/agy via
 // host-agent-driver), and loops judge→critique→revise up to --max-revisions.
 // Falls back to heuristics with a warning if no runtime is available.
 async function runWithRevisions(artifact: string, content: string, args: string[]): Promise<number> {

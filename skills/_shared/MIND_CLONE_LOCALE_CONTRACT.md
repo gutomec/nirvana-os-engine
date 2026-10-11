@@ -49,7 +49,7 @@ Glance sidebar do not duplicate personas.
 `bun ~/.nirvana/skills/_shared/scripts/translate-mindclone.ts <category>/<slug> --to <locale>`
 translates a single canonical to the target locale. `--all` translates the
 whole library. The translator runs through the host agent runtime
-(`host-agent-driver.ts`) — Claude Code, Codex, Gemini CLI, etc. — using the
+(`host-agent-driver.ts`) — Claude Code, Codex, Antigravity, etc. — using the
 host's default model and authentication. No model is hard-coded.
 
 ### Cache invalidation

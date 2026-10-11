@@ -130,7 +130,7 @@ Never switch the runtime into its own plan mode (Claude Code plan mode, Codex pl
 
 ### Rule 11 — The work runs where the user is working
 
-The default runtime is the session the user is sitting in: Claude Code, Codex, Gemini CLI, Antigravity. An in-process dispatch (the `Agent` tool, codex `[agents]`, antigravity subagents) inherits it automatically; a scripted child (`nrv dispatch --exec`, `nrv chain`, `nrv run`, a business director) resolves it from the session's env markers. From a plain terminal or a cron job there is no session to inherit, so the engine takes `execution.default_runtime` if set, else the first runtime installed, and says so on stderr.
+The default runtime is the session the user is sitting in: Claude Code, Codex, Antigravity. An in-process dispatch (the `Agent` tool, codex `[agents]`, antigravity subagents) inherits it automatically; a scripted child (`nrv dispatch --exec`, `nrv chain`, `nrv run`, a business director) resolves it from the session's env markers. From a plain terminal or a cron job there is no session to inherit, so the engine takes `execution.default_runtime` if set, else the first runtime installed, and says so on stderr.
 
 The user may name another runtime (a flag, a mention in the brief such as "use o codex para isso", a `USE_*` rule in the `.env`). That wins, **provided it is installed here**; naming one that is not installed is refused with the installed list. So don't pass `--runtime` or `--exec=<name>` unless the user asked for that runtime. `nrv doctor` shows which runtimes are green.
 
@@ -183,7 +183,7 @@ Nothing came back? Run `nrv init .`, say in one line that you did and why (the u
 Two exceptions. At `$HOME` or `/`, which are never project roots, stop and ask the user to open a project directory. In somebody else's repository, where three new files would show up in their diff, say so and let the user decide.
 
 ### Phase 0.1 — Declare your operating window
-Before reading the brief, declare your context window and budget (`/context` in Claude Code, `/memory` in Gemini CLI, `/usage` in Codex, or your system prompt) at the top of `${HARNESS_LOGS_DIR}/$(date +%Y-%m-%d)/briefs/<trace_id>.txt`:
+Before reading the brief, declare your context window and budget (`/context` in Claude Code, `/usage` in Codex, or your system prompt) at the top of `${HARNESS_LOGS_DIR}/$(date +%Y-%m-%d)/briefs/<trace_id>.txt`:
 
 ```
 context_window: <N>           # e.g. 1000000

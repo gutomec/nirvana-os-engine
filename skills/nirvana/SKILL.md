@@ -36,7 +36,7 @@ Found: go to section 2. Not found: install it, then come back.
 **What the install changes.** Bun in user space (`~/.bun`) if it is missing; the
 engine in `~/.nirvana`; the `nrv` launcher in `~/.local/bin` plus one PATH line
 in the user's shell rc; audit hooks in the settings of the agent runtimes it
-finds (`~/.claude`, `~/.gemini`, `~/.codex`, `~/.antigravity`); the empty content
+finds (`~/.claude`, `~/.codex`, `~/.gemini/config` for Antigravity); the empty content
 roots `~/squads`, `~/businesses`, `~/businesses/_library/dna`. Network once, no
 project code touched, no sudo, idempotent, reversible with `nrv uninstall --engine`.
 
@@ -105,10 +105,10 @@ engine, and this file is the door to it.
 
 | Your runtime | How to hand over |
 |---|---|
-| Any runtime that can read a file (Claude Code, Codex, Gemini CLI, Antigravity, Pi, OpenClaw, Cursor…) | read `~/.nirvana/skills/harness/SKILL.md` and follow it as your operating instructions for this brief; its `../_shared/…` references resolve against `~/.nirvana/skills/harness/` |
-| Shell-only and sub-process runtimes (Hermes, legacy gemini-cli, headless) | `nrv dispatch --auto --exec "<the user's brief, verbatim>"` (`--exec=<runtime>` pins one; without `--exec` the command only scaffolds and delivers nothing) |
+| Any runtime that can read a file (Claude Code, Codex, Antigravity, Pi, OpenClaw, Cursor…) | read `~/.nirvana/skills/harness/SKILL.md` and follow it as your operating instructions for this brief; its `../_shared/…` references resolve against `~/.nirvana/skills/harness/` |
+| Shell-only and sub-process runtimes (Hermes, headless) | `nrv dispatch --auto --exec "<the user's brief, verbatim>"` (`--exec=<runtime>` pins one; without `--exec` the command only scaffolds and delivers nothing) |
 
-Dispatch needs one agent CLI on PATH (`claude`, `codex`, `gemini`, `agy`, `pi`,
+Dispatch needs one agent CLI on PATH (`claude`, `codex`, `agy`, `pi`,
 `kimi`, `grok`, `qwen`, `opencode`). With none, Nirvana still answers discovery
 but cannot dispatch production: say so rather than producing inline. Every
 dispatch writes its audit chain to `~/.harness-logs/<date>/audit.jsonl`.

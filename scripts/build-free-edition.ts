@@ -46,7 +46,7 @@ const outerPkg = {
   name: "@nirvana-os/cli",
   version: LAUNCHER_VERSION,
   description:
-    "Nirvana-OS installer — fetches the latest engine from GitHub and installs it across Claude Code, Codex, Gemini-CLI, Antigravity and Hermes. Paid packs (squads, businesses, mind-clones) install on top via squads.sh.",
+    "Nirvana-OS installer — fetches the latest engine from GitHub and installs it across Claude Code, Codex, Antigravity and Hermes. Paid packs (squads, businesses, mind-clones) install on top via squads.sh.",
   type: "module",
   bin: { nirvana: "bin/cli.mjs" },
   license: "SEE LICENSE IN LICENSE",

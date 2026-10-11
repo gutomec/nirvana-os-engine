@@ -64,7 +64,6 @@ After Core passes, the harness loads each target adapter and runs its runtime-sp
 
 - Claude Code: `cc-max-turns-required` (blocking), `cc-description-length` (warning)
 - Codex: `codex-tools-lowercase` (warning), `codex-sequential-only` (info)
-- Gemini CLI: `gemini-max-turns-required` (blocking)
 
 See each adapter's §12 for its validators list.
 
@@ -97,7 +96,6 @@ Adapter-level validators live in each adapter's §12:
 | Runtime | See |
 |---------|-----|
 | Claude Code | [_shared/adapters/claude-code.md §12](../../_shared/adapters/claude-code.md#12-runtime-specific-validators) |
-| Gemini CLI | [_shared/adapters/gemini-cli.md §12](../../_shared/adapters/gemini-cli.md#12-runtime-specific-validators) |
 | Codex | [_shared/adapters/codex.md §12](../../_shared/adapters/codex.md#12-runtime-specific-validators) |
 | Antigravity | [_shared/adapters/antigravity-cli.md §12](../../_shared/adapters/antigravity-cli.md#12-runtime-specific-validators) |
 | Kimi | [_shared/adapters/kimi-cli.md §12](../../_shared/adapters/kimi-cli.md#12-runtime-specific-validators) |

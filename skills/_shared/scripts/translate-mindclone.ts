@@ -10,7 +10,7 @@
  *   bun translate-mindclone.ts --all --to en
  *   bun translate-mindclone.ts <category>/<slug> --to en --force
  *
- * Auth: relies on the host runtime (Claude Code, Codex, Gemini CLI, …).
+ * Auth: relies on the host runtime (Claude Code, Codex, Antigravity, …).
  * No model or agent is specified — we use the host's defaults.
  */
 
@@ -189,7 +189,7 @@ async function translateOne(t: Target): Promise<{ slug: string; status: string; 
   }
   const host = driver.detectHost?.();
   if (!host) {
-    return { slug: `${t.category}/${t.slug}`, status: "no-host", reason: "no host runtime detected (claude/codex/gemini)" };
+    return { slug: `${t.category}/${t.slug}`, status: "no-host", reason: "no host runtime detected (claude/codex/agy)" };
   }
   const r = await driver.callHostAgentAsync(buildPersona(), buildUserMessage(canonical, TARGET, t.slug), { timeoutMs: 240_000 });
   if ("error" in r) {

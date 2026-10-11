@@ -77,7 +77,7 @@ describe("a project that already has a contract file", () => {
 
   test("every runtime family ends up with the invocation contract", () => {
     // A project with only CLAUDE.md must still serve codex (AGENTS.md) and
-    // gemini-cli (GEMINI.md) after init.
+    // antigravity (AGENTS.md / GEMINI.md) after init.
     const dir = project("all-runtimes", { "CLAUDE.md": "# Mine\n" });
     runInit(dir);
     for (const f of ["AGENTS.md", "CLAUDE.md", "GEMINI.md"]) {

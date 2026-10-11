@@ -416,7 +416,7 @@ export function createEmployeeBelow(businessSlug: string, input: NewEmployeeInpu
 // A "run" is a group of audit events sharing the same trace_id. Unlike
 // listProjects() (which scans MAESTRO_LOGS_DIR for orchestrator metadata),
 // buildRuns() works for ANY agent that emits audit events — Claude Code,
-// Gemini-CLI, Codex, the auto-emit hook, anything. This is what powers
+// Codex, Antigravity, the auto-emit hook, anything. This is what powers
 // the Projects/Runs tab in Glance with paperclip-style command-center UX.
 
 /** Event names that say only "an agent was running" — which the run's status

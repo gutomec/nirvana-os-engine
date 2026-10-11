@@ -18,7 +18,7 @@ labels: bug
 
 **Environment**
 - `nrv --version`:
-- OS + runtime (Claude Code / Codex / Gemini / Antigravity, version):
+- OS + runtime (Claude Code / Codex / Antigravity, version):
 - Bun version (`bun --version`):
 
 **Audit / logs**

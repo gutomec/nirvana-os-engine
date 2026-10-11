@@ -32,7 +32,7 @@ import { forwardedEnv } from "../../_shared/lib/orca-worker.ts";
 /** The roster as it stands. A tenth adapter makes this list fail, which is the
  *  point: the reminder lands here, where all three answers are stated. */
 const ROSTER: Runtime[] = [
-  "claude-code", "codex", "antigravity-cli", "gemini-cli", "pi",
+  "claude-code", "codex", "antigravity-cli", "pi",
   "kimi-cli", "grok-cli", "qwen-code", "opencode",
 ];
 
@@ -48,7 +48,6 @@ describe("which runtime am I running inside", () => {
     ["claude-code", "CLAUDE_CODE_SESSION_ID"],
     ["codex", "CODEX_THREAD_ID"],
     ["codex", "CODEX_SANDBOX"],
-    ["gemini-cli", "GEMINI_SESSION_ID"],
     ["antigravity-cli", "ANTIGRAVITY_SESSION_ID"],
     ["antigravity-cli", "AGY_SESSION_ID"],
     ["pi", "PI_CODING_AGENT"],
@@ -66,10 +65,16 @@ describe("which runtime am I running inside", () => {
   });
 
   test("a derivative answers with itself, not with the CLI it forked", () => {
-    // qwen-code is a gemini-cli fork and antigravity-cli is Gemini-family:
+    // qwen-code is a Gemini CLI fork and antigravity-cli is Gemini-family:
     // both can carry the parent's variables, so both are tested first.
     expect(detectCurrentHost({ GEMINI_CLI: "1", QWEN_SESSION_ID: "q" })).toBe("qwen-code");
     expect(detectCurrentHost({ GEMINI_SESSION_ID: "g", ANTIGRAVITY_SESSION_ID: "a" })).toBe("antigravity-cli");
+  });
+
+  test("a Gemini CLI session (no longer a runtime) identifies nobody", () => {
+    expect(detectCurrentHost({ GEMINI_SESSION_ID: "g" })).toBeNull();
+    expect(detectCurrentHost({ GEMINI_CLI: "1" })).toBeNull();
+    expect(detectCurrentHost({ NIRVANA_HOST_RUNTIME: "gemini-cli" })).toBeNull();
   });
 
   test("NIRVANA_HOST_RUNTIME is checked before every vendor marker", () => {
@@ -82,7 +87,6 @@ describe("what the user called it", () => {
   test.each([
     ["claude-code", "claude"], ["claude-code", "claude-code"],
     ["codex", "codex"], ["codex", "codex-cli"],
-    ["gemini-cli", "gemini"], ["gemini-cli", "gemini-cli"],
     ["antigravity-cli", "agy"], ["antigravity-cli", "antigravity"],
     ["pi", "pi"], ["pi", "pi-dev"],
     ["kimi-cli", "kimi"], ["kimi-cli", "kimi-code"],
@@ -100,6 +104,12 @@ describe("what the user called it", () => {
     expect(rules.map((r) => r.runtime).sort()).toEqual([...ROSTER].sort());
   });
 
+  test("gemini and gemini-cli are no longer runtime names: they pass through, unknown", () => {
+    expect(canonicalRuntimeName("gemini")).toBe("gemini" as Runtime);
+    expect(canonicalRuntimeName("gemini-cli")).toBe("gemini-cli" as Runtime);
+    expect(listRuntimes().some((r) => r.name === ("gemini-cli" as Runtime))).toBe(false);
+  });
+
   test("an unknown suffix is still ignored, not guessed", () => {
     expect(loadRuntimeRules(null, { USE_NOTHING: "x" } as NodeJS.ProcessEnv)).toEqual([]);
   });
@@ -109,7 +119,6 @@ describe("did the brief name one", () => {
   test.each([
     ["claude-code", "use o claude para isso"],
     ["codex", "run it on codex"],
-    ["gemini-cli", "despache via gemini-cli"],
     ["antigravity-cli", "use o agy para pesquisar"],
     ["pi", "rode no pi"],
     ["kimi-cli", "use o kimi para isso"],
@@ -210,9 +219,10 @@ describe("the declarable roster agrees with the executable one", () => {
     return found;
   };
 
-  /** Every exec runtime must be declarable; the two extras are hosts that can
-   *  be required but never dispatched to. */
-  const DECLARABLE = [...ROSTER, "antigravity", "cursor", "openclaw"];
+  /** Every exec runtime must be declarable; the extras are hosts that can be
+   *  required but never dispatched to, and `gemini-cli`, no longer a runtime
+   *  but still accepted so manifests written while it was one keep validating. */
+  const DECLARABLE = [...ROSTER, "antigravity", "cursor", "openclaw", "gemini-cli"];
 
   test("the Zod validator covers every runtime the driver can execute", () => {
     const block = read("skills/_shared/validators/validators.ts").match(/const Runtime = z\.enum\(\[([\s\S]*?)\]\)/)![1];

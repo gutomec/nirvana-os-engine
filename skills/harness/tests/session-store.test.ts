@@ -54,8 +54,8 @@ describe("session-store — degradação nunca vira falha", () => {
   });
 
   test("runtime que não devolve session id não grava nada", () => {
-    // gemini-cli exposes no id; the entity simply keeps starting cold.
-    putSession(dir, sessionKey("gemini-cli", "squad", "s"), "gemini-cli", null);
+    // qwen-code exposes no id; the entity simply keeps starting cold.
+    putSession(dir, sessionKey("qwen-code", "squad", "s"), "qwen-code", null);
     expect(fs.existsSync(path.join(dir, "sessions.json"))).toBe(false);
   });
 });

@@ -5,7 +5,7 @@
 // and audit-provenance.js/.ts.
 //
 // Orca (https://orca.dev) is a HOST, not a runtime: it manages workspaces,
-// terminals and the agents that run in them (claude, codex, gemini, ...). A
+// terminals and the agents that run in them (claude, codex, agy, ...). A
 // terminal it opens carries its identity in the environment, and that is the
 // only thing this module reads. Nothing here touches Orca itself, so every
 // function is safe to call from any terminal on any operating system: outside

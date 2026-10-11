@@ -6,12 +6,10 @@
 // .env format (advanced, with model hints):
 //   LLM_CASCADE=claude-code:claude-opus-4-7,codex:gpt-5.3-codex,antigravity-cli:gemini-3-pro,antigravity-cli:gemini-3-flash
 //
-// Note: gemini-cli's individual tier is RETIRED. The CLI still authenticates and
-// is then refused with IneligibleTierError, pointing at Antigravity — confirmed
-// live on 2026-08-05. Its successor is antigravity-cli (binary `agy`), same
-// Google backend. The gemini-cli entry stays valid for anyone on an eligible
-// (enterprise / API-key) tier, but no default or example leads with it, and a
-// refusal is classified as auth_failed so the cascade hands off (quota-detector).
+// Note: Gemini CLI (`gemini-cli`, `gemini`) is no longer a runtime. An entry
+// that still names it is dropped with "Gemini CLI is no longer supported; pick
+// another runtime" and the cascade moves on to the next entry. Google models
+// stay reachable through antigravity-cli (`agy`) and the multi-provider CLIs.
 //
 // .env format (full, with provider hint for CLIs that support multi-provider —
 // codex / qwen-code / pi via the @provider suffix; on pi the @provider maps to
@@ -36,7 +34,7 @@
 // to do — by default the harness falls through to its currently-configured
 // runtime and lets it fail naturally).
 
-import { listRuntimes } from "../../_shared/lib/host-agent-driver.ts";
+import { listRuntimes, retiredRuntimeMessage } from "../../_shared/lib/host-agent-driver.ts";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -64,22 +62,31 @@ export interface CascadeEntry {
 // driver owns the list; everyone else asks it.
 const VALID_RUNTIMES: ReadonlyArray<Runtime> = listRuntimes().map((r) => r.name);
 
+const warnedRetired = new Set<string>();
+
 function parseCascadeString(s: string): CascadeEntry[] {
-  return s.split(",").map(tok => tok.trim()).filter(Boolean).map(tok => {
+  const entries: CascadeEntry[] = [];
+  for (let tok of s.split(",").map(t => t.trim()).filter(Boolean)) {
+    const raw = tok;
     // Format: runtime[:model[@provider]][$N]
     // The $N (USD budget) attaches to the LAST segment — peel it off first.
     let budgetUsd: number | null = null;
     const bm = tok.match(/\$(\d+(?:\.\d+)?)$/);
     if (bm) { budgetUsd = parseFloat(bm[1]); tok = tok.slice(0, -bm[0].length); }
-    const [runtimeAndModel, providerHint = null] = tok.split("@").map(s => s.trim());
-    const [runtime, model = null] = runtimeAndModel.split(":").map(s => s.trim());
-    return {
-      runtime: runtime as Runtime,
-      model: model || null,
-      providerHint: providerHint || null,
-      budgetUsd,
-    };
-  }).filter(e => (VALID_RUNTIMES as ReadonlyArray<string>).includes(e.runtime));
+    const [runtimeAndModel, providerHint = null] = tok.split("@").map(x => x.trim());
+    const [runtime, model = null] = runtimeAndModel.split(":").map(x => x.trim());
+    if (!(VALID_RUNTIMES as ReadonlyArray<string>).includes(runtime)) {
+      // A retired runtime (gemini-cli) is said out loud once; the next entry runs.
+      const retired = retiredRuntimeMessage(runtime);
+      if (retired && !warnedRetired.has(raw)) {
+        warnedRetired.add(raw);
+        console.error(`[cascade] LLM_CASCADE entry '${raw}': ${retired} — entry dropped. Known: ${VALID_RUNTIMES.join(", ")}`);
+      }
+      continue;
+    }
+    entries.push({ runtime: runtime as Runtime, model: model || null, providerHint: providerHint || null, budgetUsd });
+  }
+  return entries;
 }
 
 /** Stable string key identifying a unique entry — used by the spend tracker. */

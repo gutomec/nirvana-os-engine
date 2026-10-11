@@ -252,7 +252,7 @@ describe("planRouteWithFallback — router-failure ladder", () => {
 
 describe("resolveAgentXPromptPath — persona survey", () => {
   test("real shipped dir: every runtime resolves to an existing agent-x file", () => {
-    for (const rt of ["claude-code", "codex", "gemini-cli", "antigravity-cli", "kimi-cli", "grok-cli", "pi"] as const) {
+    for (const rt of ["claude-code", "codex", "antigravity-cli", "kimi-cli", "grok-cli", "pi"] as const) {
       const p = resolveAgentXPromptPath(rt);
       expect(p).toBeTruthy();
       expect(fs.existsSync(p!)).toBe(true);
@@ -260,9 +260,9 @@ describe("resolveAgentXPromptPath — persona survey", () => {
     }
   });
 
-  test("-cli suffix is stripped (gemini-cli → agent-x.gemini.md)", () => {
-    const p = resolveAgentXPromptPath("gemini-cli");
-    expect(path.basename(p!)).toBe("agent-x.gemini.md");
+  test("-cli suffix is stripped (antigravity-cli → agent-x.antigravity.md)", () => {
+    const p = resolveAgentXPromptPath("antigravity-cli");
+    expect(path.basename(p!)).toBe("agent-x.antigravity.md");
   });
 
   test("unknown flavor in a fixture dir falls back to agent-x.claude-code.md", () => {

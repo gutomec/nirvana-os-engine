@@ -54,7 +54,7 @@
             "slug": { "type": "string" },
             "runtime": {
               "type": "string",
-              "description": "Required when type='agent-x' (claude-code, codex, antigravity-cli, gemini-cli)."
+              "description": "Required when type='agent-x' (claude-code, codex, antigravity-cli, ...)."
             }
           }
         },

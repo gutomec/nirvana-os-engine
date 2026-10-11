@@ -34,7 +34,7 @@ import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { runHeadless, runtimeAvailable, AUTONOMOUS_DIRECTIVE, LEDGER_DEFAULT_TIMEOUT_MS, type Runtime } from "../lib/host-agent-driver.ts";
-import { listRuntimes } from "../../_shared/lib/host-agent-driver.ts";
+import { listRuntimes, retiredRuntimeMessage } from "../../_shared/lib/host-agent-driver.ts";
 import { amplify } from "../lib/amplifier.ts";
 import { proxyEnrichBrief } from "../lib/brief-proxy.ts";
 import { resolveRoutingMode, routingModeOrigin } from "../../_shared/lib/routing-mode.ts";
@@ -474,7 +474,7 @@ if (!slug && !autoMode && !explicitTarget) {
   console.error("    --manifest=<path>       deliverables.json (expected paths)");
   console.error("    --project=<id>          Custom project ID (default: auto)");
   console.error("    --outputs-root=<dir>    Where final artifacts are written");
-  console.error("    --runtime=<name>        claude-code|codex|antigravity-cli|gemini-cli|kimi-cli|grok-cli|pi (default: claude-code)");
+  console.error("    --runtime=<name>        claude-code|codex|antigravity-cli|kimi-cli|grok-cli|pi (default: claude-code)");
   console.error("");
   console.error("  Exec (autopilot):");
   console.error("    --auto                  no business named: the router picks the best one for the brief");
@@ -657,11 +657,13 @@ const envDefault = defaultRuntimeSetting.value.trim();
 const firstAvailable = (): Runtime | null =>
   (listRuntimes().map(r => r.name).find(n => runtimeAvailable(n)) ?? null);
 const hostDefault: Runtime = resolveDefaultRuntime({ detectedHost, envDefault, normalize: normRuntime, firstAvailable }).runtime;
+// A default left on a retired runtime (gemini-cli) was skipped above, with the reason.
+const envDefaultUsed = !!envDefault && !retiredRuntimeMessage(envDefault);
 if (!detectedHost) {
-  const how = envDefault ? `execution.default_runtime=${hostDefault} (${describeSettingSource(defaultRuntimeSetting)})` : `first available on PATH: ${hostDefault}`;
+  const how = envDefaultUsed ? `execution.default_runtime=${hostDefault} (${describeSettingSource(defaultRuntimeSetting)})` : `first available on PATH: ${hostDefault}`;
   console.error(c("yellow", "⚠") + ` host runtime not identified — using ${how}.`
     + " Pin it with NIRVANA_DEFAULT_RUNTIME in .env, nrv config set execution.default_runtime <runtime>, --runtime, or by naming it in the brief.");
-  emit("x_host_runtime_undetected", { used: hostDefault, from: envDefault ? defaultRuntimeSetting.source : "path-scan", cwd: process.cwd() });
+  emit("x_host_runtime_undetected", { used: hostDefault, from: envDefaultUsed ? defaultRuntimeSetting.source : "path-scan", cwd: process.cwd() });
 }
 let runtimeDecision: RuntimeDecision = decideRuntime({
   brief, explicitRuntime, defaultRuntime: hostDefault,
@@ -2147,7 +2149,7 @@ if (wantExec) {
     session_id: res.sessionId, project_dir: projDir, project_root: projectRoot,
     outputs_root: oroot, zip_path: null, created_at: new Date().toISOString(),
     // Where the session was started: `nrv revise` resumes from the same folder,
-    // since claude and gemini keep a session under its working directory.
+    // since claude keeps a session under its working directory.
     workspace: runWorkspace ?? null,
     // The manifest travels with the session: without it `nrv revise` loses the
     // one completeness proof the system has (promised paths vs disk truth) and

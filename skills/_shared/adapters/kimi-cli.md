@@ -179,14 +179,14 @@ O driver extrai o texto final do assistant defensivamente dos eventos NDJSON (sc
 
 **Autenticação (não é env var do shell).** O Kimi **não lê** `MOONSHOT_API_KEY`/env do shell automaticamente. A credencial vem de uma de duas rotas:
 
-- **OAuth grátis** — `kimi` → `/login` com conta Kimi.com (sem API key). Rota **grátis e agêntica**; custo rastreado = **$0** (o driver reporta `costUsd: null`, igual a gemini/agy). Cota: janela rolante ~5h, ~300–1200 chamadas — checar `/usage`.
+- **OAuth grátis** — `kimi` → `/login` com conta Kimi.com (sem API key). Rota **grátis e agêntica**; custo rastreado = **$0** (o driver reporta `costUsd: null`, igual a agy). Cota: janela rolante ~5h, ~300–1200 chamadas — checar `/usage`.
 - **`~/.kimi-code/config.toml` (paga)** — bloco `[providers.<id>] type="openai" base_url=... api_key=...` apontando para Moonshot (`https://api.moonshot.ai/v1`, key `MOONSHOT_API_KEY`) ou OpenRouter. Custo = pay-per-token do provider.
 
 ---
 
 ## 9. Context Window & Compaction
 
-- Janela: **1M tokens** (Kimi K3 — maior que Claude/Codex, comparável ao Gemini/Antigravity).
+- Janela: **1M tokens** (Kimi K3 — maior que Claude/Codex, comparável ao Antigravity).
 - Compaction: a janela grande reduz a pressão por compaction em businesses long-running.
 - **Vantagem:** brief que consome >100K tokens (análise de código grande, document review extenso) roda sem truncamento agressivo.
 

@@ -3,7 +3,7 @@
 **Status:** existente
 **Idioma:** PT-BR
 
-O `nrv serve` recebe briefs por HTTP e os executa como `nrv dispatch --auto --exec` em processo filho, dentro de um diretório de sessão que o próprio servidor cria. O agente despachado é um runtime completo (Claude Code, Codex, Gemini CLI…) com shell: ele lê o que o usuário do processo lê e vê o que o ambiente do processo carrega. A pergunta de operação é, portanto, uma só: **o que o usuário e o ambiente do servidor conseguem alcançar?** O que está fora desse alcance não chega ao agente por pedido nenhum no brief; o que está dentro é o que as camadas abaixo restringem.
+O `nrv serve` recebe briefs por HTTP e os executa como `nrv dispatch --auto --exec` em processo filho, dentro de um diretório de sessão que o próprio servidor cria. O agente despachado é um runtime completo (Claude Code, Codex, Antigravity…) com shell: ele lê o que o usuário do processo lê e vê o que o ambiente do processo carrega. A pergunta de operação é, portanto, uma só: **o que o usuário e o ambiente do servidor conseguem alcançar?** O que está fora desse alcance não chega ao agente por pedido nenhum no brief; o que está dentro é o que as camadas abaixo restringem.
 
 O caso concreto que motivou esta página: o projeto em que o agente trabalha tem um `.env` que o agente não pode ler, e um brief pode pedir exatamente o conteúdo desse arquivo. Três camadas respondem, em ordem de força.
 

@@ -1,6 +1,6 @@
 # Agent quickstart: drive Nirvana-OS in one page
 
-You are a terminal agent (Claude Code, Codex, Gemini, Antigravity, …) on a
+You are a terminal agent (Claude Code, Codex, Antigravity, …) on a
 machine where Nirvana-OS is installed. This page is your contract. The full
 version lives in [`AGENTS.md`](./AGENTS.md) and per-skill `SKILL.md` files;
 read those when you need depth. This page is enough to operate correctly.

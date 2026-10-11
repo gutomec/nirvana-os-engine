@@ -155,7 +155,7 @@ export function workspaceDirective(workspace: string): string {
  * cwd when there is no repository (learn.chatgpt.com/docs/agent-configuration/
  * agents-md). Started in a run folder of a project that is not a repository, it
  * would lose the project's contract, so it is pointed at it. Claude Code and
- * Gemini CLI find theirs walking up from the run folder and are not told twice.
+ * Antigravity find theirs walking up from the run folder and are not told twice.
  */
 export function contractPointer(runtime: string, workspace: string, projectRoot: string | null): string {
   if (runtime !== "codex" || !projectRoot) return "";

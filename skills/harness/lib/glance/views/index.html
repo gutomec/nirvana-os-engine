@@ -732,7 +732,7 @@
           <div class="runs-empty">
             <i data-lucide="users" class="runs-empty-icon"></i>
             <p>No active agents.</p>
-            <p class="runs-empty-hint">Cards appear here in real time when Claude Code, Gemini-CLI, or Codex emit audit events. Make sure the auto-emit hooks are wired in <code>~/.claude/settings.json</code> and <code>~/.gemini/settings.json</code>.</p>
+            <p class="runs-empty-hint">Cards appear here in real time when Claude Code or Codex emit audit events. Make sure the auto-emit hooks are wired in <code>~/.claude/settings.json</code> and <code>~/.codex/hooks.json</code> (<code>nrv setup</code>).</p>
           </div>
         </template>
         <template x-for="agent in visibleAgents" :key="agent.trace_id">
@@ -1596,7 +1596,7 @@
         <div class="cost-empty-body">
           <div class="cost-empty-title">No cost telemetry recorded yet</div>
           <div class="cost-empty-hint">
-            The host-agent-driver auto-emits <code>cost_emission</code> on every LLM call (Claude Code reports usage; Codex/Gemini do not yet).
+            The host-agent-driver auto-emits <code>cost_emission</code> on every LLM call (Claude Code reports usage; Codex/Antigravity do not yet).
             Run any agent invocation through <code>callHostAgent</code>/<code>callHostAgentAsync</code> and the dashboard will populate.
           </div>
           <div class="cost-empty-hint cost-empty-muted">
@@ -1926,7 +1926,7 @@
 
         <!-- ══ Painel de REGRAS USE_*/NOT_USE_* ══ -->
         <div class="settings-body" x-show="settingsData && settingsActiveGroup === '__rules__'">
-          <p class="text-caption" style="margin-bottom:10px">Diga em português quando cada CLI deve ser usado. Ex.: <em>use codex quando precisar gerar imagens</em>, <em>nunca gemini para análise de codebase</em>. Precedência: flag explícita &gt; menção no brief &gt; veto (nunca) &gt; regra (use) &gt; runtime atual.</p>
+          <p class="text-caption" style="margin-bottom:10px">Diga em português quando cada CLI deve ser usado. Ex.: <em>use codex quando precisar gerar imagens</em>, <em>nunca agy para análise de codebase</em>. Precedência: flag explícita &gt; menção no brief &gt; veto (nunca) &gt; regra (use) &gt; runtime atual.</p>
           <div class="rules-list">
             <template x-for="(r, i) in rulesDraft" :key="i">
               <div class="rule-row">

@@ -5,7 +5,7 @@
 
 ## Context
 
-Orca (orca.dev) is a desktop and headless host for agentic work. It manages workspaces (git repos and plain folders), the terminals agents run in, an embedded browser, scheduled automations, public artifacts and paired remote machines. It installs status hooks into the same agent configuration files `nrv setup` writes to (Claude Code, Codex, Gemini, Antigravity, Grok), reads them into a sidebar that shows each pane's state, and offers an orchestration layer — Run (namespace and inbox), Task (a DAG with dependencies), Dispatch (one attempt in one terminal) — with `worker-start`, `worker_done`, `ask`/`reply`, `escalation`, `check --wait` and federation to paired servers.
+Orca (orca.dev) is a desktop and headless host for agentic work. It manages workspaces (git repos and plain folders), the terminals agents run in, an embedded browser, scheduled automations, public artifacts and paired remote machines. It installs status hooks into the same agent configuration files `nrv setup` writes to (Claude Code, Codex, Antigravity, Grok), reads them into a sidebar that shows each pane's state, and offers an orchestration layer — Run (namespace and inbox), Task (a DAG with dependencies), Dispatch (one attempt in one terminal) — with `worker-start`, `worker_done`, `ask`/`reply`, `escalation`, `check --wait` and federation to paired servers.
 
 Every concept the engine already has maps onto one of Orca's: a Nirvana project onto a workspace, a ledger run onto the workspace card and its board column, a seat or squad dispatch onto a worker terminal, `manifest.json` phases onto Tasks with `--deps`, `human_notification_required` onto an escalation, the Glance cockpit onto an embedded browser tab. Users who work in Orca should see all of it there.
 

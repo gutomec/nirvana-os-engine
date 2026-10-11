@@ -185,7 +185,7 @@ O driver extrai o objeto JSON final do stdout defensivamente; se o build não su
 
 **Autenticação — dois trilhos.** O engine é model-agnostic: o model vem SÓ da entrada `grok-cli:<model>` do cascade. A credencial vem de uma de duas rotas:
 
-- **Assinatura via `grok` login** — o Grok Build CLI logado numa conta xAI. Rota **agêntica de custo marginal $0** na assinatura; custo rastreado = **$0** (o driver reporta `costUsd: null`, igual a agy/gemini/kimi). É a rota que o squad **`grok-studio-nirvana`** usa.
+- **Assinatura via `grok` login** — o Grok Build CLI logado numa conta xAI. Rota **agêntica de custo marginal $0** na assinatura; custo rastreado = **$0** (o driver reporta `costUsd: null`, igual a agy/kimi). É a rota que o squad **`grok-studio-nirvana`** usa.
 - **API xAI via `XAI_API_KEY` (paga)** — chave no ambiente apontando para a API da xAI. Custo = pay-per-token.
 
 ---

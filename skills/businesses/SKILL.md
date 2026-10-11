@@ -19,7 +19,7 @@ metadata:
 
 > Requires the Nirvana-OS engine (`nrv` on PATH). If it is absent, use the `nirvana` skill, which installs it. This skill is not standalone.
 
-Multi-agent business orchestrator following `BUSINESS_PROTOCOL_V2.md` (the delta) over `BUSINESS_PROTOCOL_V1.md` (everything the delta does not change). Runtime-agnostic (Claude Code, Codex, Gemini-CLI). Zero external dependencies beyond the runtime and the centralized validators in `~/.nirvana/skills/_shared/`.
+Multi-agent business orchestrator following `BUSINESS_PROTOCOL_V2.md` (the delta) over `BUSINESS_PROTOCOL_V1.md` (everything the delta does not change). Runtime-agnostic (Claude Code, Codex, Antigravity). Zero external dependencies beyond the runtime and the centralized validators in `~/.nirvana/skills/_shared/`.
 
 ---
 
@@ -311,7 +311,7 @@ Escalation inside the business is the org chart: `reports_to` / `manages` and `o
 
 ## Writing contract (BP13)
 
-Every prose deliverable follows the writing contract appended to `AGENTS.md` / `CLAUDE.md` / `GEMINI.md`. The contract is auto-loaded by every runtime (Claude Code, Antigravity CLI, Gemini CLI, Codex) before the agent generates anything, so prevention happens at write time. No post-hoc correction loop, no separate skill invocation, no extra cost.
+Every prose deliverable follows the writing contract appended to `AGENTS.md` / `CLAUDE.md` / `GEMINI.md`. The contract is auto-loaded by every runtime (Claude Code, Antigravity CLI, Codex) before the agent generates anything, so prevention happens at write time. No post-hoc correction loop, no separate skill invocation, no extra cost.
 
 Employees that produce only technical artifacts (JSON, schemas, code) ignore the contract by content — none of the prose rules apply to non-prose output.
 

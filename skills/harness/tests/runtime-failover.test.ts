@@ -1,19 +1,19 @@
 // runtime-failover.test.ts — what the system does when a runtime is DEAD.
 //
-// Regression cover for the gemini-cli incident (2026-08): Google retired the
-// individual Code Assist tier, so the CLI authenticated and was then refused
-// (`IneligibleTierError`, pointing users at Antigravity). A live six-runtime
-// matrix caught it, and it exposed two defects of ours behind the external one:
+// Regression cover for the 2026-08 incident on the (since removed) Gemini CLI
+// runtime: Google retired its individual tier, so the CLI authenticated and
+// was then refused. A live six-runtime matrix caught it, and it exposed two
+// defects of ours behind the external one:
 //
-//   1. `IneligibleTierError` matched no pattern in classifyGemini — the verdict
-//      came back a generic `error`, which by policy does not rotate. The run
-//      died with a working runtime sitting right below it in the cascade.
+//   1. The refusal matched no pattern — the verdict came back a generic
+//      `error`, which by policy does not rotate. The run died with a working
+//      runtime sitting right below it in the cascade.
 //   2. The failure the user saw was "YOLO mode is enabled. All tool calls will
 //      be automatically approved." — benign chatter the CLI prints before the
 //      real cause. The ledger's last_error, the router's warning and the
 //      dispatch summary all led with it.
 //
-// The three tests below pin, in order: the cause survives the chatter; the EOL
+// The tests below pin, in order: the cause survives the chatter; an auth
 // surface classifies as auth; a dead runtime hands off instead of ending the run.
 import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
 import { describe, expect, test, beforeAll, afterAll } from "bun:test";
@@ -28,8 +28,9 @@ import { isInCooldown } from "../lib/cooldown-registry.ts";
 import { writeFakeCli } from "./helpers/fake-cli.ts";
 import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
-// Verbatim stderr from the failed gemini-cli run of the 2026-08-05 matrix.
-const REAL_GEMINI_STDERR = [
+// Verbatim stderr from the failed run of the 2026-08-05 matrix: benign chatter
+// first, the real cause after it, stack frames last.
+const REAL_REFUSAL_STDERR = [
   "YOLO mode is enabled. All tool calls will be automatically approved.",
   "Error authenticating: IneligibleTierError: This client is no longer supported for Gemini Code Assist for individuals. To continue using Gemini, please migrate to the Antigravity suite of products: https://antigravity.google",
   "    at throwIneligibleOrProjectIdError (file:///opt/homebrew/lib/node_modules/@google/gemini-cli/bundle/chunk-GPVT36PL.js:307463:11)",
@@ -38,7 +39,7 @@ const REAL_GEMINI_STDERR = [
 
 describe("salientError — the cause outranks the chatter", () => {
   test("skips the benign headline and reports the real failure", () => {
-    const msg = salientError(REAL_GEMINI_STDERR, "gemini failed");
+    const msg = salientError(REAL_REFUSAL_STDERR, "runtime failed");
     expect(msg).toContain("IneligibleTierError");
     expect(msg).not.toContain("YOLO mode is enabled");
   });
@@ -68,18 +69,12 @@ describe("salientError — the cause outranks the chatter", () => {
   });
 });
 
-describe("classify — a retired runtime tier is an auth failure, not a generic error", () => {
-  test("IneligibleTierError classifies as auth_failed and names the successor", () => {
-    const v = classify("gemini-cli", { ok: false, exitCode: 1, stderr: REAL_GEMINI_STDERR, error: "", result: "" } as any);
-    expect(v.kind).toBe("auth_failed");
-    // The user cannot re-auth their way out of a retired tier: the hint has to
-    // point at the runtime that replaced it.
-    expect((v as any).hint).toContain("antigravity-cli");
-  });
-
+describe("classify — a refused credential is an auth failure, not a generic error", () => {
   test("`Error authenticating:` alone is enough — the old regex wanted `authentication failed`", () => {
-    const v = classify("gemini-cli", { ok: false, exitCode: 1, stderr: "Error authenticating: bad token", error: "", result: "" } as any);
-    expect(v.kind).toBe("auth_failed");
+    for (const runtime of ["codex", "antigravity-cli"] as const) {
+      const v = classify(runtime, { ok: false, exitCode: 1, stderr: "Error authenticating: bad token", error: "", result: "" } as any);
+      expect(v.kind, runtime).toBe("auth_failed");
+    }
   });
 });
 
@@ -92,21 +87,21 @@ describe("cascade — a dead runtime hands off instead of ending the run", () =>
   beforeAll(() => {
     fs.mkdirSync(BIN, { recursive: true });
     fs.mkdirSync(path.join(PROJ, "outputs"), { recursive: true });
-    // `gemini` reproduces the retired tier: the real stderr, exit 1. On Windows
+    // `codex` is refused at login: chatter, then the cause, exit 1. On Windows
     // these land as `.cmd` launchers — the same shape npm installs a real agent
     // CLI as — so the driver's own .cmd handling is exercised, not assumed.
-    writeFakeCli(BIN, "gemini", `
+    writeFakeCli(BIN, "codex", `
       try { await Bun.stdin.text(); } catch {}
-      console.error(${JSON.stringify(REAL_GEMINI_STDERR)});
+      console.error(${JSON.stringify("YOLO mode is enabled.\nError authenticating: 401 Unauthorized, run `codex login`")});
       process.exit(1);
     `);
-    // `agy` is the successor and works.
+    // `agy` is next in the cascade and works.
     writeFakeCli(BIN, "agy", `
       try { await Bun.stdin.text(); } catch {}
       console.log(JSON.stringify({ response: "guide written" }));
       process.exit(0);
     `);
-    fs.writeFileSync(path.join(PROJ, ".env"), "LLM_CASCADE=gemini-cli,antigravity-cli\n");
+    fs.writeFileSync(path.join(PROJ, ".env"), "LLM_CASCADE=codex,antigravity-cli\n");
     process.env.PATH = `${BIN}${path.delimiter}${process.env.PATH}`;
     process.env.HARNESS_LOGS_DIR = path.join(TMP, "logs");
   });
@@ -121,7 +116,7 @@ describe("cascade — a dead runtime hands off instead of ending the run", () =>
   });
 
   test("shims are the ones being exercised, not any real CLI on this machine", () => {
-    expect(runtimeAvailable("gemini-cli")).toBe(true);
+    expect(runtimeAvailable("codex")).toBe(true);
     expect(runtimeAvailable("antigravity-cli")).toBe(true);
     // The probe must answer about the CURRENT PATH. Under Bun a spawn without an
     // explicit `env` uses the environment captured at process start, so this
@@ -142,7 +137,7 @@ describe("cascade — a dead runtime hands off instead of ending the run", () =>
 
   test("auth failure rotates to the next runtime and the work completes", () => {
     const res = runWithCascade({
-      runtime: "gemini-cli",
+      runtime: "codex",
       prompt: "write a short code-review guide",
       brief: "write a short code-review guide",
       cwd: PROJ,
@@ -153,13 +148,13 @@ describe("cascade — a dead runtime hands off instead of ending the run", () =>
 
     expect(res.ok).toBe(true);
     expect(res.finalRuntime).toBe("antigravity-cli");
-    expect(res.handoffs.map(h => `${h.from}->${h.to}`)).toContain("gemini-cli->antigravity-cli");
+    expect(res.handoffs.map(h => `${h.from}->${h.to}`)).toContain("codex->antigravity-cli");
   });
 
   test("the dead runtime is cooled down, so no later step of the run picks it again", () => {
-    // The live incident hit gemini three times in one run (route, retry, agent-x)
-    // because nothing recorded that it was down.
-    expect(isInCooldown(PROJ, "gemini-cli")).toBe(true);
+    // The live incident hit the dead runtime three times in one run (route,
+    // retry, agent-x) because nothing recorded that it was down.
+    expect(isInCooldown(PROJ, "codex")).toBe(true);
     expect(isInCooldown(PROJ, "antigravity-cli")).toBe(false);
   });
 
@@ -169,8 +164,8 @@ describe("cascade — a dead runtime hands off instead of ending the run", () =>
       .split("\n").filter(Boolean).map(l => parseAuditLine(l));
     const auth = events.find(e => e.event === "runtime_auth_failed");
     expect(auth).toBeDefined();
-    expect(auth.runtime).toBe("gemini-cli");
-    expect(auth.hint).toContain("antigravity-cli");
+    expect(auth.runtime).toBe("codex");
+    expect(auth.hint).toContain("Codex auth");
     expect(events.some(e => e.event === "runtime_handoff" && e.to === "antigravity-cli")).toBe(true);
   });
 });

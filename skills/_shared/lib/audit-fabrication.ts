@@ -1,7 +1,7 @@
 /**
  * audit-fabrication.ts — heuristic detector for fabricated audit events.
  *
- * Some agents (notably Gemini-CLI without hooks) write audit events directly
+ * Some agents (an agent without hooks, typically) write audit events directly
  * via fs.appendFile, bypassing the audit.emit validator. They invent event
  * names, fabricate timestamps in artificial increments, and pretend tools were
  * dispatched without leaving evidence.
@@ -15,7 +15,7 @@
  *   +2   5+ events with timestamps in exact 5/10/15-minute increments
  *   +2   3+ consecutive events with `host: null`
  *   +1   delivered=true but ZERO `tool_invoked` / `artifact_touched` / `bash_completed` before it
- *   +2   ZERO events from any known hook host (gemini-cli-hook / claude-code-hook / fs-watch)
+ *   +2   ZERO events from any known hook host (claude-code-hook / codex-hook / fs-watch)
  */
 
 // Mirror of audit.js ALLOWED_EVENTS (kept in sync manually — these are events
@@ -34,13 +34,16 @@ const ALLOWED_EVENTS = new Set<string>([
   "research_completed", "briefing_completed", "no_match",
   "local_execution_started", "local_execution_completed",
   "delivered", "gate_passed",
-  // Hook-emitted events (audit-emit-from-hook.ts + gemini-session-start.ts)
+  // Hook-emitted events (audit-emit-from-hook.ts; session_started also comes
+  // from the Gemini CLI hook, in audit logs written before it was removed)
   "tool_invoked", "artifact_touched", "bash_completed",
   "session_started",
   // fs-watch daemon events (watch-fs.ts)
   "watch_started", "watch_stopped",
 ]);
 
+// `gemini-cli-hook` stays: audit logs written while the Gemini CLI was a
+// runtime carry it, and a real run from then must not read as fabricated.
 const KNOWN_HOOK_HOSTS = new Set<string>(["claude-code-hook", "gemini-cli-hook", "codex-hook", "fs-watch"]);
 
 // Events the harness protocol itself emits directly (nrv audit emit,

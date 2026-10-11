@@ -15,7 +15,7 @@
 #          hooks), then kills it on exit.
 #
 # The bridge skill (global) is always available via external_dirs; this wrapper
-# adds the per-project skills + the paranoid fs-watch, mirroring nrv-gemini.
+# adds the per-project skills + the paranoid fs-watch.
 #
 # Usage: identical to `hermes chat`. Same args. Just type `nrv-hermes` instead.
 

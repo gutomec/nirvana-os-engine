@@ -6,7 +6,7 @@ Install Nirvana-OS: the orchestration layer that turns your terminal agent into 
 npx @nirvana-os/cli
 ```
 
-One command. It installs the engine, links it into every agent runtime it finds (Claude Code, Codex, Gemini-CLI, Antigravity), and is safe to run again any time.
+One command. It installs the engine, links it into every agent runtime it finds (Claude Code, Codex, Antigravity), and is safe to run again any time.
 
 ## What you get
 

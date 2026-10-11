@@ -72,7 +72,7 @@ describe("the interactive command per runtime", () => {
     expect(interactiveArgv({ runtime: "claude-code", yolo: true, model: "opus", addDirs: ["/p"] })).toEqual(["claude", "--dangerously-skip-permissions", "--model", "opus", "--add-dir", "/p"]);
     expect(interactiveArgv({ runtime: "claude-code", yolo: false, model: "opus" })).toEqual(["claude", "--permission-mode", "acceptEdits", "--model", "opus"]);
     expect(interactiveArgv({ runtime: "codex", yolo: true, model: "gpt-5" })).toEqual(["codex", "--dangerously-bypass-approvals-and-sandbox", "-m", "gpt-5"]);
-    expect(interactiveArgv({ runtime: "gemini-cli", yolo: false, model: "g" })).toEqual(["gemini", "--approval-mode", "auto_edit", "-m", "g"]);
+    expect(interactiveArgv({ runtime: "gemini-cli" as any, yolo: true })).toBeNull();
     expect(interactiveArgv({ runtime: "antigravity-cli", yolo: true, model: "a" })).toEqual(["agy", "--dangerously-skip-permissions", "--model", "a"]);
     expect(interactiveArgv({ runtime: "grok-cli", yolo: true, model: "x" })).toEqual(["grok", "--always-approve", "-m", "x"]);
   });
@@ -294,9 +294,12 @@ describe("the workspace trust record", () => {
       expect(toml).toContain(`[projects.${JSON.stringify(cwd)}]\ntrust_level = "trusted"`);
       expect(preTrustWorkspace("codex", cwd, env)).toEqual([]);
       expect(fs.readFileSync(path.join(home, ".codex", "config.toml"), "utf8")).toBe(toml);
-      // gemini: the trusted-folders map.
-      expect(preTrustWorkspace("gemini-cli", cwd, env)).toEqual([path.join(home, ".gemini", "trustedFolders.json")]);
-      expect(JSON.parse(fs.readFileSync(path.join(home, ".gemini", "trustedFolders.json"), "utf8"))[cwd]).toBe("TRUST_FOLDER");
+      // qwen-code: the trusted-folders map, in its own home.
+      expect(preTrustWorkspace("qwen-code", cwd, env)).toEqual([path.join(home, ".qwen", "trustedFolders.json")]);
+      expect(JSON.parse(fs.readFileSync(path.join(home, ".qwen", "trustedFolders.json"), "utf8"))[cwd]).toBe("TRUST_FOLDER");
+      // The Gemini CLI is no longer a runtime: its trust file is never written.
+      expect(preTrustWorkspace("gemini-cli" as any, cwd, env)).toEqual([]);
+      expect(fs.existsSync(path.join(home, ".gemini"))).toBe(false);
       // a runtime with no known record writes nothing.
       expect(preTrustWorkspace("grok-cli", cwd, env)).toEqual([]);
     } finally {

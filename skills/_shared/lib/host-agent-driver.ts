@@ -15,14 +15,15 @@
  * there again — the pre-unification split is exactly the divergence this
  * module closes.
  *
- * Adapters (9): claude-code, codex, gemini-cli, antigravity-cli, kimi-cli,
- * grok-cli, pi, qwen-code, opencode.
+ * Adapters (8): claude-code, codex, antigravity-cli, kimi-cli, grok-cli, pi,
+ * qwen-code, opencode. Gemini CLI (`gemini-cli`) was removed: a config that
+ * still names it reads as an unavailable runtime (retiredRuntimeMessage).
  *
  * PROMPT DELIVERY (ARG_MAX safety): Linux caps a single argv element at
  * MAX_ARG_STRLEN (~128 KiB) and macOS shares a ~256 KiB pool across argv+env,
  * so a large prompt must NEVER travel as one argv string. Each adapter uses
  * its verified best channel:
- *   - STDIN when the CLI documents it (claude, codex, gemini, qwen).
+ *   - STDIN when the CLI documents it (claude, codex, qwen).
  *   - A native prompt-file flag when the CLI has one (grok --prompt-file).
  *   - Otherwise argv for small prompts, degrading to a temp prompt file plus
  *     a short bootstrap argv ("read the file and execute it") above
@@ -34,8 +35,8 @@
  * so every adapter passes its CLI's autonomy flag by default, in BOTH layers.
  * Every one passes its approval bypass, Claude Code included (per-CLI --help
  * audits, 2026-08-26: claude --dangerously-skip-permissions, codex
- * --dangerously-bypass-approvals-and-sandbox, gemini --approval-mode yolo, agy
- * --dangerously-skip-permissions, grok --always-approve). Claude Code ran in
+ * --dangerously-bypass-approvals-and-sandbox, agy --dangerously-skip-permissions,
+ * grok --always-approve). Claude Code ran in
  * auto mode for a while (0.14.9), where a classifier decides each action: a
  * worker must reach any folder and run any command its brief needs, as the
  * owner decided, and auto mode also falls back to refusing everything on a
@@ -151,7 +152,7 @@ function clampPersona(persona: string, cliName: string, max: number = PERSONA_MA
  * Benign chatter agent CLIs print to stderr before (and after) the real failure.
  * A failed run reports ONLY `error` — quota-detector classifies from that string
  * and the ledger shows it to the user — so taking the first N bytes of stderr let
- * noise like gemini-cli's "YOLO mode is enabled" headline the failure and, when
+ * noise like qwen-code's "YOLO mode is enabled" headline the failure and, when
  * the chatter was long enough, push the actual cause out of the window entirely.
  * Then nothing classifies it and the cascade cannot fail over. Match on whole
  * lines only: a line that merely CONTAINS one of these is still a real message.
@@ -638,8 +639,7 @@ const RUNTIMES: RuntimeAdapter[] = [
     envHints: ["CODEX_HOME"],
   },
   {
-    // Antigravity CLI (`agy`) — replaces gemini-cli for the consumer tier after
-    // 2026-06-18. Same Google backend, different binary + flags. `agy --help`
+    // Antigravity CLI (`agy`) — Google's agent CLI (Gemini models). `agy --help`
     // (audited 2026-08-06): -p/--print runs a single prompt non-interactively;
     // NO stdin channel and NO prompt-file flag documented, so large prompts
     // degrade to the temp-file bootstrap. --dangerously-skip-permissions for
@@ -652,23 +652,6 @@ const RUNTIMES: RuntimeAdapter[] = [
       const merged = persona ? `${persona}\n\n---\n\n${userMsg}` : userMsg;
       const autonomy = headlessSkipPermissions() ? ["--dangerously-skip-permissions"] : [];
       return argvOrPromptFile(merged, (p) => ["-p", p, ...autonomy]);
-    },
-    parseStdout(stdout) { return stdout.trim(); },
-    envHints: ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
-  },
-  {
-    name: "gemini-cli",
-    cli: "gemini",
-    // `gemini --help` (audited 2026-08-06): "-p ... Appended to input on
-    // stdin (if any)" — stdin is a documented prompt channel. The prompt goes
-    // via STDIN; `-p ""` keeps headless mode without duplicating content.
-    // Autonomy (`gemini --help`, audited 2026-08-26): "--approval-mode ...
-    // yolo (auto-approve all tools)" — the same flag runGemini passes.
-    buildCall(persona, userMsg) {
-      const merged = persona ? `${persona}\n\n---\n\n${userMsg}` : userMsg;
-      const args = ["-p", ""];
-      if (headlessSkipPermissions()) args.push("--approval-mode", "yolo");
-      return { args, input: merged };
     },
     parseStdout(stdout) { return stdout.trim(); },
     envHints: ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
@@ -858,7 +841,7 @@ export function callHostAgent(persona: string, userMessage: string, opts: CallOp
  *    on until the inactivity budget.
  *
  * `heartbeatMs` defaults to 0 — DISARMED — because most adapters here are not
- * streaming: `claude -p --output-format json`, gemini, grok, kimi and
+ * streaming: `claude -p --output-format json`, grok, kimi and
  * antigravity all print one JSON object at the END of the call. For those,
  * "no bytes yet" is not a stall signal, it is the normal shape of a call in
  * progress, and the old 60 s default was a 60-second wall clock on an LLM
@@ -1144,8 +1127,26 @@ export function callHostAgentAsync(persona: string, userMessage: string, opts: C
 // ══════════════════════════════════════════════════════════════════════════
 
 export type Runtime =
-  | "claude-code" | "codex" | "gemini-cli" | "antigravity-cli"
+  | "claude-code" | "codex" | "antigravity-cli"
   | "kimi-cli" | "grok-cli" | "pi" | "qwen-code" | "opencode";
+
+/**
+ * Runtimes the engine no longer drives. A setting, a USE_* rule or an
+ * LLM_CASCADE entry written for one of them is not an error to crash on: it is
+ * an unavailable runtime, said in these words, and the usual fallback (the
+ * next cascade entry, the next installed runtime) takes over.
+ */
+const RETIRED_RUNTIMES: Record<string, string> = {
+  "gemini-cli": "Gemini CLI is no longer supported; pick another runtime",
+};
+
+/** The notice for a retired runtime name (`gemini-cli`, `gemini`, `GEMINI_CLI`),
+ *  or null when the name is not a retired runtime. */
+export function retiredRuntimeMessage(name: unknown): string | null {
+  const key = String(name ?? "").trim().toLowerCase().replace(/_/g, "-");
+  if (key === "gemini") return RETIRED_RUNTIMES["gemini-cli"];
+  return Object.prototype.hasOwnProperty.call(RETIRED_RUNTIMES, key) ? RETIRED_RUNTIMES[key] : null;
+}
 
 export interface RunHeadlessOpts {
   runtime: Runtime;
@@ -1160,8 +1161,7 @@ export interface RunHeadlessOpts {
   /** Tool allowlist. Default: file + web tools, no Bash. */
   allowedTools?: string[];
   /** An answer-only call: the child gets no tools at all where the CLI can
-   *  say so (claude `--tools ""`, codex's read-only sandbox, gemini's plan
-   *  mode). A decision step that only returns JSON has nothing to do with a
+   *  say so (claude `--tools ""`, codex's read-only sandbox). A decision step that only returns JSON has nothing to do with a
    *  tool, and a model holding tools reports its work instead of answering.
    *  Runtimes without such a switch run as before; the caller contains them
    *  with an empty working directory. */
@@ -1364,13 +1364,12 @@ export interface RunHeadlessResult {
  * squad dir on top of cwd; under a sandbox those grants are what lets a seat
  * read its playbooks and write its deliverables. A runtime without a flag gets
  * a warning on the result, never silence. Audited on the installed CLIs,
- * 2026-09-05 (claude, codex 0.153, gemini, agy); qwen-code is a gemini-cli
- * fork and takes the same flag, with a retry without it for older builds.
+ * 2026-09-05 (claude, codex 0.153, agy); qwen-code takes
+ * `--include-directories`, with a retry without it for older builds.
  */
 export const RUNTIME_DIR_GRANT_FLAG: Record<Runtime, string | null> = {
   "claude-code": "--add-dir",
   codex: "--add-dir",
-  "gemini-cli": "--include-directories",
   "antigravity-cli": "--add-dir",
   "qwen-code": "--include-directories",
   "kimi-cli": null,
@@ -1583,7 +1582,7 @@ function runWithLedgerHeartbeat(opts: RunHeadlessOpts, runner: (o: RunHeadlessOp
 //   codex: JSONL event stream; a terminal `error` event or `turn.failed`
 //     with no subsequent `turn.completed` (a later completed turn = internal
 //     retry succeeded, clears the failure).
-//   gemini-cli / qwen-code: single JSON object; an `error` field in the
+//   qwen-code: single JSON object; an `error` field in the
 //     envelope marks a failed run even on exit 0.
 //   antigravity-cli: single JSON object; `is_error: true` or an `error`
 //     field.
@@ -1736,7 +1735,7 @@ function runClaudeCode(opts: RunHeadlessOpts): RunHeadlessResult {
   };
 }
 
-// codex / gemini lack a --append-system-prompt flag, so we fold the directive
+// codex / qwen lack a --append-system-prompt flag, so we fold the directive
 // into the user prompt as a preamble for those runtimes.
 function withPreamble(opts: RunHeadlessOpts): string {
   return opts.appendSystemPrompt ? `${opts.appendSystemPrompt}\n\n---\n\n${opts.prompt}` : opts.prompt;
@@ -1892,67 +1891,7 @@ function runCodex(opts: RunHeadlessOpts): RunHeadlessResult {
   };
 }
 
-// Gemini CLI. We set a known --session-id on first run so revise can resume it
-// deterministically with -r. auto_edit auto-approves file writes (yolo = all).
-// Prompt via STDIN (verified `gemini --help`: "-p ... Appended to input on
-// stdin (if any)") — `-p ""` keeps headless mode, content rides stdin, argv
-// stays small no matter the prompt size.
-function runGemini(opts: RunHeadlessOpts): RunHeadlessResult {
-  const started = Date.now();
-  const sid = opts.sessionId || randomUUID();
-  const args = ["-p", "", "-o", "json", "--skip-trust"];
-  if (opts.sessionId) args.push("-r", opts.sessionId);
-  else args.push("--session-id", sid);
-  const gmModel = opts.model ?? resolveSystemModel("gemini-cli");
-  if (gmModel) args.push("--model", gmModel);
-  // Workspace grants (`gemini --help`, audited 2026-09-05: "--include-directories
-  // Additional directories to include in the workspace", repeatable).
-  for (const d of opts.addDirs ?? []) args.push("--include-directories", d);
-  // Trust by default (--yolo); --safe (opts.yolo===false) → auto_edit; an
-  // answer-only call → plan, which `gemini --help` (audited 2026-09-29) calls
-  // "read-only mode".
-  args.push("--approval-mode", opts.noTools ? "plan" : opts.yolo === false ? "auto_edit" : "yolo");
-
-  const r = driverSpawnSync("gemini", args, {
-    cwd: opts.cwd,
-    input: withPreamble(opts),
-    encoding: "utf8",
-    ...(typeof opts.timeoutMs === "number" ? { timeout: opts.timeoutMs } : {}),
-    maxBuffer: 64 * 1024 * 1024,
-  });
-
-  const durationMs = Date.now() - started;
-  const exitCode = r.status ?? (r.signal ? 124 : 1);
-  const stderr = (r.stderr || "").trim();
-
-  const rawStdout = (r.stdout || "").trim();
-  let sessionId: string | null = sid;
-  let envelopeError: string | null = null;
-  let costUsd: number | null = null;
-  try {
-    const j = JSON.parse(rawStdout);
-    sessionId = j.session_id || j.sessionId || sid;
-    // Failure contract: an `error` field in the envelope = failed run even
-    // when the process exits 0.
-    if (j.error != null) envelopeError = envelopeErrorMessage(j.error);
-    if (typeof j.total_cost_usd === "number" && Number.isFinite(j.total_cost_usd)) costUsd = j.total_cost_usd;
-  } catch { /* keep sid */ }
-  // CRITICAL: keep the FULL JSON stdout in result, not just j.response — the
-  // cost-estimator needs the `stats.models.*.tokens` block to compute spend.
-  // Slicing to j.response throws that data away and forces $0 tracking.
-  const result = rawStdout;
-
-  const ok = exitCode === 0 && envelopeError === null;
-  return {
-    ok, runtime: "gemini-cli", sessionId, result,
-    costUsd, ...(costUsd === null ? { costUnavailable: true } : {}),
-    exitCode, stderr, durationMs,
-    error: ok ? undefined : (envelopeError || salientError(stderr, "gemini failed")),
-  };
-}
-
-// Antigravity CLI (`agy`). Replaces gemini-cli for consumer tier after 2026-06-18.
-// Same Google backend (Gemini models), different binary + flag conventions.
+// Antigravity CLI (`agy`), Google's agent CLI (Gemini models).
 // Prompt delivery: `agy --help` (audited 2026-08-06) documents NO stdin
 // channel and NO prompt-file flag — argv for small prompts, temp-file
 // bootstrap above MAX_ARGV_PROMPT_BYTES. Note: the bootstrap needs the child
@@ -1964,7 +1903,7 @@ function runAntigravity(opts: RunHeadlessOpts): RunHeadlessResult {
   const sid = opts.sessionId || randomUUID();
   // agy headless: -p / --print / --prompt all accept the prompt as argv value.
   // Output formats: "json" (single object) or "stream-json" (NDJSON events).
-  // We use single-object json for parity with runGemini/runClaudeCode.
+  // We use single-object json for parity with runClaudeCode.
   // Resume = --continue (most recent conversation); we can't set our own id
   // upfront. Autonomy = --dangerously-skip-permissions (without it agy hangs
   // waiting for approval).
@@ -2244,7 +2183,7 @@ function runGrok(opts: RunHeadlessOpts): RunHeadlessResult {
 // "<uuid>", ...} and the assistant text in `message_end` events with
 // message.content = [{type:"text",text}]. Deterministic session via
 // `--session-id <uuid>` ("exact project session ID, creating it if missing")
-// — same pattern as runGemini: we generate the id on the 1st run and `nrv
+// — we generate the id on the 1st run and `nrv
 // revise` resumes with the SAME id. `--append-system-prompt` exists (the
 // directive goes as a REAL system prompt, not folded into the user prompt).
 //
@@ -2544,8 +2483,6 @@ function runConfined(opts: RunHeadlessOpts): RunHeadlessResult {
       return runClaudeCode(opts);
     case "codex":
       return runCodex(opts);
-    case "gemini-cli":
-      return runGemini(opts);
     case "antigravity-cli":
       return runAntigravity(opts);
     case "kimi-cli":
@@ -2558,12 +2495,15 @@ function runConfined(opts: RunHeadlessOpts): RunHeadlessResult {
       return runQwen(opts);
     case "opencode":
       return runOpencode(opts);
-    default:
+    default: {
+      const retired = retiredRuntimeMessage(opts.runtime);
+      const known = "claude-code | codex | antigravity-cli | kimi-cli | grok-cli | pi | qwen-code | opencode";
       return {
         ok: false, runtime: opts.runtime, sessionId: null, result: "", costUsd: null, costUnavailable: true,
         exitCode: 2, stderr: "", durationMs: 0,
-        error: `unknown runtime '${opts.runtime}'. Use claude-code | codex | gemini-cli | antigravity-cli | kimi-cli | grok-cli | pi | qwen-code | opencode.`,
+        error: retired ? `${retired} (${known}).` : `unknown runtime '${opts.runtime}'. Use ${known}.`,
       };
+    }
   }
 }
 
@@ -2583,7 +2523,6 @@ export function listRuntimes(): { name: Runtime; cli: string }[] {
 const RUNTIME_BINS: Record<Runtime, string> = {
   "claude-code": "claude",
   "codex": "codex",
-  "gemini-cli": "gemini",
   "antigravity-cli": "agy",
   "kimi-cli": "kimi",
   "grok-cli": "grok",
@@ -2595,7 +2534,11 @@ const RUNTIME_BINS: Record<Runtime, string> = {
 /** True if the runtime's CLI binary is on PATH. Cross-platform: uses `where`
  * on Windows, `which` elsewhere. */
 export function runtimeAvailable(runtime: Runtime): boolean {
-  const bin = RUNTIME_BINS[runtime] ?? "gemini";
+  // An unknown name is NOT installed, and neither is a retired one (gemini-cli):
+  // the old `?? "gemini"` fallback made any typo report whatever gemini
+  // reported, so a typo or an old config could pass an availability gate.
+  const bin = Object.prototype.hasOwnProperty.call(RUNTIME_BINS, runtime) ? RUNTIME_BINS[runtime] : undefined;
+  if (!bin) return false;
   const probe = process.platform === "win32" ? "where" : "which";
   // `env` is passed EXPLICITLY: under Bun a spawn without it uses the
   // environment captured at process start, not the current `process.env`. The

@@ -166,7 +166,7 @@ function loadHostDriver() {
 
 /**
  * callAgent — dispatch one round through the HOST runtime (Claude Code,
- * Codex, Gemini CLI, etc.). We do NOT specify model or agent — those are
+ * Codex, Antigravity, etc.). We do NOT specify model or agent — those are
  * the host's responsibility. Persona is passed as system prompt prefix.
  */
 async function callAgent(_client, role, userMessage) {

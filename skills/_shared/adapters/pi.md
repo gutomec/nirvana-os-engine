@@ -152,8 +152,8 @@ pi -p --mode json --session-id <uuid> --provider <provider> --model <model> --ap
 
 Flags usadas pelo driver (todas confirmadas no `pi --help` 0.82.1 + run real):
 - `-p --mode json` — event stream JSONL: header `{"type":"session","version":3,"id":"<uuid>","timestamp","cwd"}` + eventos (`agent_start`, `turn_start/end`, `message_start/update/end`, `tool_execution_*`, `agent_end`, `agent_settled`). O texto do assistant vem nos `message_end` (`message.content = [{type:"text",text}]`). **Builds sem `--mode`** → o driver detecta o erro de flag e **re-executa em print mode `-p`** (texto puro no stdout).
-- `--session-id <uuid>` — sessão DETERMINÍSTICA ("exact project session ID, creating it if missing"): o driver gera o uuid no 1º run e o `nrv revise` retoma passando o MESMO id (padrão runGemini). Alternativas: `--session <path|id>` (lookup por UUID parcial), `--fork <path|id>` (branch), `-c/--continue` (mais recente).
-- `--append-system-prompt <text>` — o `AUTONOMOUS_DIRECTIVE` vai como system prompt DE VERDADE (não dobrado no prompt do usuário como em codex/gemini/kimi/grok).
+- `--session-id <uuid>` — sessão DETERMINÍSTICA ("exact project session ID, creating it if missing"): o driver gera o uuid no 1º run e o `nrv revise` retoma passando o MESMO id. Alternativas: `--session <path|id>` (lookup por UUID parcial), `--fork <path|id>` (branch), `-c/--continue` (mais recente).
+- `--append-system-prompt <text>` — o `AUTONOMOUS_DIRECTIVE` vai como system prompt DE VERDADE (não dobrado no prompt do usuário como em codex/kimi/grok).
 - `--model <pattern>` / `--provider <name>` — vêm SÓ da entrada `pi:<model>@<provider>` do cascade, nunca hardcoded. Sem eles, vale o default da config do usuário do pi (não necessariamente `google`, o default de fábrica).
 - `--approve` / `--no-approve` — trust nos arquivos locais do projeto (ver §5).
 - Prompt como argumento posicional; stdin também é aceito como conteúdo anexado (`cat file | pi -p "..."`) — cuidado em shells interativos: sem EOF no stdin o pi BLOQUEIA esperando input (o spawnSync do driver fecha o stdin, então o dispatch não sofre disso; em teste manual use `< /dev/null`).

@@ -18,8 +18,8 @@
 // It guessed from a VENDOR env var. `ANTHROPIC_MODEL` is set on many machines
 // and has nothing to do with Nirvana, and the lookup below it ignored the
 // runtime. Measured: with `ANTHROPIC_MODEL=claude-opus-5` exported, the
-// resolver answered `opus` for all nine runtimes, so the driver ran
-// `gemini --model opus`, `agy --model opus`, `pi --model opus`,
+// resolver answered `opus` for every runtime, so the driver ran
+// `agy --model opus`, `pi --model opus`,
 // `qwen --model opus` — model ids those vendors do not have. Only the codex
 // adapter guarded itself (`isOpenAiModelId`), and the Orca worker path did not
 // even do that.
@@ -72,7 +72,7 @@ export function toAlias(model: string): string {
  *
  * The `runtime` parameter is kept for callers and for symmetry with
  * `resolvePinnedEffort`; the pin is runtime-independent by design, because a
- * user who writes `NIRVANA_MODEL=gpt-5.3-codex` and then dispatches gemini has
+ * user who writes `NIRVANA_MODEL=gpt-5.3-codex` and then dispatches agy has
  * made a mistake the engine should surface, not silently rewrite.
  */
 export function resolveSystemModel(_runtime?: string): string | null {

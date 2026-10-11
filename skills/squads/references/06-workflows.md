@@ -135,7 +135,6 @@ Subagent spawning mechanics and parallelism behavior vary by runtime:
 | Runtime | See |
 |---------|-----|
 | Claude Code | [_shared/adapters/claude-code.md §7](../../_shared/adapters/claude-code.md#7-subagent-spawning) |
-| Gemini CLI | [_shared/adapters/gemini-cli.md §7](../../_shared/adapters/gemini-cli.md#7-subagent-spawning) |
 | Codex | [_shared/adapters/codex.md §7](../../_shared/adapters/codex.md#7-subagent-spawning) |
 | Antigravity | [_shared/adapters/antigravity-cli.md §7](../../_shared/adapters/antigravity-cli.md#7-subagent-spawning) |
 | Kimi | [_shared/adapters/kimi-cli.md §7](../../_shared/adapters/kimi-cli.md#7-subagent-spawning) |

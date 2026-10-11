@@ -58,7 +58,7 @@ export type AgentStatus =
 export interface AgentState {
   trace_id: string;
   label: string;                  // host + cwd basename (or session slice fallback)
-  host: string;                    // e.g., "claude-code", "antigravity-cli", "gemini-cli", "fs-watch"
+  host: string;                    // e.g., "claude-code", "antigravity-cli", "codex-hook", "fs-watch"
   caller_id: string | null;        // e.g., "claude-code-transcript" → backfill, not realtime
   is_backfill: boolean;            // true if all events come from transcript importer
   cwd: string | null;

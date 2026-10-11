@@ -36,7 +36,7 @@ root. `nrv audit where` prints the resolved root and the reason.
 ## 2. What `nrv init` writes
 
 `AGENTS.md`, `CLAUDE.md`, `GEMINI.md` — one contract in three filenames, so
-every runtime finds the one it reads — plus `.nirvana/` (briefs, businesses,
+every runtime finds the one it reads (agy reads `AGENTS.md` and `GEMINI.md`) — plus `.nirvana/` (briefs, businesses,
 squads, mind-clones, `project.yaml`), `.env`, `.env.example`, `.gitignore`,
 `README.md`. Per-project skills are opt-in (`--with-skills`); by default the
 project relies on the machine's `~/.nirvana/skills`.
@@ -47,8 +47,7 @@ project relies on the machine's `~/.nirvana/skills`.
 |---|---|---|---|---|
 | Claude Code | `cd <project> && claude` | `CLAUDE.md` in cwd | `--add-dir` | hooks (`PreToolUse`/`PostToolUse`) + `nrv audit emit` |
 | Codex | `cd <project> && codex`, or `codex exec -C <project>` | `AGENTS.md` in cwd (native) | `--add-dir` | hooks (`PreToolUse`/`PostToolUse` on `Bash\|apply_patch`, trusted by `nrv setup`) + `nrv audit emit` |
-| Gemini CLI | `cd <project> && gemini` | `GEMINI.md` in cwd | `--include-directories` | hooks + `nrv audit emit` |
-| Antigravity | `cd <project> && agy` | `AGENTS.md` in cwd | `--add-dir` | hooks + `nrv audit emit` |
+| Antigravity | `cd <project> && agy` | `AGENTS.md` / `GEMINI.md`, walking up from cwd | `--add-dir` | PreInvocation context hook + `nrv audit emit` |
 | Hermes | `nrv-hermes`, or `hermes chat --in <project>` | `AGENTS.md` injected from cwd | n/a (works in cwd) | shell hooks (`pre/post_tool_call`) + fs-watch |
 | OpenClaw | the project **is** the agent's workspace (below) | `AGENTS.md` in the workspace | n/a (workspace is the root) | `nrv audit emit` + fs-watch (tool hooks: see §4.3) |
 
@@ -162,7 +161,7 @@ per file. Hook events are stamped like every other engine write, so they read as
 ## 4c. Orca: a host, not a runtime
 
 Orca manages workspaces and the terminals agents run in; the runtime inside
-one of its terminals is still Claude Code, Codex, Gemini or another CLI, so
+one of its terminals is still Claude Code, Codex, Antigravity or another CLI, so
 the rule of §1 holds unchanged: the agent works in the project directory.
 What Orca adds, the engine uses only when it detects the host
 (`TERM_PROGRAM=Orca`, `ORCA_TERMINAL_HANDLE`, `ORCA_WORKTREE_ID`) and never

@@ -165,11 +165,15 @@ describe("default runtime detection shared with dispatch.ts", () => {
     expect(resolveDefaultRuntime({ detectedHost: null, envDefault: "agy", normalize, firstAvailable: () => "pi" })).toEqual({ runtime: "antigravity-cli", from: "env" });
     expect(resolveDefaultRuntime({ detectedHost: null, envDefault: "", normalize, firstAvailable: () => "pi" })).toEqual({ runtime: "pi", from: "path-scan" });
     expect(resolveDefaultRuntime({ detectedHost: null, envDefault: "", normalize, firstAvailable: () => null })).toEqual({ runtime: "claude-code", from: "fallback" });
+    // A default naming the Gemini CLI (no longer a runtime) is skipped: the next source decides.
+    for (const old of ["gemini-cli", "gemini"]) {
+      expect(resolveDefaultRuntime({ detectedHost: null, envDefault: old, normalize, firstAvailable: () => "pi" })).toEqual({ runtime: "pi", from: "path-scan" });
+    }
   });
 
   test("canonicalRuntimeName maps the user's aliases and passes unknown names through", () => {
     expect(canonicalRuntimeName("claude")).toBe("claude-code");
-    expect(canonicalRuntimeName("Gemini-CLI")).toBe("gemini-cli");
+    expect(canonicalRuntimeName("Codex-CLI")).toBe("codex");
     expect(canonicalRuntimeName("pi-dev")).toBe("pi");
     expect(canonicalRuntimeName("kimi")).toBe("kimi-cli");
     expect(canonicalRuntimeName("hermes")).toBe("hermes");
@@ -178,7 +182,7 @@ describe("default runtime detection shared with dispatch.ts", () => {
 
   test("detectExecutionRuntime reads the host marker and the env default from the env it is given", () => {
     expect(detectExecutionRuntime({ NIRVANA_HOST_RUNTIME: "codex" })).toMatchObject({ runtime: "codex", from: "host" });
-    expect(detectExecutionRuntime({ NIRVANA_DEFAULT_RUNTIME: "gemini" })).toMatchObject({ runtime: "gemini-cli", from: "env" });
+    expect(detectExecutionRuntime({ NIRVANA_DEFAULT_RUNTIME: "agy" })).toMatchObject({ runtime: "antigravity-cli", from: "env" });
     expect(["path-scan", "fallback"]).toContain(detectExecutionRuntime({}).from);
   });
 });

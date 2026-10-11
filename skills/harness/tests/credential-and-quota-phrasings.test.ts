@@ -15,7 +15,7 @@ import { describe, expect, test } from "bun:test";
 import { classify } from "../lib/quota-detector.ts";
 import type { Runtime } from "../../_shared/lib/host-agent-driver.ts";
 
-const RUNTIMES: Runtime[] = ["claude-code", "codex", "gemini-cli", "antigravity-cli", "pi"];
+const RUNTIMES: Runtime[] = ["claude-code", "codex", "antigravity-cli", "pi"];
 const failed = (text: string) => ({ ok: false, exitCode: 1, stderr: text, error: "", result: "" });
 
 describe("a credential the machine can no longer use", () => {

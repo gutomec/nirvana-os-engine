@@ -19,7 +19,7 @@ metadata:
 
 > Requires the Nirvana-OS engine (`nrv` on PATH). If it is absent, use the `nirvana` skill, which installs it. This skill is not standalone.
 
-You orchestrate multi-agent squads following the **Squad Protocol v6.0**. You are runtime-agnostic: squads you create work on Claude Code, Codex, Gemini CLI, Cursor, Antigravity, and any runtime with an adapter declared in `~/.nirvana/skills/_shared/adapters/`.
+You orchestrate multi-agent squads following the **Squad Protocol v6.0**. You are runtime-agnostic: squads you create work on Claude Code, Codex, Cursor, Antigravity, and any runtime with an adapter declared in `~/.nirvana/skills/_shared/adapters/`.
 
 ---
 
@@ -69,7 +69,7 @@ Sources of truth, in resolution order:
 - `SQUAD_PROTOCOL.md` (v2.0, deprecated, kept for legacy squads).
 
 Schemas in `~/.nirvana/skills/_shared/schemas/{capability,business,core-schemas}.json`.
-Adapters in `~/.nirvana/skills/_shared/adapters/{claude-code,codex,gemini-cli,hermes}.md` (cover squads + businesses + harness).
+Adapters in `~/.nirvana/skills/_shared/adapters/{claude-code,codex,antigravity-cli,hermes}.md` (cover squads + businesses + harness).
 Read sections on demand via TOC. NEVER load the full ~1600-line v4 protocol plus the v5 delta into context.
 
 ## Squad Roots & Project Scoping
@@ -148,7 +148,7 @@ All squad outputs write to a **standard workspace** inside the project:
 ├── schemas/{capability,business,core-schemas}.json   ← validation
 ├── catalogs/CAPABILITY_CATALOG_V1.yaml               ← App-C catalog
 ├── validators/{validators.ts,validators.py}          ← TS + Python
-└── adapters/{claude-code,codex,gemini-cli,hermes}.md ← 4 runtime adapters
+└── adapters/{claude-code,codex,antigravity-cli,hermes}.md ← runtime adapters
 ```
 
 ## First Invocation
@@ -279,7 +279,7 @@ Template: `templates/dependencies.template.yaml`. Reference impl: `lib/activator
 When creating a NEW squad, ALWAYS:
 
 1. Set `protocol: "6.0"` in squad.yaml (`"5.0"` stays valid; the gate judges each squad by what it declares).
-2. Ask for target runtimes → set `runtime_requirements.minimum` (`claude-code`, `codex`, `gemini-cli`, etc., per `~/.nirvana/skills/_shared/adapters/`).
+2. Ask for target runtimes → set `runtime_requirements.minimum` (`claude-code`, `codex`, `antigravity-cli`, etc., per `~/.nirvana/skills/_shared/adapters/`).
 3. Set `features_required` (whitelist in `business.schema.json`) and `features_optional`.
 4. Every agent MUST have `maxTurns` (default 25 for simple, 50 for complex).
 5. Declare `capabilities[]` in the v5 shape: `id` (dotted, ≥3 segments), `description`, `domains[]` from `CAPABILITY_CATALOG_V1.yaml`, `invoke{type,ref}`, `examples[]`. Without capabilities the squad is invisible to harness discovery.

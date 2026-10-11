@@ -93,7 +93,7 @@ export function checkPortability(squadDir: string): Finding[] {
         if (m) out.push({
           severity: "warn", code: "portability-leak", where: `${sub}/${f}`,
           problem: `non-portable leak: ${label} ("${m[0].trim()}")`,
-          why: "a squad is meant to run on several runtimes (Codex, Gemini, Cursor…); a Claude-specific term breaks the conversion",
+          why: "a squad is meant to run on several runtimes (Codex, Antigravity, Cursor…); a Claude-specific term breaks the conversion",
           fix: `replace it with a neutral term or use the target adapter's semantic_map; if it is deliberate, add '<!-- portability-ok -->' to the file`,
           autofixable: false,
         });

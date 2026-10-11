@@ -206,7 +206,7 @@
   <section class="hero">
     <p class="eyebrow">Guia de instalação</p>
     <h1>Do zero ao sistema completo, dentro do seu agente.</h1>
-    <p class="lede">O Nirvana-OS não roda na web: ele vive dentro do agente que você já usa (Claude Code, Codex, Gemini CLI, Antigravity, Pi e outros). Você instala o engine, instala um pacote de conteúdo se quiser, cria um projeto e conversa com o agente. Depois disso, <strong>você fala e o agente usa o Nirvana para despachar empresas, squads e mind-clones</strong>. Cada passo abaixo mostra o comando e a saída do terminal.</p>
+    <p class="lede">O Nirvana-OS não roda na web: ele vive dentro do agente que você já usa (Claude Code, Codex, Antigravity, Pi e outros). Você instala o engine, instala um pacote de conteúdo se quiser, cria um projeto e conversa com o agente. Depois disso, <strong>você fala e o agente usa o Nirvana para despachar empresas, squads e mind-clones</strong>. Cada passo abaixo mostra o comando e a saída do terminal.</p>
     <div class="flow">
       <span class="n"><b>engine</b></span><span class="arw">→</span>
       <span class="n"><b>pacote</b></span><span class="arw">→</span>
@@ -220,7 +220,7 @@
   <!-- 1 -->
   <section class="step">
     <div class="step-head"><span class="step-num">1</span><h2>Instale o engine</h2></div>
-    <p>Um comando. Ele instala o <strong>Bun</strong> se faltar, baixa a última versão estável do engine no GitHub, coloca o engine em <code>~/.nirvana/skills</code>, liga a skill <code>nirvana</code> nos runtimes que achar (<code>~/.claude/skills</code>, <code>~/.codex/skills</code>, <code>~/.gemini/skills</code>, <code>~/.gemini/config/skills</code> do Antigravity, <code>~/.pi/agent/skills</code>, <code>~/.agents/skills</code>), instala os hooks de auditoria e põe o <code>nrv</code> no seu PATH. Rodar de novo é seguro. Depois, abra um terminal novo e peça ao agente: <em>"confira se o Nirvana-OS está instalado corretamente"</em>.</p>
+    <p>Um comando. Ele instala o <strong>Bun</strong> se faltar, baixa a última versão estável do engine no GitHub, coloca o engine em <code>~/.nirvana/skills</code>, liga a skill <code>nirvana</code> nos runtimes que achar (<code>~/.claude/skills</code>, <code>~/.codex/skills</code>, <code>~/.gemini/config/skills</code> do Antigravity, <code>~/.pi/agent/skills</code>, <code>~/.agents/skills</code>), instala os hooks de auditoria e põe o <code>nrv</code> no seu PATH. Rodar de novo é seguro. Depois, abra um terminal novo e peça ao agente: <em>"confira se o Nirvana-OS está instalado corretamente"</em>.</p>
     <div class="term" data-term="engine"></div>
     <p class="win-alt">No <strong>Windows</strong>, em PowerShell:</p>
     <div class="term" data-term="engineWin"></div>
@@ -441,7 +441,7 @@ Remove-Item Env:NIRVANA_ENGINE_URL</pre></div>
         "@a;[2/4]@c; Installing shared deps → ~/.nirvana/node_modules ...",
         "@g;  ✓ deps in ~/.nirvana/node_modules",
         "@a;[3/4]@c; Copying CLI dispatchers...",
-        "@g;  ✓ nrv, nrv-gemini, nrv-hermes",
+        "@g;  ✓ nrv, nrv-hermes",
         "@a;[4/4]@c; Linking runtimes → shared skills tree ...",
         "@g;  ✓ ~/.claude/skills/nirvana (linked)   ✓ ~/.codex/skills/nirvana (copied)",
         "@g;  ✓ audit hooks wired",

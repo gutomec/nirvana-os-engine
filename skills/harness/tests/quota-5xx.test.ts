@@ -21,7 +21,7 @@ describe("5xx classifies as transient", () => {
   });
 
   test("the gateway family, on every runtime", () => {
-    for (const rt of ["claude-code", "codex", "gemini-cli", "antigravity-cli", "pi"] as const) {
+    for (const rt of ["claude-code", "codex", "antigravity-cli", "pi"] as const) {
       for (const body of ["HTTP 503 Service Unavailable", "status 500 internal server error", "error 502 bad gateway"]) {
         expect(classify(rt, fail(body)).kind).toBe("transient");
       }
