@@ -247,7 +247,7 @@ export const CONFIG_SCHEMA: ConfigGroup[] = [
         key: "LLM_CASCADE",
         type: "string",
         label: "LLM cascade (quota failover)",
-        description: "Ordered, comma-separated chain of runtime:model@provider$budget. If one runs out of quota, the next takes over. E.g.: claude-code:opus,codex:gpt-5.5$10,antigravity-cli:gemini-3-flash",
+        description: "Ordered, comma-separated chain of runtime:model@provider$budget. If one runs out of quota, the next takes over. E.g.: claude-code:opus,codex:gpt-6.1-sol$10,antigravity-cli:gemini-3-flash",
         placeholder: "claude-code,codex,antigravity-cli",
         recommendedScope: "global",
       },

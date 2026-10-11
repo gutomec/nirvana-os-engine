@@ -1,229 +1,211 @@
-# Adapter · Antigravity CLI (Google Antigravity 2.0)
+# Adapter · Antigravity CLI (`agy`)
 
 > Runtime adapter for Squad Protocol v6 + Business Protocol v2 + Harness Protocol v1.
 > Covers the 3 protocols in a single doc. Canonical sections per Squad Protocol v6 §18.5.
 > System identity + capabilities (what Nirvana-OS is and can do): see `../NIRVANA-OS.md` (single source).
 
-> **Google's agent CLI.** Announced at Google I/O 2026, Antigravity 2.0 replaced the Gemini CLI on the consumer tier from 2026-06-18: same Google backend (Gemini models), different binary and flag conventions (`agy`). The Gemini CLI is no longer a Nirvana runtime; agy is how Nirvana reaches Gemini models directly.
+> **Google's agent CLI.** `agy` replaced the Gemini CLI for individual tiers on 2026-06-18 (Google Developers Blog, "An important update: transitioning Gemini CLI to Antigravity CLI"). The Gemini CLI is no longer a Nirvana runtime; agy is how Nirvana reaches Gemini models directly. The CLI is versioned 1.x and ships every one or two days, so every flag below was read from `agy --help`, `agy changelog` and the docs bundled with the binary on **1.3.3** (2026-10-10). Re-check `agy --help` before relying on a flag on another build.
 
 ---
 
-## 1. Adapter Metadata
+## 1. Adapter metadata
 
 | Field | Value |
 |---|---|
 | `runtime` | `antigravity-cli` |
 | `vendor` | Google |
-| `min_version` | `2.0+` (Antigravity CLI), `google-genai` SDK `>=0.5` |
-| `default_model` | inherited from the runtime. The engine NEVER sets a model; the user's runtime config decides. Pass a model only when the user explicitly asks. |
-| `tested_against` | Antigravity 2.0 against Gemini 3 Pro |
-| `config_paths` | `~/.gemini/config/hooks.json` (named hooks; Nirvana's is `nirvana-os`, a `PreInvocation` that injects the session context), `<project>/AGENTS.md`, `~/AGENTS.md` |
-| `skills_root` | `~/.gemini/config/skills/<name>/` (read by agy, by the CLI and by the IDE; the CLI also reads `~/.gemini/antigravity-cli/skills/` and `<workspace>/.agents/skills/`). `~/.antigravity/skills` is not read by any of them |
-| `agents_root` | `~/.antigravity/agents/<name>.md` or bundled in `<project>/.antigravity/agents/` |
-| `memory_root` | `<project>/AGENTS.md` (project), `~/.antigravity/memory/` (custom) |
-| `audit_log` | `~/.antigravity/sessions/` (transcripts), `~/.harness-logs/` (jsonl fallback) |
+| `cli` | `agy` (installed by the official installer to `~/.local/bin/agy` on macOS; `agy update` updates it in place) |
+| `min_version` | 1.2.10 recommended: from there a turn that fails mid-stream exits 3 instead of 0. `--output-format` and `--conversation` exist on every build the engine supports |
+| `default_model` | Inherited from the runtime. The engine never sets a model; the user's agy config decides. A model is passed only when the user asks for one (`--model`). `agy models` lists the ids |
+| `tested_against` | agy 1.3.3 (flag surface, changelog, bundled docs). No model call was made for this doc |
+| `config_root` | `~/.gemini/config/` (global customization root: `config.json`, `hooks.json`, `mcp_config.json`, `skills.json`, `rules.json`, `plugins.json`, `agents.json`, `skills/`, `rules/`). Workspace root: `<project>/.agents/`. CLI settings: `~/.gemini/antigravity-cli/settings.json` |
+| `nirvana_hook` | `~/.gemini/config/hooks.json`, named hook `nirvana-os`: a `PreInvocation` handler running `bun ".../gemini-session-start.ts" --agy`, timeout 10 s (written by `install.ts`) |
+| `skills_root` | `~/.gemini/config/skills/<name>/`, `~/.gemini/antigravity-cli/skills/<name>/`, `<workspace>/.agents/skills/<name>/` |
+| `agents_root` | `<workspace>/.agents/agents/<name>.md` (Markdown custom agents); `agents.json` in a customization root or at a plugin root (1.3.3) |
+| `memory_root` | `GEMINI.md` / `AGENTS.md` walked up from cwd to the repo root; global rules in `~/.gemini/config/` |
+| `audit_log` | Hook payloads carry `transcriptPath` and `artifactDirectoryPath` (under an `antigravity-cli/` directory for the CLI). Nirvana keeps its own audit (`outputs/<trace>/audit.jsonl`) |
 | `protocol_versions` | Squad 5.0, Business 1.0, Harness 1.0 (with gaps recorded in §13) |
 
 ---
 
-## 2. Feature Support Matrix
+## 2. Feature support matrix
 
 `✓` = native · `~` = workaround/partial · `✗` = not supported
 
 | Feature (Business v2 §6.5) | Squad v6 | Business v2 | Harness v1 | Notes |
 |---|---|---|---|---|
-| `max_turns` | ~ | ~ | ~ | global `--max-iterations` on the CLI; per-employee via wrapper |
-| `tool_whitelist` | ✓ | ✓ | ✓ | Function calling whitelist + `--tools` flag |
-| `subagent_spawning` | ✓ | ✓ | ✓ | native: dynamic subagents in-process via the local Agent Harness; Managed Agents for long runs; the `agy -p` sub-process is the fallback |
-| `audit_trail` | ✓ | ✓ | ✓ | Session transcripts in `~/.antigravity/sessions/`; the harness adds OTel/jsonl |
-| `scheduled_invocation` | ✗ | ✗ | ✗ | No `ScheduleWakeup`: external cron |
-| `event_bus` | ~ | ~ | ~ | Mentions/tickets via file-system; no broker |
-| `hooks` | ~ | ~ | ~ | Partial hooks; complex validation in a wrapper |
-| `sandboxing` | ~ | ~ | ~ | Approval modes (Request Review / Proceed-in-Sandbox / Always-Proceed); profiles are being consolidated |
-| `session_memory` | ✓ | ✓ | ✓ | Conversation context |
-| `project_memory` | ✓ | ✓ | ✓ | `AGENTS.md` loaded at start |
-| `global_memory` | ~ | ~ | ~ | `~/AGENTS.md` user-level, no rich auto-discovery |
-| `handoff_artifacts` | ✓ | ✓ | ✓ | JSON in tool_result or in a persisted file |
-| `fork_context` | ✓ | ✓ | ✓ | Dynamic subagents create an isolated context in-process |
-| `teammate_primitive` | ~ | ~ | ~ | Managed Agents for long runs; a formal team via convention |
-| `telemetry_otel` | ~ | ~ | ~ | Via an external OpenTelemetry SDK |
-
-> **Note outside the canonical matrix:** Antigravity exposes its own SDK to orchestrate agents programmatically, besides the local Agent Harness that hosts the dynamic subagents. Covered in §7.
+| `max_turns` | ✗ | ✗ | ✗ | No turn or step flag. `--print-timeout <dur>` bounds wall-clock time; a `Stop` hook sees `terminationReason: max_steps_exceeded` when agy's own step limit hits |
+| `tool_whitelist` | ~ | ~ | ~ | No per-call tools flag. A Markdown custom agent declares `tools` and is picked with `--agent`; `--mode plan` and `--sandbox` restrict behavior. The engine uses none of these today |
+| `subagent_spawning` | ✓ | ✓ | ✓ | Native subagents: `.agents/agents/*.md`, `@<subagent> <message>`, `invoke_subagent` in a custom agent's tools. The engine dispatches each turn as its own `agy -p` process |
+| `audit_trail` | ~ | ~ | ~ | Transcript path in every hook payload; `--log-file` for the CLI log. The engine audits from the JSON envelope |
+| `scheduled_invocation` | ✗ | ✗ | ✗ | Timers the agent schedules live inside a session only. Cross-run scheduling is external cron |
+| `event_bus` | ~ | ~ | ~ | Mentions and tickets through the file system; no broker |
+| `hooks` | ✓ | ✓ | ✓ | `PreToolUse`, `PostToolUse`, `PreInvocation`, `PostInvocation`, `Stop` (§10) |
+| `sandboxing` | ✓ | ✓ | ✓ | `--sandbox` (OS terminal sandbox, macOS and Windows), `--mode accept-edits\|plan`, approval prompts unless `--dangerously-skip-permissions` |
+| `session_memory` | ✓ | ✓ | ✓ | Conversations persist and resume with `--conversation <id>` or `--continue` |
+| `project_memory` | ✓ | ✓ | ✓ | `GEMINI.md` / `AGENTS.md` loaded from cwd up to the repo root |
+| `global_memory` | ✓ | ✓ | ✓ | Global rules in `~/.gemini/config/` (`AGENTS.md`, `GEMINI.md`, `rules/`) |
+| `handoff_artifacts` | ✓ | ✓ | ✓ | Files on disk plus the JSON envelope; `--json-schema` yields validated `structured_output` (not wired by the engine) |
+| `fork_context` | ~ | ~ | ~ | Each subagent runs its own conversation; subagents with a `branch` workspace get an isolated copy (1.3.3) |
+| `teammate_primitive` | ~ | ~ | ~ | Subagents plus `agy remote-control`; a formal team only by convention |
+| `telemetry_otel` | ✗ | ✗ | ✗ | No OTel export documented. Token usage comes back in the JSON envelope |
 
 ---
 
-## 3. Concept Mapping
+## 3. Concept mapping
 
 | Concept (Protocol) | Antigravity equivalent | Implementation |
 |---|---|---|
-| Squad / Business | Agents directory + AGENTS.md | `<project>/.antigravity/<name>/AGENTS.md` loads the "skill" |
-| Capability | Workflow file | `<skill>/capabilities/<id>.md` invoked by a wrapper |
-| Employee (seat) | Seat file played by the one business agent; optional Antigravity agent profile | A business runs as ONE solo agent (`skills/harness/lib/business-solo.ts`) that opens a seat's file when it works as that seat; `~/.antigravity/agents/<name>.md` (frontmatter + body) is only for a stand-alone subagent |
-| `is_brief_intake: true` | Default agent when the skill is active | Configured in the skill's `AGENTS.md` |
-| `is_antagonist: true` | Dynamic subagent in a pipeline | In-process spawn via the Agent Harness |
-| Handoff artifact | JSON in a file + tool_result | Persisted in `<project>/.handoffs/` |
-| Mention `@employee` | Convention in the prompt | The adapter resolves it to a subagent spawn |
+| Squad / Business | Workspace skills + rules | The engine dispatches the brief as one `agy -p` run; agy also loads any `GEMINI.md` / `AGENTS.md` above cwd |
+| Capability | Skill | `<root>/skills/<name>/SKILL.md` with `name` and `description` frontmatter, or the capability text inside the brief |
+| Employee (seat) | Seat file played by the one business agent; optional agy custom agent | A business runs as ONE solo agent (`skills/harness/lib/business-solo.ts`) that opens a seat's file when it works as that seat. A stand-alone agy subagent would live in `.agents/agents/<name>.md` and be chosen with `--agent <name>`; the engine does not generate these |
+| `is_brief_intake: true` | First turn of the run | The brief is the `-p` prompt |
+| `is_antagonist: true` | A separate `agy -p` run, or a native subagent | The engine prefers a separate run with its own trace |
+| Handoff artifact | File + JSON envelope | Persisted in `<project>/.handoffs/` or the trace's outputs |
+| Mention `@employee` | `@<subagent> <message>` (native, 1.2.9) for agy subagents | Nirvana mentions are resolved by the engine, not by agy |
 | Ticket | Persisted file | `<project>/.tickets/<TICKET_ID>.json` |
-| Escalation trigger | Wrapper script + harness call | The wrapper checks the condition → emits a notification to the harness |
-| Permanent memory | `~/AGENTS.md` + custom files | Auto-loads only AGENTS.md |
-| Project memory | `<project>/AGENTS.md` | Auto-load |
-| Session memory | Conversation transcript | Compacted automatically |
-| Routing decision (harness) | Pre-spawn lookup table | BM25 over `capabilities[].examples[]` in a Python/Node wrapper |
+| Escalation trigger | Engine check + harness notification | `.harness/notifications/<ts>.json` |
+| Permanent memory | Global rules in `~/.gemini/config/` + engine files | Business memory stays in `~/businesses/<biz>/memory/` |
+| Project memory | `<project>/AGENTS.md` / `GEMINI.md` | Auto-load |
+| Session memory | agy conversation | Resumed with `--conversation <id>` |
+| Routing decision (harness) | None in agy | The orchestrator routes before spawning |
 
 ---
 
-## 4. Frontmatter Mapping
+## 4. Frontmatter mapping
 
-### Squad v6 / Business v2 → AGENTS.md
+### Squad v6 / Business v2 → agy skill
 
-Antigravity has no rich frontmatter in the skill head. The adapter generates two files:
+agy reads Agent Skills: a directory with a `SKILL.md` whose YAML frontmatter has `name` (lowercase, hyphenated) and `description` (when to use it). Optional `scripts/`, `examples/`, `resources/`, `references/` folders sit beside it.
 
-```yaml
-# AGENTS.md (head of the project/skill)
-You are an AI agent operating under the Squad/Business Protocol.
+```markdown
+---
+name: media-video-analyze
+description: Use this skill when the brief asks to analyze a video and extract a transcript.
+---
 
-Available capabilities: [media.video.analyze, media.transcript.extract, ...]
-Default tools: [Read, Write, Bash]
+# Steps
+1. ...
 ```
 
-```yaml
-# .antigravity/manifest.yaml (auxiliary: read by a wrapper, not by the runtime)
-name: nexus-council
-protocol: 1.0
-employees: [ceo, marketing-lead, ...]
-operation_mode: zero_human
-```
+`GEMINI.md` / `AGENTS.md` take no frontmatter and are always active for their directory scope.
 
-### Employee → Antigravity agent profile
+### Employee → agy custom agent (optional)
 
-```yaml
-# ~/.antigravity/agents/alex-hormozi.md
----
-name: alex-hormozi
-description: Mind clone of Alex Hormozi for offer evaluation. (DISCLOSURE: AI-generated persona, not real person.)
-model: inherit  # the engine does not pin a model; it uses the runtime's
-tools: [Read, Grep, Bash]
-max_iterations: 30
----
-
-# System prompt
-You are a mind-clone of Alex Hormozi specialized in offer evaluation...
-```
-
-> The adapter prepends `(DISCLOSURE: ...)` to the description when `type: mind_clone`.
+A Markdown custom agent in `.agents/agents/<name>.md`. The keys the changelog names for its frontmatter are `tools`, `skills`, `rules`, `agents`, `plugins`, `hooks`, `inheritCustomizations` and `excludeDefaultComponents`; relative paths resolve against the agent file's directory. The full schema is in the online reference (https://antigravity.google/docs/cli/reference), not in the bundled docs, so generate one only after checking it there. For a `type: mind_clone`, the adapter prepends `(DISCLOSURE: AI-generated persona, not real person.)` to the description.
 
 ---
 
-## 5. Tool Whitelist Mechanics
+## 5. Tool whitelist mechanics
 
-- Antigravity uses function calling (Gemini backend). The adapter translates semantic tools → function declarations:
-  - `read` → `read_file({path})`
-  - `bash` → `execute_command({command})`
-  - `web_fetch` → `fetch_url({url})`
-- The whitelist is enforced in the list passed to the SDK (`tools=[...]`) or via `--tools`.
-- The approval mode (§9) is an additional gate on commands that write.
+- agy has no flag that lists allowed tools for one call. Restriction comes from three places: a custom agent's `tools` list (with `--agent`), `--mode plan` (plan before acting), and `PreToolUse` hooks that answer `allow`, `deny`, `ask` or `force_ask` per tool name (`run_command`, `view_file`, `browser_.*`, ...).
+- Approval: without `--dangerously-skip-permissions`, a headless run stops on the first tool that needs approval. Since 1.2.15 a denied request is respected and not worked around.
+- The engine passes `--dangerously-skip-permissions` unless the run asks for safety (`opts.yolo === false`, the `--safe` path). It does **not** honor `opts.noTools` on agy yet: answer-only calls still run with full tools (§13).
 
 ---
 
-## 6. Max-Turns Mechanics
+## 6. Max-turns mechanics
 
-Antigravity CLI has a global `--max-iterations N`, but not per-subagent. The adapter simulates it like this:
+agy exposes no turn or iteration limit on the command line. What exists:
 
-1. The wrapper spawns `agy -p "..." --max-iterations <N>` (or dispatches a native subagent with a per-agent limit).
-2. `<N>` is read from the employee frontmatter (`maxTurns` / `max_iterations`).
-3. Process exit or the wrapper detects the limit → emits `audit_event: budget_violation`.
+1. `--print-timeout <dur>` (Go duration, for example `20m`). Default `0s` waits until the turn completes; since 1.2.9 the run waits for background tasks up to that deadline, capped at 30 minutes.
+2. agy's internal step limit, visible to a `Stop` hook as `terminationReason: "max_steps_exceeded"`.
+3. The engine's spawn timeout (`opts.timeoutMs`), which kills the process; the result reports exit 124 and nothing is parsed.
 
-**Limitation:** nested invocations via a dynamic subagent can escape the external wrapper's count. Documented as `~` (partial).
+A protocol `max_turns` is therefore not enforceable on agy. The engine does not pass `--print-timeout` today.
 
 ---
 
-## 7. Subagent Spawning
+## 7. Subagent spawning
 
-**PRIMARY: native dynamic subagents.** Antigravity 2.0 spawns **in-process dynamic** subagents through a **local Agent Harness server**. When the maestro runs inside an `agy` session, it dispatches the work as a dynamic subagent hosted by the Agent Harness, in-process to that run, with no sub-process cold start. For long runs there are **Managed Agents** (they run in a managed/persistent way), and an **SDK** allows orchestrating agents programmatically.
-
-**FALLBACK: `agy -p` sub-process.** For standalone scripts with no LLM context of their own (or sub-process-only runtimes), the adapter uses `agy -p` as a sub-process (`host-agent-driver.runAntigravity`):
+**What the engine runs.** Every turn is one `agy` process, spawned once (`runAntigravity` in `skills/_shared/lib/host-agent-driver.ts`):
 
 ```bash
-# Adapter spawn (host-agent-driver.runAntigravity)
-agy -p "Review this offer: ..." \
-  --output-format json \
-  > .handoffs/alex-hormozi-$(date +%s).json
+agy -p "<prompt or bootstrap>" --output-format json \
+  [--conversation <id> | --continue] \
+  [--model <id>] \
+  [--dangerously-skip-permissions] \
+  [--add-dir <dir>]...
 ```
 
-Real flags used by the driver:
-- `-p "<prompt>"`: headless prompt (one-shot). `-p` / `--print` / `--prompt` take the prompt as an argv value.
-- `--output-format json`: a single JSON object (parity with `runClaudeCode`). `stream-json` (NDJSON) also exists.
-- `--resume <id>`: resumes the session (passed when `opts.sessionId` is set).
-- `--model <id>`: model override (passed when `opts.model` is set).
+- `-p` (alias `--print`, `--prompt`): run one prompt non-interactively. The prompt is `appendSystemPrompt + "\n\n---\n\n" + prompt` when a preamble is set.
+- Prompt delivery: argv up to 100 000 bytes (6 000 on Windows). Above that, the engine writes the prompt to a UTF-8 temp file and sends a short bootstrap telling agy to read and execute it. The engine does not use `--input-format stream-json` yet, so the file read needs tool approval in `--safe` mode.
+- `--output-format json`: one JSON object at the end. The engine reads `response` (or `result`), `session_id` / `sessionId` / `conversation_id`, `is_error`, `error`, and `usage` (`input_tokens`, `output_tokens`, `thinking_tokens`, `cache_read_tokens`). No USD cost is reported, so the run is marked `costUnavailable` and priced from tokens.
+- Resume: `--conversation <id>` when the previous envelope returned a real id; `--continue` (agy: "Continue the most recent conversation") only when the id is the engine's placeholder `nrv-agy-<uuid>`. agy cannot be given an id up front.
+- `--model <id>`: only from `opts.model` or the resolved system model.
+- `--dangerously-skip-permissions`: unless `opts.yolo === false`.
+- `--add-dir <dir>`: once per directory the run is granted (project, outputs root, business or squad dir).
+- Never passed: `--effort` (see §13), `--mode`, `--sandbox`, `--json-schema`, `--print-timeout`, `--agent`, `--disable-slash-commands`.
 
-The sub-process returns the handoff artifact on stdout. The adapter parses it and records it in the audit log.
+**No re-spawn.** A failed run is reported as failed. Since 1.2.10 a model or agent error mid-turn exits 3 after the turn was paid for, so the two retries that used to re-run the turn (without `--output-format`, and `--conversation` → `--continue`) are gone. Recovery is the caller's (the delivery pipeline's cold retry).
 
-> **Driver note:** the approval-mode flag (autonomous/yolo) is **not yet confirmed** in the research (`(internal knowledge base)` §5.3, modes Request Review / Proceed-in-Sandbox / Always-Proceed). `host-agent-driver.runAntigravity` carries a TODO: confirm with `agy --help` once authenticated, then map `opts.yolo !== false → Always-Proceed`.
+**Light layer.** The `RUNTIMES` adapter used for short helper calls runs `agy -p "<persona>\n\n---\n\n<message>" [--dangerously-skip-permissions]` with the same argv/temp-file rule, in text mode, and trims stdout. The skip flag follows the `execution.headless_skip_permissions` setting (`NIRVANA_HEADLESS_SKIP_PERMISSIONS`).
 
-**For a mention `@x`:** the adapter detects it in the returned handoff and spawns a new subagent (in-process) or sub-process for `x`.
+**Native subagents.** Inside an interactive agy session the model can delegate to subagents defined in `.agents/agents/`, address one with `@<name> <message>`, or start a session as one with `--agent <name>` (works headless since 1.2.11). Nirvana does not rely on them for dispatch.
 
 ---
 
-## 8. Memory Storage
+## 8. Memory storage
 
 | Layer | Path | Persistence |
 |---|---|---|
-| Permanent (cross-session) | `~/AGENTS.md` + `~/.antigravity/memory/` (adapter convention) | Manual |
-| Project | `<project>/AGENTS.md` | Auto-load |
-| Session | Conversation transcript | Compacted |
-| Business permanent | `~/businesses/<biz>/memory/permanent.md` | Adapter persists |
+| Permanent (cross-session) | Global rules in `~/.gemini/config/` (`AGENTS.md`, `GEMINI.md`, `rules/`) | Manual |
+| Project | `<project>/AGENTS.md` or `GEMINI.md`, plus every one above cwd up to the repo root | Auto-load |
+| Session | agy conversation | Persisted by agy; resumable |
+| Business permanent | `~/businesses/<biz>/memory/permanent.md` | Engine persists |
 | Project (business) | `<project>/<biz>/<project_id>/memory/` | Isolation by construction |
 
-> **Isolation guard:** Antigravity does not enforce memory isolation natively. The adapter builds the prompt with ONLY the memory relevant to the `project_id` before spawning, otherwise `audit_event: isolation_violation`.
+Rules are deduplicated per conversation. Each rule file is capped at 24 000 bytes (truncated on line boundaries), and always-on plus global rules share a 20 000-token budget; rules over budget become file-path pointers.
+
+> **Isolation guard:** agy does not isolate memory between projects. The engine builds the prompt with ONLY the memory relevant to the `project_id` before spawning, otherwise `audit_event: isolation_violation`. A `GEMINI.md` / `AGENTS.md` above the run's cwd is loaded regardless, so dispatch cwd matters.
 
 ---
 
-## 9. Context Window & Compaction
+## 9. Context window and compaction
 
-- Window: 1M-2M tokens (Gemini 3 Pro/Flash), larger than Claude/Codex.
-- Compaction: auto-summarization near the limit.
-- **Approval modes** (Request Review / Proceed-in-Sandbox / Always-Proceed) govern whether commands that write ask for confirmation; they affect long autonomous runs.
-- **Advantage:** the larger window reduces compaction pressure in long-running businesses.
-
----
-
-## 10. Hook System
-
-Antigravity has no mature granular hooks. Workarounds in a wrapper:
-
-| Desired hook | Antigravity workaround |
-|---|---|
-| `PreToolUse` | Function declaration validation in the SDK |
-| `PostToolUse` | The wrapper parses tool calls from the transcript after each turn |
-| `UserPromptSubmit` | The adapter injects system instructions into the `agy -p` prompt |
-| `Stop` | The wrapper inspects the exit code and the final transcript |
-| `SessionStart` | The wrapper loads memory before invoking `agy` |
-| `Compact` | `--checkpoint` flag (when available) |
+- The window depends on the model in use; `agy models` lists what the account can run.
+- Compaction is automatic and spreads its user-request budget across all captured prompts (1.2.8).
+- The `nirvana-os` `PreInvocation` hook runs before **every** model call, so its context is re-sent each time and counts against the window on long runs.
+- Since 1.3.2 `--dangerously-skip-permissions` no longer approves the implementation plan in plan mode; plans wait for review unless `Artifact Review` is changed in `/config`. A headless run in `--mode plan` may therefore block.
 
 ---
 
-## 11. Invocation Examples
+## 10. Hook system
+
+Hooks live in `hooks.json` in a customization root: `~/.gemini/config/hooks.json` (global) or `<workspace>/.agents/hooks.json`. Plugins may ship their own. Each top-level key is a named hook (`"enabled": false` turns it off); handlers of the same event across named hooks run in sequence.
+
+| Event | When it fires | Shape | Output |
+|---|---|---|---|
+| `PreToolUse` | Before a tool step | Grouped: `matcher` regex on the tool name + `hooks` | `decision`: `allow` / `deny` / `ask` / `force_ask`; optional `reason`, `permissionOverrides`, `overwrite` |
+| `PostToolUse` | After a tool step | Grouped | `{}` |
+| `PreInvocation` | Before every model call (input has `invocationNum`) | Flat list of handlers | `injectSteps`: `userMessage`, `ephemeralMessage` or `toolCall` |
+| `PostInvocation` | After tool calls finish | Flat | `injectSteps`, `terminationBehavior`: `force_continue` / `terminate` |
+| `Stop` | When the loop ends (`terminationReason`: `model_stop`, `max_steps_exceeded`, `error`) | Flat | `decision: "continue"` re-enters the loop |
+
+- Handler fields: `type` (only `"command"`), `command` (run with `sh -c`, or `cmd /c` on Windows, from the directory holding `hooks.json`; `~` expands), `timeout` in **seconds**, default 30.
+- Input is JSON on stdin with camelCase keys: `conversationId`, `workspacePaths`, `transcriptPath`, `artifactDirectoryPath`, `modelName`. Output is JSON on stdout. Hooks run synchronously and block the loop.
+- Nirvana installs one named hook, `nirvana-os`, a `PreInvocation` that injects the project's session context as an `ephemeralMessage`.
+
+---
+
+## 11. Invocation examples
 
 ### Example 1: Squad capability
 
 ```bash
-agy -p "Analyze video: https://..." \
-  --output-format json
+agy -p "Analyze video: https://..." --output-format json --dangerously-skip-permissions
 ```
 
-### Example 2: Business brief with handoff in a pipeline
+### Example 2: Business brief, then a revision on the same conversation
 
 ```bash
-# The business runs as ONE solo agent (it plays the seats itself)
-agy -p "<brief>" --output-format json > .handoffs/ceo-1.json
+# First turn: the business runs as ONE solo agent (it plays the seats itself)
+agy -p "<brief>" --output-format json --dangerously-skip-permissions \
+  --add-dir "$PROJECT" --add-dir "$OUTPUTS" > turn-1.json
 
-# Adapter detecta `next_action: delegate to marketing-lead`
-agy -p "<context from ceo handoff>" --output-format json --resume <ceo-session-id> \
-  > .handoffs/marketing-1.json
-
-# Adapter detecta mention `@alex-hormozi`
-agy -p "<context from marketing handoff>" --output-format json \
-  > .handoffs/alex-1.json
+# Revision: resume the conversation id returned in turn-1.json
+agy -p "<revision request>" --output-format json --dangerously-skip-permissions \
+  --conversation "$(jq -r '.session_id // .conversation_id' turn-1.json)" > turn-2.json
 ```
 
 ### Example 3: Harness escalation
@@ -233,42 +215,57 @@ echo '{"type":"human_escalation_required","trigger_id":"budget","severity":"high
   > .harness/notifications/$(date +%s).json
 ```
 
----
+### Reading the result
 
-## 12. Runtime-Specific Validators
-
-- **Coherent approval mode**: if employee.tools includes `Bash`, the approval mode must not be so restrictive that it blocks every write the brief expects.
-- **Coherent function declarations**: tools in the whitelist need a valid declaration; the wrapper validates pre-spawn.
-- **AGENTS.md loaded**: the adapter checks that the skill manifest is referenced in `AGENTS.md` (otherwise it does not load).
-- **Supported model**: some features (rich function calling, code execution) vary by model. The adapter checks `model` in the employee frontmatter against the Antigravity capability matrix.
-
----
-
-## 13. Known Limitations
-
-1. **Approval-mode flag for autonomous runs not yet confirmed**: TODO in the driver (§7); confirm with an authenticated `agy --help`.
-2. **No mature granular hooks**: validation in an external wrapper.
-3. **No `ScheduleWakeup` / `CronCreate`**: external cron.
-4. **No rich cross-session memory**: the adapter keeps memory in files and builds the prompt manually.
-5. **Per-employee max-iterations is simulated**: nested subagent invocations can escape the wrapper's count.
-6. **Mentions and tickets** depend on the wrapper detecting and fanning out; race conditions are possible in multi-process.
-7. **OTel is not built-in**: the adapter integrates with an external OpenTelemetry SDK.
-8. **Recent runtime (2.0)**: the flag/SDK surface can change between versions; test before each bump.
+| Exit | Meaning |
+|---|---|
+| 0 | Turn completed. Still check `is_error` / `error` in the envelope |
+| 1 | Startup or usage error, for example an invalid `--json-schema` (rejected at startup since 1.2.14) |
+| 3 | Agent or model API failure. stderr carries an `AGY_ERROR: {...}` JSON line (status, error code, retryability, error id; since 1.2.6). Since 1.2.10 this also covers a turn that streamed part of its answer, and the JSON output includes the partial response |
+| 124 | Engine-side: the spawn timeout killed the process |
 
 ---
 
-## 14. Source References
+## 12. Runtime-specific validators
 
-- Antigravity CLI spec (internal research): `(internal knowledge base)`
-- Google Gen AI SDK: https://github.com/google-gemini/generative-ai-python
+- **Flags exist**: every flag the engine builds is in `agy --help` on 1.3.3. Re-run `agy --help` after an update before adding a new one.
+- **Approval coherent**: a run without `--dangerously-skip-permissions` must not need tools to start (the large-prompt bootstrap needs a file read).
+- **Model valid**: a model passed with `--model` must appear in `agy models`.
+- **Rules size**: a generated `AGENTS.md` / `GEMINI.md` must stay under 24 000 bytes or agy truncates it.
+- **JSON configs one level deep**: since 1.2.10 a directory entry in `skills.json`, `rules.json`, `agents.json` or `plugins.json` loads only the items directly inside it; nested items need `include_only`.
+
+---
+
+## 13. Known limitations
+
+1. **Effort is not passed.** agy has `--effort low|medium|high|xhigh|max` (since 1.2.11, the same levels as the engine's), but `EFFORT_CAPABLE` holds only `claude-code` and `codex`, so a requested effort only logs "has no effort setting" and agy runs at its default.
+2. **`noTools` is ignored.** Answer-only calls run with full tools and the skip flag. `--mode plan` is the candidate, but headless plan behavior since 1.3.2 is untested.
+3. **`--continue` can pick the wrong conversation** when the previous envelope returned no id and two runs share a directory.
+4. **No turn limit** (§6) and no per-call tool list (§5).
+5. **Hook re-injection.** The `nirvana-os` `PreInvocation` hook ignores `invocationNum` and `NIRVANA_DISPATCH_DEPTH`, so it re-sends the session context before every model call, including in dispatched workers.
+6. **Quota stops are immediate.** `GEMINI_API_KEY` sessions stop on daily quota, spend cap or depleted credits (1.2.12, 1.2.13); server retry delays above 30 s stop the run; "Your AI credits balance is too low to continue." (1.2.15). Expect exit 3.
+7. **Windows.** The argv budget is 6 000 bytes, so most briefs go through the temp-file bootstrap. agy itself: the terminal sandbox needs no admin rights (1.2.17), sandboxed commands fall back to Windows PowerShell when PowerShell 7 came from the Microsoft Store (1.3.3), and `config.json`, `hooks.json` and plugin manifests saved with a UTF-8 BOM load (1.2.16, 1.3.1). Hook commands run under `cmd /c`.
+8. **Fast release cadence.** One release every one or two days; behavior in headless mode has changed several times in a month (1.2.6, 1.2.9, 1.2.10, 1.3.2).
+
+---
+
+## 14. Source references
+
+- `agy --help`, `agy help plugin`, `agy help mcp`, `agy models --help`, `agy changelog` (1.3.3)
+- Bundled docs: `~/.gemini/antigravity-cli/builtin/skills/agy-customizations/docs/{hooks,skills,rules,json_configs,plugins,mcp_servers}.md`
+- CLI reference: https://antigravity.google/docs/cli/reference
+- Gemini CLI migration: https://antigravity.google/docs/cli/gcli-migration
+- Transition announcement: https://developers.googleblog.com/an-important-update-transitioning-gemini-cli-to-antigravity-cli/
+- Driver: `skills/_shared/lib/host-agent-driver.ts` (`runAntigravity`, the `antigravity-cli` entry in `RUNTIMES`, `RUNTIME_DIR_GRANT_FLAG`, `EFFORT_CAPABLE`)
 - Squad Protocol v6: `~/.nirvana/skills/squads/SQUAD_PROTOCOL_V6.md`
 - Business Protocol v2: `~/.nirvana/skills/businesses/BUSINESS_PROTOCOL_V2.md`
 - Harness protocol: `~/.nirvana/skills/harness/SKILL.md`
 
 ---
 
-## 15. Version History
+## 15. Version history
 
 | Version | Date | Changes |
 |---|---|---|
 | 1.0.0 | 2026-06-06 | Doc inicial — successor to gemini-cli (sunset 2026-06-18); covers Squad 5.0 + Business 1.0 + Harness 1.0 against Antigravity 2.0 (Gemini 3 Pro) |
+| 2.0.0 | 2026-10-11 | Rewritten against agy 1.3.3. Removed flags that never existed (`--max-iterations`, `--tools`, `--resume`, `--checkpoint`), the `~/.antigravity/*` paths and the 2.0 versioning. Documents the real driver argv (one spawn, `--conversation` / `--continue`), exit 3 + `AGY_ERROR`, the 1.3.2 plan-mode change, hooks, rules, skills, plugins, subagents and Windows notes |

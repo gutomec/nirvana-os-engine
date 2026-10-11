@@ -173,7 +173,8 @@ export function interactiveArgv(opts: Pick<RunHeadlessOpts, "runtime" | "yolo" |
       // The headless runner's rule: a dispatched worker does not open its own
       // agents (the runtime's subagent tool multiplies inside one child and
       // never passes through the engine's depth counter).
-      if (!opts.allowSubagents) a.push("--disallowedTools", "Task", "Agent");
+      // Workflow too: the dynamic-workflow tool can fan out to 1,000 agents.
+      if (!opts.allowSubagents) a.push("--disallowedTools", "Task", "Agent", "Workflow");
       for (const d of dirs) a.push("--add-dir", d);
       return a;
     }
@@ -184,6 +185,8 @@ export function interactiveArgv(opts: Pick<RunHeadlessOpts, "runtime" | "yolo" |
       // The context ceiling, as the headless runner passes it.
       const window = contextWindowSetting();
       if (window > 0) a.push("-c", `model_auto_compact_token_limit=${window}`);
+      // The headless runner's rule: no subagents unless the caller orchestrates.
+      if (!opts.allowSubagents) a.push("-c", "agents.enabled=false");
       for (const d of dirs) a.push("--add-dir", d);
       return a;
     }
@@ -367,7 +370,7 @@ export function runOrcaWorker(opts: RunHeadlessOpts, hooks: OrcaWorkerHooks = {}
       CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS,
       CLAUDE_CODE_AUTO_COMPACT_WINDOW: process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW,
     };
-    for (const [k, v] of Object.entries(headlessClaudeEnv(seeded))) if (v !== undefined) workerEnv[k] = v;
+    for (const [k, v] of Object.entries(headlessClaudeEnv(seeded, { denySubagents: !opts.allowSubagents }))) if (v !== undefined) workerEnv[k] = v;
   }
   if (opts.workspace) workerEnv[RUN_WORKSPACE_ENV] = cwd;
   const command = workerCommand(argv, cwd, workerEnv);

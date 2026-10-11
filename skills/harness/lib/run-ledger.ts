@@ -345,6 +345,10 @@ export function openLedger(dbPath?: string): LedgerHandle {
   db.exec("CREATE INDEX IF NOT EXISTS idx_runs_project ON runs(project_root, state)");
   // supervisor bookkeeping (e.g. last-sweep timestamp for the lazy sweep)
   db.exec("CREATE TABLE IF NOT EXISTS supervisor_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
+  // The last cumulative cost a runtime reported for a session
+  // (claude-session-cost.ts): a resumed claude session reports its total, so
+  // the run's own spend is the difference from the total recorded here.
+  db.exec("CREATE TABLE IF NOT EXISTS session_costs (session_id TEXT PRIMARY KEY, total_usd REAL NOT NULL, updated_at TEXT NOT NULL)");
   const handle: LedgerHandle = {
     db,
     path: p,
@@ -913,6 +917,20 @@ export function recordSession(handle: LedgerHandle, runId: string, sessionId: st
     [sessionId ?? null, childPid ?? null, nowIso(), runId],
   );
   emitLedgerAudit("x_ledger_session_recorded", { run_id: runId, session_id: sessionId, child_pid: childPid ?? null }, row);
+}
+
+/** The last cumulative cost recorded for a runtime session, or null. */
+export function sessionCostTotal(handle: LedgerHandle, sessionId: string): number | null {
+  const r = handle.db.query("SELECT total_usd FROM session_costs WHERE session_id = ?").get(sessionId) as { total_usd: number } | null;
+  return r && Number.isFinite(r.total_usd) ? r.total_usd : null;
+}
+
+/** Store the cumulative cost a runtime just reported for a session. */
+export function recordSessionCostTotal(handle: LedgerHandle, sessionId: string, totalUsd: number): void {
+  handle.db.run(
+    "INSERT INTO session_costs (session_id, total_usd, updated_at) VALUES (?, ?, ?) ON CONFLICT(session_id) DO UPDATE SET total_usd = excluded.total_usd, updated_at = excluded.updated_at",
+    [sessionId, totalUsd, nowIso()],
+  );
 }
 
 /**

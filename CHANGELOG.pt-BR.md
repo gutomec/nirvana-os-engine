@@ -8,6 +8,18 @@ do engine que os instaladores de uma linha e os setups de pack consomem.
 
 ## Não lançado
 
+### Correções de runtime da auditoria de 2026-10-11
+
+Um worker do Claude Code despachado ainda podia se multiplicar pela ferramenta `Workflow`, que roda em `-p`, é aprovada no modo bypass e pode abrir até 1.000 agentes. Os workers agora negam `Task Agent Workflow` e rodam com `CLAUDE_CODE_DISABLE_WORKFLOWS=1`, em headless e no Orca; quem chama com `allowSubagents` mantém as três, como antes. Os workers do Codex recebem `-c agents.enabled=false` pela mesma regra, no `runCodex` e no lançador do Orca.
+
+Desde o Claude Code 2.1.277 uma sessão retomada informa o `total_cost_usd` acumulado. O `nrv revise`, as rodadas de revisão do pipeline de entrega, as correções da revisão solo e os turnos de chat do Glance gravavam esse total como gasto da própria execução, e cada rodada contava a sessão inteira de novo. O ledger de execuções agora guarda o último total por sessão (tabela `session_costs`) e uma execução retomada grava a diferença. Uma sessão sem total registrado mantém o comportamento antigo.
+
+O GPT-5.5 sai do Codex em 2026-10-14. Todo exemplo e dica de schema que ensinava `codex:gpt-5.5` agora cita `gpt-6.1-sol`; uma config do usuário que ainda cite gpt-5.5 segue sem alteração.
+
+O runner do Antigravity não dispara de novo um turno que falhou. Desde o agy 1.2.10 um erro de modelo no meio do turno sai com exit 3 e `AGY_ERROR` depois que o turno já foi pago, e duas heurísticas sobre o stderr rodavam o turno inteiro outra vez, uma delas com `--continue`, que pode cair em outra conversa. Uma execução do agy que falhou agora é informada como falha.
+
+Os workers do Grok passam `--trust`, para que uma pasta de execução nova carregue o `AGENTS.md`, as skills e o MCP do projeto (um build que recusa a flag é tentado de novo uma vez sem ela), e uma retomada continua a sessão do grok com `-r <id>`. O Pi nunca recebe `--provider` sem `--model`, que o pi 1.0.0 recusa (o resultado leva um aviso no lugar), e recebe o prompt depois de `--`, para que um brief que começa com `-` ou `---` não seja lido como flag. Os resultados do Kimi guardam só mensagens do assistente, nunca a saída de uma ferramenta, e as permissões de diretório vão como `--add-dir`. O `opencode run` recebe `--auto` no caminho autônomo, como os outros runtimes. Os docs de adapter do Claude Code, Codex, Antigravity, Grok, Kimi e Pi foram reescritos contra os CLIs atuais e não ensinam mais comandos que não existem, como `codex run`, `--max-turns` no Codex, `--max-iterations`, `--tools` ou `--checkpoint`.
+
 ### O Gemini CLI deixou de ser um runtime
 
 O Gemini CLI (`gemini`, id de runtime `gemini-cli`) não é mais suportado. Saíram o runner, o wrapper `nrv-gemini`, as personas de agent-x e judge-x, o documento de adapter e as entradas nas listas de runtimes, no `nrv doctor`, no Glance, no Orca e nas tabelas de cota e de custo. O Antigravity (`agy`) não mudou e é por ele que o Nirvana chega direto aos modelos Gemini; OpenCode, Pi e os outros runtimes com vários provedores mantêm os seus provedores Google.

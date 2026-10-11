@@ -5,7 +5,7 @@
 //   { "claude-code:opus": { spend_usd: 4.23, dispatches: 7, last_iso: "..." }, ... }
 //
 // Each LLM_CASCADE entry has an INDEPENDENT bucket keyed by entry-key
-// (runtime[:model][@provider]). A budget-exhaustion on entry "codex:gpt-5.5"
+// (runtime[:model][@provider]). A budget-exhaustion on entry "codex:gpt-6.1-sol"
 // does NOT affect "codex:qwen3-coder@openrouter" — they're different bucketed
 // budgets even though the same CLI binary executes them.
 //
