@@ -162,7 +162,7 @@ The engine's own test loop for contributors is in `CONTRIBUTING.md`.
 
 ### Rule 14 — Dependencies install to `~/.nirvana`, never where you are standing
 
-Node packages go to `~/.nirvana/node_modules`, Python packages to `~/.nirvana/python`, tool-downloaded runtimes (Chromium, browsers, model weights) to `~/.nirvana/cache/<tool>`. Never run `bun install`, `bun add`, `npm install`, `pnpm add` or `pip install` inside a squad, a business, a pack or the project: use `nrv deps install <pkg>`, `nrv deps link <dir>` or `nrv activate <squad>` (which installs what the squad declares, centrally). Real system programs (`ffmpeg`, `pandoc`) belong to `brew`/`apt` through the squad's `dependencies.yaml`.
+Node packages go to `~/.nirvana/node_modules`, Python packages to `~/.nirvana/python`, tool-downloaded runtimes (Chromium, browsers, model weights) to `~/.nirvana/cache/<tool>`. Never run `bun install`, `bun add`, `npm install`, `pnpm add` or `pip install` inside a squad, a business, a pack or the project: use `nrv deps install <pkg>`, `nrv deps link <dir>` or `nrv activate <squad>` (which installs what the squad declares, centrally). Real system programs (`ffmpeg`, `pandoc`) belong to `brew`/`apt` through the squad's `dependencies.yaml`. When `nrv activate` fails it prints a block between `=== nrv activate: issues for the agent ===` markers (`--json` for data): run each `fix`, asking the user first where it says `permission`, then its `then` line. Never edit the squad folder to make it pass.
 
 ---
 

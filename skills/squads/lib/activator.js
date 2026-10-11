@@ -482,7 +482,8 @@ function installSystem(dep, dryRun, confirmHeavy) {
   }
   const installResult = runCmd(effectiveCmd);
   if (!installResult.ok) {
-    return { name: dep.name, status: 'install_failed', kind: 'system', error: installResult.error };
+    // The command travels with the failure: it is the fix a caller can retry.
+    return { name: dep.name, status: 'install_failed', kind: 'system', cmd: installCmd, error: installResult.error };
   }
   const recheck = checkCmd(dep.check);
   return {
