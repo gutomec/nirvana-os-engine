@@ -60,16 +60,17 @@ afterAll(() => {
 });
 
 describe("runHeadless with a workspace", () => {
-  test("claude-code starts in the run folder, with the project granted and the sibling run denied", () => {
+  test("claude-code starts in the run folder, with the project granted and no folder denied", () => {
     const r = runHeadless({ runtime: "claude-code", prompt: "p", cwd: ROOT, workspace: MINE, addDirs: [path.join(MINE, "agent-x")], timeoutMs: 60_000 });
     expect(r.ok).toBe(true);
     const c = captured("claude");
     expect(fs.realpathSync(c.cwd)).toBe(MINE);
     expect(c.argv[c.argv.indexOf("--add-dir", c.argv.indexOf("--add-dir") + 1) + 1]).toBe(ROOT);
     const deny: string[] = JSON.parse(c.settings!).permissions.deny;
-    const other = claudeAbsolutePattern(OTHER)!;
-    expect(deny).toEqual(expect.arrayContaining([`Read(${other})`, `Read(${other}/**)`, `Edit(${other}/**)`, `Read(${claudeAbsolutePattern(ROOT)}/.env)`]));
-    expect(deny.some((rule) => rule.includes("run-mine"))).toBe(false);
+    // Only the project's own rules travel: the sibling run stays reachable, so a
+    // brief that builds on it (or work in any other folder) is never refused.
+    expect(deny).toEqual(expect.arrayContaining([`Read(${claudeAbsolutePattern(ROOT)}/.env)`]));
+    expect(deny.some((rule) => rule.includes(path.basename(OTHER)) || rule.includes("run-mine"))).toBe(false);
     // The settings file is the run's own and does not outlive it.
     expect(fs.existsSync(c.argv[c.argv.indexOf("--settings") + 1])).toBe(false);
     // The child knows its run folder, so a dispatch it starts nests inside it.

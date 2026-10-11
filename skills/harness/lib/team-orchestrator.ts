@@ -459,8 +459,7 @@ function runStep(step: ChainStep, idx: number, total: number, args: TeamRunArgs,
     // The prompt says in words that it is read-only, which is the instrument the
     // rest of the engine uses to keep deliverables where they belong.
     runtime: args.runtime, prompt: ep.stdout, cwd: args.projectRoot, addDirs: [args.projectDir, employeeOutDir, bizDir],
-    // Every seat of the run starts in the run's folder, fenced off from the
-    // runs beside it (run-workspace.ts).
+    // Every seat of the run starts in the run's folder (run-workspace.ts).
     workspace: runFolderOf(args.projectDir, args.projectRoot) ?? undefined,
     // The chain never passed this, so `--safe` stopped at the business door and
     // every employee inside ran in full trust regardless.

@@ -27,6 +27,8 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { spawnSync } from "node:child_process";
 import { ensureDir } from "../../_shared/lib/ensure-dir.ts";
+import { mayReplace, planEngineUpdate } from "../../nirvana/scripts/engine-release.ts";
+import { installedPackLicenses, legacyProvenancePath } from "../../_shared/lib/license-store.ts";
 
 const ANSI = {
   reset: "\x1b[0m", bold: "\x1b[1m", dim: "\x1b[2m",
@@ -50,6 +52,9 @@ const USAGE = [
   "  --force          discard local changes in the engine repo before pulling",
   "  --branch=<name>  pull a branch other than main",
   "  --skip-pull      re-apply skills without pulling",
+  "A release install stays on its channel: a prerelease engine moves to the newest greater",
+  "release (prerelease or stable), a stable one to the newest greater stable, and an older or",
+  "equal version is never installed. NIRVANA_ENGINE_URL / NIRVANA_ENGINE_TARBALL pin the source.",
 ].join("\n");
 if (args.includes("--help") || args.includes("-h")) { console.log(USAGE); process.exit(0); }
 {
@@ -75,25 +80,42 @@ const INSTALL_SCRIPT = path.join(REPO, "scripts/install.ts");
 //     re-fetch the latest ENGINE release from GitHub and re-run its installer.
 // Overrides for the release path: NIRVANA_ENGINE_REPO, NIRVANA_ENGINE_URL,
 // NIRVANA_ENGINE_TARBALL (local tarball, no network — used by tests).
+//
+// Without an explicit URL or tarball the release is chosen by the installed
+// engine's channel (nirvana/scripts/engine-release.ts): `releases/latest` is
+// never a prerelease, so a beta engine used to be replaced by the newest stable,
+// an older version, on every `nrv update`. An explicit source still wins.
 const ENGINE_REPO = process.env.NIRVANA_ENGINE_REPO || "gutomec/nirvana-os-engine";
-const ENGINE_URL = process.env.NIRVANA_ENGINE_URL
-  || `https://github.com/${ENGINE_REPO}/releases/latest/download/nirvana-os-engine.tar.gz`;
+const ENGINE_URL_PIN = process.env.NIRVANA_ENGINE_URL || "";
 const ENGINE_TARBALL = (process.env.NIRVANA_ENGINE_TARBALL || "").replace(/^file:\/\//, "");
+
+function installedEngineVersion(): string | null {
+  try { return fs.readFileSync(path.join(SKILLS_ROOT, "VERSION"), "utf8").trim() || null; }
+  catch { return null; }
+}
 
 // Installed paid packs: after updating the engine (or on --check), run each
 // pack's --check with PROVENANCE — the buyer sees engine AND pack in a single
 // `nrv update`. Best-effort: network down or no PROVENANCE never breaks the update.
+//
+// Each pack has its own license file (~/.nirvana-license/packs/<slug>/) since
+// setup.ts writes one per pack; an install made before that has only the single
+// legacy file, whose edition names the one pack it can check.
 function checkInstalledPacks(): void {
+  const script = path.join(SKILLS_ROOT, "_shared", "scripts", "update-pack.ts");
+  if (!fs.existsSync(script)) return;
+  const slugs = installedPackLicenses().map((l) => l.slug);
   try {
-    const prov = JSON.parse(fs.readFileSync(path.join(HOME, ".nirvana-license", "PROVENANCE.json"), "utf8"));
-    if (!prov?.license_key) return;
-    const slug = prov.edition || "genesis-circle";
-    const script = path.join(SKILLS_ROOT, "_shared", "scripts", "update-pack.ts");
-    if (!fs.existsSync(script)) return;
+    const prov = JSON.parse(fs.readFileSync(legacyProvenancePath(), "utf8"));
+    const legacy = prov?.license_key ? String(prov.edition || "genesis-circle") : "";
+    if (legacy && !slugs.includes(legacy)) slugs.push(legacy);
+  } catch { /* no legacy PROVENANCE */ }
+  // No PROVENANCE at all = no paid pack; stay silent.
+  for (const slug of slugs) {
     console.log("");
     console.log(c("lime", "▶") + c("bold", ` Pack installed ('${slug}') — checking for an update...`));
     spawnSync(process.execPath, [script, slug, "--check"], { windowsHide: true, stdio: "inherit" });
-  } catch { /* no PROVENANCE = no paid pack; stay silent */ }
+  }
 }
 
 /** Copy the deployed skills tree aside before anything overwrites it, and
@@ -168,9 +190,25 @@ function rollbackHint(backupDir: string | null): void {
 async function updateFromRelease(): Promise<never> {
   console.log("");
   console.log(c("lime", "▶") + c("bold", " Nirvana-OS update (engine release)"));
+  const installed = installedEngineVersion();
+  // An explicit source is installed as given; otherwise the channel decides,
+  // and a fallback download is installed only when it is newer (guarded below).
+  let source = ENGINE_TARBALL || ENGINE_URL_PIN;
+  let guarded = false;
+  if (!source) {
+    const plan = await planEngineUpdate(installed, { repo: ENGINE_REPO });
+    if (plan.kind === "current") {
+      console.log(c("green", `  ✓ ${plan.reason}.`));
+      checkInstalledPacks();
+      process.exit(0);
+    }
+    source = plan.url;
+    guarded = plan.kind === "fallback";
+    console.log(c(guarded ? "yellow" : "dim", `  ${plan.reason}`));
+  }
   if (checkOnly) {
-    console.log(c("dim", `  source: ${ENGINE_TARBALL || ENGINE_URL}`));
-    console.log(c("dim", "  --check: would fetch the latest engine release and re-run the installer."));
+    console.log(c("dim", `  source: ${source}`));
+    console.log(c("dim", `  --check: would fetch this engine release${guarded ? " (installed only if newer)" : ""} and re-run the installer.`));
     checkInstalledPacks();
     process.exit(0);
   }
@@ -179,9 +217,9 @@ async function updateFromRelease(): Promise<never> {
     if (!fs.existsSync(tarball)) { console.error(c("red", `tarball not found: ${tarball}`)); process.exit(1); }
     console.log(c("dim", `  local engine: ${tarball}`));
   } else {
-    console.log(c("dim", `  downloading: ${ENGINE_URL}`));
+    console.log(c("dim", `  downloading: ${source}`));
     let res: Response;
-    try { res = await fetch(ENGINE_URL, { redirect: "follow" }); }
+    try { res = await fetch(source, { redirect: "follow" }); }
     catch (e) { console.error(c("red", `network failure downloading the engine: ${(e as Error).message}`)); process.exit(1); }
     if (!res.ok) {
       console.error(c("red", `failed to download the engine (HTTP ${res.status}).`));
@@ -211,6 +249,12 @@ async function updateFromRelease(): Promise<never> {
   }
   const installer = path.join(root, "scripts", "install.ts");
   if (!fs.existsSync(installer)) { console.error(c("red", "invalid engine asset: scripts/install.ts not found.")); process.exit(1); }
+  if (guarded && !mayReplace(releaseVersion(root), installed)) {
+    console.log(c("green", `  ✓ The latest release (${releaseVersion(root) ?? "unknown version"}) is not newer than the installed engine (${installed}); nothing changed.`));
+    fs.rmSync(srcDir, { recursive: true, force: true });
+    checkInstalledPacks();
+    process.exit(0);
+  }
   // The installer writes over ~/.nirvana/skills in place, exactly as the git
   // path does, so it needs the copy just as much.
   const backupDir = backupSkills();
@@ -219,7 +263,7 @@ async function updateFromRelease(): Promise<never> {
   const ok = (r.status ?? 1) === 0;
   if (ok) {
     pruneOldBackups(backupDir);
-    emitUpdated({ path: "release", source: ENGINE_TARBALL || ENGINE_URL, to_version: releaseVersion(root), backup: backupDir });
+    emitUpdated({ path: "release", source: ENGINE_TARBALL || source, from_version: installed, to_version: releaseVersion(root), backup: backupDir });
     checkInstalledPacks();
   } else {
     console.error(c("red", "✗ installer failed (exit code " + r.status + ")"));

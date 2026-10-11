@@ -326,6 +326,10 @@ describe("runAgentX — the cascade bottom (injected runWithCascade seam)", () =
       expect(seen[0].prompt).toContain("Deliver the impossible artifact.");
       expect(seen[0].prompt).toContain(oroot);
       expect(seen[0].prompt).toContain("router no_match: nothing fits");
+      // Work the brief places elsewhere is done there; earlier runs are input only when pointed to.
+      expect(seen[0].prompt).toContain("When the brief's work lives in another folder");
+      expect(seen[0].prompt).toContain("Earlier runs beside this one are not your input unless the brief points to them.");
+      expect(seen[0].prompt).not.toContain("do not list, read or edit them");
       // The persona fixture carries no guard of its own: this line is runAgentX's.
       expect(seen[0].prompt).toContain(SCOPE_GUARD_EN);
       // A worker: the stamp is what makes "agent-x dispatches nothing" enforced.

@@ -355,7 +355,7 @@ const forceTeam = process.argv.includes("--team");
 const autoBriefEq = process.argv.find(a => a.startsWith("--auto-brief="));
 const autoBriefMode = autoBriefEq ? autoBriefEq.split("=")[1] : (process.argv.includes("--auto-brief") ? "inferred" : null);
 const wantAutoBrief = autoBriefMode !== null;
-// Default = autonomy (Bash enabled; claude in auto mode, the other runtimes skip approvals)
+// Default = autonomy (Bash enabled; every runtime skips its approvals, claude included)
 // so the agent can delegate to colleagues and deliver with quality.
 // --safe opts into the old restricted mode (allowlist + acceptEdits / workspace-write).
 const safeMode = process.argv.includes("--safe");
@@ -1765,8 +1765,7 @@ console.log(c("lime", "▶") + c("bold", ` Step 2/4 — buildEmployeePrompt (${i
 // inside the business subdir. That root is the scaffold's, never the project's — see PROJECT_ROOT.
 const scaffoldRoot = path.resolve(projDir, "..", "..");
 const projectRoot = PROJECT_ROOT;
-// The run's own folder: where the intake starts, fenced off from the runs
-// beside it (run-workspace.ts).
+// The run's own folder: where the intake starts (run-workspace.ts).
 const runWorkspace = runFolderOf(projDir, projectRoot) ?? undefined;
 // In exec mode the agent writes deliverables here (a clean subfolder export
 // includes but the scaffold dirs handoffs/tickets/employees are excluded).

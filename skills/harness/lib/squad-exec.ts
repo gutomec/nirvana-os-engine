@@ -615,8 +615,8 @@ export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
     // and the stamp is what makes that enforceable rather than advisory.
     dispatchRole: "squad",
     // The dispatched runtime starts in its own run folder, with the project it
-    // serves granted beside it (its .nirvana/, config, logs and code-base) and
-    // the other runs' folders fenced off (run-workspace.ts). The scaffold and
+    // serves granted beside it (its .nirvana/, config, logs and code-base)
+    // (run-workspace.ts). The scaffold and
     // the outputs dir are handed to it as additional directories so both stay
     // writable when a caller pins them elsewhere.
     workspace: runFolderOf(args.projectDir, args.projectRoot) ?? undefined,

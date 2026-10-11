@@ -117,6 +117,9 @@ describe("the brief points, it does not paste", () => {
     expect(brief).toContain(participationFile(PROJECT_DIR));
     expect(brief).toContain("summary naming the same seats, squads and clones");
     expect(brief).toContain("language of the request");
+    // Work the request places in another folder is done there, never refused.
+    expect(brief).toContain("When the request's work lives in another folder (a project to review or fix, a new project to create), do that work there");
+    expect(brief).not.toContain("Write nothing anywhere else");
   });
 
   test("support squads come with the division of labour, and none are invented", () => {
@@ -262,9 +265,10 @@ describe("the run", () => {
     expect(spec.seats.map((s: any) => s.slug)).toEqual(["al-ceo", "al-copy", "al-qa"]);
   });
 
-  test("inside a project the session runs in its run folder, and the hook file carries the fence", () => {
+  test("inside a project the session runs in its run folder, and the hook file carries only the project's deny rules", () => {
     const root = path.join(TMP, "fenced");
     write(path.join(root, ".nirvana", "project.yaml"), "id: prj_test\n");
+    write(path.join(root, ".claude", "settings.json"), JSON.stringify({ permissions: { deny: ["Read(./.env)"] } }));
     const run = path.join(root, "outputs", "run-a");
     const sibling = path.join(root, "outputs", "run-b");
     fs.mkdirSync(sibling, { recursive: true });
@@ -281,7 +285,10 @@ describe("the run", () => {
     expect(calls[0].workspace).toBe(run);
     const settings = JSON.parse(fs.readFileSync(calls[0].claudeSettings, "utf8"));
     expect(settings.hooks.PostToolUse[0].matcher).toBe("Agent|Task");
-    expect(JSON.stringify(settings.permissions.deny)).toContain("run-b");
+    // No folder is denied: the sibling run stays reachable, and only the
+    // project's own rules travel.
+    expect(JSON.stringify(settings.permissions.deny)).toContain("/.env)");
+    expect(JSON.stringify(settings.permissions.deny)).not.toContain("run-b");
     expect(JSON.stringify(settings.permissions.deny)).not.toContain("run-a");
   });
 

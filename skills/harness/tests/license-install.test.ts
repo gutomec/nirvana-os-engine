@@ -106,6 +106,39 @@ describe("nrv license install", () => {
   }, 30_000);
 });
 
+describe("one license per pack", () => {
+  test("install also keeps the file as the pack's own license, under its edition", () => {
+    const h = home("per-pack"); pack(h);
+    expect(run(h, ["install"]).status).toBe(0);
+    const own = path.join(h, ".nirvana-license", "packs", "genesis-circle");
+    expect(fs.readFileSync(path.join(own, "PROVENANCE.json"), "utf8")).toBe(PROVENANCE);
+    expect(fs.existsSync(path.join(own, "LICENSE.txt"))).toBe(true);
+  }, 30_000);
+
+  test("an install from before the per-pack copies gains one, instead of a no-op", () => {
+    const h = home("legacy-upgrade"); pack(h);
+    fs.mkdirSync(path.dirname(store(h)), { recursive: true });
+    fs.writeFileSync(store(h), PROVENANCE);
+    const r = run(h, ["install"]);
+    expect(r.status).toBe(0);
+    expect(r.stdout).not.toMatch(/Already installed/);
+    expect(fs.existsSync(path.join(h, ".nirvana-license", "packs", "genesis-circle", "PROVENANCE.json"))).toBe(true);
+  }, 30_000);
+
+  test("--pack reads that pack's own license before the legacy file", () => {
+    const h = home("pack-flag");
+    const own = path.join(h, ".nirvana-license", "packs", "creators");
+    fs.mkdirSync(own, { recursive: true });
+    fs.writeFileSync(path.join(own, "PROVENANCE.json"), JSON.stringify({ license_key: "KEY-CREATORS", edition: "creators" }));
+    fs.writeFileSync(store(h), PROVENANCE);
+    expect(run(h, ["status", "--pack", "creators"]).stdout).toContain("KEY-CREATORS");
+    expect(run(h, ["--pack", "creators"]).stdout).toContain("KEY-CREATORS");
+    // Without --pack, and for a pack with no file of its own: the legacy file, as before.
+    expect(run(h, ["status"]).stdout).toContain("TEST-KEY-1234");
+    expect(run(h, ["status", "--pack", "education"]).stdout).toContain("TEST-KEY-1234");
+  }, 30_000);
+});
+
 describe("the failure message points at the cheap fix", () => {
   test("update-pack offers `nrv license install` before reinstalling the pack", () => {
     const src = fs.readFileSync(path.resolve(import.meta.dir, "..", "..", "_shared", "scripts", "update-pack.ts"), "utf8");

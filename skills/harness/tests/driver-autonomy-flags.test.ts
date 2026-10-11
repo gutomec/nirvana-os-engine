@@ -96,7 +96,7 @@ describe("light layer — buildCall argv per adapter", () => {
 
   test.each([
     ["claude-code",
-      ["-p", "--no-session-persistence", "--output-format", "json", "--permission-mode", "auto", "--append-system-prompt", "persona"],
+      ["-p", "--no-session-persistence", "--output-format", "json", "--dangerously-skip-permissions", "--append-system-prompt", "persona"],
       ["-p", "--no-session-persistence", "--output-format", "json", "--append-system-prompt", "persona"]],
     ["codex", ["exec", "--dangerously-bypass-approvals-and-sandbox"], ["exec"]],
     ["gemini-cli", ["-p", "", "--approval-mode", "yolo"], ["-p", ""]],
@@ -127,10 +127,10 @@ describe("headless layer — runHeadless argv per runtime", () => {
     return readCapturedArgs(CAP, cli);
   }
 
-  test("claude-code: auto mode by default, never the bypass; the acceptEdits allowlist path under =0", () => {
+  test("claude-code: full access by default (the bypass, never auto mode); the acceptEdits allowlist path under =0", () => {
     const trusted = argv("claude-code", "claude", undefined);
-    expect(hasPair(trusted, ["--permission-mode", "auto"])).toBeTrue();
-    expect(trusted).not.toContain("--dangerously-skip-permissions");
+    expect(trusted).toContain("--dangerously-skip-permissions");
+    expect(trusted).not.toContain("--permission-mode");
     expect(trusted).not.toContain("--allowedTools");
     const restricted = argv("claude-code", "claude", "0", true);
     expect(restricted).not.toContain("--dangerously-skip-permissions");
@@ -181,8 +181,8 @@ describe("headless layer — runHeadless argv per runtime", () => {
     expect(at).toBeGreaterThanOrEqual(0);
     expect(args).toHaveLength(at + 2);   // the directive pair is last: nothing behind it to lose
     expect(args.lastIndexOf("--add-dir")).toBeLessThan(at);
-    expect(args.indexOf("--permission-mode")).toBeGreaterThanOrEqual(0);
-    expect(args.indexOf("--permission-mode")).toBeLessThan(at);
+    expect(args.indexOf("--dangerously-skip-permissions")).toBeGreaterThanOrEqual(0);
+    expect(args.indexOf("--dangerously-skip-permissions")).toBeLessThan(at);
     expect(hasPair(args, ["--add-dir", "/tmp/grant-b"])).toBeTrue();
     // What the CHILD received, read from its own argv. Inline (the direct-spawn path, and every
     // POSIX run) this is the multi-line directive itself, so the run proves what no simulation
@@ -262,7 +262,7 @@ describe("a dispatched worker does not open its own agents", () => {
 
   test("the subagent tools are denied by default, alongside the autonomy flag", () => {
     const a = argvFor({});
-    expect(hasPair(a, ["--permission-mode", "auto"])).toBeTrue();
+    expect(a).toContain("--dangerously-skip-permissions");
     const i = a.indexOf("--disallowedTools");
     expect(i).toBeGreaterThan(-1);
     expect(a.slice(i + 1, i + 3)).toEqual(["Task", "Agent"]);
