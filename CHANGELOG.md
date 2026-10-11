@@ -58,6 +58,18 @@ The project contract and the on-demand note were rewritten for this release (per
 
 Backported from 0.15. The installer wrote Antigravity's hooks to `~/.antigravity/settings.json`, which `agy` does not read, so an `agy` session never received Nirvana's context. `nrv setup` now writes a named `nirvana-os` hook to `~/.gemini/config/hooks.json`: a `PreInvocation` that runs `gemini-session-start.ts --agy` and, before each model call, injects as a transient message the same context Gemini CLI gets at SessionStart. Other named hooks in that file are kept. Install and uninstall take our entries out of `~/.antigravity/settings.json` and leave the user's own. `agy` gets no audit hooks: its PostToolUse carries no tool name and its PreToolUse must answer with a permission decision. `nrv install --check` prints the new file's path and fails while entries of ours remain in the old one, and `nrv doctor` reports the hook in `hooks.json` and any entry left in the old file. Without `~/.gemini/config`, nothing is created.
 
+### Runtime fixes from the 2026-10-11 runtime audit
+
+A dispatched Claude Code worker could still fan out through the `Workflow` tool, which runs in `-p`, is approved in bypass mode and may start up to 1,000 agents. Headless workers now deny `Task Agent Workflow` and run with `CLAUDE_CODE_DISABLE_WORKFLOWS=1`; a caller with `allowSubagents` keeps all three, as before. Codex workers get `-c agents.enabled=false` on the same rule, in `runCodex` and in the Orca launcher.
+
+Since Claude Code 2.1.277 a resumed session reports its cumulative `total_cost_usd`. `nrv revise`, the delivery pipeline's revision rounds, solo review corrections and Glance chat turns recorded that total as the run's own spend, so each round counted the whole session again. The run ledger now keeps the last total per session (a `session_costs` table) and a resumed run records the difference. A session with no recorded total keeps the old behaviour.
+
+GPT-5.5 leaves Codex on 2026-10-14. Every example and schema hint that taught `codex:gpt-5.5` now names `gpt-6.1-sol`; a user config that still names gpt-5.5 is passed through unchanged.
+
+The Antigravity runner no longer re-spawns a failed turn. Since agy 1.2.10 a model error mid-turn exits 3 with `AGY_ERROR` after the turn was paid for, and a stderr heuristic that dropped `--output-format` ran the whole turn again. A failed agy run is now reported as failed.
+
+Grok workers pass `--trust`, so a new run folder loads the project's `AGENTS.md`, skills and MCP (a build that rejects the flag is retried once without it), and a resume continues the grok session with `-r <id>`. Pi never receives `--provider` without `--model`, which pi 1.0.0 rejects (the result carries a warning instead), and takes the prompt after `--`, so a brief that starts with `-` or `---` is no longer read as a flag. Kimi results keep only assistant messages, never a tool's output, and directory grants travel as `--add-dir`. `opencode run` gets `--auto` on the autonomous path, like the other runtimes. The adapter docs for Claude Code, Codex, Antigravity, Grok, Kimi and Pi were rewritten against the current CLIs and no longer teach commands that do not exist, such as `codex run`, `--max-turns` for Codex, `--max-iterations`, `--tools` or `--checkpoint`.
+
 ## 0.14.10 — 2026-10-08
 
 ### A relative --outputs-root names one folder for everyone

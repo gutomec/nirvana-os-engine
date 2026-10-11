@@ -467,9 +467,10 @@ describe("directory grants — every runtime that has a flag passes it; the rest
     expect(RUNTIME_DIR_GRANT_FLAG.codex).toBe("--add-dir");
     expect(RUNTIME_DIR_GRANT_FLAG["antigravity-cli"]).toBe("--add-dir");
     expect(RUNTIME_DIR_GRANT_FLAG["qwen-code"]).toBe("--include-directories");
+    expect(RUNTIME_DIR_GRANT_FLAG["kimi-cli"]).toBe("--add-dir");
   });
 
-  for (const [runtime, cli] of [["claude-code", "claude"], ["codex", "codex"], ["antigravity-cli", "agy"], ["qwen-code", "qwen"]] as const) {
+  for (const [runtime, cli] of [["claude-code", "claude"], ["codex", "codex"], ["antigravity-cli", "agy"], ["qwen-code", "qwen"], ["kimi-cli", "kimi"]] as const) {
     test(`${runtime}: each extra directory rides argv behind ${RUNTIME_DIR_GRANT_FLAG[runtime]}`, () => {
       const r = runWith(runtime, { addDirs: dirs });
       expect(r.ok).toBe(true);
@@ -485,7 +486,7 @@ describe("directory grants — every runtime that has a flag passes it; the rest
     }, spawnBudgetMs(2));
   }
 
-  for (const runtime of ["grok-cli", "pi", "kimi-cli", "opencode"] as const) {
+  for (const runtime of ["grok-cli", "pi", "opencode"] as const) {
     test(`${runtime}: no flag → the result says the grant did not happen`, () => {
       const r = runWith(runtime, { addDirs: dirs });
       expect(RUNTIME_DIR_GRANT_FLAG[runtime]).toBeNull();
@@ -507,13 +508,13 @@ describe("directory grants — every runtime that has a flag passes it; the rest
 
 describe("codex — flags audited against 0.153.4, usage and notices", () => {
   test("trust: bypass flag; grants, model and provider as -c", () => {
-    const r = runWith("codex", { addDirs: [path.join(TMP, "biz")], model: "gpt-5.5", providerHint: "openai" });
+    const r = runWith("codex", { addDirs: [path.join(TMP, "biz")], model: "gpt-6.1-sol", providerHint: "openai" });
     expect(r.ok).toBe(true);
     const args = capturedArgs("codex");
     expect(args).toContain("--dangerously-bypass-approvals-and-sandbox");
     expect(args).not.toContain("--provider");
     expect(args).toContain('model_provider="openai"');
-    expect(args[args.indexOf("--model") + 1]).toBe("gpt-5.5");
+    expect(args[args.indexOf("--model") + 1]).toBe("gpt-6.1-sol");
     expect(args).not.toContain("--ephemeral");
     expect(args).not.toContain("-s");
   }, spawnBudgetMs(2));

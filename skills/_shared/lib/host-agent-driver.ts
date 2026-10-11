@@ -62,6 +62,7 @@ import { childEnvFor, type ChildEnvMode } from "./child-env.ts";
 import { childDepth, currentDepth, currentRole, DEFAULT_MAX_DEPTH, DEPTH_ENV, mayDispatch, refusalMessage, roleMayDispatch, roleRefusalMessage, ROLE_ENV, type DispatchRole } from "./dispatch-depth.ts";
 import { runOrcaWorker } from "./orca-worker.ts";
 import { confineToWorkspace, FENCE_FILE_PREFIX, RUN_WORKSPACE_ENV } from "./run-workspace.ts";
+import { claudeRunCost } from "./claude-session-cost.ts";
 
 /** `execution.child_env`. The variable NIRVANA_CHILD_ENV wins over any file
  *  (settings precedence), which is how a child that was itself filtered — it
@@ -133,8 +134,14 @@ export function headlessSkipPermissions(): boolean {
  *  already says so; this makes it hold in the runtime: `claude` documents
  *  CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1 as turning off all background task
  *  functionality. A value the user set explicitly is left as it is. */
-export function headlessClaudeEnv<T extends Record<string, string | undefined>>(env: T): T {
+export function headlessClaudeEnv<T extends Record<string, string | undefined>>(env: T, opts: { denySubagents?: boolean } = {}): T {
   if (env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS === undefined) (env as Record<string, string | undefined>).CLAUDE_CODE_DISABLE_BACKGROUND_TASKS = "1";
+  // A worker that may not open subagents may not open a workflow either: the
+  // Workflow tool runs in `-p`, bypass mode approves it, and one run may fan out
+  // to 1,000 agents (code.claude.com/docs/en/workflows). The `--disallowedTools`
+  // deny is one fence; this variable, documented on the same page, is the
+  // second. Forced, not defaulted: it is a fence, like the deny it backs.
+  if (opts.denySubagents) (env as Record<string, string | undefined>).CLAUDE_CODE_DISABLE_WORKFLOWS = "1";
   return env;
 }
 
@@ -670,6 +677,8 @@ const RUNTIMES: RuntimeAdapter[] = [
       // Persona via --append-system-prompt (native, confirmed on pi 0.82.1).
       const args = ["-p", "--no-approve"];
       if (persona) args.push("--append-system-prompt", clampPersona(persona, "pi"));
+      // `--` ends the options (runPi's rule): a message starting with `-` or `---` stays a message.
+      args.push("--");
       if (Buffer.byteLength(userMsg, "utf8") <= MAX_ARGV_PROMPT_BYTES) {
         args.push(userMsg);
         return { args };
@@ -706,7 +715,8 @@ const RUNTIMES: RuntimeAdapter[] = [
       const merged = persona ? `${persona}\n\n---\n\n${userMsg}` : userMsg;
       const f = writePromptFile(merged);
       const args = ["--prompt-file", f];
-      if (headlessSkipPermissions()) args.push("--always-approve");
+      // --trust: the folder-trust grant runGrok passes, under the same switch.
+      if (headlessSkipPermissions()) args.push("--always-approve", "--trust");
       return { args, tmpFiles: [f] };
     },
     parseStdout(stdout) {
@@ -736,7 +746,8 @@ const RUNTIMES: RuntimeAdapter[] = [
     cli: "opencode",
     buildCall(persona, userMsg) {
       const merged = persona ? `${persona}\n\n---\n\n${userMsg}` : userMsg;
-      return argvOrPromptFile(merged, (p) => ["run", p]);
+      // `--auto` under the headless switch, as runOpencode passes it.
+      return argvOrPromptFile(merged, (p) => ["run", p, ...(headlessSkipPermissions() ? ["--auto"] : [])]);
     },
     parseStdout(stdout) { return stdout.trim(); },
     envHints: [],
@@ -1372,7 +1383,9 @@ export const RUNTIME_DIR_GRANT_FLAG: Record<Runtime, string | null> = {
   codex: "--add-dir",
   "antigravity-cli": "--add-dir",
   "qwen-code": "--include-directories",
-  "kimi-cli": null,
+  // Kimi Code 2.x documents `--add-dir <dir>`, repeatable (kimi-command
+  // reference, audited 2026-10-11); a build that rejects it is retried without.
+  "kimi-cli": "--add-dir",
   "grok-cli": null,
   pi: null,
   opencode: null,
@@ -1452,6 +1465,10 @@ let spawnInWorkspace: string | null = null;
 /** The run's own variables (RunHeadlessOpts.env), laid over the child's
  *  environment last. Same save-and-restore idiom as the three above. */
 let spawnExtraEnv: Record<string, string> | null = null;
+/** True while runClaudeCode spawns a worker that may not open its own agents,
+ *  so the claude child also gets CLAUDE_CODE_DISABLE_WORKFLOWS. Same
+ *  save-and-restore idiom as the four above. */
+let spawnDenySubagents = false;
 
 /** All runners spawn their child through this. Pass-through to spawnSync when
  * unledgered (zero behavior change); with an active ledger context, stdout/
@@ -1486,7 +1503,7 @@ function driverSpawnSync(cmd: string, args: string[], options: SpawnSyncOptions 
   // And WHERE it runs, so what it dispatches belongs to its run.
   if (spawnInWorkspace) baseEnv[RUN_WORKSPACE_ENV] = spawnInWorkspace;
   if (spawnExtraEnv) Object.assign(baseEnv, spawnExtraEnv);
-  if (isClaude) headlessClaudeEnv(baseEnv);
+  if (isClaude) headlessClaudeEnv(baseEnv, { denySubagents: spawnDenySubagents });
   options = {
     // Windows: a process without its own console makes Windows allocate a VISIBLE
     // one for every child it spawns, and `stdio: "ignore"` does not prevent it.
@@ -1662,7 +1679,12 @@ function runClaudeCode(opts: RunHeadlessOpts): RunHeadlessResult {
   //
   // A caller that genuinely orchestrates — not a worker — opts back in with
   // `allowSubagents: true`.
-  if (!opts.allowSubagents) args.push("--disallowedTools", "Task", "Agent");
+  //
+  // `Workflow` joins the list: the dynamic-workflow tool runs in `-p`, bypass
+  // mode approves it, and one call may spawn up to 1,000 agents
+  // (code.claude.com/docs/en/workflows, audited 2026-10-11 on 2.1.296). The
+  // child env also carries CLAUDE_CODE_DISABLE_WORKFLOWS=1 (headlessClaudeEnv).
+  if (!opts.allowSubagents) args.push("--disallowedTools", "Task", "Agent", "Workflow");
 
   if (typeof opts.maxBudgetUsd === "number") args.push("--max-budget-usd", String(opts.maxBudgetUsd));
   if (opts.claudeSettings) args.push("--settings", opts.claudeSettings);
@@ -1677,6 +1699,8 @@ function runClaudeCode(opts: RunHeadlessOpts): RunHeadlessResult {
   args.push(...directive.args);
 
   let r!: SpawnSyncReturns<string>;
+  const previousDenySubagents = spawnDenySubagents;
+  spawnDenySubagents = !opts.allowSubagents;
   try {
     r = driverSpawnSync("claude", args, {
       cwd: opts.cwd,
@@ -1686,6 +1710,7 @@ function runClaudeCode(opts: RunHeadlessOpts): RunHeadlessResult {
       maxBuffer: 64 * 1024 * 1024,
     });
   } finally {
+    spawnDenySubagents = previousDenySubagents;
     removeTmpFiles(directive.tmpFiles);
   }
 
@@ -1705,7 +1730,9 @@ function runClaudeCode(opts: RunHeadlessOpts): RunHeadlessResult {
     const parsed = JSON.parse(stdout.trim());
     sessionId = parsed.session_id ?? null;
     result = typeof parsed.result === "string" ? parsed.result : JSON.stringify(parsed.result ?? "");
-    costUsd = typeof parsed.total_cost_usd === "number" ? parsed.total_cost_usd : null;
+    // A resumed session reports its cumulative total (claude 2.1.277+): the
+    // run's own spend is the difference from the total last recorded for it.
+    costUsd = claudeRunCost({ resumedFrom: opts.sessionId, sessionId, reportedUsd: typeof parsed.total_cost_usd === "number" ? parsed.total_cost_usd : null });
     if (typeof parsed.subtype === "string") resultSubtype = parsed.subtype;
     if (typeof parsed.is_error === "boolean") isError = isError || parsed.is_error;
   } catch {
@@ -1788,6 +1815,12 @@ function runCodex(opts: RunHeadlessOpts): RunHeadlessResult {
   // the user's own value in force.
   const cxEffort = effortFor(opts, "codex");
   if (cxEffort) args.push("-c", `model_reasoning_effort=${JSON.stringify(cxEffort)}`);
+  // A dispatched worker does not open its own agents (the claude runner's rule):
+  // codex ships `multi_agent` on by default, and `agents.enabled = false` is
+  // the documented switch (developers.openai.com/codex/subagents, audited
+  // 2026-10-11). A config key, not `--disable multi_agent`: an unknown `-c`
+  // key is tolerated by older builds, an unknown `--disable` feature exits 1.
+  if (!opts.allowSubagents) args.push("-c", "agents.enabled=false");
   // `--provider` no longer exists on `codex exec` ("unexpected argument" on
   // 0.153); the provider is a config key, overridable per run with -c.
   if (opts.providerHint) args.push("-c", `model_provider=${JSON.stringify(opts.providerHint)}`);
@@ -1910,8 +1943,15 @@ function runAntigravity(opts: RunHeadlessOpts): RunHeadlessResult {
   //
   // --output-format json: under non-TTY, `agy -p` in TEXT mode can drop the
   // final response from stdout (documented terminal-render bug); JSON does not
-  // suffer from it. Old builds do NOT have the flag (confirmed via --help on
-  // installed versions) — if the spawn fails with a flag error, retry without it.
+  // suffer from it.
+  //
+  // ONE spawn, never a re-spawn. Since agy 1.2.10 a model or agent error in the
+  // middle of a turn exits 3 with an `AGY_ERROR` line, after the turn was paid
+  // for. The retry that used to sit here (without --output-format on any
+  // stderr naming "unknown"/"invalid") matched those messages and ran the whole
+  // turn again. Every supported agy has --output-format (1.3.3 help), so it is
+  // gone: a failed run is reported as failed, and the callers' own recovery
+  // decides.
   const delivery = argvOrPromptFile(withPreamble(opts), (p) => ["-p", p]);
   const args = [...delivery.args, "--output-format", "json"];
   if (opts.sessionId) args.push("--continue");
@@ -1929,10 +1969,6 @@ function runAntigravity(opts: RunHeadlessOpts): RunHeadlessResult {
   let r!: SpawnSyncReturns<string>;
   try {
     r = driverSpawnSync("agy", args, spawnOpts);
-    if ((r.status ?? 1) !== 0 && /output[- ]format|unknown|unrecognized|invalid (option|flag|argument)/i.test(r.stderr || "")) {
-      const i = args.indexOf("--output-format");
-      r = driverSpawnSync("agy", [...args.slice(0, i), ...args.slice(i + 2)], spawnOpts);
-    }
   } finally {
     removeTmpFiles(delivery.tmpFiles);
   }
@@ -2011,6 +2047,8 @@ function runKimi(opts: RunHeadlessOpts): RunHeadlessResult {
   const args = [...delivery.args, "--output-format", "stream-json"];
   const kmModel = opts.model ?? resolveSystemModel("kimi-cli");
   if (kmModel) args.push("-m", kmModel);
+  for (const d of opts.addDirs ?? []) args.push("--add-dir", d);
+  const warnings: string[] = [];
 
   const spawnOpts = {
     cwd: opts.cwd,
@@ -2021,6 +2059,13 @@ function runKimi(opts: RunHeadlessOpts): RunHeadlessResult {
   let r!: SpawnSyncReturns<string>;
   try {
     r = driverSpawnSync("kimi", args, spawnOpts);
+    // A build without --add-dir (the legacy Python kimi-cli line) rejects it
+    // while parsing argv, before the model: drop the grants once, and say so.
+    if ((r.status ?? 1) !== 0 && args.includes("--add-dir") && /add[- ]dir/i.test(r.stderr || "")) {
+      for (let i = args.indexOf("--add-dir"); i >= 0; i = args.indexOf("--add-dir")) args.splice(i, 2);
+      warnings.push(`kimi-cli: this version does not know --add-dir; retried without it (not granted by the CLI: ${(opts.addDirs ?? []).join(", ")})`);
+      r = driverSpawnSync("kimi", args, spawnOpts);
+    }
     if ((r.status ?? 1) !== 0 && /output[- ]format|unknown|unrecognized|invalid (option|flag|argument)/i.test(r.stderr || "")) {
       const i = args.indexOf("--output-format");
       r = driverSpawnSync("kimi", [...args.slice(0, i), ...args.slice(i + 2)], spawnOpts);
@@ -2034,11 +2079,26 @@ function runKimi(opts: RunHeadlessOpts): RunHeadlessResult {
   const stderr = (r.stderr || "").trim();
   const rawStdout = (r.stdout || "").trim();
 
-  // stream-json = NDJSON events. Extract the assistant's final text defensively
-  // (schema varies by build), accumulating any assistant-content field; if the
+  // stream-json = one message per line: "an Assistant message; when the model
+  // calls a tool, an Assistant message with `tool_calls` is emitted first,
+  // followed by the corresponding Tool message, then subsequent Assistant
+  // messages" (kimi-command reference, audited 2026-10-11). Only assistant
+  // messages make the result: a Tool message carries the tool's output (file
+  // dumps, command output), which used to land in the worker's result. The
+  // answer is the last assistant message without tool_calls (else the last
+  // assistant text). Lines with no role keep the older event reading; if the
   // output isn't NDJSON (plain-text fallback path) keep the whole stdout.
+  const roleOf = (j: any): string | null =>
+    typeof j?.role === "string" ? j.role : typeof j?.message?.role === "string" ? j.message.role : null;
+  const textOf = (content: unknown): string => typeof content === "string" ? content
+    : Array.isArray(content) ? content.map((part: any) => typeof part === "string" ? part
+      : (part?.type === undefined || part?.type === "text") && typeof part?.text === "string" ? part.text : "").join("")
+    : "";
   let sessionId: string | null = sid;
   let assistant = "";
+  let sawRole = false;
+  let lastAssistant = "";
+  let finalAssistant = "";
   let sawJson = false;
   let streamError: string | null = null;
   let costUsd: number | null = null;
@@ -2059,6 +2119,19 @@ function runKimi(opts: RunHeadlessOpts): RunHeadlessResult {
         else if (j.is_error === false) streamError = null;
         if (typeof j.total_cost_usd === "number" && Number.isFinite(j.total_cost_usd)) costUsd = j.total_cost_usd;
       }
+      const role = roleOf(j);
+      if (role !== null) {
+        sawRole = true;
+        if (role === "assistant") {
+          const message = typeof j.role === "string" ? j : j.message;
+          const text = textOf(message?.content);
+          if (text.trim()) {
+            lastAssistant = text;
+            if (!(Array.isArray(message?.tool_calls) && message.tool_calls.length)) finalAssistant = text;
+          }
+        }
+        continue;
+      }
       const piece = typeof j.text === "string" ? j.text
         : typeof j.content === "string" ? j.content
         : typeof j.response === "string" ? j.response
@@ -2069,12 +2142,13 @@ function runKimi(opts: RunHeadlessOpts): RunHeadlessResult {
       if (piece) assistant += piece;
     } catch { /* not a json line */ }
   }
-  const result = (sawJson && assistant) ? assistant.trim() : rawStdout;
+  const result = sawRole ? (finalAssistant || lastAssistant).trim()
+    : (sawJson && assistant) ? assistant.trim() : rawStdout;
 
   const ok = exitCode === 0 && streamError === null;
   return {
     ok, runtime: "kimi-cli", sessionId, result,
-    ...noDirGrantWarning("kimi-cli", opts.addDirs),
+    ...(warnings.length ? { warnings } : {}),
     costUsd, ...(costUsd === null ? { costUnavailable: true } : {}),
     exitCode, stderr, durationMs,
     error: ok ? undefined : (streamError || salientError(stderr, "kimi failed")),
@@ -2097,14 +2171,31 @@ function runKimi(opts: RunHeadlessOpts): RunHeadlessResult {
 // json` returns a single object (real keys: text/sessionId/total_cost_usd).
 // Old builds may lack `--output-format` (retry without it) or even
 // `--prompt-file` (retry with -p argv — small prompts only at that point).
+//
+// Folder trust (grok 1.0.x): project AGENTS.md, project skills under
+// `.agents/skills`, project hooks and project MCP load only in a trusted
+// folder, and "headless startup with these sources requires `--trust` or a
+// prior grant" (~/.grok/docs/user-guide/22-permissions-and-safety.md, 1.0.44).
+// A run folder is new on every dispatch, so the autonomous path passes the
+// hidden `--trust` (parsed by 1.0.44: `grok --trust --version`); `--safe`
+// leaves trust to the user. A build that does not know the flag rejects it
+// while parsing argv, before any model call, so that one error is retried
+// without it.
+//
+// Resume: `-r <id>` continues the session (`grok --help`, 1.0.44: "-r,
+// --resume [<SESSION_ID_OR_TITLE>]"); without it a revise started a fresh
+// conversation.
 function runGrok(opts: RunHeadlessOpts): RunHeadlessResult {
   const started = Date.now();
   const sid = opts.sessionId || randomUUID();
   const merged = withPreamble(opts);
   const promptFile = writePromptFile(merged);
+  let withTrust = opts.yolo !== false;
   const buildArgs = (delivery: string[], withFormat: boolean): string[] => {
     const a = [...delivery, ...(withFormat ? ["--output-format", "json"] : []), "--cwd", opts.cwd];
+    if (opts.sessionId) a.push("-r", opts.sessionId);
     if (opts.yolo !== false) a.push("--always-approve");
+    if (withTrust) a.push("--trust");
     const gkModel = opts.model ?? resolveSystemModel("grok-cli");
     if (gkModel) a.push("-m", gkModel);
     return a;
@@ -2122,6 +2213,10 @@ function runGrok(opts: RunHeadlessOpts): RunHeadlessResult {
   try {
     let delivery = ["--prompt-file", promptFile];
     r = driverSpawnSync("grok", buildArgs(delivery, true), spawnOpts);
+    if (withTrust && (r.status ?? 1) !== 0 && /unexpected argument '--trust'/.test(r.stderr || "")) {
+      withTrust = false;
+      r = driverSpawnSync("grok", buildArgs(delivery, true), spawnOpts);
+    }
     if (flagError(r) && /prompt[- ]file/i.test(r.stderr || "")) {
       // Very old build without --prompt-file → argv fallback (ARG_MAX-unsafe
       // above MAX_ARGV_PROMPT_BYTES, but the flagless build leaves no choice).
@@ -2209,8 +2304,17 @@ function runPi(opts: RunHeadlessOpts): RunHeadlessResult {
   if (opts.appendSystemPrompt) flags.push("--append-system-prompt", opts.appendSystemPrompt);
   const piModel = opts.model ?? resolveSystemModel("pi");
   if (piModel) flags.push("--model", piModel);
-  if (opts.providerHint) flags.push("--provider", opts.providerHint);
+  // `--provider` travels only WITH `--model`: since pi 1.0.0 "--provider
+  // without --model now fails with an error" (CHANGELOG, issue #10236), where
+  // 0.8x ignored it. Alone, it is dropped and pi uses its configured default.
+  const droppedProvider = !!opts.providerHint && !piModel;
+  if (opts.providerHint && piModel) flags.push("--provider", opts.providerHint);
   flags.push(opts.yolo === false ? "--no-approve" : "--approve");
+  // The prompt goes after `--`: a brief that starts with `-` or `---` (YAML
+  // front matter, a bullet) is otherwise parsed as an option (`pi --help`:
+  // `pi -p -- "- Summarize"`). `@file` attachments still work after it
+  // (verified in pi 0.84.3 dist/cli/args.js).
+  flags.push("--");
 
   let promptArgs: string[] = [opts.prompt];
   let tmpFiles: string[] | undefined;
@@ -2281,9 +2385,13 @@ function runPi(opts: RunHeadlessOpts): RunHeadlessResult {
   const result = (sawJson && assistant) ? assistant.trim() : rawStdout;
   const ok = exitCode === 0 && streamError === null;
 
+  const piWarnings = [
+    ...(((noDirGrantWarning("pi", opts.addDirs) as { warnings?: string[] }).warnings) ?? []),
+    ...(droppedProvider ? [`pi: --provider ${opts.providerHint} needs --model (pi 1.0.0 rejects it alone); not passed, pi used its configured provider`] : []),
+  ];
   return {
     ok, runtime: "pi", sessionId, result,
-    ...noDirGrantWarning("pi", opts.addDirs),
+    ...(piWarnings.length ? { warnings: piWarnings } : {}),
     costUsd, ...(costUsd === null ? { costUnavailable: true } : {}),
     exitCode, stderr, durationMs,
     error: ok ? undefined : (streamError || salientError(stderr, "pi failed")),
@@ -2347,9 +2455,14 @@ function runQwen(opts: RunHeadlessOpts): RunHeadlessResult {
 // verified (binary not auditable here): argv for small prompts, temp-file
 // bootstrap above MAX_ARGV_PROMPT_BYTES; exit code is the only failure
 // signal. No session capture, no native USD figure → costUnavailable.
+//
+// Autonomy: `opencode run --auto` "Auto-approve[s] permissions that are not
+// explicitly denied" (opencode.ai/docs/cli, audited 2026-10-11), the bypass
+// every other adapter passes by default; `--safe` (yolo false) leaves the
+// user's own permission config in charge.
 function runOpencode(opts: RunHeadlessOpts): RunHeadlessResult {
   const started = Date.now();
-  const delivery = argvOrPromptFile(withPreamble(opts), (p) => ["run", p]);
+  const delivery = argvOrPromptFile(withPreamble(opts), (p) => ["run", p, ...(opts.yolo !== false ? ["--auto"] : [])]);
 
   let r!: SpawnSyncReturns<string>;
   try {

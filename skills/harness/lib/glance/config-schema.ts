@@ -247,7 +247,7 @@ export const CONFIG_SCHEMA: ConfigGroup[] = [
         key: "LLM_CASCADE",
         type: "string",
         label: "LLM cascade (failover de cota)",
-        description: "Cadeia ordenada de runtime:model@provider$budget separada por vírgula. Se um esgotar a cota, o próximo assume. Ex.: claude-code:opus,codex:gpt-5.5$10,antigravity-cli:gemini-3-flash",
+        description: "Cadeia ordenada de runtime:model@provider$budget separada por vírgula. Se um esgotar a cota, o próximo assume. Ex.: claude-code:opus,codex:gpt-6.1-sol$10,antigravity-cli:gemini-3-flash",
         placeholder: "claude-code,codex,antigravity-cli",
         recommendedScope: "global",
       },

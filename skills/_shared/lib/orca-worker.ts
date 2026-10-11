@@ -144,7 +144,7 @@ export interface OrcaWorkerHooks {
  * (yolo false) drops them, and claude takes `--permission-mode acceptEdits`
  * like its headless twin. Null for a runtime Orca has no agent id for.
  */
-export function interactiveArgv(opts: Pick<RunHeadlessOpts, "runtime" | "yolo" | "model" | "effort" | "addDirs" | "claudeSettings">): string[] | null {
+export function interactiveArgv(opts: Pick<RunHeadlessOpts, "runtime" | "yolo" | "model" | "effort" | "addDirs" | "claudeSettings"> & Partial<Pick<RunHeadlessOpts, "allowSubagents">>): string[] | null {
   if (!ORCA_AGENT_ID[opts.runtime]) return null;
   const yolo = opts.yolo !== false;
   // The caller's value, else the user's pin, else nothing — a bare CLI uses the
@@ -176,6 +176,8 @@ export function interactiveArgv(opts: Pick<RunHeadlessOpts, "runtime" | "yolo" |
       const a = ["codex", ...(yolo ? ["--dangerously-bypass-approvals-and-sandbox"] : [])];
       if (model) a.push("-m", model);
       if (effort) a.push("-c", `model_reasoning_effort=${JSON.stringify(effort)}`);
+      // The headless runner's rule: no subagents unless the caller orchestrates.
+      if (!opts.allowSubagents) a.push("-c", "agents.enabled=false");
       for (const d of dirs) a.push("--add-dir", d);
       return a;
     }

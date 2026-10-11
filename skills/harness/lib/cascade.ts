@@ -14,12 +14,12 @@
 // .env format (full, with provider hint for CLIs that support multi-provider —
 // codex / qwen-code / pi via the @provider suffix; on pi the @provider maps to
 // its native `--provider`, including LOCAL providers such as ollama):
-//   LLM_CASCADE=claude-code:claude-opus-4-7,codex:gpt-5.5,codex:qwen-3-coder@openrouter,antigravity-cli:gemini-3-flash
+//   LLM_CASCADE=claude-code:claude-opus-4-7,codex:gpt-6.1-sol,codex:qwen-3-coder@openrouter,antigravity-cli:gemini-3-flash
 //
 // .env format (with USD soft-budget per entry — switches to NEXT entry when
 // accumulated spend on THIS project hits the threshold):
-//   LLM_CASCADE=codex:gpt-5.5$10,codex:qwen3-coder@openrouter$5,antigravity-cli:gemini-3-flash
-//   (gpt-5.5 used until $10 spent on this project, then qwen3 until $5, then
+//   LLM_CASCADE=codex:gpt-6.1-sol$10,codex:qwen3-coder@openrouter$5,antigravity-cli:gemini-3-flash
+//   (gpt-6.1-sol used until $10 spent on this project, then qwen3 until $5, then
 //   gemini-flash uncapped)
 //
 // Each ENTRY has its own cooldown bucket — different entries of the same
@@ -154,8 +154,8 @@ export function resolveCascadeRoot(start: string): string {
 /** Read LLM_CASCADE from disk. CRITICAL: we deliberately ignore
  *  process.env.LLM_CASCADE when reading the project .env, because Bun
  *  auto-loads .env and runs shell-style $VAR expansion on the value —
- *  so "claude-code:opus$2,codex:gpt-5.5$1" gets EATEN to
- *  "claude-code:opus,codex:gpt-5.5" (the $2/$1 are shell positional params
+ *  so "claude-code:opus$2,codex:gpt-6.1-sol$1" gets EATEN to
+ *  "claude-code:opus,codex:gpt-6.1-sol" (the $2/$1 are shell positional params
  *  that don't exist → expanded to empty). The literal file value is the
  *  source of truth.
  *
@@ -206,7 +206,7 @@ export function nextAvailable(projectRoot: string, cascade: CascadeEntry[]): Cas
 export function nextAfter(projectRoot: string, cascade: CascadeEntry[], current: Runtime, currentKey?: string): CascadeEntry | null {
   if (!cascade.length) return null;
   // Prefer exact-entry-key match (so budget-exhausted current can hand to a
-  // same-runtime sibling like "codex:gpt-5.5" → "codex:qwen3@openrouter").
+  // same-runtime sibling like "codex:gpt-6.1-sol" → "codex:qwen3@openrouter").
   let idx = -1;
   if (currentKey) idx = cascade.findIndex(e => entryKey(e) === currentKey);
   if (idx < 0) idx = cascade.findIndex(e => e.runtime === current);

@@ -27,6 +27,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { paths as nrvPaths } from "../../../_shared/lib/bun-helpers.ts";
+import { claudeRunCost } from "../../../_shared/lib/claude-session-cost.ts";
 import { DEFAULT_ALLOWED_TOOLS, headlessClaudeEnv, resolveExecutable, runHeadless, runtimeAvailable, type Runtime } from "../../../_shared/lib/host-agent-driver.ts";
 import { harnessLogsDir } from "../../../_shared/lib/log-paths.ts";
 import { resolveSetting, settingsEnvForChild } from "../../../_shared/lib/settings.ts";
@@ -262,8 +263,12 @@ export function startMaestroTurn(input: StartTurnInput): StartedTurn {
       settled = true;
       parser.end();
       for (const file of command.tmpFiles ?? []) { try { fs.rmSync(path.dirname(file), { recursive: true, force: true }); } catch { /* already gone */ } }
+      // A resumed claude session reports its cumulative total (2.1.277+): the
+      // turn's own spend is the difference from the session's last total.
+      const streamedSession = parser.sessionId ?? command.sessionId;
       const base = streaming
-        ? { ok: exitCode === 0 && !parser.isError, result: parser.result, sessionId: parser.sessionId ?? command.sessionId, costUsd: parser.costUsd, subtype: parser.subtype }
+        ? { ok: exitCode === 0 && !parser.isError, result: parser.result, sessionId: streamedSession,
+            costUsd: claudeRunCost({ resumedFrom: input.sessionId, sessionId: streamedSession, reportedUsd: parser.costUsd }), subtype: parser.subtype }
         : { ok: childDone?.ok === true && exitCode === 0, result: childDone?.result ?? "", sessionId: childDone?.sessionId ?? null, costUsd: childDone?.costUsd ?? null };
       const error = base.ok ? undefined : (spawnError ?? childDone?.error ?? stderr.trim().split("\n").filter(Boolean).at(-1) ?? `runtime exited with ${exitCode ?? signal ?? "a signal"}`);
       resolve({ ...base, exitCode, signal, durationMs: Date.now() - started, ...(error ? { error } : {}) });

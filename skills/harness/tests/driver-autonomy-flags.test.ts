@@ -6,7 +6,7 @@
 // variable, NIRVANA_HEADLESS_SKIP_PERMISSIONS=0, turns the bypass off in both layers: the
 // light layer (callHostAgent's buildCall) omits the flag, runHeadless takes the runner's
 // restricted path, the one `nrv dispatch --safe` selects. Adapters whose flag could not be
-// verified (kimi, qwen, opencode) and pi (its --approve is project-file trust, not tool
+// verified (kimi, qwen) and pi (its --approve is project-file trust, not tool
 // permission) carry no flag in the light layer and are pinned that way here.
 // Hermetic: the light layer is asserted from buildCall's argv without a process; the
 // headless layer against fake CLIs on a temp PATH. No LLM, no network.
@@ -15,7 +15,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
-  HEADLESS_SKIP_PERMISSIONS_ENV, __testables, claudeDirectiveArgs, headlessSkipPermissions, resolveExecutable,
+  HEADLESS_SKIP_PERMISSIONS_ENV, __testables, claudeDirectiveArgs, headlessClaudeEnv, headlessSkipPermissions, resolveExecutable,
   runHeadless, type Runtime,
 } from "../../_shared/lib/host-agent-driver.ts";
 import { childDepth } from "../../_shared/lib/dispatch-depth.ts";
@@ -43,7 +43,7 @@ beforeAll(() => {
 
   // Success envelopes only: what is under test is the argv each runner builds.
   const fake = (name: string, body: string) => writeFakeCli(BIN, name, CAPTURE_PRELUDE + body);
-  fake("claude", `await stdinLen(); process.stdout.write(JSON.stringify({ type: "result", is_error: false, result: "ok", session_id: "s1", total_cost_usd: 0.01 }));`);
+  fake("claude", `await stdinLen(); if (captureDir) fs.writeFileSync(path.join(captureDir, "claude-env.json"), JSON.stringify({ CLAUDE_CODE_DISABLE_WORKFLOWS: process.env.CLAUDE_CODE_DISABLE_WORKFLOWS ?? null })); process.stdout.write(JSON.stringify({ type: "result", is_error: false, result: "ok", session_id: "s1", total_cost_usd: 0.01 }));`);
   fake("codex", `await stdinLen(); const oi = argv.indexOf("-o"); if (oi >= 0) fs.writeFileSync(argv[oi + 1], "ok"); console.log(JSON.stringify({ type: "turn.completed" }));`);
   fake("agy", `process.stdout.write(JSON.stringify({ response: "ok", session_id: "a1" }));`);
   fake("kimi", `console.log(JSON.stringify({ type: "result", is_error: false, session_id: "k1" }));`);
@@ -99,7 +99,8 @@ describe("light layer — buildCall argv per adapter", () => {
       ["-p", "--no-session-persistence", "--output-format", "json", "--append-system-prompt", "persona"]],
     ["codex", ["exec", "--dangerously-bypass-approvals-and-sandbox"], ["exec"]],
     ["antigravity-cli", ["-p", MERGED, "--dangerously-skip-permissions"], ["-p", MERGED]],
-    ["grok-cli", ["--prompt-file", "<file>", "--always-approve"], ["--prompt-file", "<file>"]],
+    ["grok-cli", ["--prompt-file", "<file>", "--always-approve", "--trust"], ["--prompt-file", "<file>"]],
+    ["opencode", ["run", MERGED, "--auto"], ["run", MERGED]],
   ])("%s passes its documented autonomy flag by default and drops it under =0", (name, byDefault, restricted) => {
     expect(argv(name, undefined)).toEqual(byDefault);
     expect(argv(name, "1")).toEqual(byDefault);
@@ -107,10 +108,9 @@ describe("light layer — buildCall argv per adapter", () => {
   });
 
   test.each([
-    ["pi", ["-p", "--no-approve", "--append-system-prompt", "persona", "msg"]],
+    ["pi", ["-p", "--no-approve", "--append-system-prompt", "persona", "--", "msg"]],
     ["kimi-cli", ["-p", MERGED]],
     ["qwen-code", ["-p", ""]],
-    ["opencode", ["run", MERGED]],
   ])("%s has no verified bypass flag: the same argv with and without the switch", (name, expected) => {
     expect(argv(name, undefined)).toEqual(expected);
     expect(argv(name, "0")).toEqual(expected);
@@ -206,9 +206,22 @@ describe("headless layer — runHeadless argv per runtime", () => {
     expect(argv("antigravity-cli", "agy", "0", true)).not.toContain("--dangerously-skip-permissions");
   });
 
-  test("grok-cli: --always-approve by default; nothing under =0", () => {
-    expect(argv("grok-cli", "grok", undefined)).toContain("--always-approve");
-    expect(argv("grok-cli", "grok", "0", true)).not.toContain("--always-approve");
+  test("grok-cli: --always-approve and --trust by default; neither under =0", () => {
+    const trusted = argv("grok-cli", "grok", undefined);
+    expect(trusted).toContain("--always-approve");
+    // Folder trust: a fresh run folder loads AGENTS.md, project skills and MCP only with it.
+    expect(trusted).toContain("--trust");
+    const restricted = argv("grok-cli", "grok", "0", true);
+    expect(restricted).not.toContain("--always-approve");
+    expect(restricted).not.toContain("--trust");
+  });
+
+  test("grok-cli: a resume continues the session with -r <id>; a fresh run passes none", () => {
+    try { fs.rmSync(path.join(CAP, "grok-args.json"), { force: true }); } catch { /* ignore */ }
+    const r = runHeadless({ runtime: "grok-cli", prompt: "revise", cwd: TMP, timeoutMs: 20_000, sessionId: "gk-prev" });
+    expect(r.ok, r.error ?? r.stderr).toBe(true);
+    expect(hasPair(readCapturedArgs(CAP, "grok"), ["-r", "gk-prev"])).toBeTrue();
+    expect(argv("grok-cli", "grok", undefined)).not.toContain("-r");
   });
 
   test("pi: --approve (project-file trust) by default; --no-approve under =0", () => {
@@ -225,7 +238,12 @@ describe("headless layer — runHeadless argv per runtime", () => {
     expect(argv("qwen-code", "qwen", "0", true)).not.toContain("--approval-mode");
   });
 
-  test.each([["kimi-cli", "kimi"], ["opencode", "opencode"]] as [Runtime, string][])("%s: no bypass flag in either state (none verified)", (runtime, cli) => {
+  test("opencode: --auto by default; nothing under =0", () => {
+    expect(argv("opencode", "opencode", undefined)).toContain("--auto");
+    expect(argv("opencode", "opencode", "0", true)).not.toContain("--auto");
+  });
+
+  test.each([["kimi-cli", "kimi"]] as [Runtime, string][])("%s: no bypass flag in either state (-p already runs in auto permission)", (runtime, cli) => {
     const flags = ["--dangerously-skip-permissions", "--dangerously-bypass-approvals-and-sandbox", "--approval-mode", "--always-approve", "--yolo"];
     for (const value of [undefined, "0"]) {
       const args = argv(runtime, cli, value);
@@ -258,7 +276,54 @@ describe("a dispatched worker does not open its own agents", () => {
     expect(a).toContain("--dangerously-skip-permissions");
     const i = a.indexOf("--disallowedTools");
     expect(i).toBeGreaterThan(-1);
-    expect(a.slice(i + 1, i + 3)).toEqual(["Task", "Agent"]);
+    expect(a.slice(i + 1, i + 4)).toEqual(["Task", "Agent", "Workflow"]);
+  });
+
+  // The Workflow tool runs in `-p`, bypass mode approves it, and one call may
+  // spawn up to 1,000 agents (code.claude.com/docs/en/workflows). Two fences:
+  // the deny rule and CLAUDE_CODE_DISABLE_WORKFLOWS=1 on the child.
+  test("workflows are fenced twice: denied in argv and disabled in the child env", () => {
+    try { fs.rmSync(path.join(CAP, "claude-env.json"), { force: true }); } catch { /* ignore */ }
+    const saved = process.env.CLAUDE_CODE_DISABLE_WORKFLOWS;
+    process.env.CLAUDE_CODE_DISABLE_WORKFLOWS = "0";   // a user value does not open the fence
+    try {
+      expect(argvFor({})).toContain("Workflow");
+      expect(JSON.parse(fs.readFileSync(path.join(CAP, "claude-env.json"), "utf8")).CLAUDE_CODE_DISABLE_WORKFLOWS).toBe("1");
+    } finally {
+      if (saved === undefined) delete process.env.CLAUDE_CODE_DISABLE_WORKFLOWS; else process.env.CLAUDE_CODE_DISABLE_WORKFLOWS = saved;
+    }
+  });
+
+  test("codex: multi-agent tools are switched off with -c agents.enabled=false, unless the caller orchestrates", () => {
+    const run = (extra: Record<string, unknown>) => {
+      try { fs.rmSync(path.join(CAP, "codex-args.json"), { force: true }); } catch { /* ignore */ }
+      const r = runHeadless({ runtime: "codex", prompt: "do the task", cwd: TMP, timeoutMs: 20_000, ...extra });
+      expect(r.ok, r.error ?? r.stderr).toBe(true);
+      return readCapturedArgs(CAP, "codex");
+    };
+    expect(hasPair(run({}), ["-c", "agents.enabled=false"])).toBeTrue();
+    expect(hasPair(run({ sessionId: "s1" }), ["-c", "agents.enabled=false"])).toBeTrue();
+    expect(run({ allowSubagents: true })).not.toContain("agents.enabled=false");
+    // Never the feature switch: an unknown --disable feature is a hard error on older builds.
+    expect(run({})).not.toContain("--disable");
+  });
+
+  test("headlessClaudeEnv sets the workflow switch only for a worker (the maestro, an orchestrator, keeps workflows)", () => {
+    expect(headlessClaudeEnv({} as Record<string, string | undefined>, { denySubagents: true }).CLAUDE_CODE_DISABLE_WORKFLOWS).toBe("1");
+    expect(headlessClaudeEnv({ CLAUDE_CODE_DISABLE_WORKFLOWS: "0" } as Record<string, string | undefined>, { denySubagents: true }).CLAUDE_CODE_DISABLE_WORKFLOWS).toBe("1");
+    expect(headlessClaudeEnv({} as Record<string, string | undefined>).CLAUDE_CODE_DISABLE_WORKFLOWS).toBeUndefined();
+  });
+
+  test("an orchestrating caller keeps workflows: no deny, no disabling variable", () => {
+    try { fs.rmSync(path.join(CAP, "claude-env.json"), { force: true }); } catch { /* ignore */ }
+    const saved = process.env.CLAUDE_CODE_DISABLE_WORKFLOWS;
+    delete process.env.CLAUDE_CODE_DISABLE_WORKFLOWS;
+    try {
+      expect(argvFor({ allowSubagents: true })).not.toContain("Workflow");
+      expect(JSON.parse(fs.readFileSync(path.join(CAP, "claude-env.json"), "utf8")).CLAUDE_CODE_DISABLE_WORKFLOWS).toBeNull();
+    } finally {
+      if (saved !== undefined) process.env.CLAUDE_CODE_DISABLE_WORKFLOWS = saved;
+    }
   });
 
   test("both spellings travel, because the tool was renamed across CLI versions", () => {
