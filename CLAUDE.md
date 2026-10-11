@@ -47,23 +47,29 @@ powershell -c "irm bun.sh/install.ps1 | iex"        # Windows
 ```
 
 <!-- nirvana:deps-rule:v1 -->
-## Dependencies: one home, `~/.nirvana`
+## Dependencies: never where you are standing
 
-Node packages live in `~/.nirvana/node_modules`, Python packages in
-`~/.nirvana/python`, tool-downloaded runtimes (browsers, model weights) in
-`~/.nirvana/cache/<tool>`. **Never run `bun install`, `npm install`, `pnpm add`
-or `pip install` inside a squad, a business, a pack or this project.**
+Each squad has its own environment, `~/.nirvana/envs/<squad>`, holding the Node
+and Python packages its `dependencies.yaml` declares, versions as written. A
+dispatch prepares it before the worker starts and reaches it through the run's
+`NODE_PATH`, `PATH` and an `npx` shim. Tool-downloaded runtimes (browsers,
+model weights) go to `~/.nirvana/cache/<tool>`. **Never run `bun install`,
+`npm install`, `pnpm add` or `pip install` inside a squad, a business, a pack
+or this project.**
 
 ```
-nrv deps install <pkg>[@version]   # add to the shared store
-nrv deps link <squad-slug|dir>     # point a directory at the store
-nrv deps status                    # what escaped the store
-nrv activate <squad>               # install what a squad declares
+nrv activate <squad>               # prepare a squad's environment now (or --all)
+nrv activate status <squad>        # the squad's activation state
+nrv deps                           # the squad environments, the caches, what escaped them
+nrv deps install <pkg>[@version]   # a package outside any squad: the shared store ~/.nirvana/node_modules
 ```
 
-The one exception is a real system program (`ffmpeg`, `git`, `pandoc`): it
-belongs to the machine's package manager, declared in the squad's
-`dependencies.yaml` under `system:`.
+When `nrv activate` fails it prints a block between
+`=== nrv activate: issues for the agent ===` markers: run each fix it lists,
+ask the user first where it says the fix needs their permission, then run the
+re-check it names. Never edit the squad folder to make it pass. A real system
+program (`ffmpeg`, `git`, `pandoc`) belongs to the machine's package manager,
+declared in the squad's `dependencies.yaml` under `system:`.
 
 ## 1. Invoke the harness for any concrete artifact
 

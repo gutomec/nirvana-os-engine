@@ -1,7 +1,11 @@
 # Your configuration, and what survives an update
 
-Nirvana-OS reads settings from five places. Four of them belong to the engine,
-a project or your shell. **One belongs to you and is never replaced:**
+You normally change settings by asking your agent ("put Nirvana in economy
+mode", "what is configured?", "cap each run at US$ 5"); it runs `nrv config`
+for you. This page explains where those settings live.
+
+Nirvana-OS reads settings from six places. Five of them belong to the engine,
+a project, a profile or your shell. **One belongs to you and is never replaced:**
 
 ```
 ~/.nirvana/config.yaml
@@ -12,7 +16,7 @@ is overwritten on every `nrv update`. A setting you put there is gone the next
 time you update, and nothing tells you it left. The file above is the layer
 that stays.
 
-## The five layers
+## The six layers
 
 Strongest first. The first one that has a value wins.
 
@@ -21,8 +25,13 @@ Strongest first. The first one that has a value wins.
 | 1 | Environment variable | your shell, a CI runner, a `.env` | n/a — it is set per run |
 | 2 | Project | `<project>/.nirvana/config.yaml` | yes; it travels with the repository |
 | 3 | **You** | `~/.nirvana/config.yaml` | **yes** |
-| 4 | Engine | `skills/harness/config.yaml` | **no — replaced every update** |
-| 5 | Schema default | in the code | n/a |
+| 4 | Profile | the preset named by `execution.profile` (`max`, `balanced`, `economy`) | the choice is in layer 2 or 3 and survives |
+| 5 | Engine | `skills/harness/config.yaml` | **no, replaced every update** |
+| 6 | Schema default | in the code | n/a |
+
+A profile moves effort, the workers' context ceiling, review, routing and the
+judge together, and never picks the model. Any key set in layers 1 to 3 beats
+it, so you can take a profile and change one thing.
 
 `NIRVANA_HOME` moves layer 3 with it, so a machine that relocates the Nirvana
 home keeps its own settings there.
@@ -37,6 +46,7 @@ You rarely need to open the file. The command writes it, validates the value
 and keeps your comments:
 
 ```sh
+nrv config set execution.profile economy --global   # or balanced, max
 nrv config list                                 # every key: effective value, where it came from, default
 nrv config explain quality_gate.max_revisions   # what the key does, its scopes, its variable
 nrv config set quality_gate.max_revisions 3 --global
@@ -80,10 +90,14 @@ variable somebody exported, and that column is where they become visible.
 
 ## What is not here
 
-Paths (`NIRVANA_HOME`, `SQUADS_DIR`, `BUSINESSES_DIR`, `DNA_LIBRARY`), library
-scope (`NIRVANA_SCOPE`) and locale have their own contract and live in the
-project's `.env` — see `docs/architecture/configuration.md` for the reasons and
-for the complete key table. Credentials never live in a config file.
+Paths (`NIRVANA_HOME`, `SQUADS_DIR`, `BUSINESSES_DIR`, `DNA_LIBRARY`) and
+locale have their own contract and live in the environment or the project's
+`.env`, which `nrv init` does not create (it writes `.env.example`). The
+project's library scope (`global`, `project`, `merge`) is `scope` in
+`.nirvana/project.yaml`, set with `nrv init . --scope=<mode>`;
+`NIRVANA_SCOPE` in the environment still overrides it. See
+`docs/architecture/configuration.md` for the complete key table. Credentials
+never live in a config file.
 
 ---
 

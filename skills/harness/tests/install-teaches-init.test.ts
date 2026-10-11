@@ -64,6 +64,7 @@ describe("the engine installer's last screen", () => {
   test("still tells the user how to verify the install", () => {
     const s = summaryBlock();
     expect(s).toMatch(/nrv install --check/);
-    expect(s).toMatch(/nrv validate/);
+    // Bare `nrv validate` is a deprecated alias of the doctor; the screen names the doctor.
+    expect(s).toMatch(/nrv doctor/);
   });
 });

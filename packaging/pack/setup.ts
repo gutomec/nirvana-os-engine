@@ -336,7 +336,7 @@ function recordedProfile(): string {
 }
 async function askProfile(): Promise<string> {
   console.log("\n[profile] How should Nirvana spend tokens? (change it later with: nrv config set execution.profile <name> --global)");
-  console.log("  1) max       highest quality and highest usage: xhigh effort, no context cap, every delivery reviewed by another runtime");
+  console.log("  1) max       highest quality and highest usage: xhigh effort, no context cap, every delivery reviewed, up to two correction rounds");
   console.log("  2) balanced  recommended: high effort, 400k context cap, review when a rule asks for it");
   console.log("  3) economy   lowest usage: medium effort, 200k context cap, review only when requested");
   const rl = createInterface({ input: process.stdin, output: process.stdout });
@@ -384,7 +384,7 @@ if (!enginePresent) {
     // anyway. Failing here, with the right reason, beats failing later with an
     // error that looks like it comes from the content.
     console.error(`    ✗ Failed to update the engine, and the current one (${installedVer ?? "unknown"}) is older than this pack requires (>=${requiresEngine}).`);
-    console.error(`      Update manually and run again:  npx @nirvana-os/cli`);
+    console.error(`      Update manually and run again:  curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | bash   (Windows: irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex)`);
     process.exit(1);
   } else {
     // The engine already satisfies the pack: the network failure does not block the install.

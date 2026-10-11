@@ -52,7 +52,7 @@ project relies on the machine's `~/.nirvana/skills`.
 | Hermes | `nrv-hermes`, or `hermes chat --in <project>` | `AGENTS.md` injected from cwd | n/a (works in cwd) | shell hooks (`pre/post_tool_call`) + fs-watch |
 | OpenClaw | the project **is** the agent's workspace (below) | `AGENTS.md` in the workspace | n/a (workspace is the root) | `nrv audit emit` + fs-watch (tool hooks: see §4.3) |
 
-The scripted path (`nrv dispatch --exec`, `nrv team step`) passes the project
+The scripted path (`nrv dispatch --exec`) passes the project
 dir, the outputs root and the business or squad dir to the child runtime through
 the flag in the third column (`RUNTIME_DIR_GRANT_FLAG` in the driver). Runtimes
 without a flag (grok, pi, kimi, opencode) get a warning on the result.
@@ -60,12 +60,12 @@ without a flag (grok, pi, kimi, opencode) get a warning on the result.
 A dispatched worker does not start in the project root. It starts in its own
 run folder (`outputs/<run id>/`), with the project granted beside it through the
 same flag, so the runs next to it are not one `ls ../` away
-(`skills/_shared/lib/run-workspace.ts`). On Claude Code the other run folders
-are denied to `Read` and `Edit` by a per-run `--settings` file; the project's own
-`.claude/settings.json` deny rules, which Claude Code loads from the cwd only,
-travel in the same file re-anchored at the project root. The other runtimes read
-the same boundary as one line of their directive. A run folder the brief names
-by path stays readable. A dispatch the worker starts itself (a seat's
+(`skills/_shared/lib/run-workspace.ts`). No folder is denied: the directive
+says the runs beside it are not its input unless the brief points to them, and
+a worker may reach any folder its brief needs. On Claude Code a per-run
+`--settings` file carries only the project's own `.claude/settings.json` deny
+rules (the `.env` rules `nrv init` writes), which Claude Code loads from the cwd
+only, re-anchored at the project root. A dispatch the worker starts itself (a seat's
 `nrv dispatch --squad`) is part of its run: the worker carries
 `NIRVANA_RUN_WORKSPACE`, and the nested scaffold goes to
 `<run folder>/dispatches/<id>`, where the later seats can read it.

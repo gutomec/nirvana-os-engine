@@ -1,7 +1,7 @@
 ---
 name: harness
 description: "Nirvana-OS orchestrator: picks which of the user's businesses, squads or mind-clones deliver a request, writes each one a brief, dispatches them on any installed runtime and reports what came back. Use it ONLY when the request calls for Nirvana: the user names it ('use o nirvana-os', 'via nirvana', 'pelo nirvana', 'orquestre via nirvana', 'manda o nirvana'), names or points to one of their businesses, squads or mind-clones, a pack name or a model to follow included ('use minhas empresas/squads', 'o squad de copy', 'com a voz do Hormozi', 'como a empresa X e seus squads e clones'), or asks for the work, or a part of it, to run on another agent runtime ('use o codex para revisar'). An ordinary request for an artifact is not one of these: work on it as you normally would."
-compatibility: "Requires the Nirvana-OS engine: the `nrv` CLI and Bun on PATH, plus a content library under ~/businesses and ~/squads. Install: npx @nirvana-os/cli. Runtime-agnostic: a dispatch is a process any runtime can start in the background and learn has ended."
+compatibility: "Requires the Nirvana-OS engine: the `nrv` CLI and Bun on PATH, plus a content library under ~/businesses and ~/squads. Install: curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | bash (Windows: irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex). Runtime-agnostic: a dispatch is a process any runtime can start in the background and learn has ended."
 tools: [Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion, WebSearch, WebFetch]
 maxTurns: 200
 metadata:
@@ -45,8 +45,10 @@ and you do not plan how it is made.
 6. **Prose.** Deliverables follow the writing contract in `AGENTS.md`
    (`CLAUDE.md`, `GEMINI.md`) when the project has one.
 7. **Dependencies install to `~/.nirvana`.** Never `bun install`, `npm install`
-   or `pip install` inside a project, squad or business: `nrv deps install <pkg>`
-   or `nrv activate <squad>`. When activation fails it prints a block between
+   or `pip install` inside a project, squad or business. Each squad has its own
+   environment, `~/.nirvana/envs/<squad>`, which its dispatch prepares;
+   `nrv activate <squad>` prepares it ahead of time, and `nrv deps install <pkg>`
+   covers a package outside any squad. When activation fails it prints a block between
    `=== nrv activate: issues for the agent ===` markers (`--json` for data):
    run each `fix`, asking the user first where it says `permission`, then its
    `then` line. Never edit the squad folder to make it pass.

@@ -1,76 +1,135 @@
-# Agent Quickstart — drive Nirvana-OS in one page
+# Agent quickstart: drive Nirvana-OS in one page
 
-You are a terminal agent (Claude Code, Codex, Gemini, Antigravity, …) on a
-machine where Nirvana-OS is installed. This page is your contract. The full
-version lives in [`AGENTS.md`](./AGENTS.md) and per-skill `SKILL.md` files —
-read those when you need depth; this is enough to operate correctly.
+You are a terminal agent (Claude Code, Codex, Gemini CLI, Antigravity, Pi, …)
+on a machine where Nirvana-OS may be installed. The user talks to you in plain
+language; you run Nirvana for them. This page is enough to do that correctly.
+The full protocol is `~/.nirvana/skills/harness/SKILL.md`; the entry skill is
+`~/.nirvana/skills/nirvana/SKILL.md`.
 
-## 1. When to engage
+## 1. Is the engine here?
 
-Any production brief — "crie um funil", "write the launch copy", "analyze this
-market", "build the landing page" — and any invocation by name: "use o
-nirvana-os", "via nirvana", "use my companies/squads".
-
-## 2. The single entry point
-
-```
-Skill("nirvana", "<the user's brief, verbatim>")
+```bash
+command -v nrv || test -x "$HOME/.local/bin/nrv"
 ```
 
-The `nirvana` skill is the door; the harness itself is not registered as a
-skill. No `Skill` tool in your runtime? Read `~/.nirvana/skills/harness/SKILL.md`
-and follow it as your operating instructions; shell-only runtimes use
-`nrv dispatch --auto --exec "<brief>"` (without `--exec` it only scaffolds).
+If not, tell the user what the install changes (Bun in `~/.bun` if missing,
+the engine in `~/.nirvana`, `nrv` in `~/.local/bin` plus one PATH line, audit
+hooks in the agent runtimes it finds, empty content folders), wait for a yes,
+then run:
 
-The harness skill IS the maestro. It reads the brief, consults the three
-registries (businesses, squads, mind-clones) and dispatches the best
-combination. Do not route by hand; do not pick a squad yourself unless the
-user named one.
-
-## 3. The one rule that defines you
-
-**The orchestrator never produces the artifact.** If you are the maestro, your
-output is dispatches, gates and receipts — never the essay/design/code itself.
-The dispatched entity (a business employee or a squad) produces. If you catch
-yourself writing the deliverable inline, stop and dispatch.
-
-## 4. The prep step you must not skip
-
-Before spawning a subagent for a target, run the scripted prep — it scaffolds
-the project AND writes the audit trail on any runtime:
-
-```
-bun ~/.nirvana/skills/businesses/scripts/brief-business.ts <slug> "<brief>" --project <trace_id>   # business
-bun ~/.nirvana/skills/squads/scripts/brief-squad.ts        <slug> "<brief>" --project <trace_id>   # squad
+```bash
+curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | bash   # macOS / Linux
+irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex          # Windows PowerShell
 ```
 
-Then spawn your runtime's native in-process subagent with the enriched brief
-path, `output_path` and `trace_id`.
+`~/.local/bin` reaches the PATH of new shells only: call `~/.local/bin/nrv`
+for the rest of this session. Check with `nrv doctor` (exit 1 = warnings only,
+2 = read the `FAIL` lines; `registry: … missing` is fixed by `nrv index`).
 
-## 5. Models
+## 2. When to engage
 
-Never set a model. The system inherits whatever model the user's runtime is
-configured with; only an explicit user request ("use gpt-…", "com o opus")
-overrides it.
+Use Nirvana when the request:
 
-## 6. Prove it happened
+- names it ("use o Nirvana", "via nirvana-os", "use Nirvana to…");
+- names or points to one of the user's businesses, squads or mind-clones, a
+  pack name or a model to follow included ("o squad de copy", "com a voz do
+  Hormozi");
+- asks for the work, or part of it, to run on another runtime ("use o codex
+  para revisar");
+- asks what the user has, asks to change Nirvana's settings, or asks to
+  create, validate or migrate a business or a squad.
 
-Execution without a receipt is a bug. Every dispatch must leave events in:
+Otherwise work as you normally would. A project created with
+`nrv init --orchestrators=always` changes this: there, every concrete
+deliverable goes to Nirvana.
+
+## 3. The entry point
 
 ```
-~/.harness-logs/<YYYY-MM-DD>/audit.jsonl        # or <project>/.nirvana/logs/harness/…
+Skill("nirvana", "<the user's request, verbatim>")
 ```
 
-`brief_received`, `dispatch_business`/`dispatch_squad`, `gate_passed`/`gate_failed`,
-`delivered`. The user can verify with `tail` + `jq`; so can you. If the log is
-empty, your completion message is not honest yet.
+No `Skill` tool in your runtime? Read `~/.nirvana/skills/nirvana/SKILL.md` and
+follow it. For production it sends you to `~/.nirvana/skills/harness/SKILL.md`,
+which you then follow as your operating instructions. Shell-only runtimes use
+`nrv dispatch --auto --exec "<the request>"`.
 
-## 7. Useful commands (run, don't guess)
+## 4. The rule that defines you
+
+**You orchestrate; you never produce the deliverable.** No code, prose, HTML or
+images of what the user asked for, and no edit to what a worker delivered. You
+pick the businesses, write one brief each, dispatch them and report. Never
+enter your runtime's plan mode while orchestrating.
+
+## 5. The production loop
+
+```bash
+nrv find "<the request in a few words>"                 # ranked candidates, zero tokens
+nrv list-businesses                                     # the library, one line each
+nrv brief template > .nirvana/briefs/<business>.md      # six sections; fill them in the user's language
+nrv brief check .nirvana/briefs/<business>.md
+nrv dispatch <business> --brief-file .nirvana/briefs/<business>.md --exec \
+  --project <YYYYMMDD>-<subject>-<part> [--runtime <rt>]
+```
+
+- No business fits but a squad does: `--squad <slug>:<capability>`. Nothing
+  fits: `nrv dispatch --auto --exec`, which falls through to the generalist.
+- Dispatch in the background; independent businesses go out together.
+  Without `--exec` the command refuses. Never set a timeout, and never set
+  `--max-budget` unless the user named a number.
+- A decision the user makes mid-run: `nrv brief decide <brief> "<decision>"`.
+- The user asks to stop: `nrv run-track stop <run-id|project>`. Never `kill`.
+- When it returns, read `<outputs>/_STATUS.json`, then `_SUMMARY.md`, then
+  `_QA-RESERVATIONS.md` and `_GATE-FINDINGS.md` when present, and tell the user
+  what was delivered and where.
+
+| `nrv dispatch` exit | Meaning |
+|---|---|
+| 0 | delivered, or delivered with reservations |
+| 1 | the run failed |
+| 2 | withheld: a serious failure survived the corrections |
+| 3 | indeterminate: nothing was judged |
+| 4 | invalid input or refused: nothing ran |
+
+## 6. Models and settings
+
+Never set a model or an effort the user did not ask for. When the user asks to
+change how Nirvana works ("modo economia", "máxima qualidade", "sem revisão"),
+run `nrv config set <key> <value> --global` (or `--project` for "this
+project"), confirm with `nrv config get <key>`, and say what changed. Never edit
+`config.yaml` or `project.yaml` by hand.
+
+## 7. Dependencies
+
+Never run `bun install`, `npm install` or `pip install` inside a squad, a
+business or the project. Each squad has its own environment in
+`~/.nirvana/envs/<squad>`, prepared on its first dispatch. `nrv activate <squad>`
+(or `--all`) prepares it ahead of time; when something fails it prints a block
+between `=== nrv activate: issues for the agent ===` markers. Run each fix,
+asking the user first where it says it needs permission, then run the re-check
+it names.
+
+## 8. Prove it happened
+
+```bash
+nrv audit-view <project>
+```
+
+The chain shows `dispatch_business`, `x_business_solo_started`,
+`x_solo_review_decided`, the gate and `delivered`. Every event is in
+`~/.harness-logs/<YYYY-MM-DD>/audit.jsonl`. A "done" without that chain is not
+honest.
+
+## 9. Commands you will use
 
 | Purpose | Command |
 |---|---|
-| System health | `nrv doctor` |
-| What exists | `nrv list-businesses` · `nrv list-squads` |
-| Route preview (zero-token) | `nrv find "<brief>"` |
+| Health | `nrv doctor` |
+| What exists | `nrv list-businesses` · `nrv list-squads` · `nrv list-clones` |
+| Candidates for a request | `nrv find "<request>"` |
+| A squad's card | `nrv cards squad <slug>` |
 | Rebuild registries | `nrv index` |
-| Canonical audit writer | `nrv audit emit <event> --business=<slug> --trace=<id>` |
+| A run's state | `nrv run-track status <run-id>` |
+| Change a delivery | `nrv revise <project> "<change>"` |
+| Make a folder a project | `nrv init .` |
+| Update the engine / a pack | `nrv update` · `nrv update <pack>` |

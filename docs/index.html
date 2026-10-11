@@ -84,6 +84,7 @@ strong{font-weight:600}
 .cmd .p{color:var(--accent)}
 .cmd button{background:none; border:0; color:var(--faint); cursor:pointer; font-family:var(--mono); font-size:12px}
 .cmd button:hover{color:var(--text)}
+.cmd{max-width:100%} .cmd > span:not(.p){overflow-wrap:anywhere; min-width:0}
 .ghost{border:1px solid var(--border); border-radius:11px; padding:11px 16px; font-size:14.5px; color:var(--muted)}
 .ghost:hover{color:var(--text); border-color:var(--faint)}
 .sub{font-size:14px; color:var(--faint)}
@@ -208,16 +209,16 @@ footer .links{display:flex; gap:18px; flex-wrap:wrap; margin-bottom:14px}
     <h1>Você fala.<br>Uma <em>organização inteira</em> trabalha.</h1>
     <p class="lede">Você já tem um agente de terminal. Ele é afiado, e está sozinho. O Nirvana-OS o promove a maestro: você descreve o resultado em prosa e o sistema levanta as empresas, as equipes e os especialistas que entregam, vários ao mesmo tempo, com recibo de cada passo.</p>
     <div class="cta">
-      <span class="cmd"><span class="p">$</span><span id="cmd">npx @nirvana-os/cli</span><button id="cp" type="button">copiar</button></span>
+      <span class="cmd"><span class="p">$</span><span id="cmd">curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | bash</span><button id="cp" type="button">copiar</button></span>
       <a class="ghost" href="#runtimes">Ver funcionando</a>
     </div>
-    <p class="sub">Um comando. Instala o motor, se conecta a todos os runtimes que encontrar, e pode rodar de novo quando quiser.</p>
+    <p class="sub">macOS e Linux. No Windows, no PowerShell: <code>irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex</code>. Um comando instala o Bun se faltar, instala o motor, se conecta aos runtimes que encontrar e pode rodar de novo quando quiser.</p>
   </section>
 
   <section class="blk" id="runtimes">
     <div class="kicker">A mesma frase, qualquer agente</div>
     <h2 class="big">Você não aprende uma interface nova</h2>
-    <p class="intro">O Nirvana-OS não tem tela própria e não pede que você troque de ferramenta. Ele vive dentro do agente que você já abre todo dia. A frase abaixo é <strong>exatamente a mesma</strong> nos sete runtimes. Escolha o seu e veja acontecer.</p>
+    <p class="intro">O Nirvana-OS não tem tela própria e não pede que você troque de ferramenta. Ele vive dentro do agente que você já abre todo dia: você conversa com o agente, e o agente usa o Nirvana. A frase abaixo é <strong>exatamente a mesma</strong> nos sete runtimes. Escolha o seu e veja acontecer.</p>
 
     <div class="rt-tabs" role="tablist" aria-label="Escolha o runtime"></div>
     <div class="app" id="stage">
@@ -229,7 +230,7 @@ footer .links{display:flex; gap:18px; flex-wrap:wrap; margin-bottom:14px}
       </div>
       <div class="app-body" id="screen"></div>
     </div>
-    <p class="rt-note"><span class="i">i</span><span>O motor é o mesmo em todos. Muda só o chrome do runtime — o Nirvana-OS se instala em cada um que encontra na sua máquina e responde ao ser chamado pelo nome.</span></p>
+    <p class="rt-note"><span class="i">i</span><span>O motor é o mesmo em todos. Muda só a aparência do runtime: o Nirvana-OS se liga a cada um que encontra na sua máquina e entra em ação quando o pedido o chama pelo nome ou aponta uma das suas empresas, squads ou mind-clones.</span></p>
   </section>
 
   <section class="blk" id="fluxo">
@@ -238,8 +239,8 @@ footer .links{display:flex; gap:18px; flex-wrap:wrap; margin-bottom:14px}
     <p class="intro">Um agente sozinho responde a um prompt. Trabalho de verdade não é um prompt: é pesquisador, redator, revisor e operador puxando em direções diferentes, coordenados, com rastro. Hoje a cola é você. O Nirvana-OS tira você da cola.</p>
     <div class="flow">
       <div class="fc"><div class="n">01</div><h3>Você descreve</h3><p>Em prosa, o resultado que quer. Sem formulário, sem YAML, sem configuração.</p></div>
-      <div class="fc"><div class="n">02</div><h3>O maestro escolhe</h3><p>O orquestrador lê o brief e consulta os três registros: empresas, squads e mind-clones.</p></div>
-      <div class="fc"><div class="n">03</div><h3>Despacha em paralelo</h3><p>Convoca a combinação certa e roda tudo ao mesmo tempo, não um prompt de cada vez.</p></div>
+      <div class="fc"><div class="n">02</div><h3>O maestro escolhe</h3><p>O seu agente vira o orquestrador: consulta os três registros (empresas, squads e mind-clones) e escreve um brief para cada empresa escolhida.</p></div>
+      <div class="fc"><div class="n">03</div><h3>Despacha em paralelo</h3><p>Cada empresa roda como um agente próprio, ao mesmo tempo que as outras quando as partes são independentes.</p></div>
       <div class="fc"><div class="n">04</div><h3>Passa no portão</h3><p>Reconcilia o resultado atrás de um quality gate. O que não passa volta para revisão.</p></div>
       <div class="fc"><div class="n">05</div><h3>Deixa o recibo</h3><p>Cada despacho fica registrado. Você audita quem fez o quê, quando e com qual custo.</p></div>
     </div>
@@ -253,13 +254,13 @@ footer .links{display:flex; gap:18px; flex-wrap:wrap; margin-bottom:14px}
       <div class="mat">
         <div class="sym">▨</div>
         <h3>Empresas</h3>
-        <p>Organizações autônomas com organograma. Cada funcionário chama squads para executar. Você descreve a empresa; o sistema escreve o organograma, os funcionários e os fluxos.</p>
+        <p>Organizações com organograma. Despachada, a empresa roda como um agente que ocupa os seus assentos, usa squads pelos cards deles e canaliza mind-clones. Você descreve a empresa; o sistema escreve o organograma e os funcionários.</p>
         <div class="path">~/businesses/</div>
       </div>
       <div class="mat">
         <div class="sym">◈</div>
         <h3>Squads</h3>
-        <p>Equipes portáteis de agentes que rodam workflows reais, com DAG, portões e escalação, e entregam artefato pronto. Validados contra o Squad Protocol v6.</p>
+        <p>Equipes portáteis de agentes, com tarefas e workflows que o agente despachado segue como método, e entregam artefato pronto. Validados contra o Squad Protocol v6.</p>
         <div class="path">~/squads/</div>
       </div>
       <div class="mat">
@@ -274,7 +275,7 @@ footer .links{display:flex; gap:18px; flex-wrap:wrap; margin-bottom:14px}
   <section class="blk" id="frases">
     <div class="kicker">Tudo é uma frase</div>
     <h2 class="big">O que dizer no primeiro dia</h2>
-    <p class="intro">Você não escreve código, não preenche formulário e não edita configuração. Você conversa, dentro do runtime que já usa, chamando o sistema pelo nome.</p>
+    <p class="intro">Você não escreve código, não preenche formulário e não edita configuração. Você conversa, dentro do runtime que já usa, chamando o sistema pelo nome ou apontando uma das suas empresas, squads ou mind-clones.</p>
     <div class="says">
       <div class="say"><b>Use o Nirvana-OS para</b> criar uma empresa chamada podcast-empire que produz, publica e monetiza 3 podcasts ao mesmo tempo. Cada programa com nicho próprio, apresentador de IA, calendário editorial e funil de monetização independente. Uns 7 funcionários.<span class="what">Roda a fábrica de empresas e entrega o organograma staffado, validado contra o Business Protocol.</span></div>
       <div class="say"><b>Use o Nirvana-OS:</b> como se estrutura uma agência de marketing moderna e completa? Me dê a hierarquia, os cargos-chave e quem são os melhores especialistas do mundo para cada assento.<span class="what">Responde com organograma real e os nomes dos operadores cujo método cada assento deveria encarnar. Depois é só pedir para clonar e montar.</span></div>
@@ -288,19 +289,20 @@ footer .links{display:flex; gap:18px; flex-wrap:wrap; margin-bottom:14px}
     <h2 class="big">Instale em um comando</h2>
     <p class="intro">O motor é grátis e público. Ele não embarca conteúdo: cria as bibliotecas vazias e você preenche, conversando. Se quiser conteúdo curado e pronto, os pacotes são o atalho.</p>
     <div class="cta">
-      <span class="cmd"><span class="p">$</span><span>npx @nirvana-os/cli</span></span>
+      <span class="cmd"><span class="p">$</span><span>curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | bash</span></span>
       <a class="ghost" href="./install.html">Guia ilustrado, passo a passo</a>
     </div>
+    <p class="sub">Windows (PowerShell): <code>irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex</code></p>
     <table class="tbl">
-      <thead><tr><th>Você digita</th><th>Para quê</th></tr></thead>
+      <thead><tr><th>Você diz ao agente</th><th>Ele roda</th></tr></thead>
       <tbody>
-        <tr><td><code>npx @nirvana-os/cli</code></td><td>Instala ou atualiza o motor. Seguro rodar de novo.</td></tr>
-        <tr><td><code>nrv doctor</code></td><td>Diagnóstico do sistema: o que está ligado, o que falta.</td></tr>
-        <tr><td><code>nrv glance</code></td><td>Abre o cockpit e acompanha as execuções ao vivo.</td></tr>
-        <tr><td><code>nrv init &lt;dir&gt;</code></td><td>Prepara um projeto novo com escopo próprio.</td></tr>
+        <tr><td>"Confira se o Nirvana-OS está instalado corretamente."</td><td><code>nrv doctor</code></td></tr>
+        <tr><td>"Prepare esta pasta como um projeto do Nirvana-OS."</td><td><code>nrv init .</code></td></tr>
+        <tr><td>"Quais empresas e squads eu tenho?"</td><td><code>nrv list-businesses</code>, <code>nrv list-squads</code></td></tr>
+        <tr><td>"Atualize o Nirvana-OS."</td><td><code>nrv update</code></td></tr>
       </tbody>
     </table>
-    <p class="sub" style="margin-top:16px">O resto seu agente roda por você. Essa é a regra que a página inteira prova: <strong>você fala, o agente executa</strong>.</p>
+    <p class="sub" style="margin-top:16px">Os comandos são do seu agente. Essa é a regra que a página inteira prova: <strong>você fala, o agente executa</strong>. Para instalar um beta ou voltar à versão estável, veja o <a href="./install.html#betas">guia de instalação</a>.</p>
   </section>
 
 </div>

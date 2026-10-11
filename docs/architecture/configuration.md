@@ -160,7 +160,7 @@ Variáveis que o schema não absorve, agrupadas pelo motivo:
 
 **Identidade de um run.** Mudam a cada dispatch e são o pai que grava no filho. `NIRVANA_TRACE_ID`, `NIRVANA_PROJECT_ID`, `NIRVANA_BUSINESS_SLUG`, `NIRVANA_MULTI_TARGET_NODE_ID`, `NIRVANA_DISPATCH_TRACKS_RUN`, `NIRVANA_DISPATCH_SCRIPT`, `NIRVANA_RESOLVED_SQUAD_PATH`, `NIRVANA_BRIEF_VERIFIABLE`, `NIRVANA_BRIEF_RISK` (descrevem um brief, não uma preferência), `NIRVANA_RUNTIME`, `NIRVANA_AGENT_RUNTIME`, `NIRVANA_HOST_RUNTIME`, `NRV_IN_SWEEP`.
 
-**Escopo de biblioteca e locale.** Já têm contrato próprio em `.env`, `--scope` e `_shared/lib/scope.ts`; o `locale` do projeto vive no mesmo `.nirvana/config.yaml`, lido por `locale-resolver.ts`. `NIRVANA_SCOPE`, `NIRVANA_SCOPE_QUIET`, `NIRVANA_GLOBAL_INCLUDE_ONLY`, `NIRVANA_GLOBAL_EXCLUDE`, `NIRVANA_LOCALE`.
+**Escopo de biblioteca e locale.** Já têm contrato próprio: o escopo é `scope` em `.nirvana/project.yaml`, gravado por `nrv init --scope=<modo>` e lido por `_shared/lib/scope.ts` (a variável `NIRVANA_SCOPE` ainda vence, e um `.env` legado ainda é lido); o `locale` do projeto vive no mesmo `.nirvana/config.yaml`, lido por `locale-resolver.ts`. `NIRVANA_SCOPE`, `NIRVANA_SCOPE_QUIET`, `NIRVANA_GLOBAL_INCLUDE_ONLY`, `NIRVANA_GLOBAL_EXCLUDE`, `NIRVANA_LOCALE`.
 
 **Segredos e licença.** Nunca entram num arquivo que o `nrv config list` imprime e o doctor mostra. `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `GEMINI_API_KEY`, as demais chaves de API do painel, `CLAUDE_CODE_OAUTH_TOKEN`, `NIRVANA_PROVENANCE`, `NIRVANA_ARTIFACTS_KEY`. Continuam no `.env`.
 

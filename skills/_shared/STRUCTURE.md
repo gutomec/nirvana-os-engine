@@ -45,7 +45,7 @@ This document is the visual reference. For the legal details of the contract:
 │  ├── .squads-registry.json         ← cache: squad index                     │
 │  ├── .businesses-registry.json     ← cache: business index                  │
 │  ├── .harness-logs/                ← harness execution logs                 │
-│  └── .claude/squads-state/         ← per-squad SQLite state (global mode)   │
+│  └── .nirvana/squads-state/        ← per-squad SQLite state (global mode)   │
 └──────────────────────────────────────────────────────────────────────────────┘
 
 ┌──────────────────────── PROJECT  (any project) ─────────────────────────────┐
@@ -96,7 +96,7 @@ This document is the visual reference. For the legal details of the contract:
 | Squads registry (cache)     | `~/.squads-registry.json`                    | regenerated in project mode                        | `SQUADS_REGISTRY_PATH`          |
 | Businesses registry (cache) | `~/.businesses-registry.json`                | regenerated in project mode                        | `BUSINESSES_REGISTRY_PATH`      |
 | Harness logs                | `~/.harness-logs/`                           | `~/.harness-logs/` (shared)                        | `HARNESS_LOGS_DIR`              |
-| Squad state (SQLite)        | `~/.claude/squads-state/`                    | `<proj>/.nirvana/state/squads/`                    | `NIRVANA_STATE_DIR`             |
+| Squad state (SQLite)        | `~/.nirvana/squads-state/`                   | `<proj>/.nirvana/state/squads/`                    | `NIRVANA_STATE_DIR`             |
 | Outputs                     | (not applicable)                             | `<proj>/.nirvana/outputs/`                         | `PROJECTS_OUTPUT_DIR`           |
 | Project root detection      | (n/a)                                        | walk up to `.env` / `.nirvana` / `.git`            | `NIRVANA_PROJECT_ROOT`          |
 

@@ -35,8 +35,10 @@ Found: go to section 2. Not found: install it, then come back.
 
 **What the install changes.** Bun in user space (`~/.bun`) if it is missing; the
 engine in `~/.nirvana`; the `nrv` launcher in `~/.local/bin` plus one PATH line
-in the user's shell rc; audit hooks in the settings of the agent runtimes it
-finds (`~/.claude`, `~/.gemini`, `~/.codex`); the empty content
+in the user's shell rc; audit hooks in the agent runtimes it finds
+(`~/.claude/settings.json`, `~/.gemini/settings.json`,
+`~/.gemini/config/hooks.json` for Antigravity, `~/.codex/hooks.json`); the
+`nirvana` skill linked into their skills folders; the empty content
 roots `~/squads`, `~/businesses`, `~/businesses/_library/dna`. Network once, no
 project code touched, no sudo, idempotent, reversible with `nrv uninstall --engine`.
 
@@ -145,9 +147,11 @@ forward:
 - **Install packs.** Curated businesses, squads and mind-clones come from
   squads.sh and land in those same roots.
 
-The first brief inside a project also makes it a Nirvana project: the harness
-Phase 0 preflight runs `nrv init .` when the invocation contract is missing.
-That is the harness's job, not yours.
+A folder becomes a Nirvana project with `nrv init .`, run in its root when the
+user asks to set one up ("prepare esta pasta como projeto do Nirvana"). It
+writes `.nirvana/project.yaml` and the on-demand note in `AGENTS.md`,
+`CLAUDE.md` and `GEMINI.md`. Nothing runs it on its own: a dispatch outside a
+project still works and delivers under `~/.nirvana/outputs`.
 
 ## 6. Where the content lives
 
@@ -162,10 +166,17 @@ set with `nrv init --scope=<mode>`.
 
 | Goal | Command |
 |---|---|
-| Update the engine | `nrv update` |
-| Update this skill | `npx skills update` |
+| Update the engine (and the `nirvana` skill it links) | `nrv update`; `nrv update --check` names the release first |
+| Update an installed pack | `nrv update <pack>` |
+| Update this skill when skills.sh installed it | `npx skills update` |
 | Remove the engine, keep the content | `nrv uninstall --engine` |
-| Remove only this skill | `npx skills remove nirvana` |
+| Remove only this skill, when skills.sh installed it | `npx skills remove nirvana` |
+
+An engine update never installs an older or equal release: a stable engine
+moves to the newest greater stable, a beta to the newest greater release, beta
+or stable. When `nrv update <pack>` fails with a license error, tell the user to
+download the pack again from squads.sh and run its setup (`bash setup.sh`, or
+`powershell -ExecutionPolicy Bypass -File setup.ps1` on Windows).
 
 ## 8. Settings: the user asks, you change them
 

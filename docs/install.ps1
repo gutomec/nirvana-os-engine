@@ -56,7 +56,7 @@ try {
     Write-Host "Engine local: $($env:NIRVANA_ENGINE_TARBALL)"
     Copy-Item $env:NIRVANA_ENGINE_TARBALL $tarball
   } else {
-    Write-Host "Baixando o engine mais recente..."
+    Write-Host "Baixando o engine: $url"
     # ProgressPreference: sem isto o Invoke-WebRequest fica ordens de grandeza mais lento.
     $prev = $ProgressPreference; $ProgressPreference = "SilentlyContinue"
     try { Invoke-WebRequest -Uri $url -OutFile $tarball -UseBasicParsing }

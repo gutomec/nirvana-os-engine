@@ -1,14 +1,16 @@
 # Squad dependency manifest (sidecar to squad.yaml).
-# When user activates this squad, the activator walks each section in order,
-# checks if the item is already present, and installs only what's missing.
+# The squad's Node and Python packages install into its own environment,
+# ~/.nirvana/envs/<slug>/, which a dispatch prepares before the squad runs and
+# `nrv activate` prepares ahead of time. Activation walks each section in order,
+# checks what is already present, and installs only what is missing.
 #
 # Place at <squad>/dependencies.yaml. If the file is absent, the squad is
 # assumed self-contained (no external installs needed).
 #
 # CLI:
-#   bun ~/.nirvana/skills/squads/scripts/activate-squad.ts <slug>
-#   bun ~/.nirvana/skills/squads/scripts/activate-squad.ts <slug> --dry-run
-#   bun ~/.nirvana/skills/squads/scripts/activate-squad.ts <slug> --confirm-heavy
+#   nrv activate <slug>
+#   nrv activate <slug> --dry-run
+#   nrv activate <slug> --confirm-heavy
 #
 # Templates: copy this file and fill in only the sections that apply.
 
@@ -34,17 +36,16 @@ system:
 # ─────────────────────────────────────────────────────────────
 # Python packages.
 #
-# They install into a SHARED venv (~/.nirvana/python/venv) — never into the
-# squad, never into ~/Library/Python, never with `pip install --user` (PEP 668
-# refuses that on Debian, Ubuntu, Fedora, Arch and Homebrew). The activator
-# finds an interpreter by making it run (a dead `python` shim on PATH is
-# skipped), creates the venv with uv when uv is installed and with `-m venv`
-# otherwise, and skips the install when pip's own offline dry-run proves every
-# package present at the declared version. Version specifiers are honoured:
-# `pillow >= 10.0` is a real constraint. Declare the packages and nothing else;
-# `target_dir` is ignored. Add `use_squad_venv: true` only when the squad
-# genuinely needs isolation from the shared venv. A `check:` on an entry still
-# takes precedence over the automatic proof.
+# They install into the squad's own venv, ~/.nirvana/envs/<slug>/.venv: never
+# into the squad folder, never into ~/Library/Python, never with
+# `pip install --user` (PEP 668 refuses that on Debian, Ubuntu, Fedora, Arch and
+# Homebrew), and never into a venv another squad shares. The activator finds an
+# interpreter by making it run (a dead `python` shim on PATH is skipped),
+# creates the venv with uv when uv is installed and with `-m venv` otherwise,
+# and installs again only when the declared packages change. Version specifiers
+# are honoured: `pillow >= 10.0` is a real constraint. Declare the packages and
+# nothing else; `target_dir` is ignored, and so is `use_squad_venv` (every
+# squad is isolated now). The worker's prompt names the squad's interpreter.
 # ─────────────────────────────────────────────────────────────
 python:
   manager: pip      # uv | pip
@@ -55,11 +56,14 @@ python:
 # ─────────────────────────────────────────────────────────────
 # Node packages.
 #
-# They install into the SHARED store (~/.nirvana/node_modules) and the squad
-# directory is symlinked to it, so `import "yaml"` resolves without a copy of
-# the tree living here. Declare packages only: `cwd` is ignored (it used to
-# point installs at the squad's own directory, which cost 276 MB per squad for
-# the same packages).
+# They install into the squad's own environment, ~/.nirvana/envs/<slug>/: a
+# package.json holding these entries with their versions exactly as written,
+# installed with `bun install`. Two squads that pin different versions of a
+# package each get theirs. The worker resolves them through NODE_PATH, a Node
+# ESM resolve hook and an `npx` shim on PATH; the squad folder gets only a
+# `node_modules` link to the environment, for tools that ignore NODE_PATH.
+# Declare packages only: `cwd` is ignored (it used to point installs at the
+# squad's own directory, which cost 276 MB per squad for the same packages).
 #
 # `global: true` is the exception, for a package that must be a COMMAND on the
 # machine's PATH (`wrangler`, `lighthouse`). Those go through npm as before.

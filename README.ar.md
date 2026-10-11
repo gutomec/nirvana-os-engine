@@ -6,20 +6,22 @@
 
 **عمليات وكلاء جاهزة للتشغيل.** جملة واحدة تدخل. عمل منجز يخرج.
 
-[![npm downloads](https://img.shields.io/npm/dm/@nirvana-os/cli)](https://www.npmjs.com/package/@nirvana-os/cli)
 [![GitHub stars](https://img.shields.io/github/stars/gutomec/nirvana-os-engine)](https://github.com/gutomec/nirvana-os-engine/stargazers)
 [![version](https://img.shields.io/github/v/release/gutomec/nirvana-os-engine?label=version)](./CHANGELOG.md)
 [![CI](https://github.com/gutomec/nirvana-os-engine/actions/workflows/smoke.yml/badge.svg)](https://github.com/gutomec/nirvana-os-engine/actions/workflows/smoke.yml)
 [![license](https://img.shields.io/badge/license-SUL-lightgrey)](./LICENSE)
-[![npm](https://img.shields.io/npm/v/@nirvana-os/cli?label=npm)](https://www.npmjs.com/package/@nirvana-os/cli)
+
+**macOS / Linux**
 
 ```bash
-npx @nirvana-os/cli
+curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | bash
 ```
 
-أمر واحد يثبّت المحرك ويربطه بكل وكيل طرفية يعثر عليه. تشغيله مجدداً آمن في أي وقت.
+**Windows (PowerShell)**
 
-تفضّل مسار الـ skills؟ الأمر `npx skills add gutomec/nirvana-os-engine -g` يثبّت الـ skill المسماة `nirvana` عبر [skills.sh](https://skills.sh)؛ عند أول استخدام تثبّت هذا المحرك نفسه، وبعدها يكفي أن تقول "use nirvana".
+```powershell
+irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
+```
 
 [التوثيق](https://gutomec.github.io/nirvana-os-engine/) · [Packs](https://squads.sh/pt/packs) · [التثبيت المصوّر](https://gutomec.github.io/nirvana-os-engine/install.html) · [Changelog](./CHANGELOG.md)
 
@@ -29,154 +31,188 @@ npx @nirvana-os/cli
 
 ---
 
-## وكيلك حاد الذكاء. وهو وحيد أيضاً.
+## أنت تتحدث إلى وكيلك. ووكيلك يشغّل Nirvana.
 
-أنت تشغّل بالفعل وكيلاً في الطرفية: Claude Code أو Codex أو Gemini-CLI أو Antigravity. موجّه واحد يعطي جواباً جيداً واحداً. العمل الحقيقي ليس موجّهاً واحداً. إنه باحث وكاتب ومراجع ومشغّل يشدّون في الاتجاه نفسه، بالتوازي، مع سجل مكتوب لكل خطوة. اليوم، أنت الصمغ.
+أنت تعمل بالفعل مع وكيل في الطرفية: Claude Code أو Codex أو Gemini CLI أو Antigravity أو Pi أو Grok أو غيرها. موجّه واحد يعطي جواباً جيداً واحداً. العمل الحقيقي يتطلب باحثاً وكاتباً ومراجعاً ومشغّلاً، مع سجل يبيّن من فعل ماذا.
 
-يرقّي Nirvana-OS هذا الوكيل المنفرد إلى مايسترو يدير مؤسسات كاملة. تصف النتيجة بنثر بسيط. يقرأ المحرك الموجز، ويراجع ما تملكه، ويوزّع الشركات وsquads وmind-clones بالتوازي، ويوفّق كل شيء خلف بوابة جودة، ويكتب مسار تدقيق لكل عملية توزيع. تكفّ عن كونك المشغّل وتصبح المدير.
-
-الواجهة كلها نثر مع إيصال. أنت تتكلم. ووكيلك يشغّل الأوامر.
+يمنح Nirvana-OS وكيلك هذا التنظيم. تطلب بلغة بسيطة، فيستخدم الوكيل Nirvana لاختيار الشركات وsquads وmind-clones المناسبة، وتوزيعها، والتحقق مما يعود منها، وعرض الإيصال عليك. لا تتعلم واجهة جديدة ولا تكتب أوامر في عملك اليومي. الأوامر الواردة أدناه هي المرجع الذي يستخدمه وكيلك، وهي متاحة لك متى أردتها.
 
 ## ما هو
 
-Nirvana-OS نظام تشغيل متعدد الوكلاء، أصيل في Bun ومستقل عن بيئة التشغيل. ينشئ تكتّلاً ويديره ويشرف عليه: أي عدد من الشركات وsquads، منسّقة من الموجز حتى التسليم المتحقق منه. إنه طبقة التنسيق فوق وكيل الطرفية لديك، لا بديلاً عنه.
-
-الوضع الافتراضي هو **صفر بشر**: تعمل الشركات باستقلالية، والمدخلات البشرية اختيارية عبر محفّزات صريحة في البيان. أنت تذكر النتيجة. والمحرك يختار الطاقم.
-
-كل ما ينشئه هو واحد من ثلاثة أشياء:
+Nirvana-OS نظام متعدد الوكلاء، أصيل في Bun ومستقل عن بيئة التشغيل. يعمل فوق الوكيل الذي تستخدمه أصلاً ولا يحل محله أبداً. يتعامل مع ثلاثة أنواع من المحتوى، وكلها مجلدات على جهازك:
 
 | الركيزة | ما هي | أين تعيش |
 |---|---|---|
-| **الشركات (businesses)** | مؤسسات مستقلة بهيكل تنظيمي من موظفين دائمين يستدعون squads | `~/businesses/` |
-| **Squads** | فرق وكلاء قابلة للنقل تشغّل سير عمل حقيقياً: DAG وبوابات جودة وتصعيد | `~/squads/` |
-| **Mind-clones** | حمض نووي للشخصية في 5 طبقات، يُحقن في الموظفين ليفكّروا ويتحدّثوا بمنهج أحد كبار الخبراء | `~/businesses/_library/dna/` |
+| **الشركات (businesses)** | مؤسسات لها هيكل تنظيمي. الشركة التي يجري توزيعها تعمل كوكيل واحد يؤدي أدوار مقاعدها، ويستخدم squads عبر بطاقاتها، ويستحضر mind-clones | `~/businesses/` |
+| **Squads** | فرق وكلاء قابلة للنقل، فيها وكلاء ومهام وسير عمل يتبعها الوكيل الموزَّع منهجاً له | `~/squads/` |
+| **Mind-clones** | حمض نووي للشخصية في خمس طبقات، ليفكّر الوكيل ويكتب بمنهج خبير بعينه | `~/businesses/_library/dna/` |
 
-الشركة تنسّق الموظفين. الموظف يستدعي squads. الـ squad يشغّل وكلاء. الـ mind-clone يمنح أياً منهم صوتاً أصدق. موجز واحد يمكنه أن يحشد كثيراً منها دفعة واحدة.
+يأتي المحرك بلا محتوى. تنشئ الشركات وsquads والنسخ بطلب ذلك من وكيلك، أو تثبّت حزمة من [squads.sh](https://squads.sh/pt/packs).
 
-## البداية السريعة
+## التثبيت
 
-ما تحتاجه: [Bun](https://bun.sh) 1.0 أو أحدث. Node 18+ و`tar` موجودان فقط ليعمل `npx`، ومعظم الأجهزة تملكهما بالفعل.
+شغّل الأمر ذا السطر الواحد في أعلى هذه الصفحة. يحتاج إلى `curl` (أو `wget`) و`tar`، وهما موجودان أصلاً في macOS وLinux وWindows 10+. لا حاجة إلى Node. إذا لم يكن [Bun](https://bun.sh) موجوداً، يضعه المثبّت في مجلد المستخدم (`~/.bun`) دون sudo ويتابع عمله.
 
-```bash
-# macOS / Linux
-curl -fsSL https://bun.sh/install | bash
-exec $SHELL
-npx @nirvana-os/cli
+ما يغيّره على جهازك:
 
-# Windows (native, no WSL), in PowerShell
-powershell -c "irm bun.sh/install.ps1 | iex"
-# open a NEW PowerShell window so PATH refreshes
-npx @nirvana-os/cli
+- المحرك في `~/.nirvana/skills`؛
+- الـ skill المسماة `nirvana`، مربوطة بكل بيئة تشغيل وكلاء يعثر عليها: `~/.claude/skills` و`~/.codex/skills` و`~/.gemini/skills` و`~/.gemini/config/skills` (Antigravity) و`~/.pi/agent/skills` و`~/.agents/skills` (OpenClaw)؛
+- `nrv` و`nrv-gemini` و`nrv-hermes` في `~/.local/bin`، مع سطر PATH واحد في ملف تعريف الصدفة لديك (PATH الخاص بالمستخدم على Windows)؛
+- خطافات تدقيق في Claude Code وGemini CLI وAntigravity وCodex؛
+- مجلدات المحتوى الفارغة `~/squads` و`~/businesses` و`~/businesses/_library/dna`.
+
+إعادة تشغيله آمنة. افتح طرفية جديدة بعد ذلك ليصبح `nrv` على PATH لديك، ثم اطلب من وكيلك: *"تحقق من أن Nirvana-OS مثبّت بشكل صحيح."* فيشغّل `nrv doctor`. رمز الخروج 1 يعني تحذيرات فقط؛ والرمز 2 يسرد ما فشل.
+
+الأمر ذو السطر الواحد لا يطرح أسئلة. لاختيار ملف أداء عند التثبيت، مرّره إليه: `curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | bash -s -- --profile=balanced`. يمكنك أيضاً ضبطه لاحقاً بطلب ذلك من وكيلك (انظر [الإعدادات](#الإعدادات)).
+
+الطرق الأخرى (الـ skill المسماة `nirvana` عبر skills.sh، والتثبيت من نسخة مستنسخة) موجودة في [INSTALL.md](./INSTALL.md).
+
+## ابدأ مشروعاً
+
+افتح المجلد الذي تريد العمل فيه، وشغّل وكيلك هناك، وقل: *"اضبط هذا المجلد كمشروع Nirvana-OS."* يشغّل الوكيل `nrv init .`، الذي يكتب `.nirvana/project.yaml` وملاحظة قصيرة في `AGENTS.md` و`CLAUDE.md` و`GEMINI.md`. تصل المخرجات إلى `outputs/` داخل المشروع.
+
+هذه الملاحظة تُبقي وكيلك يعمل كالمعتاد. فهو لا يستخدم Nirvana إلا حين يستدعي طلبك ذلك:
+
+- تذكره بالاسم ("استخدم Nirvana لـ…"، "عبر nirvana")؛
+- تسمّي إحدى شركاتك أو squads أو mind-clones لديك أو تشير إليها ("شركة الإطلاق الخاصة بي"، "squad الكتابة الإعلانية"، "بصوت Hormozi")، بما في ذلك اسم حزمة؛
+- تطلب أن يجري العمل، أو جزء منه، على بيئة تشغيل أخرى ("استخدم Codex لمراجعته").
+
+إذا أردت أن ينسّق Nirvana كل المخرجات في مشروع ما، فقل *"نسّق كل شيء في هذا المشروع عبر Nirvana"*. يشغّل الوكيل `nrv init . --orchestrators=always`. افتح جلسة جديدة ليسري التغيير.
+
+## ماذا تطلب من وكيلك
+
+| تقول | يشغّل وكيلك |
+|---|---|
+| "ما الشركات / squads / mind-clones التي أملكها؟" | `nrv list-businesses`، `nrv list-squads`، `nrv list-clones` |
+| "استخدم Nirvana لكتابة نص الإطلاق الإعلاني لـ X." | الـ harness: يختار الشركة، ويكتب موجزاً، `nrv dispatch … --exec` |
+| "شغّل هذا عبر squad الكتابة الإعلانية، على Codex." | `nrv dispatch --squad <slug> … --exec --runtime codex` |
+| "أوقف ذلك التشغيل." | `nrv run-track stop <run>` |
+| "غيّر العنوان الرئيسي فيما سلّمته." | `nrv revise <project> "<change>"` |
+| "أرني ما فعله ذلك التشغيل." | `nrv audit-view <project>` |
+| "ثبّت تبعيات كل squads لديّ." | `nrv activate --all` |
+| "حدّث Nirvana-OS." | `nrv update` |
+| "حدّث حزمة Genesis Circle لديّ." | `nrv update genesis-circle` |
+| "ضع Nirvana في الوضع الاقتصادي." | `nrv config set execution.profile economy --global` |
+
+الطلبات الأكبر تعمل بالطريقة نفسها:
+
+```text
+استخدم Nirvana-OS لإنشاء شركة اسمها podcast-empire تنتج 3 بودكاستات في آن واحد
+وتنشرها وتحقق منها الدخل. لكل برنامج تخصصه الخاص، ومقدّم بالذكاء الاصطناعي، وتقويم
+تحريري، وقمع مستقل لتحقيق الدخل. نحو 7 موظفين.
 ```
 
-يضع المثبّت شجرة skills واحدة في `~/.nirvana/skills`، ويربطها بـ `~/.claude` و`~/.codex` و`~/.gemini` و`~/.antigravity` حيثما وجدها، ويضع ثنائيات `nrv` على PATH لديك. يثبّت المحرك ولا محتوى: سجلاتك تبدأ فارغة عن قصد، فكل ما فيها شيء بنيته أنت أو اخترت تثبيته. إعادة تشغيل المثبّت متكررة الأثر (idempotent) وتجلب دائماً أحدث محرك.
-
-تأكد من سلامة التثبيت:
-
-```bash
-nrv doctor
+```text
+استخدم Nirvana-OS لتحويل النتاج العام لـ <author> إلى mind-clone كامل بالذكاء الاصطناعي.
 ```
 
-على Windows، يفحص `nrv doctor` أيضاً PATH الخاص بالمستخدم بحثاً عن مدخلات `nrv-*` المؤقتة التي كانت المحركات حتى الإصدار 0.8.0 قد تخلّفها. يسردها `nrv install --repair-path` دون كتابة أي شيء؛ و`--apply` يزيل تلك بالضبط ويبقي كل مدخل آخر كما هو.
+```text
+استخدم Nirvana-OS لإنتاج حزمة إطلاق: بحث سوق، ونص إعلاني لصفحة هبوط،
+وتحليل تنافسي مفصّل.
+```
 
-ثم افتح وكيلك وقل **"استخدم Nirvana-OS لـ…"**. للإعداد الذي يقوده الوكيل، وجّه بيئة التشغيل لديك إلى [`AGENT-QUICKSTART.md`](./AGENT-QUICKSTART.md).
-
-## عرض 90 ثانية
-
-> **الموضع محجوز.** الجولة القياسية ذات الـ 90 ثانية تُضمَّن هنا فور نشرها. حتى ذلك الحين، هذه هي اللقطة الحيّة لأمر نثري واحد يجمّع تكتّلاً.
+ينسّق الوكيل ولا يكتب المُخرَج بنفسه أبداً. كل شركة يختارها تحصل على موجزها الخاص وتشغيلها الخاص، وتعمل بالتوازي حين تكون الأجزاء مستقلة.
 
 <div align="center">
   <img src="./docs/assets/nirvana-promo-en-readme.gif" alt="أمر نثري واحد يدخل، فيتجمّع تكتّل ذكاء اصطناعي كامل ويسلّم" width="100%">
 </div>
 
-<!-- DEMO-90s SLOT
-     Canonical 90-second demo goes here when published (trace 75fbfbcc, phase X3).
-     Replace the block above with:
-     <a href="VIDEO_URL"><img src="THUMBNAIL_URL" alt="Nirvana-OS في 90 ثانية" width="100%"></a>
--->
+## الحزم
 
-## شاهده يعمل: كل شيء جملة
+الحزم شركات وsquads وmind-clones منتقاة تُباع على [squads.sh](https://squads.sh/pt/packs). الحزمة الرائدة هي [Genesis Circle](https://squads.sh/pt/nirvana-os).
 
-**ابنِ شركة بوصفها.** يصمّم النظام المؤسسة، ويكتب كل موظف، ويوصّل سير العمل، ويتحقق من النتيجة وفق Business Protocol.
+1. اشترِ الحزمة على squads.sh ونزّل ملف zip الخاص بها من لوحة التحكم.
+2. فك ضغط الأرشيف كاملاً في مجلد، وافتح طرفية هناك وشغّل الإعداد:
+   - macOS / Linux: `bash setup.sh`
+   - Windows: `powershell -ExecutionPolicy Bypass -File setup.ps1`
 
-```text
-Use Nirvana-OS to create a company called podcast-empire that produces, publishes,
-and monetizes 3 podcasts at once. Each show has its own niche, an AI host, an
-editorial calendar, and an independent monetization funnel. Around 7 employees.
+   يثبّت الإعداد Bun عند الحاجة، ويثبّت المحرك أو يحدّثه، وينسخ المحتوى إلى `~/squads` و`~/businesses` و`~/businesses/_library/dna`، ويعيد بناء الفهارس، ويحفظ ترخيص الحزمة في `~/.nirvana-license/packs/<pack>/`.
+3. تحدّث إلى وكيلك: *"استخدم Nirvana لسرد ما منحتني إياه حزمة Genesis Circle"*، ثم اطلب العمل بتسمية شركة أو squad أو الحزمة.
+
+تُثبَّت تبعيات الـ squad عند الطلب في أول مرة يعمل فيها. لتجهيزها كلها مسبقاً، اطلب من وكيلك تثبيت تبعيات كل squad (`nrv activate --all`).
+
+**تحديث حزمة.** اطلب من وكيلك تحديثها، أو شغّل `nrv update <pack>`. المكوّنات التي عدّلتها تُنسخ احتياطياً في `~/.nirvana/backups/packs/<pack>/` قبل أن يستبدلها التحديث. إذا فشل التحديث بخطأ في الترخيص، فنزّل الحزمة مجدداً من squads.sh وشغّل إعدادها مرة أخرى؛ فهذا يجدّد الترخيص أيضاً.
+
+## تحديث المحرك
+
+اطلب من وكيلك تحديث Nirvana-OS، أو شغّل `nrv update`. ينسخ `~/.nirvana/skills` احتياطياً أولاً ويحتفظ بإعداداتك ومحتواك. يذكر `nrv update --check` الإصدار الذي سيثبّته دون تغيير أي شيء.
+
+لا ينقل التحديث المحرك أبداً إلى إصدار أقدم. المحرك المستقر لا ينتقل إلا إلى إصدار مستقر أحدث. أما بيتا فتنتقل إلى أحدث إصدار أعلى منها، بيتا كان أو مستقراً، لذا تصبح بيتا 0.15 هي 0.15.0 عند صدوره. بعد تحديث المحرك، يفحص `nrv update` أيضاً كل حزمة مثبّتة لها ترخيص ويخبرك حين يتوفر لإحداها إصدار أحدث.
+
+## إصدارات بيتا
+
+إصدارات بيتا هي prereleases على GitHub. الأمر ذو السطر الواحد يثبّت أحدث إصدار مستقر، لذا تُثبَّت بيتا بتحديد أرشيف tarball الخاص بها صراحةً:
+
+```bash
+curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v<version>/nirvana-os-engine.tar.gz bash
 ```
 
-**استنسخ خبيراً بالنثر.** يستخرج مصنع العباقرة حمضاً نووياً من 5 طبقات (فلسفات، ونماذج ذهنية، وقواعد إرشادية، وأطر عمل، ومنهجيات) من النتاج العام لشخص ما، مع إسناد كل عنصر إلى مصدره.
-
-```text
-Use Nirvana-OS to turn the public work of <author> into a complete AI mind-clone
-through the genius factory.
+```powershell
+$env:NIRVANA_ENGINE_URL = "https://github.com/gutomec/nirvana-os-engine/releases/download/v<version>/nirvana-os-engine.tar.gz"
+irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
+Remove-Item Env:NIRVANA_ENGINE_URL
 ```
 
-**جملة واحدة، فرق كثيرة دفعة واحدة.** موجز واحد يمكنه أن يستدعي squad بحث وsquad كتابة إعلانية وشركة تصميم بالتوازي، موفَّقة خلف بوابة جودة واحدة، مع مسار تدقيق يُظهر كل خيار اتخذه المايسترو.
+استبدل `<version>` بالإصدار، مثلاً `0.15.0-beta.5`. يبدأ الوسم بحرف `v`؛ ومن دونه يعيد التنزيل 404. قائمة الإصدارات موجودة على [GitHub](https://github.com/gutomec/nirvana-os-engine/releases). في PowerShell يبقى المتغير قائماً طوال عمر النافذة، ولهذا يحذفه السطر الأخير: ما دام مضبوطاً، يعيد `nrv update` تثبيت الأرشيف المحدد نفسه.
 
-```text
-Use Nirvana-OS to produce a launch package: market research, landing-page copy,
-and a competitive teardown.
-```
+بمجرد الانتقال إلى بيتا، يُبقيك `nrv update` وكل إعداد حزمة على قناة بيتا. للعودة إلى الإصدار المستقر، شغّل الأمر العادي ذا السطر الواحد من أعلى هذه الصفحة: فهو يثبّت أحدث إصدار مستقر فوق بيتا، ويبقى محتواك وإعداداتك كما هي.
 
-**اضبطه بجملة واحدة.** التكلفة والجودة ومدى تدخّل Nirvana إعدادات يغيّرها وكيلك عندما تطلب ذلك. ملف أداء واحد (اقتصادي أو متوازن أو أقصى جودة) يضبط دفعة واحدة الجهد والسياق والمراجعة والمُحكِّم؛ اسأل وكيلك عمّا هو مضبوط وسيعرض لك كل الإعدادات.
+## الإعدادات
 
-```text
-Put Nirvana in economy mode, and in this project use it only when I ask.
-```
+تتغيّر الإعدادات حين تطلب. يكفي أن تقول *"ضع Nirvana في الوضع الاقتصادي"* أو *"أقصى جودة"* أو *"ما المضبوط حالياً؟"*؛ فيشغّل وكيلك `nrv config` ويخبرك بما تغيّر.
 
-مزيد من التدفقات، ومنها "صمّم الوكالة، واستنسخ المتخصصين، وابنِها" في ثلاثة أسئلة، موجودة في [الصفحة الرئيسية للتوثيق](https://gutomec.github.io/nirvana-os-engine/)، التي تشغّل الجملة نفسها عبر بيئات التشغيل السبع المدعومة: Claude Code وCodex وGemini وAntigravity وGrok وKimi وHermes.
+يغيّر ملف الأداء عدة إعدادات دفعة واحدة:
+
+| ملف الأداء | الجهد | سقف السياق لكل worker | المراجعة | الفحوص البصرية من الـ workers |
+|---|---|---|---|---|
+| `max` | xhigh | لا يوجد (افتراضي بيئة التشغيل) | كل تسليم، حتى جولتين | مفعّلة |
+| `balanced` | high | 400k رمز | حين تطلبها قاعدة | معطّلة |
+| `economy` | medium | 200k رمز | عند الطلب فقط | معطّلة |
+
+لا يختار ملف الأداء النموذج أبداً؛ فالنموذج تحدده إعدادات بيئة التشغيل لديك. الإعداد الذي تغيّره صراحةً يتقدّم على ملف الأداء. يعرض `nrv config list` كل إعداد وقيمته ومصدره. المرجع الكامل في [docs/configuration.md](./docs/configuration.md).
 
 ## لماذا لعبارة "العمل منجز" معنى هنا
 
-للأنظمة متعددة الوكلاء مشكلة ثقة: يمكن للمنسّق أن يعلن أي شيء في رسالته الأخيرة. يجيب Nirvana-OS بثلاثة ضمانات، كل منها مسنود بآلية يمكنك فتحها على القرص.
+يمكن للمنسّق أن يعلن أي شيء في رسالته الأخيرة. يسند Nirvana-OS كل تسليم بأشياء يمكنك فتحها على القرص.
 
-- **قابل للتتبع.** كل إجراء يصبح حدثاً بالإلحاق فقط في `~/.harness-logs/<date>/audit.jsonl`: استلام الموجز، والتوزيع، وحقن mind-clone، واجتياز البوابة أو الإخفاق فيها. كل تشغيل بـ `--exec`، في وضع `standard` أو عبر Gauntlet، يترك أيضاً Run قياسياً في `.nirvana/run-kernel.sqlite` الخاص بالمشروع، وهو سجل بالإلحاق فقط يقرؤه Glance. من دون هذه الأحداث، لا رسالة إنجاز صادقة.
-- **مختبَر.** يقارن `verify-deliverable.ts` ما وعد به الموجز بما هو موجود فعلاً على القرص. ويشغّل `quality-gate.ts` معايير تقييم لكل نوع ملف في حلقة حكم ونقد ومراجعة. لا PASS من verify، لا إنجاز مشروع.
-- **متعاقد عليه.** للمهام معايير قبول ثنائية. وللقدرات مدخلات ومخرجات منمّطة. المخرجات الموجّهة للعميل تمر بسلسلة اعتماد: المنتِج، ثم المراجع، ثم المعتمِد. الميزانيات سقف صارم، ومحفّزات التصعيد تحدد بالضبط متى يدخل الإنسان الحلقة.
+- **مسار التدقيق.** كل توزيع وحكم بوابة وتسليم هو حدث بالإلحاق فقط في `~/.harness-logs/<date>/audit.jsonl`. كل تشغيل بـ `--exec` يترك أيضاً سجلاً في `.nirvana/run-kernel.sqlite` الخاص بالمشروع. يعرض `nrv audit-view <project>` السلسلة كاملة.
+- **متحقَّق منه على القرص.** يقارن `verify-deliverable` ما وعد به الموجز بالملفات الموجودة فعلاً، وتشغّل بوابة الجودة معايير تقييم لكل نوع ملف، مع جولات تصحيح عند الإخفاق. التشغيل الذي تصمد إخفاقاته الجسيمة بعد التصحيحات يُحجب ولا يُسلَّم.
+- **موجزات بمعايير.** يحمل كل موجز طلب المستخدم بنصه الحرفي ومعايير "يُعدّ منجزاً حين" قابلة للملاحظة؛ والمعايير الموسومة `(blocking)` هي التي تقرر ما إذا كان التسليم يجتاز.
+- **الإنفاق تحت سيطرتك.** لا يُضبط أي سقف للتكلفة ما لم تطلبه (*"حدّد سقف كل تشغيل بـ US$ 5"* يضبط `budget.default_max_cost_usd`).
 
-## المحرك مجاني، والمحتوى مدفوع
+## مرجع الأوامر
 
-المحرك في هذا المستودع مجاني، بلا مستوى مبتور ولا شيء أساسي محجوب. ينشئ وينسّق الشركات وsquads وmind-clones من الصفر. المصدر منشور ومقروء علناً بموجب [Sustainable Use License](./LICENSE) (متاح المصدر، وليس معتمداً من OSI؛ بعض الاستخدامات التجارية تتطلب ترخيصاً منفصلاً).
+للوكلاء والمستخدمين المتقدمين. يسرد `nrv help` كل شيء؛ ويعطي `nrv <command> --help` خيارات كل أمر. المرجع الكامل: [docs/CLI.md](./docs/CLI.md).
 
-الطبقة المدفوعة هي **محتوى لا قدرة**: مجموعات منتقاة جاهزة للتشغيل، تُسلَّم عبر [squads.sh](https://squads.sh). الفارق الذي تشتريه لك الحزم هو الوقت، لا القوة. تصفّحها في **[squads.sh/pt/packs](https://squads.sh/pt/packs)**. الباقة الرائدة، **[Genesis Circle](https://squads.sh/pt/nirvana-os)**، تسلّمك تكتّلاً كاملاً يمكنك تشغيله من اليوم الأول، ويُبقى محدثاً بـ `nrv update <pack>`.
-
-| | المحرك المجاني (هذا المستودع) | Packs ([squads.sh/pt/packs](https://squads.sh/pt/packs)) |
-|---|---|---|
-| الإنشاء من الصفر | نعم | نعم |
-| التنسيق بالتوازي | نعم | نعم |
-| مسار تدقيق لكل عملية توزيع | نعم | نعم |
-| squads وشركات وmind-clones جاهزة | لا شيء، فارغ عن قصد | تكتّل كامل من اليوم الأول |
-
-## حفنة الأوامر التي تستحق أن تكتبها بنفسك
-
-| ما تكتبه | ما يفعله |
+| الأمر | ما يفعله |
 |---|---|
-| `npx @nirvana-os/cli` | يثبّت المحرك أو يحدّثه (متكرر الأثر) |
-| `nrv glance` | قمرة قيادة على الويب: الشركات وsquads والنسخ والتدقيق والتكاليف. في مشروع مُتبنّى، تشغّل رسالة Message في الدردشة عملية توزيع حقيقية في عملية فرعية، مع خط زمني حيّ وإلغاء واستعادة بعد إعادة التشغيل. `--read-only` يبقيه للتصفح فقط |
-| `nrv list-businesses` / `nrv list-squads` / `nrv list-clones` | تصفّح السجلات الثلاثة |
-| `nrv search "<topic>"` | العثور على القدرات عبر السجلات الثلاثة كلها |
-| `nrv dispatch --business <slug> \| --squad <slug> \| --agent-x "<brief>" --exec` | تشغيل موجز على هدف تسمّيه أنت؛ لا يُستشار الموجّه أبداً |
-| `nrv run <business> "<brief>" --execution-mode=gauntlet --gauntlet-intensity=light\|balanced\|exhaustive` | الانضمام إلى Gauntlet: مرشحون وتقييمات وجولات مراجعة بثلاث شدّات (أهداف Business تحتاج `NIRVANA_BUSINESS_GAUNTLET_ALLOWLIST`) |
-| `nrv multi-target plan\|run\|status <plan.json>` | تجميع خطة متعددة الأهداف أو تنفيذها أو فحصها فوق Run Kernel (`NIRVANA_MULTI_TARGET_KILL_SWITCH=1` يعطّل `run`) |
-| `nrv validate <squad\|business\|clone> <slug> [--fix]` | بوابة قبول لكيان واحد، أو `--all` لكل الكيانات المثبّتة؛ و`--fix` يصلح ما يمكن إصلاحه دون اختلاق شيء |
-| `nrv migrate <slug> --to 6 [--apply]` | يحوّل squad إلى Squad Protocol 6.0؛ التشغيل التجريبي هو الافتراضي، و`--apply` يكتب مع نسخة احتياطية |
-| `nrv update <pack>` | تحديث حزمة مثبّتة |
-| `nrv doctor` | فحص التثبيت؛ على Windows، ينظّف `nrv install --repair-path` مدخلات PATH الخاصة بالمستخدم التي يحذّر منها |
-
-كل ما عدا ذلك يشغّله وكيلك. المرجع الكامل: [docs/CLI.md](./docs/CLI.md).
+| `nrv doctor` | فحص السلامة: بيئات التشغيل، والخطافات، وروابط skills، والتبعيات، والسجلات، والتراخيص |
+| `nrv init <dir>` | يجعل مجلداً مشروع Nirvana (`--orchestrators=always`، `--scope=project\|merge\|global`) |
+| `nrv list-businesses` / `list-squads` / `list-clones` | تصفّح السجلات الثلاثة |
+| `nrv find "<need>"` / `nrv search "<topic>"` | مرشحون مرتّبون لطلب ما / بحث بالكلمات المفتاحية عبر المكتبات |
+| `nrv brief template\|check\|decide` | الموجز ذو الأقسام الستة الذي يكتبه المنسّق لشركة واحدة |
+| `nrv dispatch <business> --brief-file <file> --exec` | تشغيل شركة على موجز؛ `--squad <slug>[:<capability>]` أو `--agent-x` أو `--auto` تسمّي أهدافاً أخرى. يرفض العمل دون `--exec` |
+| `nrv run-track status\|stop <run>` | قراءة حالة تشغيل، أو إيقافه بشكل نظيف |
+| `nrv revise <project> "<change>"` | تغيير تسليم في جلسة بيئة التشغيل نفسها |
+| `nrv audit-view <project>` | سلسلة التدقيق لتشغيل ما |
+| `nrv activate <squad>\|--all` | تجهيز بيئة squad مسبقاً في `~/.nirvana/envs/<squad>` |
+| `nrv config list\|get\|set\|unset\|explain` | الإعدادات، مع `--global` أو `--project` |
+| `nrv update [--check]` / `nrv update <pack>` | تحديث المحرك / حزمة |
+| `nrv validate <squad\|business\|clone> <slug> [--fix]` | بوابة قبول لكيان واحد |
+| `nrv glance` | قمرة قيادة على الويب (`--read-only` للتصفح فقط) |
+| `nrv uninstall --engine` | إزالة المحرك مع الإبقاء على محتواك |
 
 ## الأسئلة الشائعة
 
-**هل أحتاج إلى معرفة البرمجة؟** لا. تصف النتائج بلغة بسيطة؛ والنظام يكتب الشيفرة ويتحقق منها ويشغّلها.
+**هل أحتاج إلى معرفة البرمجة؟** لا. تصف النتائج بلغة بسيطة؛ ووكيلك يشغّل Nirvana، والشركات وsquads تكتب وتتحقق وتسلّم.
 
-**هل يحل محل وكيلي؟** لا. يعمل فوق Claude Code أو Codex أو Gemini-CLI أو Antigravity، ويجعل الوكيل الذي تملكه ينسّق كثيرين.
+**هل يحل محل وكيلي؟** لا. يعمل فوقه. العمل الموزَّع يجري على بيئة تشغيل جلستك ما لم تسمِّ غيرها: Claude Code أو Codex أو Gemini CLI أو Antigravity أو Pi أو Kimi أو Grok أو Qwen Code أو OpenCode.
 
-**أين يعيش عملي؟** على جهازك، تحت `~/businesses` و`~/squads` و`~/businesses/_library/dna`. محلي أولاً، من دون أي سحابة طرف ثالث في الحلقة.
+**أين يعيش عملي؟** على جهازك: المحتوى في `~/businesses` و`~/squads` و`~/businesses/_library/dna`، والمخرجات في `outputs/` الخاص بكل مشروع. لا توجد سحابة Nirvana في الحلقة.
 
-**ماذا لو لم يستطع النظام فعل ما أطلبه؟** يقول ذلك. الموجز الذي لا يطابق شيئاً يتلقى رفضاً مع اقتراح بإنشاء القدرة الناقصة. والموجز الغامض يتلقى سؤالاً في المقابل، مع أفضل المرشحين.
+**ماذا لو لم يناسب أي شيء في مكتبتي؟** يعمل الطلب رغم ذلك، على `agent-x`، الوكيل العام. ويمكنك أيضاً أن تطلب من وكيلك إنشاء الشركة أو الـ squad الناقصة.
 
-**Windows؟** أصلي، عبر Bun. لا حاجة إلى WSL.
+**Windows؟** أصلي، عبر Bun. بلا WSL.
 
 ## الترخيص والتأليف والحالة
 

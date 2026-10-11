@@ -16,12 +16,17 @@ Created by `nrv init`. Any agent runtime that opens this folder reads
 
 ## Use it
 
-Ask your agent for what you need; for a concrete deliverable it invokes the
-Nirvana harness, which picks the businesses and dispatches them.
+Ask your agent for what you need, in plain language. It works as usual and
+uses Nirvana when the request names it, names or points to one of your
+businesses, squads or mind-clones, or asks for work on another runtime; then
+it picks the businesses and dispatches them. After
+`nrv init . --orchestrators=always`, every concrete deliverable goes to Nirvana.
+Settings change the same way ("put this project in economy mode"); the
+commands underneath are:
 
 ```bash
-nrv config list                            # settings and where they come from
-nrv config set execution.profile economy   # max | balanced | economy
+nrv config list                                      # settings and where they come from
+nrv config set execution.profile economy --project   # max | balanced | economy
 nrv list-businesses                        # the library this project sees
 nrv audit-view <run>                       # what a run did
 ```

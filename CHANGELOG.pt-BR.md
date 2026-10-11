@@ -4,7 +4,7 @@
 
 Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
-do engine que o `npx @nirvana-os/cli` e as instalações de pack consomem.
+do engine que os instaladores de uma linha e os setups de pack consomem.
 
 ## Não lançado
 
@@ -23,6 +23,10 @@ O `bash setup.sh --profile=economy` perdia a flag no caminho até o `setup.ts`. 
 ### `nrv activate` diz a quem o rodou o que fazer com uma falha
 
 A passada de instalação não mudou; o que vem depois de uma falha agora depende de quem roda o comando. Uma sessão de agente (os marcadores de sessão que o roteamento já lê: `CLAUDECODE`, `CODEX_THREAD_ID`, `GEMINI_CLI`, `NIRVANA_HOST_RUNTIME`…) ou um script recebe um bloco entre `=== nrv activate: issues for the agent ===` e o marcador de fim. Cada item traz o squad, o tipo e o nome da dependência, as linhas úteis do erro, o comando que corrige quando ele é conhecido (`brew install ffmpeg`, `winget install …`, `uv pip install --python <python do venv> <spec>`, `bun install --cwd <env>`), `nrv activate <slug>` para checar de novo e um aviso quando a correção depende do usuário: sudo, um gerenciador de pacotes, um segredo ou uma variável de ambiente que só ele tem. `--json` imprime os mesmos dados no stdout, com a saída do ativador movida para o stderr. Nenhum dos dois pergunta nada, e o código de saída mantém o contrato. Uma pessoa no terminal (stdin e stdout num TTY, sem marcador de agente, sem `CI`) recebe um resumo em linguagem simples e `Want an agent to try to fix these? Found: Claude Code, Codex. [1/2/n]`, com apenas os runtimes que estão no PATH. O escolhido roda headless pelo `runHeadless`, com o mesmo bypass de permissões dos workers e o papel `exec`, numa pasta temporária, com um prompt restrito às falhas listadas que proíbe mexer em qualquer pasta de squad e pede uma linha por item; a resposta dele aparece, depois esses squads são ativados de novo e o relatório diz o que foi corrigido e o que ainda falha. `--fix-with-agent[=<runtime>]` faz o mesmo sem perguntar, em qualquer contexto: sem valor, usa o runtime da sessão, senão o primeiro instalado. Quando a detecção fica em dúvida, o comando nunca pergunta. Uma instalação de sistema que falha agora leva o próprio comando no resultado do ativador, e o bloco o oferece como nova tentativa.
+
+### A documentação bate com o engine
+
+Os READMEs nos seis idiomas, o `INSTALL.md`, o `AGENT-QUICKSTART.md`, o `docs/` (incluindo o site do Pages), os contratos de projeto, os arquivos de skill, o template de dependências e as mensagens factuais do instalador foram reescritos para bater com o código desta linha: instalação pelo `install.sh` / `install.ps1` de uma linha, conversa com o agente primeiro, ambientes por squad, canal de release, betas e o fluxo dos packs.
 
 ## 0.15.0-beta.5 — 2026-10-10
 

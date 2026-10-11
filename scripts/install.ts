@@ -1047,7 +1047,7 @@ async function offerHermesBridge(): Promise<boolean> {
 
 const PROFILES = ["max", "balanced", "economy"] as const;
 const PROFILE_HELP: Record<(typeof PROFILES)[number], string> = {
-  max: "highest quality, highest token use: xhigh effort, no context ceiling, every delivery reviewed by another runtime",
+  max: "highest quality, highest token use: xhigh effort, no context ceiling, every delivery reviewed, up to two correction rounds",
   balanced: "recommended: high effort, a 400k context ceiling, review when a rule asks for it",
   economy: "lowest token use: medium effort, a 200k context ceiling, review only on request",
 };
@@ -1198,7 +1198,7 @@ function summary(): void {
   console.log();
   console.log("Verify this install:");
   console.log("  nrv install --check       # hooks wired");
-  console.log("  nrv validate              # registries smoke-test");
+  console.log("  nrv doctor                # full health check (exit 1 = warnings only)");
 }
 
 async function main(): Promise<void> {

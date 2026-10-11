@@ -17,8 +17,8 @@ Template: `~/.nirvana/skills/squads/templates/dependencies.template.yaml`. Refer
 | Category | Purpose | Example item |
 |---|---|---|
 | `system` | OS-level CLIs that must be on PATH | `ffmpeg`, `git`, `uv` — checked then installed via brew/apt/choco per-platform |
-| `python` | Python packages | installed into the SHARED venv `~/.nirvana/python/venv` through a discovered interpreter (uv when present); skipped when pip's offline `--dry-run` proves every token present at its declared version; `target_dir` is ignored (`use_squad_venv: true` opts into a venv inside the squad); no usable Python is a warning, not a failure |
-| `node` | Node packages | installed into the SHARED store `~/.nirvana/node_modules`, then the squad dir is symlinked to it; `cwd` is ignored. `global: true` still goes through npm for packages that must be a command on PATH |
+| `python` | Python packages | installed into the squad's own venv, `~/.nirvana/envs/<slug>/.venv`, through a discovered interpreter (uv when present, `python -m venv` and pip otherwise); installed again only when the declared packages change; `target_dir` and `use_squad_venv` are ignored (every squad is isolated); no usable Python is a warning, not a failure |
+| `node` | Node packages | installed with `bun install` into the squad's own environment, `~/.nirvana/envs/<slug>/` (sub-apps under `subapps/<dir>/`), versions as declared; the squad dir gets only a `node_modules` link to it, and the worker resolves packages through `NODE_PATH`, a Node ESM hook and an `npx` shim; `cwd` is ignored. `global: true` still goes through npm for packages that must be a command on PATH |
 | `services` | Long-lived daemons (cloned + installed, NOT started) | Pixelle-Video, ComfyUI, Ollama |
 | `custom_nodes` | ComfyUI-specific custom node repos | `kijai/ComfyUI-WanVideoWrapper`, etc. |
 | `models` | HuggingFace / URL downloads | `Wan-AI/Wan2.1-T2V-14B`. Items with `size_gb > 1` require user consent |
@@ -28,7 +28,7 @@ Template: `~/.nirvana/skills/squads/templates/dependencies.template.yaml`. Refer
 
 ### Synthesis fallback
 
-If a squad has no `dependencies.yaml` but contains `package.json`, `pyproject.toml`, or `requirements.txt`, the activator auto-synthesizes one. Cached at `~/.claude/squads-state/<slug>/synth-deps.yaml` for the user to review and optionally promote to a proper sidecar.
+If a squad has no `dependencies.yaml` but contains `package.json`, `pyproject.toml`, or `requirements.txt`, the activator auto-synthesizes one. Cached at `~/.nirvana/squads-state/<slug>/synth-deps.yaml` for the user to review and optionally promote to a proper sidecar.
 
 ## Activation Flow (`*squad activate {name}`)
 
