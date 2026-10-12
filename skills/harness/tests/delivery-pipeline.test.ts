@@ -317,6 +317,35 @@ describe("runDelivery — outcomes", () => {
     expect(calls.find(x => x.event === "revision_auto")?.payload.cold_retry).toBe(true);
   }, spawnBudgetMs(2));
 
+  test("a correction the runtime ran in another conversation is warned about, audited, never re-run, and the new id kept", () => {
+    const oroot = path.join(tmp, "out-resume-lost");
+    fs.mkdirSync(oroot);
+    const artifact = path.join(oroot, "nota.md");
+    fs.writeFileSync(artifact, FAILING_MD);
+    const seen: any[] = [];
+    const warned: string[] = [];
+    const { args, calls } = baseArgs(oroot, {
+      maxRevisions: 1,
+      runtime: "antigravity-cli",
+      sessionId: "conv-gone",
+      warn: (l: string) => warned.push(l),
+      runHeadlessImpl: ((opts: any) => {
+        seen.push(opts);
+        fs.writeFileSync(artifact, PASSING_MD);
+        return { ok: true, runtime: opts.runtime, sessionId: "conv-new", result: "OK", costUsd: null, exitCode: 0, stderr: "", durationMs: 5,
+          resumeLost: true, warnings: ["agy: resume failed: --continue did not resume conversation conv-gone"] };
+      }) as any,
+    });
+    const res = runDelivery(args);
+    expect(seen).toHaveLength(1);
+    expect(res.sessionId).toBe("conv-new");
+    expect(warned.some(l => /did NOT resume.*without the previous context/.test(l))).toBe(true);
+    expect(warned.some(l => l.includes("agy: resume failed"))).toBe(true);
+    const ra = calls.find(x => x.event === "revision_auto");
+    expect(ra?.payload.resume_lost).toBe(true);
+    expect(ra?.payload.cold_retry).toBeUndefined();
+  }, spawnBudgetMs(2));
+
   test("no producer role, no stamp: the revision carries what the producer carried", () => {
     const oroot = path.join(tmp, "out-norole");
     fs.mkdirSync(oroot);

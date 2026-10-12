@@ -70,6 +70,12 @@ The Antigravity runner no longer re-spawns a failed turn. Since agy 1.2.10 a mod
 
 Grok workers pass `--trust`, so a new run folder loads the project's `AGENTS.md`, skills and MCP (a build that rejects the flag is retried once without it), and a resume continues the grok session with `-r <id>`. Pi never receives `--provider` without `--model`, which pi 1.0.0 rejects (the result carries a warning instead), and takes the prompt after `--`, so a brief that starts with `-` or `---` is no longer read as a flag. Kimi results keep only assistant messages, never a tool's output, and directory grants travel as `--add-dir`. `opencode run` gets `--auto` on the autonomous path, like the other runtimes. The adapter docs for Claude Code, Codex, Antigravity, Grok, Kimi and Pi were rewritten against the current CLIs and no longer teach commands that do not exist, such as `codex run`, `--max-turns` for Codex, `--max-iterations`, `--tools` or `--checkpoint`.
 
+The Orca worker for Claude Code denied neither subagents nor workflows: its terminal ran `claude` without the deny the headless runner passes. It now passes `--disallowedTools Task Agent Workflow` and sets `CLAUDE_CODE_DISABLE_WORKFLOWS=1` on the worker, unless the caller has `allowSubagents`, as the 0.15 line does.
+
+A revision on Antigravity could run blind. This line resumes agy with `--continue`, which agy 1.3.3 points at the most recent non-empty conversation of the directory, or at a new one when there is none, with exit 0 and no warning. When the envelope's conversation id differs from the one the run recorded, the runner now marks the result (`resumeLost`) with a warning that the resume failed, keeps the id agy answered from as the session, and does not run the turn again. `nrv revise` and the gate's correction rounds print the warning and audit it.
+
+The Grok and Kimi runners spawned a turn again whenever a failure's stderr said "unknown", "unrecognized" or "invalid", which a model or provider error also says after the turn was paid for. A retry now needs proof that argv parsing refused that exact flag before any model call: the flag named in an unknown option or invalid value message, no JSON on stdout, and for Grok the clap usage exit code 2. The one-shot fallbacks for `--trust` (Grok) and `--add-dir` (Kimi) follow the same rule. Grok's `{"type":"error","message":...}` envelope is now read, so the error shown is its message rather than stderr.
+
 ## 0.14.10 — 2026-10-08
 
 ### A relative --outputs-root names one folder for everyone

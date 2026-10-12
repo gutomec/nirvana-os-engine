@@ -30,6 +30,8 @@ beforeAll(() => {
       process.exit(3);
     }
     if (mode === "flag-error") { console.error("error: unknown option '--output-format'"); process.exit(1); }
+    // agy 1.3.3 \`--continue\` with no conversation to continue: exit 0, no warning, a NEW conversation.
+    if (mode === "fresh-conv") { console.log(JSON.stringify({ conversation_id: "conv-new", status: "SUCCESS", response: "OK" })); process.exit(0); }
     console.log(JSON.stringify({ conversation_id: "conv-1", response: "done" }));
   `);
   process.env.PATH = `${BIN}${path.delimiter}${process.env.PATH}`;
@@ -69,5 +71,34 @@ describe("antigravity-cli runner: one spawn per turn", () => {
     expect(r.ok, r.error ?? r.stderr).toBe(true);
     expect(calls).toHaveLength(1);
     expect(calls[0]).toContain("--continue");
+  }, spawnBudgetMs(2));
+});
+
+// `--continue` (this line's only resume) points agy 1.3.3 at the most recent
+// non-empty conversation of the directory, and at a NEW one when there is
+// none, with exit 0 and no warning. The envelope's conversation id is the sign.
+describe("antigravity-cli runner: a --continue that did not land on the run's conversation", () => {
+  test("a different conversation id: one call, ok, marked resumeLost with a warning, the new id kept", () => {
+    const { r, calls } = run("fresh-conv", "conv-1");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toContain("--continue");
+    expect(r.ok, r.error ?? r.stderr).toBe(true);
+    expect(r.resumeLost).toBe(true);
+    expect(r.sessionId).toBe("conv-new");
+    expect(r.warnings?.join("\n")).toMatch(/resume failed.*--continue.*conv-1.*conversation conv-new.*WITHOUT the previous context/);
+  }, spawnBudgetMs(2));
+
+  test("a resume that held carries no warning", () => {
+    const { r } = run("ok", "conv-1");
+    expect(r.ok).toBe(true);
+    expect(r.resumeLost).toBeUndefined();
+    expect(r.warnings).toBeUndefined();
+    expect(r.sessionId).toBe("conv-1");
+  }, spawnBudgetMs(2));
+
+  test("a fresh run (no resume asked) is never marked", () => {
+    const { r } = run("fresh-conv");
+    expect(r.resumeLost).toBeUndefined();
+    expect(r.sessionId).toBe("conv-new");
   }, spawnBudgetMs(2));
 });

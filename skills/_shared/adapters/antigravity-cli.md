@@ -137,6 +137,8 @@ agy -p "<prompt ou bootstrap>" --output-format json \
 - `--add-dir <dir>`: uma vez por diretório concedido ao run (projeto, raiz de outputs, diretório do business ou squad).
 - Nunca passadas: `--effort` (ver §13), `--mode`, `--sandbox`, `--json-schema`, `--print-timeout`, `--agent`, `--disable-slash-commands`, `--conversation`.
 
+**Uma retomada que cai em outra conversa.** No agy 1.3.3 o `--continue` aponta para a conversa não vazia mais recente do diretório e, quando não há nenhuma, para uma conversa nova, com exit 0 e sem aviso: o turno roda sem o contexto anterior. O driver não roda de novo (o turno foi pago). Quando o `conversation_id` do envelope difere do id que o run gravou (ou o stderr traz `conversation "<id>" not found`), ele marca o resultado com `resumeLost: true`, acrescenta um aviso de que a retomada falhou e grava o id novo como sessão; o `nrv revise` e as rodadas de correção do gate mostram o aviso e o registram (`x_resume_lost`, ou `resume_lost: true` no `revision_auto`).
+
 **Sem re-spawn.** Um run que falha é reportado como falho. Desde a 1.2.10 um erro de modelo ou agente no meio do turno sai com 3 depois que o turno já foi pago, então repetir o run gasta duas vezes. A re-spawn sem `--output-format` que o driver desta linha carregava foi removida: todo agy suportado tem a flag. A recuperação fica com quem chamou.
 
 **Camada leve.** O adapter `antigravity-cli` em `RUNTIMES`, usado em chamadas auxiliares curtas, roda `agy -p "<persona>\n\n---\n\n<mensagem>" [--dangerously-skip-permissions]` com a mesma regra de argv/arquivo temporário, em modo texto, e faz trim do stdout. A flag de skip segue o setting `execution.headless_skip_permissions` (`NIRVANA_HEADLESS_SKIP_PERMISSIONS`).

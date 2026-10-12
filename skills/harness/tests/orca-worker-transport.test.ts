@@ -69,8 +69,8 @@ describe("the interactive command per runtime", () => {
   });
 
   test("autonomy flags match the headless runners, and --safe drops them", () => {
-    expect(interactiveArgv({ runtime: "claude-code", yolo: true, model: "opus", addDirs: ["/p"] })).toEqual(["claude", "--dangerously-skip-permissions", "--model", "opus", "--add-dir", "/p"]);
-    expect(interactiveArgv({ runtime: "claude-code", yolo: false, model: "opus" })).toEqual(["claude", "--permission-mode", "acceptEdits", "--model", "opus"]);
+    expect(interactiveArgv({ runtime: "claude-code", yolo: true, model: "opus", addDirs: ["/p"] })).toEqual(["claude", "--dangerously-skip-permissions", "--model", "opus", "--disallowedTools", "Task", "Agent", "Workflow", "--add-dir", "/p"]);
+    expect(interactiveArgv({ runtime: "claude-code", yolo: false, model: "opus" })).toEqual(["claude", "--permission-mode", "acceptEdits", "--model", "opus", "--disallowedTools", "Task", "Agent", "Workflow"]);
     expect(interactiveArgv({ runtime: "codex", yolo: true, model: "gpt-5" })).toEqual(["codex", "--dangerously-bypass-approvals-and-sandbox", "-m", "gpt-5", "-c", "agents.enabled=false"]);
     expect(interactiveArgv({ runtime: "codex", yolo: true, model: "gpt-5", allowSubagents: true })).toEqual(["codex", "--dangerously-bypass-approvals-and-sandbox", "-m", "gpt-5"]);
     expect(interactiveArgv({ runtime: "gemini-cli" as any, yolo: true })).toBeNull();
@@ -80,7 +80,11 @@ describe("the interactive command per runtime", () => {
 
   test("a confined claude worker carries its run's deny rules, as the headless runner does", () => {
     expect(interactiveArgv({ runtime: "claude-code", yolo: true, model: "opus", addDirs: ["/p"], claudeSettings: "/tmp/fence.json" }))
-      .toEqual(["claude", "--dangerously-skip-permissions", "--model", "opus", "--settings", "/tmp/fence.json", "--add-dir", "/p"]);
+      .toEqual(["claude", "--dangerously-skip-permissions", "--model", "opus", "--settings", "/tmp/fence.json", "--disallowedTools", "Task", "Agent", "Workflow", "--add-dir", "/p"]);
+  });
+
+  test("subagents and workflows are denied unless the caller is an orchestrator", () => {
+    expect(interactiveArgv({ runtime: "claude-code", yolo: true, allowSubagents: true })).toEqual(["claude", "--dangerously-skip-permissions"]);
   });
 
   test("the terminal command enters the run's directory and pins the engine's environment", () => {
@@ -165,6 +169,18 @@ describe("with canned Orca answers", () => {
     const termCreate = c.calls.find((a) => a[0] === "terminal" && a[1] === "create")!;
     // POSIX `NODE_PATH='…'`, PowerShell `$env:NODE_PATH='…'`: the pin is there either way.
     expect(termCreate[termCreate.indexOf("--command") + 1]).toContain("NODE_PATH='/env/brandcraft/node_modules'");
+  });
+
+  test("a claude worker runs with CLAUDE_CODE_DISABLE_WORKFLOWS=1 over the run's own value; an orchestrator does not", () => {
+    const worker = canned(HAPPY);
+    runOrcaWorker(base({ env: { CLAUDE_CODE_DISABLE_WORKFLOWS: "0" } }), worker.hooks);
+    const cmd = (c: ReturnType<typeof canned>) => { const t = c.calls.find((a) => a[0] === "terminal" && a[1] === "create")!; return t[t.indexOf("--command") + 1]; };
+    expect(cmd(worker)).toContain("CLAUDE_CODE_DISABLE_WORKFLOWS='1'");
+    expect(cmd(worker)).toContain("'Workflow'");
+    const orchestrator = canned(HAPPY);
+    runOrcaWorker(base({ allowSubagents: true }), orchestrator.hooks);
+    expect(cmd(orchestrator)).not.toContain("CLAUDE_CODE_DISABLE_WORKFLOWS");
+    expect(cmd(orchestrator)).not.toContain("'Workflow'");
   });
 
   test("a question on the way is answered with the defaults policy, then the worker finishes", () => {

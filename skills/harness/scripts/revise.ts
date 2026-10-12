@@ -175,6 +175,14 @@ if (res.sessionId && res.sessionId !== sessionId) {
   session.session_id = res.sessionId;
   fs.writeFileSync(sessionFile, JSON.stringify(session, null, 2));
 }
+// The runtime ran the revision in another conversation (agy's `--continue`
+// with nothing to continue): the change was applied blind to the run's work.
+if (res.resumeLost) {
+  console.error(c("yellow", "⚠ The revision did NOT resume the run's conversation: it ran without the previous context."));
+  for (const w of res.warnings ?? []) console.error(c("dim", `  ${w}`));
+  appendAudit({ event: "x_resume_lost", trace_id: projectId, project_id: projectId, business_slug: slug, runtime: rt,
+    requested_session_id: sessionId, session_id: res.sessionId, revision: true }, projectRoot);
+}
 console.log(c("dim", `  ${res.durationMs}ms${res.costUsd != null ? ` · $${res.costUsd.toFixed(4)}` : ""}`));
 
 // ── delivery (verify → gate → deliver) ────────────────────────────────────

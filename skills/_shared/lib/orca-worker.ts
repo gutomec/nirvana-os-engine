@@ -169,6 +169,10 @@ export function interactiveArgv(opts: Pick<RunHeadlessOpts, "runtime" | "yolo" |
       if (effort) a.push("--effort", effort);
       // The project's own deny rules (run-workspace.ts), as headless.
       if (opts.claudeSettings) a.push("--settings", opts.claudeSettings);
+      // The headless runner's rule: a dispatched worker does not open its own
+      // agents (Task/Agent multiply inside one child and never pass through the
+      // engine's depth counter), nor a workflow, which can fan out to 1,000.
+      if (!opts.allowSubagents) a.push("--disallowedTools", "Task", "Agent", "Workflow");
       for (const d of dirs) a.push("--add-dir", d);
       return a;
     }
@@ -331,6 +335,10 @@ export function runOrcaWorker(opts: RunHeadlessOpts, hooks: OrcaWorkerHooks = {}
   const workerEnv = forwardedEnv(process.env, opts.runtime);
   if (opts.workspace) workerEnv[RUN_WORKSPACE_ENV] = cwd;
   Object.assign(workerEnv, opts.env ?? {});
+  // The second workflow fence, as the headless claude child gets it
+  // (headlessClaudeEnv): forced over anything set above, unless the caller
+  // orchestrates.
+  if (opts.runtime === "claude-code" && !opts.allowSubagents) workerEnv.CLAUDE_CODE_DISABLE_WORKFLOWS = "1";
   const command = workerCommand(argv, cwd, workerEnv);
   // The terminal starts in the run folder (cwd); the worktree Orca files it
   // under is the project's, which is the caller's own cwd when the driver

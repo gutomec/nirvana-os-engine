@@ -163,10 +163,10 @@ grok --prompt-file <arquivo-tmp> --output-format json --cwd <cwd> \
 - `--trust`: flag oculta (fora do `--help`; `grok --trust --version` é aceito na 1.0.44). Concede folder trust, e assim carregam o `AGENTS.md` do projeto, skills de projeto em `.agents/skills`, hooks de projeto, MCP/LSP de projeto e regras de permissão de projeto. Sem ela, a inicialização headless com essas fontes exige `--trust` ou uma concessão anterior, e uma pasta de run nova não tem concessão anterior.
 - `-m <model>`: de `opts.model` ou `resolveSystemModel("grok-cli")`; nunca hardcoded.
 
-Retentativas, nesta ordem, todas antes de qualquer chamada ao modelo:
-1. O stderr diz `unexpected argument '--trust'` → roda de novo, uma vez, sem `--trust`.
-2. Erro de flag citando `prompt-file` → roda de novo com `-p <prompt>` no argv (inseguro para ARG_MAX com prompt grande; só para builds muito antigos).
-3. Erro de flag citando `output-format` → roda de novo sem `--output-format` (texto puro no stdout).
+Retentativas, nesta ordem, cada uma só com prova de que a leitura do argv recusou a flag antes de qualquer chamada ao modelo (`argvRejectedFlag`): exit 2 (o código de erro de uso do clap), stderr citando aquela flag numa mensagem `unexpected argument` / opção desconhecida / valor inválido, e nenhum objeto JSON no stdout. Qualquer outra falha, sejam quais forem as palavras, é um turno que rodou: é reportada como falha e nunca disparada de novo.
+1. `--trust` recusada → roda de novo, uma vez, sem `--trust`.
+2. `--prompt-file` recusada → roda de novo com `-p <prompt>` no argv (inseguro para ARG_MAX com prompt grande; só para builds muito antigos).
+3. `--output-format` recusada → roda de novo sem `--output-format` (texto puro no stdout).
 
 Não passados hoje: `-s/--session-id`, `--effort`, `--no-subagents`, `--max-turns`, `--rules`, `--tools`, `--disallowed-tools`, `--permission-mode`, `--sandbox`, `--json-schema`. O grok não está em `EFFORT_CAPABLE`, então um effort pedido gera um aviso único e é descartado. Não há flag de concessão de diretório (equivalente a `--add-dir`): `addDirs` extras geram um warning.
 
@@ -192,7 +192,7 @@ Sucesso (`--output-format json`):
 
 Falha: `{"type":"error","message":"..."}` com exit diferente de zero (130 em SIGINT, 143 em SIGTERM, 1 nos demais casos).
 
-Como o `runGrok` lê: texto do resultado de `response`, `result`, `output` ou `text`; session id de `session_id`, `sessionId`, `conversation_id` ou `session.id` (com fallback para o id recebido ou um UUID novo); custo de `total_cost_usd`, senão `costUnavailable`. Falha é `exit != 0` ou um campo `is_error` / `error`. O envelope `{"type":"error","message"}` não tem nenhum dos dois campos, então a mensagem dele não é extraída: o run falha mesmo assim pelo exit code, e o texto de erro vem do stderr. `cost_is_partial`, `usage_is_incomplete`, `num_turns` e `total_cost_usd_ticks` não são lidos.
+Como o `runGrok` lê: texto do resultado de `response`, `result`, `output` ou `text`; session id de `session_id`, `sessionId`, `conversation_id` ou `session.id` (com fallback para o id recebido ou um UUID novo); custo de `total_cost_usd`, senão `costUnavailable`. Falha é `exit != 0`, um campo `is_error` / `error`, ou o envelope `{"type":"error","message"}`, cuja `message` vira o erro do run (o stderr só entra quando nenhum envelope diz o motivo). `cost_is_partial`, `usage_is_incomplete`, `num_turns` e `total_cost_usd_ticks` não são lidos.
 
 ### Sessões
 
@@ -336,7 +336,7 @@ Flags que existem no CLI e que um comando montado à mão pode acrescentar (o en
 4. **Workers podem abrir subagents.** `--no-subagents` existe e não é passado, então a regra de profundidade do engine não vale para o grok.
 5. **Effort é descartado.** `--effort` existe e funciona no headless; o grok não está em `EFFORT_CAPABLE`.
 6. **A diretiva é texto de usuário.** A diretiva autônoma é prependida ao arquivo de prompt em vez de ir por `--rules`.
-7. **Texto de erro perdido.** O envelope `{"type":"error","message"}` não é parseado; o erro exibido vem do stderr.
+7. **Envelope de erro lido.** `{"type":"error","message"}` faz o run falhar (mesmo com exit 0) e a mensagem dele é o erro exibido.
 8. **Atribuição de auditoria.** O Grok executa os hooks de `~/.claude/settings.json`, então os eventos de tool dele chegam rotulados como Claude (§10).
 9. **`--trust` não aparece no `--help`.** É aceito na 1.0.44 e está no guia do usuário; um build que remova a flag cai para o run sem trust (retentativa do §7), o que perde em silêncio o `AGENTS.md` e as skills de projeto numa pasta de run nova.
 10. **Sem `TeamCreate`** → teams são convenção em file system.

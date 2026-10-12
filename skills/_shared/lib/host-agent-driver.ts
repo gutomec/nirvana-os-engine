@@ -1363,6 +1363,12 @@ export interface RunHeadlessResult {
    * fail the turn (codex: skills budget, an MCP server that did not start), or a
    * grant this runtime's CLI has no flag for. Delivered, not swallowed. */
   warnings?: string[];
+  /** A resume was asked for and the CLI ran the turn in another conversation
+   *  instead (agy: `--continue` lands on whatever conversation it finds, or a
+   *  new one). The run happened without the previous context; `warnings` says
+   *  so in words, and `sessionId` is the conversation it ran in. Never re-run:
+   *  the turn was paid. */
+  resumeLost?: boolean;
   exitCode: number;
   stderr: string;
   durationMs: number;
@@ -1606,7 +1612,8 @@ function runWithLedgerHeartbeat(opts: RunHeadlessOpts, runner: (o: RunHeadlessOp
 //   kimi-cli: NDJSON stream; an `error` event or a terminal `result` event
 //     with `is_error: true` (a result with is_error:false clears earlier
 //     error events — internal retry).
-//   grok-cli: single JSON object; `is_error: true` or an `error` field.
+//   grok-cli: single JSON object; `is_error: true`, an `error` field, or the
+//     `{"type":"error","message":...}` failure envelope.
 //   pi: JSONL stream; assistant `message_end` with `stopReason: "error"` /
 //     `errorMessage` (a later successful turn clears it).
 //   opencode: no machine envelope verified — exit code is the only signal.
@@ -1931,6 +1938,34 @@ function runCodex(opts: RunHeadlessOpts): RunHeadlessResult {
 // to READ the file, so in --safe mode (no skip-permissions) a large-prompt
 // run can block on approval — a pre-existing agy constraint (headless agy
 // without the skip flag halts anyway).
+/**
+ * A resume agy did not honour, read from its output, or null when it held (or
+ * nothing says otherwise). This line resumes with `--continue`, which agy
+ * 1.3.3 points at the most recent non-empty conversation of the directory and,
+ * when there is none, at a new conversation, with exit 0 and no warning. So
+ * the sign is the envelope: a conversation id that differs from the one the
+ * run recorded. (`conversation "<id>" not found` on stderr, agy's answer to an
+ * unknown `--conversation <id>`, counts too.) The turn ran, so the caller must
+ * not re-run it: the result carries the warning and the id agy answered from.
+ */
+export function agyResumeLost(requested: string, stdout: string, stderr: string): { newId: string | null; warning: string } | null {
+  let returned: string | null = null;
+  try {
+    const j = JSON.parse(stdout);
+    const id = j?.session_id || j?.sessionId || j?.conversation_id;
+    if (typeof id === "string" && id) returned = id;
+  } catch { /* no envelope: only stderr can tell */ }
+  const notFound = /conversation\s+["'`]?[^"'`\s]*["'`]?\s+not found/i.test(stderr);
+  if (!notFound && (returned === null || returned === requested)) return null;
+  const newId = returned !== null && returned !== requested ? returned : null;
+  const why = notFound ? `agy reported conversation "${requested}" not found` : `agy answered from conversation ${returned}`;
+  return {
+    newId,
+    warning: `agy: resume failed: --continue did not resume conversation ${requested} (${why}); `
+      + `this run went to ${newId ? `conversation ${newId}` : "another conversation"} (a new one, or another of this directory) WITHOUT the previous context`,
+  };
+}
+
 function runAntigravity(opts: RunHeadlessOpts): RunHeadlessResult {
   const started = Date.now();
   const sid = opts.sessionId || randomUUID();
@@ -2014,14 +2049,51 @@ function runAntigravity(opts: RunHeadlessOpts): RunHeadlessResult {
     if (typeof j.total_cost_usd === "number" && Number.isFinite(j.total_cost_usd)) costUsd = j.total_cost_usd;
   } catch { /* plain text — keep the whole stdout */ }
 
+  // A resume agy did not honour: `--continue` with no conversation to continue
+  // (or another one more recent in the directory) exits 0 having run the turn,
+  // paid, elsewhere. Not re-run; said, and the id it ran in kept.
+  const lost = opts.sessionId ? agyResumeLost(opts.sessionId, rawStdout, stderr) : null;
+  if (lost) sessionId = lost.newId;
+
   const ok = exitCode === 0 && envelopeError === null;
   return {
     ok, runtime: "antigravity-cli", sessionId, result,
     costUsd, ...(costUsd === null ? { costUnavailable: true } : {}),
     ...(usage ? { usage } : {}),
+    ...(lost ? { resumeLost: true, warnings: [lost.warning] } : {}),
     exitCode, stderr, durationMs,
     error: ok ? undefined : (envelopeError || salientError(stderr, "agy failed")),
   };
+}
+
+/**
+ * True only when the CLI provably refused `flag` while parsing argv, so no
+ * model call happened and running again without the flag cannot pay for a
+ * turn twice. All of it must hold: a non-zero exit (exactly `usageExit` when
+ * the CLI reserves one for usage errors, as clap does with 2); stderr naming
+ * THAT flag in an unknown / unrecognized / unexpected / no-such option or
+ * argument message, or an invalid value for it; and no JSON object on stdout
+ * (a session, a usage block or a stream event means a turn started). A word
+ * like "unknown" anywhere else (a model error, a tool's output) proves nothing.
+ */
+export function argvRejectedFlag(
+  res: { status: number | null; stdout?: string | null; stderr?: string | null },
+  flag: string,
+  usageExit?: number,
+): boolean {
+  const status = res.status ?? 1;
+  if (status === 0 || (usageExit !== undefined && status !== usageExit)) return false;
+  for (const line of String(res.stdout ?? "").split("\n")) {
+    const t = line.trim();
+    if (!t.startsWith("{")) continue;
+    try { const j = JSON.parse(t); if (j && typeof j === "object") return false; } catch { /* not JSON */ }
+  }
+  const name = flag.replace(/^-+/, "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const named = `["'\`]?(?:--?)?${name}(?![\\w-])`;
+  const unknown = new RegExp(`(?:unknown|unrecognized|unexpected|no such)\\s+(?:option|argument|flag)s?\\b[^\\n]*?(?<![\\w-])${named}`, "i");
+  const badValue = new RegExp(`invalid value\\b[^\\n]*?(?<![\\w-])["'\`]?--${name}(?![\\w-])`, "i");
+  const err = String(res.stderr ?? "");
+  return unknown.test(err) || badValue.test(err);
 }
 
 // Kimi Code CLI (`kimi`, MoonshotAI/kimi-code). Open-weight Moonshot models
@@ -2061,12 +2133,16 @@ function runKimi(opts: RunHeadlessOpts): RunHeadlessResult {
     r = driverSpawnSync("kimi", args, spawnOpts);
     // A build without --add-dir (the legacy Python kimi-cli line) rejects it
     // while parsing argv, before the model: drop the grants once, and say so.
-    if ((r.status ?? 1) !== 0 && args.includes("--add-dir") && /add[- ]dir/i.test(r.stderr || "")) {
+    // Only on that proof (argvRejectedFlag): kimi reserves no usage exit code
+    // (commander exits 1, click 2), so the rejected flag must be named and
+    // stdout must carry no event. Anything else is a turn that ran, and paid.
+    if (args.includes("--add-dir") && argvRejectedFlag(r, "--add-dir")) {
       for (let i = args.indexOf("--add-dir"); i >= 0; i = args.indexOf("--add-dir")) args.splice(i, 2);
       warnings.push(`kimi-cli: this version does not know --add-dir; retried without it (not granted by the CLI: ${(opts.addDirs ?? []).join(", ")})`);
       r = driverSpawnSync("kimi", args, spawnOpts);
     }
-    if ((r.status ?? 1) !== 0 && /output[- ]format|unknown|unrecognized|invalid (option|flag|argument)/i.test(r.stderr || "")) {
+    // A build without stream-json output, on the same proof.
+    if (argvRejectedFlag(r, "--output-format")) {
       const i = args.indexOf("--output-format");
       r = driverSpawnSync("kimi", [...args.slice(0, i), ...args.slice(i + 2)], spawnOpts);
     }
@@ -2185,6 +2261,9 @@ function runKimi(opts: RunHeadlessOpts): RunHeadlessResult {
 // Resume: `-r <id>` continues the session (`grok --help`, 1.0.44: "-r,
 // --resume [<SESSION_ID_OR_TITLE>]"); without it a revise started a fresh
 // conversation.
+/** clap's exit code for a usage error (grok 1.0.44: an unknown flag exits 2). */
+const GROK_USAGE_EXIT = 2;
+
 function runGrok(opts: RunHeadlessOpts): RunHeadlessResult {
   const started = Date.now();
   const sid = opts.sessionId || randomUUID();
@@ -2207,23 +2286,27 @@ function runGrok(opts: RunHeadlessOpts): RunHeadlessResult {
     ...(typeof opts.timeoutMs === "number" ? { timeout: opts.timeoutMs } : {}),
     maxBuffer: 64 * 1024 * 1024,
   };
-  const flagError = (res: SpawnSyncReturns<string>): boolean =>
-    (res.status ?? 1) !== 0 && /unknown|unrecognized|unexpected|invalid (option|flag|argument)/i.test(res.stderr || "");
+  // A retry runs only on proof the flag was refused while parsing argv: grok
+  // parses with clap, which exits 2 on a usage error (`error: unexpected
+  // argument '--x' found`, grok 1.0.44) before any model call; a turn that
+  // failed exits 1, 130 or 143 and was paid for. argvRejectedFlag also wants
+  // the flag named and no JSON on stdout.
+  const rejected = (res: SpawnSyncReturns<string>, flag: string): boolean => argvRejectedFlag(res, flag, GROK_USAGE_EXIT);
   let r!: SpawnSyncReturns<string>;
   try {
     let delivery = ["--prompt-file", promptFile];
     r = driverSpawnSync("grok", buildArgs(delivery, true), spawnOpts);
-    if (withTrust && (r.status ?? 1) !== 0 && /unexpected argument '--trust'/.test(r.stderr || "")) {
+    if (withTrust && rejected(r, "--trust")) {
       withTrust = false;
       r = driverSpawnSync("grok", buildArgs(delivery, true), spawnOpts);
     }
-    if (flagError(r) && /prompt[- ]file/i.test(r.stderr || "")) {
+    if (rejected(r, "--prompt-file")) {
       // Very old build without --prompt-file → argv fallback (ARG_MAX-unsafe
       // above MAX_ARGV_PROMPT_BYTES, but the flagless build leaves no choice).
       delivery = ["-p", merged];
       r = driverSpawnSync("grok", buildArgs(delivery, true), spawnOpts);
     }
-    if (flagError(r) && /output[- ]format/i.test(r.stderr || "")) {
+    if (rejected(r, "--output-format")) {
       r = driverSpawnSync("grok", buildArgs(delivery, false), spawnOpts);
     }
   } finally {
@@ -2251,6 +2334,9 @@ function runGrok(opts: RunHeadlessOpts): RunHeadlessResult {
     // Failure contract: is_error / error in the envelope = failed run.
     if (j.is_error === true) envelopeError = envelopeErrorMessage(j.error) || "grok returned is_error";
     else if (j.error != null) envelopeError = envelopeErrorMessage(j.error);
+    // grok's failure envelope (1.0.44): `{"type":"error","message":"..."}`,
+    // with neither field above. Its message is the error, not stderr's noise.
+    else if (j.type === "error") envelopeError = envelopeErrorMessage(j.message ?? j) || "grok reported an error";
     const cost = j.total_cost_usd ?? j.totalCostUsd ?? j.cost_usd;
     if (typeof cost === "number" && Number.isFinite(cost)) costUsd = cost;
   } catch { /* plain text — keep stdout */ }

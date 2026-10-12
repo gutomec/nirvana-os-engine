@@ -83,7 +83,7 @@ interface ReviseCase {
 /** A project laid out the way dispatch.ts leaves one (outputs/<pid>/businesses/
  *  <slug>/session.json), with `files` already in the outputs root, plus a fake
  *  runtime that succeeds without touching disk. Then: `nrv revise`. */
-function runRevise(files: Record<string, string | Buffer>, opts: { env?: Record<string, string>; runtimeFails?: boolean } = {}): ReviseCase {
+function runRevise(files: Record<string, string | Buffer>, opts: { env?: Record<string, string>; runtimeFails?: boolean; setup?: (pid: string, home: string) => void } = {}): ReviseCase {
   const n = caseSeq++;
   const home = path.join(TMP, `case-${n}`);
   const pid = `proj-revise-${n}`;
@@ -124,6 +124,7 @@ function runRevise(files: Record<string, string | Buffer>, opts: { env?: Record<
   `);
 
   const logs = path.join(home, "harness-logs");
+  opts.setup?.(pid, home);
   const r = spawnSync(process.execPath, [REVISE, pid, "encurte o texto", "--no-color"], {
     cwd: home,
     encoding: "utf8",
@@ -201,6 +202,29 @@ describe("nrv revise — the outcome goes through the delivery pipeline", () => 
     expect(delivered[0].gate).toBe("pass");
     expect(delivered[0].revision).toBe(true);
     expect(c.runtimeCalls).toBe(1);                 // no revision needed
+  }, 30_000);
+
+  test("a revision agy ran in another conversation says so, is audited, and the new id is kept for the next one", () => {
+    // agy 1.3.3 `--continue` with nothing to continue: exit 0, no warning, a new conversation.
+    const c = runRevise({ "nota.md": PASSING_MD }, {
+      setup: (pid, home) => {
+        const sessionFile = path.join(home, "outputs", pid, "businesses", "biz", "session.json");
+        const session = JSON.parse(fs.readFileSync(sessionFile, "utf8"));
+        fs.writeFileSync(sessionFile, JSON.stringify({ ...session, runtime: "antigravity-cli", session_id: "conv-gone" }, null, 2));
+        writeFakeCli(path.join(home, "bin"), "agy", `
+          console.log(JSON.stringify({ conversation_id: "conv-new", status: "SUCCESS", response: "OK" }));
+          process.exit(0);
+        `);
+      },
+    });
+    expect(c.status).toBe(0);
+    expect(c.stdout).toContain("did NOT resume the run's conversation");
+    expect(c.stdout).toContain("agy: resume failed");
+    const lost = c.audit.find(l => l.event === "x_resume_lost");
+    expect(lost?.requested_session_id).toBe("conv-gone");
+    expect(lost?.session_id).toBe("conv-new");
+    const session = JSON.parse(fs.readFileSync(path.join(c.oroot, "..", "session.json"), "utf8"));
+    expect(session.session_id).toBe("conv-new");
   }, 30_000);
 
   test("spawned BY THE SUPERVISOR (NRV_IN_SWEEP=1): zero revision runs, verdict handed back", () => {
