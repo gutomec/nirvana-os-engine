@@ -163,10 +163,10 @@ grok --prompt-file <tmp-file> --output-format json --cwd <cwd> \
 - `--trust`: hidden flag (not in `--help`; `grok --trust --version` parses on 1.0.44). It grants folder trust, so project `AGENTS.md`, project skills under `.agents/skills`, project hooks, project MCP/LSP and project permission rules load. Without it, "headless startup with these sources requires `--trust` or a prior grant", and a fresh run folder has no prior grant.
 - `-m <model>`: from `opts.model` or `resolveSystemModel("grok-cli")`; never hardcoded.
 
-Retries, in order, each before any model call:
-1. Stderr says `unexpected argument '--trust'` → rerun once without `--trust`.
-2. A flag error naming `prompt-file` → rerun with `-p <prompt>` on argv (ARG_MAX-unsafe for large prompts; only for very old builds).
-3. A flag error naming `output-format` → rerun without `--output-format` (plain text on stdout).
+Retries, in order, each only on proof that argv parsing refused the flag before any model call (`argvRejectedFlag`): exit 2 (clap's usage-error code), stderr naming that flag in an `unexpected argument` / unknown-option / invalid-value message, and no JSON object on stdout. Any other failure, whatever words it uses, is a turn that ran and is reported as failed, never spawned again.
+1. `--trust` refused → rerun once without `--trust`.
+2. `--prompt-file` refused → rerun with `-p <prompt>` on argv (ARG_MAX-unsafe for large prompts; only for very old builds).
+3. `--output-format` refused → rerun without `--output-format` (plain text on stdout).
 
 Not passed today: `-s/--session-id`, `--effort`, `--no-subagents`, `--max-turns`, `--rules`, `--tools`, `--disallowed-tools`, `--permission-mode`, `--sandbox`, `--json-schema`. Grok is not in `EFFORT_CAPABLE`, so a requested effort is warned about once and dropped. There is no directory-grant flag (`--add-dir` equivalent): extra `addDirs` produce a warning.
 
@@ -192,7 +192,7 @@ Success (`--output-format json`):
 
 Failure: `{"type":"error","message":"..."}` with a non-zero exit (130 on SIGINT, 143 on SIGTERM, 1 otherwise).
 
-How `runGrok` reads it: result text from `response`, `result`, `output` or `text`; session id from `session_id`, `sessionId`, `conversation_id` or `session.id` (falling back to the id it was given or a fresh UUID); cost from `total_cost_usd`, else `costUnavailable`. Failure is `exit != 0` or an `is_error` / `error` field. The `{"type":"error","message"}` envelope has neither field, so its message is not extracted: the run still fails on the exit code, and the error text comes from stderr. `cost_is_partial`, `usage_is_incomplete`, `num_turns` and `total_cost_usd_ticks` are not read.
+How `runGrok` reads it: result text from `response`, `result`, `output` or `text`; session id from `session_id`, `sessionId`, `conversation_id` or `session.id` (falling back to the id it was given or a fresh UUID); cost from `total_cost_usd`, else `costUnavailable`. Failure is `exit != 0`, an `is_error` / `error` field, or the `{"type":"error","message"}` envelope, whose `message` becomes the run's error (stderr is the fallback only when no envelope says why). `cost_is_partial`, `usage_is_incomplete`, `num_turns` and `total_cost_usd_ticks` are not read.
 
 ### Sessions
 
@@ -332,7 +332,7 @@ Flags that exist in the CLI and that a hand-built command may add (the engine do
 4. **Workers can open subagents.** `--no-subagents` exists and is not passed, so the engine's depth rule does not hold for grok.
 5. **Effort is dropped.** `--effort` exists and works headless; grok is not in `EFFORT_CAPABLE`.
 6. **Directive is user text.** The autonomous directive is prepended to the prompt file instead of going through `--rules`.
-7. **Error text is lost.** The `{"type":"error","message"}` envelope is not parsed; the error shown comes from stderr.
+7. **Error envelope parsed.** `{"type":"error","message"}` fails the run (even on exit 0) and its message is the error shown.
 8. **Audit attribution.** Grok runs the `~/.claude/settings.json` hooks, so its tool events arrive labelled as Claude (§10).
 9. **`--trust` is undocumented in `--help`.** It parses on 1.0.44 and is in the user guide; a build that drops it falls back to running without trust (retry in §7), which silently loses `AGENTS.md` and project skills in a fresh run folder.
 10. **No `TeamCreate`** → teams are a file-system convention.

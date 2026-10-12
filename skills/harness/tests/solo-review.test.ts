@@ -264,6 +264,32 @@ describe("runSoloReviewStage", () => {
     expect(fs.readFileSync(out.reservations!, "utf8")).toContain("A monthly cost estimate");
   });
 
+  test("a correction the runtime ran in a NEW conversation is logged and audited, and the next round resumes the new one", () => {
+    deliver();
+    const calls: any[] = [];
+    const events: Array<[string, Record<string, unknown>]> = [];
+    const logs: string[] = [];
+    runSoloReviewStage(args({
+      policy: "always", runtimePref: "other", maxRounds: 2,
+      worker: { runtime: "antigravity-cli", sessionId: "conv-gone", launch: { cwd: tmp, addDirs: [], appendSystemPrompt: "" } },
+      emit: (e, p) => events.push([e, p]), log: (l) => logs.push(l),
+      runImpl: (o: any) => {
+        calls.push(o);
+        if (!o.sessionId) return ok(JSON.stringify({ confirmed: [{ id: "d1", evidence: "prd.md:10, the tables" }] }));
+        return o.sessionId === "conv-gone"
+          ? { ...ok(""), runtime: "antigravity-cli", sessionId: "conv-new", resumeLost: true, warnings: ["agy: resume failed: --conversation conv-gone"] }
+          : { ...ok(""), runtime: "antigravity-cli", sessionId: o.sessionId };
+      },
+    }));
+    const corrections = calls.filter((c) => c.dispatchRole === "solo").map((c) => c.sessionId);
+    expect(corrections).toEqual(["conv-gone", "conv-new"]);
+    expect(events.filter(([e]) => e === "x_resume_lost")).toEqual([
+      ["x_resume_lost", { business_slug: "biz", runtime: "antigravity-cli", requested_session_id: "conv-gone", session_id: "conv-new" }],
+    ]);
+    expect(logs.some((l) => /did NOT resume/.test(l))).toBe(true);
+    expect(logs.some((l) => l.includes("agy: resume failed"))).toBe(true);
+  });
+
   test("a blocking criterion a correction does not move gets no extra round, and is carried out as serious", () => {
     deliver();
     const calls: any[] = [];

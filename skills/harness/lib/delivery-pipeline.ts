@@ -1032,7 +1032,14 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
       warn(`  revision ${revUsed}: the session did not resume — retrying cold`);
       rr = revise(undefined, [fixPrompt, "", "The brief these deliverables answer:", args.brief].join("\n"));
     }
-    emit("revision_auto", { trace_id: args.pid, project_id: args.pid, business_slug: args.slug, attempt: revUsed, ok: rr.ok, ...(coldRetry ? { cold_retry: true } : {}), ...(ev.serious.length ? { serious: ev.serious.length } : {}) });
+    // The runtime answered from a NEW conversation (agy on an id it no longer
+    // knows): the correction ran without the run's context. Not re-run (the
+    // turn was paid); said here and in the audit.
+    if (rr.resumeLost) {
+      warn(`  revision ${revUsed}: the session did NOT resume — this correction ran without the previous context`);
+      for (const w of rr.warnings ?? []) warn(`    ${w}`);
+    }
+    emit("revision_auto", { trace_id: args.pid, project_id: args.pid, business_slug: args.slug, attempt: revUsed, ok: rr.ok, ...(coldRetry ? { cold_retry: true } : {}), ...(rr.resumeLost ? { resume_lost: true } : {}), ...(ev.serious.length ? { serious: ev.serious.length } : {}) });
     if (rr.sessionId) {
       sessionId = rr.sessionId;
       args.onSession?.(rr.sessionId);

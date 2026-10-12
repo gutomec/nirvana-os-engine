@@ -137,6 +137,8 @@ agy -p "<prompt or bootstrap>" --output-format json \
 - `--add-dir <dir>`: once per directory the run is granted (project, outputs root, business or squad dir).
 - Never passed: `--effort` (see §13), `--mode`, `--sandbox`, `--json-schema`, `--print-timeout`, `--agent`, `--disable-slash-commands`.
 
+**A resume that lands in a new conversation.** agy 1.3.3 answers `--conversation <unknown-id>` with exit 0, `warning: conversation "<id>" not found` on stderr and a NEW `conversation_id` in the envelope: the turn ran without the previous context. The driver does not re-run it (it was paid for). It marks the result `resumeLost: true`, adds a warning saying the resume failed, and records the new id as the session id; `nrv revise`, the gate's correction rounds and the solo review's corrections print that warning and audit it (`x_resume_lost`, or `resume_lost: true` on `revision_auto`). Either sign is enough: the stderr line, or an envelope id that differs from the one asked for.
+
 **No re-spawn.** A failed run is reported as failed. Since 1.2.10 a model or agent error mid-turn exits 3 after the turn was paid for, so the two retries that used to re-run the turn (without `--output-format`, and `--conversation` → `--continue`) are gone. Recovery is the caller's (the delivery pipeline's cold retry).
 
 **Light layer.** The `RUNTIMES` adapter used for short helper calls runs `agy -p "<persona>\n\n---\n\n<message>" [--dangerously-skip-permissions]` with the same argv/temp-file rule, in text mode, and trims stdout. The skip flag follows the `execution.headless_skip_permissions` setting (`NIRVANA_HEADLESS_SKIP_PERMISSIONS`).

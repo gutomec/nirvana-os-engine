@@ -242,6 +242,30 @@ describe("nrv revise — the outcome goes through the delivery pipeline", () => 
     expect(c.runtimeCalls).toBe(1);                 // no revision needed
   }, 30_000);
 
+  test("a revision agy ran in a NEW conversation says so, is audited, and the new id is kept for the next one", () => {
+    // agy 1.3.3 on an unknown --conversation id: exit 0, a stderr warning, a new conversation.
+    const c = runRevise({ "nota.md": PASSING_MD }, {
+      setup: (pid, home) => {
+        const sessionFile = path.join(home, "outputs", pid, "businesses", "biz", "session.json");
+        const session = JSON.parse(fs.readFileSync(sessionFile, "utf8"));
+        fs.writeFileSync(sessionFile, JSON.stringify({ ...session, runtime: "antigravity-cli", session_id: "conv-gone" }, null, 2));
+        writeFakeCli(path.join(home, "bin"), "agy", `
+          console.error('warning: conversation "conv-gone" not found');
+          console.log(JSON.stringify({ conversation_id: "conv-new", status: "SUCCESS", response: "OK" }));
+          process.exit(0);
+        `);
+      },
+    });
+    expect(c.status).toBe(0);
+    expect(c.stdout).toContain("did NOT resume the run's conversation");
+    expect(c.stdout).toContain("agy: resume failed");
+    const lost = c.audit.find(l => l.event === "x_resume_lost");
+    expect(lost?.requested_session_id).toBe("conv-gone");
+    expect(lost?.session_id).toBe("conv-new");
+    const session = JSON.parse(fs.readFileSync(path.join(c.oroot, "..", "session.json"), "utf8"));
+    expect(session.session_id).toBe("conv-new");
+  }, 30_000);
+
   test("spawned BY THE SUPERVISOR (NRV_IN_SWEEP=1): zero revision runs, verdict handed back", () => {
     // Budget rule: an unattended sweep must not spend LLM money in a
     // revision loop nobody is watching. Same artifacts as the case above.

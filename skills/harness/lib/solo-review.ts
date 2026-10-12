@@ -480,13 +480,25 @@ export function runSoloReviewStage(a: SoloReviewArgs): SoloReviewOutcome {
     log(`  review stopped: the run is ${why}; nothing more runs`);
     return outcome({ reviewer, rounds, skipped: "stopped" });
   };
-  const correct = (prompt: string) => run({
-    runtime: a.worker.runtime, prompt, sessionId: a.worker.sessionId ?? undefined,
-    cwd: launch.cwd, addDirs: launch.addDirs, appendSystemPrompt: directive,
-    ...(launch.workspace ? { workspace: launch.workspace } : {}),
-    ...(launch.env ? { env: launch.env } : {}),
-    dispatchRole: "solo", yolo: a.yolo ?? true, timeoutMs: a.timeoutMs, maxBudgetUsd: a.maxBudgetUsd, ...ledger,
-  } as Parameters<typeof runHeadless>[0]);
+  // The worker's conversation; a correction the runtime ran in a NEW one (agy
+  // on an id it no longer knows) moves it there, so the next round resumes it.
+  let workerSession = a.worker.sessionId ?? undefined;
+  const correct = (prompt: string) => {
+    const r = run({
+      runtime: a.worker.runtime, prompt, sessionId: workerSession,
+      cwd: launch.cwd, addDirs: launch.addDirs, appendSystemPrompt: directive,
+      ...(launch.workspace ? { workspace: launch.workspace } : {}),
+      ...(launch.env ? { env: launch.env } : {}),
+      dispatchRole: "solo", yolo: a.yolo ?? true, timeoutMs: a.timeoutMs, maxBudgetUsd: a.maxBudgetUsd, ...ledger,
+    } as Parameters<typeof runHeadless>[0]);
+    if (r.resumeLost) {
+      log("  correction did NOT resume the worker's session: it ran without the previous context");
+      for (const w of r.warnings ?? []) log(`    ${w}`);
+      emit("x_resume_lost", { business_slug: a.business, runtime: a.worker.runtime, requested_session_id: workerSession ?? null, session_id: r.sessionId });
+      if (r.sessionId) workerSession = r.sessionId;
+    }
+    return r;
+  };
 
   let rounds = 0;
   // Nothing on disk: a reviewer would open an empty folder and reject it. The

@@ -317,6 +317,14 @@ if ((res.sessionId && res.sessionId !== sessionId) || finalRuntime !== rt) {
 if (ledgerRun && res.sessionId) {
   try { runLedger.recordSession(ledgerRun.handle, ledgerRun.runId, res.sessionId); } catch { /* the session file has it */ }
 }
+// The runtime ran the revision in a NEW conversation (agy on an id it no longer
+// knows): the change was applied blind to what the run produced before.
+if (res.resumeLost) {
+  console.error(c("yellow", "⚠ The revision did NOT resume the run's conversation: it ran without the previous context."));
+  for (const w of res.warnings ?? []) console.error(c("dim", `  ${w}`));
+  appendAudit({ event: "x_resume_lost", trace_id: projectId, project_id: projectId, business_slug: kind === "business" ? slug : null,
+    target_kind: kind, runtime: finalRuntime, requested_session_id: sessionId, session_id: res.sessionId, revision: true }, projectRoot);
+}
 console.log(c("dim", `  ${res.durationMs}ms${res.costUsd != null ? ` · $${res.costUsd.toFixed(4)}` : ""}`));
 
 // ── delivery (verify → gate → deliver) ────────────────────────────────────

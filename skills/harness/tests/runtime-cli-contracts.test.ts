@@ -6,12 +6,15 @@
 //          brief starting with `-` or `---` is not read as an option.
 //   kimi   stream-json is one message per line; only assistant messages make the result,
 //          never a Tool message's output. Grants travel as `--add-dir`.
+//   both   a run is spawned again only on proof that argv parsing refused the flag before
+//          any model call (argvRejectedFlag); "unknown" in a paid turn's output is not proof.
+//          grok's `{"type":"error","message"}` envelope is the error text.
 // Hermetic: fake CLIs on a temp PATH that record argv. No LLM, no network.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { runHeadless } from "../../_shared/lib/host-agent-driver.ts";
+import { argvRejectedFlag, runHeadless } from "../../_shared/lib/host-agent-driver.ts";
 import { writeFakeCli } from "./helpers/fake-cli.ts";
 import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
@@ -37,6 +40,24 @@ beforeAll(() => {
       console.error("error: unexpected argument '--trust' found");
       process.exit(2);
     }
+    // A turn that ran and failed: grok's error envelope, exit 1, "unknown" all over stderr.
+    if (mode === "paid-unknown") {
+      console.error("error: unknown error; unexpected argument '--trust' in tool output");
+      process.stdout.write(JSON.stringify({ type: "error", message: "unknown model grok-x" }));
+      process.exit(1);
+    }
+    // exit 2 and the flag named, but a session on stdout: the turn started.
+    if (mode === "trust-with-json" && argv.includes("--trust")) {
+      console.error("error: unexpected argument '--trust' found");
+      process.stdout.write(JSON.stringify({ sessionId: "gk1", text: "partial" }));
+      process.exit(2);
+    }
+    if (mode === "other-flag") { console.error("error: unexpected argument '--bogus' found"); process.exit(2); }
+    if (mode === "no-output-format" && argv.includes("--output-format")) {
+      console.error("error: unexpected argument '--output-format' found");
+      process.exit(2);
+    }
+    if (mode === "no-output-format") { process.stdout.write("plain answer"); process.exit(0); }
     process.stdout.write(JSON.stringify({ text: "ok", sessionId: "gk1" }));
   `);
   writeFakeCli(BIN, "pi", RECORD + `
@@ -46,6 +67,23 @@ beforeAll(() => {
   `);
   writeFakeCli(BIN, "kimi", RECORD + `
     if (mode === "legacy" && argv.includes("--add-dir")) { console.error("Error: No such option: --add-dir"); process.exit(2); }
+    // commander: exit 1 is its usage code too, so the named flag is the proof.
+    if (mode === "commander" && argv.includes("--add-dir")) { console.error("error: unknown option '--add-dir'"); process.exit(1); }
+    if (mode === "add-dir-with-json" && argv.includes("--add-dir")) {
+      console.log(JSON.stringify({ role: "assistant", content: "started" }));
+      console.error("Error: No such option: --add-dir");
+      process.exit(2);
+    }
+    if (mode === "paid-unknown") {
+      console.log(JSON.stringify({ role: "assistant", content: "half done" }));
+      console.error("provider error: unknown finish reason; unrecognized option in tool call");
+      process.exit(1);
+    }
+    if (mode === "no-stream-json" && argv.includes("--output-format")) {
+      console.error("Error: Invalid value for '--output-format': 'stream-json' is not one of 'text'.");
+      process.exit(2);
+    }
+    if (mode === "no-stream-json") { console.log("plain answer"); process.exit(0); }
     const lines = [
       { role: "assistant", content: "Vou ler o arquivo.", tool_calls: [{ id: "t1", type: "function", function: { name: "ReadFile", arguments: "{}" } }] },
       { role: "tool", tool_call_id: "t1", content: "SECRET FILE DUMP 0123456789" },
@@ -88,6 +126,51 @@ describe("grok-cli", () => {
     expect(seen).toHaveLength(2);
     expect(seen[1]).not.toContain("--trust");
   }, spawnBudgetMs(3));
+
+  test("a turn that failed is never spawned again, and the error envelope's message is the error", () => {
+    reset("paid-unknown");
+    const r = runHeadless({ runtime: "grok-cli", prompt: "do", cwd: TMP, timeoutMs: 20_000 });
+    expect(calls("grok")).toHaveLength(1);
+    expect(r.ok).toBe(false);
+    expect(r.error).toBe("unknown model grok-x");
+  }, spawnBudgetMs(2));
+
+  test("--trust named with exit 2 but a session on stdout is not a parse failure: no retry", () => {
+    reset("trust-with-json");
+    const r = runHeadless({ runtime: "grok-cli", prompt: "do", cwd: TMP, timeoutMs: 20_000 });
+    expect(calls("grok")).toHaveLength(1);
+    expect(r.ok).toBe(false);
+  }, spawnBudgetMs(2));
+
+  test("a usage error about another flag retries nothing", () => {
+    reset("other-flag");
+    const r = runHeadless({ runtime: "grok-cli", prompt: "do", cwd: TMP, timeoutMs: 20_000 });
+    expect(calls("grok")).toHaveLength(1);
+    expect(r.ok).toBe(false);
+  }, spawnBudgetMs(2));
+
+  test("a build that refuses --output-format while parsing argv is retried once without it", () => {
+    reset("no-output-format");
+    const r = runHeadless({ runtime: "grok-cli", prompt: "do", cwd: TMP, timeoutMs: 20_000 });
+    expect(r.ok, r.error ?? r.stderr).toBe(true);
+    const seen = calls("grok");
+    expect(seen).toHaveLength(2);
+    expect(seen[1]).not.toContain("--output-format");
+    expect(r.result).toBe("plain answer");
+  }, spawnBudgetMs(3));
+
+  test("an error envelope on exit 0 still fails the run", () => {
+    reset();
+    const fake = path.join(TMP, "bin2");
+    writeFakeCli(fake, "grok", `process.stdout.write(JSON.stringify({ type: "error", message: "rate limited" })); process.exit(0);`);
+    const saved = process.env.PATH;
+    process.env.PATH = `${fake}${path.delimiter}${saved ?? ""}`;
+    try {
+      const r = runHeadless({ runtime: "grok-cli", prompt: "do", cwd: TMP, timeoutMs: 20_000 });
+      expect(r.ok).toBe(false);
+      expect(r.error).toBe("rate limited");
+    } finally { process.env.PATH = saved; }
+  }, spawnBudgetMs(2));
 });
 
 describe("pi", () => {
@@ -147,4 +230,58 @@ describe("kimi-cli", () => {
     expect(seen[1]).not.toContain("--add-dir");
     expect((r.warnings ?? []).some(w => w.includes("does not know --add-dir"))).toBe(true);
   }, spawnBudgetMs(3));
+});
+
+describe("kimi-cli: a retry only on proof of an argv parse failure", () => {
+  test("commander's exit 1 with the flag named is proof: retried once without --add-dir", () => {
+    reset("commander");
+    const r = runHeadless({ runtime: "kimi-cli", prompt: "do", cwd: TMP, timeoutMs: 20_000, addDirs: [path.join(TMP, "project")] });
+    expect(r.ok, r.error ?? r.stderr).toBe(true);
+    const seen = calls("kimi");
+    expect(seen).toHaveLength(2);
+    expect(seen[1]).not.toContain("--add-dir");
+  }, spawnBudgetMs(3));
+
+  test("an event on stdout means the turn started: no retry, even with the flag named", () => {
+    reset("add-dir-with-json");
+    const r = runHeadless({ runtime: "kimi-cli", prompt: "do", cwd: TMP, timeoutMs: 20_000, addDirs: [path.join(TMP, "project")] });
+    expect(calls("kimi")).toHaveLength(1);
+    expect(r.ok).toBe(false);
+  }, spawnBudgetMs(2));
+
+  test("a failed turn that says 'unknown' and 'unrecognized option' is never spawned again", () => {
+    reset("paid-unknown");
+    const r = runHeadless({ runtime: "kimi-cli", prompt: "do", cwd: TMP, timeoutMs: 20_000 });
+    expect(calls("kimi")).toHaveLength(1);
+    expect(r.ok).toBe(false);
+  }, spawnBudgetMs(2));
+
+  test("a build that refuses the stream-json value is retried once without --output-format", () => {
+    reset("no-stream-json");
+    const r = runHeadless({ runtime: "kimi-cli", prompt: "do", cwd: TMP, timeoutMs: 20_000 });
+    expect(r.ok, r.error ?? r.stderr).toBe(true);
+    const seen = calls("kimi");
+    expect(seen).toHaveLength(2);
+    expect(seen[1]).not.toContain("--output-format");
+    expect(r.result).toBe("plain answer");
+  }, spawnBudgetMs(3));
+});
+
+describe("argvRejectedFlag", () => {
+  const res = (status: number | null, stderr: string, stdout = "") => ({ status, stderr, stdout });
+  test("clap, commander and click messages that name the flag are proof", () => {
+    expect(argvRejectedFlag(res(2, "error: unexpected argument '--trust' found"), "--trust", 2)).toBe(true);
+    expect(argvRejectedFlag(res(1, "error: unknown option '--add-dir'"), "--add-dir")).toBe(true);
+    expect(argvRejectedFlag(res(2, "Error: No such option: --add-dir"), "--add-dir")).toBe(true);
+    expect(argvRejectedFlag(res(2, "error: invalid value 'json' for '--output-format <FORMAT>'"), "--output-format", 2)).toBe(true);
+  });
+  test("anything short of that is not", () => {
+    expect(argvRejectedFlag(res(0, "error: unexpected argument '--trust' found"), "--trust")).toBe(false);
+    expect(argvRejectedFlag(res(1, "error: unexpected argument '--trust' found"), "--trust", 2)).toBe(false);
+    expect(argvRejectedFlag(res(2, "error: unexpected argument '--bogus' found"), "--trust", 2)).toBe(false);
+    expect(argvRejectedFlag(res(2, "error: unexpected argument '--trusted' found"), "--trust", 2)).toBe(false);
+    expect(argvRejectedFlag(res(1, "unknown error while calling the model"), "--add-dir")).toBe(false);
+    expect(argvRejectedFlag(res(2, "error: unknown option '--add-dir'", '{"session_id":"s1"}'), "--add-dir")).toBe(false);
+    expect(argvRejectedFlag(res(1, "the --add-dir folder is unknown"), "--add-dir")).toBe(false);
+  });
 });
