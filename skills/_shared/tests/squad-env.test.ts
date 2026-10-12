@@ -40,7 +40,8 @@ function tarball(name: string, version: string): string {
   fs.mkdirSync(src, { recursive: true });
   fs.writeFileSync(path.join(src, "package.json"), JSON.stringify({ name, version, main: "index.js" }));
   fs.writeFileSync(path.join(src, "index.js"), `module.exports = ${JSON.stringify(version)};\n`);
-  const r = spawnSync("tar", ["-czf", file, "-C", path.dirname(src), "package"], { windowsHide: true });
+  // Relative paths and a cwd: GNU tar on Windows reads "C:" in an absolute path as a remote host.
+  const r = spawnSync("tar", ["-czf", path.basename(file), "-C", `${name}-${version}`, "package"], { cwd: FIXTURES, windowsHide: true });
   if (r.status !== 0) throw new Error(`tar failed: ${r.stderr}`);
   return file;
 }
