@@ -6,20 +6,22 @@
 
 **Operações agênticas prontas para rodar.** Uma frase entra. Trabalho pronto sai.
 
-[![npm downloads](https://img.shields.io/npm/dm/@nirvana-os/cli)](https://www.npmjs.com/package/@nirvana-os/cli)
 [![GitHub stars](https://img.shields.io/github/stars/gutomec/nirvana-os-engine)](https://github.com/gutomec/nirvana-os-engine/stargazers)
 [![version](https://img.shields.io/github/v/release/gutomec/nirvana-os-engine?label=version)](./CHANGELOG.md)
 [![CI](https://github.com/gutomec/nirvana-os-engine/actions/workflows/smoke.yml/badge.svg)](https://github.com/gutomec/nirvana-os-engine/actions/workflows/smoke.yml)
 [![license](https://img.shields.io/badge/license-SUL-lightgrey)](./LICENSE)
-[![npm](https://img.shields.io/npm/v/@nirvana-os/cli?label=npm)](https://www.npmjs.com/package/@nirvana-os/cli)
+
+**macOS / Linux**
 
 ```bash
-npx @nirvana-os/cli
+curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | bash
 ```
 
-Um comando instala o engine e o conecta a cada agente de terminal que encontra. Seguro para rodar de novo a qualquer momento.
+**Windows (PowerShell)**
 
-Prefere o caminho das skills? `npx skills add gutomec/nirvana-os-engine -g` instala a skill `nirvana` pelo [skills.sh](https://skills.sh); no primeiro uso ela instala este mesmo engine, e daí em diante você diz "use nirvana".
+```powershell
+irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
+```
 
 [Documentação](https://gutomec.github.io/nirvana-os-engine/) · [Packs](https://squads.sh/pt/packs) · [Instalação ilustrada](https://gutomec.github.io/nirvana-os-engine/install.html) · [Changelog](./CHANGELOG.md)
 
@@ -29,146 +31,168 @@ Prefere o caminho das skills? `npx skills add gutomec/nirvana-os-engine -g` inst
 
 ---
 
-## Seu agente é afiado. E está sozinho.
+## Você conversa com o seu agente. O seu agente usa o Nirvana.
 
-Você já roda um agente de terminal: Claude Code, Codex, Gemini-CLI ou Antigravity. Um prompt rende uma boa resposta. Trabalho de verdade não é um prompt. É um pesquisador, um redator, um revisor e um operador puxando na mesma direção, em paralelo, com registro de cada passo. Hoje, a cola é você.
+Você já trabalha com um agente de terminal: Claude Code, Codex, Antigravity, Pi, Grok ou outro. Um prompt rende uma boa resposta. Trabalho de verdade pede um pesquisador, um redator, um revisor e um operador, com registro de quem fez o quê.
 
-O Nirvana-OS promove esse agente solitário a um maestro que conduz organizações inteiras. Você descreve o resultado em prosa simples. O engine lê o briefing, consulta o que você tem, despacha empresas, squads e mind-clones em paralelo, reconcilia tudo atrás de um portão de qualidade e escreve uma trilha de auditoria de cada despacho. Você deixa de ser o operador e vira o diretor.
-
-A interface inteira é prosa mais um comprovante. Você fala. Seu agente roda os comandos.
+O Nirvana-OS dá essa organização ao seu agente. Você pede em linguagem natural, e o agente usa o Nirvana para escolher as empresas, os squads e os mind-clones certos, despachá-los, conferir o que voltou e mostrar o comprovante. Você não aprende uma interface nova e não digita comandos no dia a dia. Os comandos mais abaixo são a referência que o seu agente usa, e ficam à sua disposição quando você quiser.
 
 ## O que é
 
-O Nirvana-OS é um sistema operacional multi-agente nativo em Bun e agnóstico de runtime. Ele cria, gerencia e administra um conglomerado: qualquer número de empresas e squads, orquestrado do briefing ao entregável verificado. É a camada de orquestração acima do seu agente de terminal, não um substituto dele.
+O Nirvana-OS é um sistema multiagente nativo em Bun e independente de runtime. Ele roda por cima do agente que você já usa e nunca o substitui. Trabalha com três tipos de conteúdo, todos pastas na sua máquina:
 
-O padrão é **zero-humano**: as empresas rodam de forma autônoma, e a participação humana é opt-in, por gatilhos explícitos no manifesto. Você declara o resultado. O engine escolhe o elenco.
-
-Tudo o que ele cria é uma de três coisas:
-
-| Pilar | O que é | Onde vive |
+| Pilar | O que é | Onde fica |
 |---|---|---|
-| **Empresas (businesses)** | Organizações autônomas com um organograma de funcionários persistentes que chamam squads | `~/businesses/` |
-| **Squads** | Times de agentes portáteis que rodam workflows reais: DAG, portões de qualidade, escalação | `~/squads/` |
-| **Mind-clones** | DNA de persona em 5 camadas, injetado nos funcionários para que pensem e falem com o método de um mestre | `~/businesses/_library/dna/` |
+| **Empresas (businesses)** | Organizações com organograma de funcionários (assentos). Uma empresa despachada roda os seus assentos, que chamam squads e canalizam mind-clones | `~/businesses/` |
+| **Squads** | Equipes portáteis de agentes, com agentes, tarefas e workflows que o agente despachado segue como método | `~/squads/` |
+| **Mind-clones** | DNA de persona em cinco camadas, para que um agente pense e escreva com o método de um especialista | `~/businesses/_library/dna/` |
 
-Uma empresa orquestra funcionários. Um funcionário chama squads. Um squad roda agents. Um mind-clone dá a qualquer um deles uma voz mais verdadeira. Um único briefing pode mobilizar muitos deles de uma vez.
+O engine vem sem conteúdo. Você cria empresas, squads e clones pedindo ao seu agente, ou instala um pack do [squads.sh](https://squads.sh/pt/packs).
 
-## Início rápido
+## Instalação
 
-O que você precisa: [Bun](https://bun.sh) 1.0 ou mais novo. Node 18+ e `tar` existem só para o `npx` funcionar, e a maioria das máquinas já os tem.
+Rode o comando do topo desta página. Ele precisa de `curl` (ou `wget`) e `tar`, que macOS, Linux e Windows 10+ já trazem. Node não é necessário. Se faltar o [Bun](https://bun.sh), o instalador o coloca na sua pasta de usuário (`~/.bun`), sem sudo, e continua.
 
-```bash
-# macOS / Linux
-curl -fsSL https://bun.sh/install | bash
-exec $SHELL
-npx @nirvana-os/cli
+O que ele muda na sua máquina:
 
-# Windows (nativo, sem WSL), no PowerShell
-powershell -c "irm bun.sh/install.ps1 | iex"
-# abra uma NOVA janela do PowerShell para o PATH atualizar
-npx @nirvana-os/cli
+- o engine em `~/.nirvana/skills`;
+- a skill `nirvana` ligada em cada runtime de agente que encontrar: `~/.claude/skills`, `~/.codex/skills`, `~/.gemini/config/skills` (Antigravity), `~/.pi/agent/skills` e `~/.agents/skills` (OpenClaw);
+- `nrv` e `nrv-hermes` em `~/.local/bin`, mais uma linha de PATH no perfil do seu shell (o PATH do usuário no Windows);
+- hooks de auditoria no Claude Code, no Antigravity e no Codex;
+- as pastas de conteúdo vazias `~/squads`, `~/businesses` e `~/businesses/_library/dna`.
+
+Rodar de novo é seguro. Depois, abra um terminal novo para que o `nrv` entre no PATH e peça ao seu agente: *"Confira se o Nirvana-OS está instalado corretamente."* Ele roda `nrv doctor`. Saída 1 significa só avisos; saída 2 lista o que falhou.
+
+Outros caminhos (a skill `nirvana` pelo skills.sh, instalar a partir de um clone) estão em [INSTALL.md](./INSTALL.md).
+
+## Comece um projeto
+
+Abra a pasta em que vai trabalhar, inicie o seu agente nela e diga: *"Prepare esta pasta como um projeto do Nirvana-OS."* O agente roda `nrv init .`, que escreve `.nirvana/project.yaml`, um `.env` com o escopo de biblioteca do projeto e o contrato do projeto em `AGENTS.md`, `CLAUDE.md` e `GEMINI.md`. Os entregáveis caem em `outputs/`, dentro do projeto.
+
+Por padrão esse contrato faz do Nirvana o orquestrador de todo entregável concreto do projeto: peça um relatório, uma página ou uma campanha e o seu agente entrega o pedido ao Nirvana. Se quiser o Nirvana só quando pedir por ele pelo nome, diga isso ao preparar o projeto (*"prepare esta pasta como projeto do Nirvana, só sob demanda"*). O agente roda `nrv init . --orchestrators=on-demand`, que escreve uma nota curta no lugar do contrato completo.
+
+## O que pedir ao seu agente
+
+| Você diz | O seu agente roda |
+|---|---|
+| "Quais empresas / squads / mind-clones eu tenho?" | `nrv list-businesses`, `nrv list-squads`, `nrv list-clones` |
+| "Use o Nirvana para escrever a copy de lançamento de X." | o harness: escolhe as empresas e os squads, escreve os briefs e os despacha |
+| "Rode isto pelo squad de copy, no Codex." | `nrv dispatch --squad <slug> … --exec --runtime codex` |
+| "Troque o título no que você entregou." | `nrv revise <projeto> "<mudança>"` |
+| "Mostre o que essa execução fez." | `nrv audit-view <projeto>` |
+| "Instale as dependências de todos os meus squads." | `nrv activate --all` |
+| "Atualize o Nirvana-OS." | `nrv update` |
+| "Atualize o meu pack Genesis Circle." | `nrv update genesis-circle` |
+| "Limite cada execução a US$ 5." | `nrv config set budget.default_max_cost_usd 5 --global` |
+
+Pedidos maiores funcionam do mesmo jeito:
+
+```text
+Use o Nirvana-OS para criar uma empresa chamada podcast-empire que produz, publica
+e monetiza 3 podcasts ao mesmo tempo. Cada programa com nicho próprio, apresentador
+de IA, calendário editorial e funil de monetização independente. Uns 7 funcionários.
 ```
 
-O instalador coloca uma única árvore de skills em `~/.nirvana/skills`, conecta-a a `~/.claude`, `~/.codex`, `~/.gemini` e `~/.antigravity` onde quer que os encontre, e põe os binários `nrv` no seu PATH. Ele instala o engine e nenhum conteúdo: seus registries começam vazios por design, então tudo neles é algo que você construiu ou escolheu instalar. Rodar o instalador de novo é idempotente e sempre baixa o engine mais recente.
-
-Confirme que a instalação está saudável:
-
-```bash
-nrv doctor
+```text
+Use o Nirvana-OS para transformar a obra pública de <autor> num mind-clone completo.
 ```
 
-No Windows, o `nrv doctor` também verifica no PATH do usuário as entradas temporárias `nrv-*` que engines até a 0.8.0 podiam deixar para trás. `nrv install --repair-path` lista essas entradas sem escrever nada; `--apply` remove exatamente essas e mantém todas as outras como estão.
+```text
+Use o Nirvana-OS para produzir um pacote de lançamento: pesquisa de mercado, copy
+da landing page e uma análise da concorrência.
+```
 
-Depois abra seu agente e diga **"use o Nirvana-OS para…"**. Para uma configuração conduzida pelo agente, aponte seu runtime para [`AGENT-QUICKSTART.md`](./AGENT-QUICKSTART.md).
-
-## Demo de 90 segundos
-
-> **Espaço reservado.** O passo a passo canônico de 90 segundos entra aqui assim que for publicado. Até lá, esta é a visão ao vivo de uma ordem em prosa montando um conglomerado.
+O agente orquestra e nunca escreve o entregável ele mesmo. Ele escolhe as empresas e os squads, escreve para cada um um brief enriquecido e os despacha, em paralelo quando as partes são independentes.
 
 <div align="center">
-  <img src="./docs/assets/nirvana-promo-en-readme.gif" alt="Uma ordem em prosa entra, e um conglomerado de IA inteiro se monta e entrega" width="100%">
+  <img src="./docs/assets/nirvana-promo-en-readme.gif" alt="Uma ordem em prosa entra, um conglomerado de IA inteiro se monta e entrega" width="100%">
 </div>
 
-<!-- DEMO-90s SLOT
-     Canonical 90-second demo goes here when published (trace 75fbfbcc, phase X3).
-     Replace the block above with:
-     <a href="VIDEO_URL"><img src="THUMBNAIL_URL" alt="Nirvana-OS em 90 segundos" width="100%"></a>
--->
+## Packs
 
-## Veja funcionar: tudo é uma frase
+Packs são empresas, squads e mind-clones curados, vendidos no [squads.sh](https://squads.sh/pt/packs). O carro-chefe é o [Genesis Circle](https://squads.sh/pt/nirvana-os).
 
-**Construa uma empresa descrevendo-a.** O sistema desenha a organização, escreve cada funcionário, conecta os workflows e valida o resultado contra o Business Protocol.
+1. Compre o pack no squads.sh e baixe o zip pelo seu painel.
+2. Descompacte o arquivo inteiro numa pasta, abra um terminal nela e rode o setup:
+   - macOS / Linux: `bash setup.sh`
+   - Windows: `powershell -ExecutionPolicy Bypass -File setup.ps1`
 
-```text
-Use Nirvana-OS to create a company called podcast-empire that produces, publishes,
-and monetizes 3 podcasts at once. Each show has its own niche, an AI host, an
-editorial calendar, and an independent monetization funnel. Around 7 employees.
+   O setup instala o Bun se precisar, instala ou atualiza o engine, copia o conteúdo para `~/squads`, `~/businesses` e `~/businesses/_library/dna`, reconstrói os índices e guarda a licença do pack em `~/.nirvana-license/packs/<pack>/`.
+3. Converse com o seu agente: *"Use o Nirvana para listar o que o pack Genesis Circle me trouxe"*, e depois peça trabalho nomeando uma empresa, um squad ou o pack.
+
+As dependências de um squad são instaladas sob demanda na primeira vez que ele roda. Para preparar todas de uma vez, peça ao agente para instalar as dependências de todos os squads (`nrv activate --all`).
+
+**Atualizar um pack.** Peça ao seu agente para atualizá-lo, ou rode `nrv update <pack>`. Componentes que você editou ganham backup em `~/.nirvana/backups/packs/<pack>/` antes que a atualização os substitua. Se a atualização falhar com erro de licença, baixe o pack de novo no squads.sh e rode o setup outra vez; isso também renova a licença.
+
+## Atualizar o engine
+
+Peça ao seu agente para atualizar o Nirvana-OS, ou rode `nrv update`. Ele faz backup de `~/.nirvana/skills` antes e mantém as suas configurações e o seu conteúdo. `nrv update --check` diz qual release instalaria, sem mudar nada.
+
+Uma atualização nunca leva o engine para uma release mais antiga. Um engine estável só vai para uma estável mais nova. Um beta vai para a release maior mais nova, beta ou estável, então um beta da 0.15 vira 0.15.0 quando ela sair. Depois de atualizar o engine, o `nrv update` também confere cada pack instalado que tem licença e avisa quando há versão nova.
+
+## Betas
+
+Betas são prereleases no GitHub. O comando de instalação instala a última estável, então um beta é instalado fixando o tarball dele:
+
+```bash
+curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v<versão>/nirvana-os-engine.tar.gz bash
 ```
 
-**Clone um expert em prosa.** A fábrica de gênios extrai um DNA de 5 camadas (filosofias, modelos mentais, heurísticas, frameworks, metodologias) da obra pública de uma pessoa, cada item citado de volta à sua fonte.
-
-```text
-Use Nirvana-OS to turn the public work of <author> into a complete AI mind-clone
-through the genius factory.
+```powershell
+$env:NIRVANA_ENGINE_URL = "https://github.com/gutomec/nirvana-os-engine/releases/download/v<versão>/nirvana-os-engine.tar.gz"
+irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
+Remove-Item Env:NIRVANA_ENGINE_URL
 ```
 
-**Uma frase, muitos times de uma vez.** Um único briefing pode puxar um squad de pesquisa, um squad de copy e uma empresa de design em paralelo, reconciliados atrás de um único portão de qualidade, com a trilha de auditoria mostrando cada escolha que o maestro fez.
+Troque `<versão>` pela release, por exemplo `0.15.0-beta.5`. A tag começa com `v`; sem ele o download devolve 404. A lista de releases está no [GitHub](https://github.com/gutomec/nirvana-os-engine/releases). No PowerShell a variável vale para a janela inteira, por isso a última linha a remove: enquanto ela existir, o `nrv update` reinstala o tarball fixado.
 
-```text
-Use Nirvana-OS to produce a launch package: market research, landing-page copy,
-and a competitive teardown.
-```
+Uma vez num beta, o `nrv update` e todo setup de pack mantêm você no canal beta. Para voltar à estável, rode o comando de instalação simples do topo desta página: ele instala a última estável por cima do beta, e o seu conteúdo e as suas configurações ficam.
 
-Mais fluxos, incluindo "desenhe a agência, clone os especialistas, construa" em três perguntas, estão na [home da documentação](https://gutomec.github.io/nirvana-os-engine/), que roda a mesma frase nos sete runtimes suportados: Claude Code, Codex, Gemini, Antigravity, Grok, Kimi e Hermes.
+## Configurações
+
+As configurações mudam quando você pede. *"O que está configurado?"*, *"limite cada execução a US$ 5"* ou *"desligue o juiz de IA"* bastam; o seu agente roda `nrv config` e diz o que mudou. `nrv config list` mostra cada configuração, o valor e de onde ele veio: uma variável de ambiente, o `.nirvana/config.yaml` do projeto, o seu `~/.nirvana/config.yaml`, o engine ou o padrão. O seu arquivo global sobrevive a toda atualização.
+
+Nenhum modelo e nenhum esforço vêm definidos por padrão, então cada runtime usa a própria configuração. A referência completa está em [docs/configuration.md](./docs/configuration.md).
 
 ## Por que "o trabalho está feito" significa algo aqui
 
-Sistemas multi-agente têm um problema de confiança: um orquestrador pode anunciar qualquer coisa na mensagem final. O Nirvana-OS responde com três garantias, cada uma sustentada por um mecanismo que você pode abrir no disco.
+Um orquestrador pode anunciar qualquer coisa na mensagem final. O Nirvana-OS apoia cada entrega em coisas que você abre no disco.
 
-- **Rastreável.** Cada ação vira um evento append-only em `~/.harness-logs/<date>/audit.jsonl`: briefing recebido, despacho, mind-clone injetado, portão aprovado ou reprovado. Cada execução com `--exec`, em modo `standard` ou pelo Gauntlet, também deixa um Run canônico no `.nirvana/run-kernel.sqlite` do projeto, um journal append-only que o Glance lê. Sem esses eventos, nenhuma mensagem de conclusão é honesta.
-- **Testado.** `verify-deliverable.ts` compara o que o briefing prometeu com o que de fato existe no disco. `quality-gate.ts` roda rubrics por tipo de arquivo num loop de julgar, criticar e revisar. Sem um PASS do verify, não há conclusão legítima.
-- **Contratado.** Tasks têm critérios de aceitação binários. Capabilities têm inputs e outputs tipados. Output destinado ao cliente passa por uma cadeia de aprovação: produtor, depois revisor, depois aprovador. Orçamentos são um teto rígido, e gatilhos de escalação definem exatamente quando um humano entra no loop.
+- **Trilha de auditoria.** Cada despacho, veredito de portão e entrega é um evento só de acréscimo em `~/.harness-logs/<data>/audit.jsonl`. Toda execução com `--exec` também deixa um registro em `.nirvana/run-kernel.sqlite`, no projeto. `nrv audit-view <projeto>` mostra a cadeia.
+- **Conferido no disco.** O `verify-deliverable` compara o que o brief prometeu com os arquivos que existem, e o portão de qualidade roda rubricas por tipo de arquivo, com rodadas de correção quando reprova. Uma execução cujas falhas graves sobrevivem às correções é retida, não entregue.
+- **Avaliado contra o brief.** O portão entrega o brief ao juiz dele, então um entregável é cobrado pelo que foi pedido, não só por uma rubrica genérica.
+- **Gasto sob o seu controle.** Nenhum teto de custo é definido a menos que você peça um (*"limite cada execução a US$ 5"* define `budget.default_max_cost_usd`).
 
-## Engine grátis, conteúdo pago
+## Referência de comandos
 
-O engine neste repositório é grátis, sem tier capado e nada básico trancado. Ele cria e orquestra empresas, squads e mind-clones do zero. O código-fonte é publicado e abertamente legível sob a [Sustainable Use License](./LICENSE) (source-available, não aprovada pela OSI; certos usos comerciais exigem uma licença separada).
+Para agentes e usuários avançados. `nrv help` lista tudo; `nrv <comando> --help` mostra as opções de cada comando. Referência completa: [docs/CLI.md](./docs/CLI.md).
 
-A camada paga é **conteúdo, não capacidade**: coleções curadas e prontas para rodar, entregues via [squads.sh](https://squads.sh). A diferença que os packs compram para você é tempo, não poder. Veja todos em **[squads.sh/pt/packs](https://squads.sh/pt/packs)**. O carro-chefe, o **[Genesis Circle](https://squads.sh/pt/nirvana-os)**, entrega um conglomerado completo que você pode rodar no primeiro dia, mantido atualizado com `nrv update <pack>`.
-
-| | Engine grátis (este repo) | Packs ([squads.sh/pt/packs](https://squads.sh/pt/packs)) |
-|---|---|---|
-| Criar do zero | Sim | Sim |
-| Orquestrar em paralelo | Sim | Sim |
-| Trilha de auditoria em cada despacho | Sim | Sim |
-| Squads, empresas e mind-clones pré-construídos | Nenhum, vazio por design | Um conglomerado completo, no primeiro dia |
-
-## O punhado de comandos que vale digitar você mesmo
-
-| Você digita | O que faz |
+| Comando | O que faz |
 |---|---|
-| `npx @nirvana-os/cli` | Instala ou atualiza o engine (idempotente) |
-| `nrv glance` | Cockpit web: empresas, squads, clones, auditoria, custos. Num projeto adotado, uma Message no chat roda um despacho de verdade em processo filho, com timeline ao vivo, cancelamento e recuperação após restart. `--read-only` mantém só a leitura |
-| `nrv list-businesses` / `nrv list-squads` / `nrv list-clones` | Navega pelos três registries |
-| `nrv search "<topic>"` | Busca capabilities pelos três registries |
-| `nrv dispatch --business <slug> \| --squad <slug> \| --agent-x "<brief>" --exec` | Roda um briefing contra um alvo que você nomeia; o roteador nunca é consultado |
-| `nrv run <business> "<brief>" --execution-mode=gauntlet --gauntlet-intensity=light\|balanced\|exhaustive` | Opta pelo Gauntlet: candidates, avaliações e rodadas de revisão em três intensidades (alvos Business exigem `NIRVANA_BUSINESS_GAUNTLET_ALLOWLIST`) |
-| `nrv multi-target plan\|run\|status <plan.json>` | Compila, executa ou inspeciona um plano multi-target sobre o Run Kernel (`NIRVANA_MULTI_TARGET_KILL_SWITCH=1` desliga o `run`) |
-| `nrv validate <squad\|business\|clone> <slug> [--fix]` | Portão de admissão de uma entidade, ou `--all` para todas as instaladas; `--fix` conserta o que dá para consertar sem inventar nada |
-| `nrv migrate <slug> --to 6 [--apply]` | Converte um squad para o Squad Protocol 6.0; dry run por padrão, `--apply` escreve com backup |
-| `nrv update <pack>` | Atualiza um pack instalado |
-| `nrv doctor` | Verifica a instalação; no Windows, `nrv install --repair-path` limpa as entradas do PATH do usuário sobre as quais ele avisa |
-
-Todo o resto, seu agente roda. Referência completa: [docs/CLI.md](./docs/CLI.md).
+| `nrv doctor` | Diagnóstico: runtimes, hooks, links de skills, dependências, registros, licenças |
+| `nrv init <dir>` | Torna uma pasta um projeto Nirvana (`--orchestrators=on-demand\|always`, `--scope=project\|merge`) |
+| `nrv list-businesses` / `list-squads` / `list-clones` | Navega pelos três registros |
+| `nrv find "<necessidade>"` / `nrv search "<tema>"` | Candidatos ranqueados para um pedido / busca por palavra-chave nas bibliotecas |
+| `nrv dispatch <empresa> "<brief>" --exec` | Roda uma empresa sobre um brief; `--squad <slug>`, `--agent-x` ou `--auto` nomeiam outros alvos. Sem `--exec` só prepara a pasta |
+| `nrv run-track status\|wait <run>` | Lê o estado de uma execução, ou espera ela terminar |
+| `nrv revise <projeto> "<mudança>"` | Muda uma entrega na mesma sessão do runtime |
+| `nrv audit-view <projeto>` | A cadeia de auditoria de uma execução |
+| `nrv activate <squad>\|--all` | Prepara antes o ambiente de um squad em `~/.nirvana/envs/<squad>` |
+| `nrv config list\|get\|set\|unset\|explain` | Configurações, com `--global` ou `--project` |
+| `nrv update [--check]` / `nrv update <pack>` | Atualiza o engine / um pack |
+| `nrv validate <squad\|business\|clone> <slug> [--fix]` | Portão de admissão de uma entidade |
+| `nrv glance` | Cockpit web (`--read-only` só para navegar) |
+| `nrv uninstall --engine` | Remove o engine e mantém o seu conteúdo |
 
 ## FAQ
 
-**Preciso saber programar?** Não. Você descreve resultados em linguagem simples; o sistema escreve, valida e roda o código.
+**Preciso saber programar?** Não. Você descreve resultados em linguagem natural; o seu agente usa o Nirvana, e as empresas e os squads escrevem, conferem e entregam.
 
-**Ele substitui meu agente?** Não. Ele roda por cima do Claude Code, Codex, Gemini-CLI ou Antigravity, e faz o que você já tem orquestrar muitos.
+**Ele substitui o meu agente?** Não. Roda por cima dele. O trabalho despachado roda no runtime da sua sessão, a menos que você nomeie outro: Claude Code, Codex, Antigravity, Pi, Kimi ou Grok.
 
-**Onde meu trabalho fica?** Na sua máquina, sob `~/businesses`, `~/squads` e `~/businesses/_library/dna`. Local-first, sem nuvem de terceiros no meio.
+**Onde fica o meu trabalho?** Na sua máquina: o conteúdo em `~/businesses`, `~/squads` e `~/businesses/_library/dna`, os entregáveis no `outputs/` de cada projeto. Não há nuvem do Nirvana no caminho.
 
-**E se o sistema não conseguir fazer o que eu pedir?** Ele diz. Um briefing que não casa com nada recebe uma recusa mais uma sugestão de criar a capability faltante. Um briefing ambíguo recebe uma pergunta de volta, com os principais candidatos.
+**E se nada na minha biblioteca servir?** O pedido roda mesmo assim, no `agent-x`, o generalista. Você também pode pedir ao agente que crie a empresa ou o squad que falta.
 
 **Windows?** Nativo, via Bun. Sem WSL.
 
@@ -178,4 +202,4 @@ Autor: **Luiz Gustavo Vieira Rodrigues (gutomec / Prospecteezy)**. Sem coautores
 
 Licença: a Nirvana-OS Sustainable Use License (SUL) v1.0. O código-fonte é publicado e abertamente legível, e o engine é grátis para usar. É source-available, não uma licença open-source aprovada pela OSI, e certos usos comerciais exigem uma licença comercial separada. Leia [LICENSE](./LICENSE) antes de confiar em qualquer resumo, incluindo este.
 
-Status: beta (0.x, atualmente 0.14.10). O engine funciona hoje e instala em minutos. Espere a superfície continuar mudando até o 1.0.
+Status: beta (0.x, atualmente 0.14.11). O engine funciona hoje e instala em minutos. Espere a superfície continuar mudando até o 1.0.

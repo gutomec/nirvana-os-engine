@@ -213,7 +213,7 @@ capabilities.
 
 ## Operational notes
 
-- The wizard works on **Claude Code**, **Codex** and **Gemini CLI** —
+- The wizard works on **Claude Code**, **Codex** and **Antigravity** —
   use `AskUserQuestion` when available, otherwise inline prompts.
 - The LLM must never **invent capabilities** or agents the user did not
   request (P5 Surgical Changes).

@@ -16,6 +16,7 @@ import { runSquadHeadless, buildSquadPrompt, capabilityContext, promptPath, exec
 import { sessionKey, putSession } from "../lib/session-store.ts";
 import { SCOPE_GUARD_PT_BR, scopeBoundary } from "../../_shared/lib/scope-guard.ts";
 import { LIMITS } from "../../_shared/validators/limits.ts";
+import { nodeLine, squadEnvDir } from "../../_shared/lib/squad-env.ts";
 
 let tmp: string;
 const savedLogsDir = process.env.HARNESS_LOGS_DIR;
@@ -83,6 +84,16 @@ describe("buildSquadPrompt — framing per mode", () => {
     expect(p).toContain("de ponta a ponta");
     expect(p).toContain("ENTREGÁVEL FINAL");
     expect(p).not.toContain("synthesizer do business");
+  });
+
+  test("the squad's environment reaches the sub-task only when the squad has one", () => {
+    const squadDir = scaffoldSquad(path.join(tmp, "squads"), "brandcraft");
+    const base = { squadSlug: "brandcraft", squadDir, brief: "the brief", outDir: "/out/dir", mode: "squad-only" as const, cloneInjection: { block: "", decision: "PADRÃO" } };
+    const line = "This squad's Python: `/e/.venv/bin/python`; run its Python scripts and `-m pip` with it, never `pip install` into another interpreter.";
+    expect(buildSquadPrompt(base)).toBe(buildSquadPrompt({ ...base, envLines: [] }));
+    expect(buildSquadPrompt(base)).not.toContain("This squad's Python");
+    const p = buildSquadPrompt({ ...base, envLines: [line] });
+    expect(p.slice(p.indexOf("## SUA SUB-TAREFA"), p.indexOf("## SAÍDA"))).toContain(`(anti-loop).\n\n${line}\n\nSe o brief`);
   });
 
   test("both framings carry the scope guard in PT-BR, inside the sub-task block", () => {
@@ -687,6 +698,47 @@ describe("runSquadHeadless", () => {
     expect(r.ok).toBe(true);
     expect(r.sessionId).toBe("fresh-session");
     expect(readAudit().some(e => e.event === "session_resume_failed")).toBe(true);
+  });
+});
+
+// Each squad runs in its own environment (squad-env.ts): runSquadHeadless
+// prepares it and hands the worker its variables and its lines. Every caller
+// (squad dispatch, team and single-seat mandatory squads, Gauntlet rounds)
+// goes through here, so this is where the wiring is pinned.
+describe("runSquadHeadless — the squad's environment", () => {
+  const savedHome = process.env.NIRVANA_HOME;
+  beforeEach(() => { process.env.NIRVANA_HOME = path.join(tmp, "home"); });
+  afterEach(() => { if (savedHome === undefined) delete process.env.NIRVANA_HOME; else process.env.NIRVANA_HOME = savedHome; });
+
+  const run = (extra: Record<string, unknown>, seen: any[]) => runSquadHeadless({
+    squadSlug: "brandcraft", brief: "b", projectId: "proj-sq-env", projectDir: tmp, projectRoot: tmp,
+    outputsDir: path.join(tmp, "out-env"), runtime: "claude-code", businessSlug: null, mode: "squad-only",
+    autonomousDirective: "D", squadsRoot: path.join(tmp, "squads"),
+    runWithCascadeImpl: ((opts: any) => { seen.push(opts); return okCascadeResult(opts); }) as any,
+    ...extra,
+  });
+
+  test("a squad with no environment runs with no extra variables and an unchanged prompt", () => {
+    const squadDir = scaffoldSquad(path.join(tmp, "squads"), "brandcraft");
+    const seen: any[] = [];
+    expect(run({}, seen).ok).toBe(true);
+    expect(seen[0].env).toEqual({});
+    expect(seen[0].prompt).not.toContain("This squad's");
+    // Preparing a squad that declares nothing writes nothing, here or in the home.
+    expect(fs.existsSync(squadEnvDir("brandcraft"))).toBe(false);
+    expect(fs.existsSync(path.join(squadDir, "node_modules"))).toBe(false);
+  });
+
+  test("a squad with packages runs with its NODE_PATH, and a failure the caller found reaches the prompt", () => {
+    scaffoldSquad(path.join(tmp, "squads"), "brandcraft");
+    const modules = path.join(squadEnvDir("brandcraft"), "node_modules");
+    fs.mkdirSync(path.join(modules, ".bin"), { recursive: true });
+    const seen: any[] = [];
+    expect(run({ envProblems: ["bun install failed: offline"] }, seen).ok).toBe(true);
+    expect(String(seen[0].env.NODE_PATH).split(path.delimiter)[0]).toBe(modules);
+    expect(seen[0].env.NODE_OPTIONS).toContain("node-path-hook.mjs");
+    expect(seen[0].prompt).toContain(nodeLine(modules));
+    expect(seen[0].prompt).toContain("Environment problem: bun install failed: offline");
   });
 });
 

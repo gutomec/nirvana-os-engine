@@ -6,7 +6,7 @@
  *
  * This package carries NO engine bytes. At run time it downloads the latest
  * engine from GitHub (the most recent release asset) and installs it across
- * every detected runtime — Claude Code, Codex, Gemini-CLI, Antigravity — plus
+ * every detected runtime — Claude Code, Codex, Antigravity — plus
  * an optional Hermes bridge. The paid packs (squads, businesses, mind-clones)
  * install on top, gated by purchase, via squads.sh.
  *

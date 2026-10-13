@@ -78,7 +78,6 @@ Discovery itself is runtime-neutral. Filtering squads by runtime compatibility d
 | Runtime | See |
 |---------|-----|
 | Claude Code | [_shared/adapters/claude-code.md §2](../../_shared/adapters/claude-code.md#2-feature-support-matrix) |
-| Gemini CLI | [_shared/adapters/gemini-cli.md §2](../../_shared/adapters/gemini-cli.md#2-feature-support-matrix) |
 | Codex | [_shared/adapters/codex.md §2](../../_shared/adapters/codex.md#2-feature-support-matrix) |
 | Antigravity | [_shared/adapters/antigravity-cli.md §2](../../_shared/adapters/antigravity-cli.md#2-feature-support-matrix) |
 | Kimi | [_shared/adapters/kimi-cli.md §2](../../_shared/adapters/kimi-cli.md#2-feature-support-matrix) |

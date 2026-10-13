@@ -6,15 +6,15 @@
 
 ---
 
-## 1. Adapter Metadata
+## 1. Adapter metadata
 
 | Campo | Valor |
 |---|---|
 | `runtime` | `claude-code` |
 | `vendor` | Anthropic |
-| `min_version` | `1.0.0` (CLI), Anthropic SDK `>=0.30` |
+| `min_version` | Não é imposto pelo engine. O argv da §7 foi auditado no 2.1.284 e no 2.1.296; a correção de custo em resume pressupõe 2.1.277 ou posterior e mantém como está o valor por execução de um CLI mais antigo. O engine chama o CLI e não usa nenhum SDK da Anthropic. |
 | `default_model` | herdado do runtime — o engine NUNCA define model; a config do runtime do usuário decide. Passe model só quando o usuário pedir explicitamente. |
-| `tested_against` | Claude Code 1.x (CLI, IDE, web) — Opus 4.7 |
+| `tested_against` | Claude Code 2.1.296 (CLI, build nativo), auditado em 2026-10-11. Opus 5.5 é o Opus padrão desde o 2.1.280 |
 | `config_paths` | `~/.claude/settings.json` (user), `<project>/.claude/settings.json`, `<project>/.claude/settings.local.json` |
 | `skills_root` | `~/.nirvana/skills/` (user), `<project>/.claude/skills/` (project), bundled |
 | `agents_root` | `~/.claude/agents/` (user), `<project>/.claude/agents/` (project) |
@@ -24,31 +24,31 @@
 
 ---
 
-## 2. Feature Support Matrix
+## 2. Feature support matrix
 
 `✓` = nativo · `~` = workaround/parcial · `✗` = não suportado
 
 | Feature (Business v1 §6) | Squad v5 | Business v1 | Harness v1 | Notas |
 |---|---|---|---|---|
-| `max_turns` | ✓ | ✓ | ✓ | `maxTurns` em frontmatter de agent/employee; runtime não enforça hard mas adapter pode fechar via hook |
+| `max_turns` | ✓ | ✓ | ✓ | O runtime impõe: `maxTurns` no frontmatter do subagent, `--max-turns` no `claude -p`. O engine ainda não mapeia o `max_turns` do employee para a flag (§6) |
 | `tool_whitelist` | ✓ | ✓ | ✓ | `tools:` no frontmatter + `permissions` em settings.json |
-| `subagent_spawning` | ✓ | ✓ | ✓ | `Agent` tool com `subagent_type` |
+| `subagent_spawning` | ✓ | ✓ | ✓ | `Agent` tool com `subagent_type` (`Task` é o nome antigo, ainda aceito). A tool `Workflow` também abre agentes (§7) |
 | `audit_trail` | ✓ | ✓ | ✓ | OTel se configurado, fallback para jsonl em `~/.harness-logs/` |
 | `scheduled_invocation` | ✓ | ✓ | ✓ | `ScheduleWakeup`, `CronCreate` (deferred tools) |
 | `event_bus` | ~ | ~ | ~ | Sem broker nativo. Mentions e tickets viajam por tool results + filesystem watch + memory polling. Documentado como limitação em §13. |
-| `hooks` | ✓ | ✓ | ✓ | `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `Stop`, `SessionStart`, `Compact` |
+| `hooks` | ✓ | ✓ | ✓ | `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `Stop`, `SubagentStop`, `SessionStart`, `PreCompact`, `PostCompact` (§10) |
 | `sandboxing` | ~ | ~ | ~ | `dangerouslyDisableSandbox` no Bash tool; sandbox é por permissão de tool, não por process isolation |
 | `session_memory` | ✓ | ✓ | ✓ | Conversation context (auto-compactado) |
 | `project_memory` | ✓ | ✓ | ✓ | `CLAUDE.md` + `<project>/.claude/memory/` |
 | `global_memory` | ✓ | ✓ | ✓ | `~/.claude/CLAUDE.md` + `~/.claude/memory/` |
 | `handoff_artifacts` | ✓ | ✓ | ✓ | Estrutura JSON em `tool_result` ou em arquivo persistido |
 | `fork_context` | ✓ | ✓ | ✓ | Cada `Agent` invocation cria um sub-context isolado |
-| `teammate_primitive` | ~ | ~ | ~ | Subagents servem de teammate por convenção; `TeamCreate` é deferred tool, não está disponível em todas as instalações 1.x. Quando indisponível o adapter cai para spawn paralelo de `Agent`. |
+| `teammate_primitive` | ~ | ~ | ~ | Subagents servem de teammate por convenção; `TeamCreate` é deferred tool, não está disponível em todas as instalações. Quando indisponível o adapter cai para spawn paralelo de `Agent`. |
 | `telemetry_otel` | ✓ | ✓ | ✓ | Via OTLP endpoint quando `HARNESS_TELEMETRY=otel` |
 
 ---
 
-## 3. Concept Mapping
+## 3. Concept mapping
 
 | Conceito (Protocolo) | Equivalente Claude Code | Implementação |
 |---|---|---|
@@ -68,7 +68,7 @@
 
 ---
 
-## 4. Frontmatter Mapping
+## 4. Frontmatter mapping
 
 ### Squad v5 → Skill frontmatter
 
@@ -134,7 +134,7 @@ model: inherit
 
 ---
 
-## 5. Tool Whitelist Mechanics
+## 5. Tool whitelist mechanics
 
 - O frontmatter `tools:` aceita semantic names (`read`, `write`, `edit`, `grep`, `glob`, `bash`, `web_search`, `web_fetch`) — Squad v4 §10.7.
 - Adapter Claude Code traduz para nomes nativos: `Read`, `Write`, `Edit`, `Grep`, `Glob`, `Bash`, `WebSearch`, `WebFetch`.
@@ -152,30 +152,41 @@ model: inherit
 
 ---
 
-## 6. Max-Turns Mechanics
+## 6. Max-turns mechanics
 
-Claude Code não enforça `maxTurns` nativamente em sub-agentes. O adapter usa 3 mecanismos:
+O Claude Code impõe limite de turns nativamente em dois lugares:
 
-1. **Informativo**: `maxTurns` no employee frontmatter aparece no prompt do subagent ("você tem N turns").
-2. **Pre-flight budget**: harness converte `maxTurns × estimated_cost_per_turn` em `budget.default_max_cost_usd` (Harness §6).
-3. **Hook enforcement**: `PostToolUse` hook conta tool calls do subagent e aborta via `decision: "block"` quando excede:
+1. **Frontmatter do subagent**: `maxTurns: N` em `~/.claude/agents/<name>.md` limita aquele subagent.
+2. **Execuções headless**: `claude -p --max-turns N`. A flag não aparece no `claude --help`, mas é aceita (conferido no 2.1.296). Uma execução que bate no limite termina com subtype `error_max_turns`; o `runClaudeCode` devolve isso em `resultSubtype` e cita no `error`.
+
+O engine hoje não passa `--max-turns`, então o `max_turns` de um employee chega ao worker headless só como:
+
+- **Informativo**: `maxTurns` no frontmatter do employee aparece no prompt ("você tem N turns").
+- **Pre-flight budget**: o harness converte `maxTurns × estimated_cost_per_turn` em `budget.default_max_cost_usd` (Harness §6), e o `--max-budget-usd` encerra a execução (`error_max_budget_usd`).
+
+Um hook pode acrescentar um contador onde nenhum dos limites nativos alcança. Um hook `PostToolUse` que devolve `{"continue": false}` quando a contagem estoura interrompe o processamento; `decision: "block"` no `PostToolUse` só mostra o motivo ao Claude, porque a tool já rodou. Schema atual (evento, grupo com matcher, lista de handlers):
 
 ```json
 // settings.json hook (exemplo)
 {
   "hooks": {
     "PostToolUse": [
-      { "matcher": "Agent", "command": "~/.claude/hooks/turn-counter.sh" }
+      {
+        "matcher": "Agent",
+        "hooks": [
+          { "type": "command", "command": "~/.claude/hooks/turn-counter.sh" }
+        ]
+      }
     ]
   }
 }
 ```
 
-**Limitação conhecida:** se o subagent é dispatched via `Skill` em vez de `Agent`, o counter precisa rodar em outro escopo. Documentar como `~` (parcial) na matrix.
+**Limitação conhecida:** se o trabalho roda via `Skill` em vez de `Agent`, nem o `maxTurns` do subagent nem um matcher `Agent` o enxergam; só o `--max-turns` da sessão cobre esse caso.
 
 ---
 
-## 7. Subagent Spawning
+## 7. Subagent spawning
 
 Padrão: `Agent` tool com `subagent_type` apontando para o nome do agent definido em `~/.claude/agents/<name>.md`.
 
@@ -192,7 +203,21 @@ Agent({
 
 O `Agent` tool é o **caminho PRIMÁRIO de dispatch**: roda in-process dentro da sessão do maestro, sem child `claude -p` e sem hard kill de 20 min de wall-clock — deliverables longos não são truncados.
 
-O spawn devolve na hora um recibo (`"Async agent launched successfully"`) e a sessão segue livre. O trabalho chega depois, numa `<task-notification>` com `<result>` — é ali que está o relatório do subagente. Não passe `run_in_background: false`: bloqueia a sessão inteira pela duração do subagente (uma stack de deploy leva 45 min) e não traz nada que a notificação já não traga. O caminho headless `claude -p` (`host-agent-driver.runClaudeCode`, flags `--output-format json` / `--allowedTools` / `--permission-mode` / `--add-dir` / `--max-budget-usd` / `--resume`) é o FALLBACK, usado só por scripts standalone sem contexto LLM próprio (o `dispatch.ts`). Todo filho headless (`runClaudeCode` e o `buildCall` do `callHostAgent`) passa `--permission-mode auto` por padrão, porque o `claude -p` começa em modo manual, e sem TTY o CLI nega a primeira ferramenta que pede aprovação. No modo auto um classificador aprova no lugar de uma pessoa, sem desligar o sistema de permissões: uma ação que ele recusa não roda e a sessão segue trabalhando. O modo exige um modelo compatível (Opus 4.6 ou superior, Sonnet 4.6 ou superior, Fable); com outro modelo a sessão começa em modo manual. `NIRVANA_HEADLESS_SKIP_PERMISSIONS=0` desliga a autonomia em todos os runtimes (o `claude -p` cai em `--allowedTools` + `--permission-mode acceptEdits`, o mesmo caminho de `nrv dispatch --safe`).
+O spawn devolve na hora um recibo (`"Async agent launched successfully"`) e a sessão segue livre. O trabalho chega depois, numa `<task-notification>` com `<result>` — é ali que está o relatório do subagente. Não passe `run_in_background: false`: bloqueia a sessão inteira pela duração do subagente (uma stack de deploy leva 45 min) e não traz nada que a notificação já não traga. O caminho headless `claude -p` (`host-agent-driver.runClaudeCode`) é o FALLBACK, usado só por scripts standalone sem contexto LLM próprio (o `dispatch.ts`).
+
+**O argv headless, como o driver monta** (`skills/_shared/lib/host-agent-driver.ts`, conferido contra o `claude --help` do 2.1.296):
+
+- `runClaudeCode`: `claude -p --output-format json`, depois `--resume <id>` numa revisão, `--model <m>` e `--effort <level>` só quando quem chama ou o pin do usuário define, `--tools ""` numa chamada sem tools, `--allowedTools` quando quem chama lista tools ou a autonomia está desligada, e então um destes: o `--permission-mode` de quem chama, `--permission-mode acceptEdits` (autonomia desligada) ou `--dangerously-skip-permissions` (o padrão). Em seguida `--disallowedTools Task Agent Workflow` salvo com `allowSubagents`, `--max-budget-usd`, `--settings`, cada `--add-dir` e, por último, a diretiva como `--append-system-prompt <texto>` (ou `--append-system-prompt-file <caminho>` quando o CLI é chamado por um shell, para que uma diretiva longa nunca trunque o argv). O prompt vai pelo stdin.
+- `buildCall` (a entrada `claude-code` em `RUNTIMES`, usada pelo `callHostAgent` em judges e gates): `claude -p --no-session-persistence --output-format json`, `--dangerously-skip-permissions` com autonomia ligada, `--model` quando há pin, `--append-system-prompt <persona>`. A mensagem vai pelo stdin.
+- Ambiente do filho (`headlessClaudeEnv`): `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` salvo se o usuário definiu, e `CLAUDE_CODE_DISABLE_WORKFLOWS=1` para um worker que não pode abrir agentes.
+
+A flag de bypass é o padrão porque um filho sem TTY não tem como responder a um pedido de aprovação: num `-p`, as chamadas que ainda pediriam aprovação são negadas. O modo em que o `claude -p` começa sem flag depende da sessão: `default` (exibido como `manual`) onde o CLI busca feature flags, `auto` em provedores terceiros ou com telemetria desligada desde o 2.1.285. O engine não depende de nenhum dos dois. As opções de `--permission-mode` que o help lista são `acceptEdits`, `auto`, `bypassPermissions`, `manual`, `dontAsk`, `plan`; `default` saiu da lista, mas ainda é aceito como `manual`. Um worker alcança qualquer pasta e roda qualquer comando que o brief dele precisa, com qualquer modelo. `NIRVANA_HEADLESS_SKIP_PERMISSIONS=0` desliga a autonomia em todos os runtimes (o `claude -p` cai em `--allowedTools` + `--permission-mode acceptEdits`, o mesmo caminho de `nrv dispatch --safe`).
+
+**Worker não abre agentes.** Negar `Task` e `Agent` não basta nos builds atuais: a tool `Workflow` roda workflows dinâmicos dentro do `claude -p`, o modo bypass aprova a chamada e uma execução pode abrir até 1.000 agentes. Os interruptores são `CLAUDE_CODE_DISABLE_WORKFLOWS=1`, `"disableWorkflows": true` nos settings ou uma regra deny em `Workflow`. O engine usa dois deles em todo worker, salvo quando quem chama passa `allowSubagents: true`: `--disallowedTools Task Agent Workflow` no argv e `CLAUDE_CODE_DISABLE_WORKFLOWS=1` no ambiente do filho.
+
+**Custo em resume.** Desde o 2.1.277, o `total_cost_usd` de uma sessão retomada inclui o gasto das execuções que ela restaurou, então somar resultados conta em dobro. O engine registra o custo da própria execução: guarda no run ledger o último total informado por session id (`claude-session-cost.ts`) e, numa execução retomada, registra a diferença. Sem total anterior conhecido, ou quando o valor informado é menor que ele (CLI anterior ao 2.1.277), o valor informado é mantido. O `--max-budget-usd` conta só o gasto da própria chamada.
+
+**`--bare`.** A documentação do CLI anuncia o `--bare` como futuro padrão do `-p`. Ele pula hooks, a descoberta de CLAUDE.md, OAuth e keychain (só API key ou `apiKeyHelper`), o que quebraria a autenticação por assinatura e o setup do `~/.nirvana`. O engine nunca passa essa flag.
 
 **Para businesses (employees):** o adapter mapeia 1:1 — cada employee vira um subagent_type. CEO da business é o agent_type que tem `is_brief_intake: true`.
 
@@ -200,7 +225,7 @@ O spawn devolve na hora um recibo (`"Async agent launched successfully"`) e a se
 
 ---
 
-## 8. Memory Storage
+## 8. Memory storage
 
 | Camada | Path | Persistência |
 |---|---|---|
@@ -214,17 +239,17 @@ O spawn devolve na hora um recibo (`"Async agent launched successfully"`) e a se
 
 ---
 
-## 9. Context Window & Compaction
+## 9. Context window e compaction
 
-- Janela: 200K tokens (Sonnet/Opus 4.x).
-- Compaction: automática quando perto do limit. Emite hook `Compact` permitindo persistir state crítico antes.
+- Janela: definida pelo modelo que o usuário roda. `claude --autocompact <auto|tokens>` (100k a 1M) ou `CLAUDE_CODE_AUTO_COMPACT_WINDOW` (100000 a 1000000; valores menores viram 100K) antecipam o ponto em que a compaction começa.
+- Compaction: automática quando perto do limit. `PreCompact` dispara antes (matcher `manual` ou `auto`), permitindo persistir state crítico, e `PostCompact` depois que ela termina.
 - Para businesses long-running: forçar checkpoint via `Skill: harness#checkpoint` ao atingir 70% do context.
 
 ---
 
-## 10. Hook System
+## 10. Hook system
 
-Hooks executam shell commands. Eventos relevantes:
+Hooks são declarados por evento, como grupos com matcher que carregam cada um uma lista `hooks` de handlers (o JSON está na §6). O `type` do handler é `command`, `http`, `mcp_tool`, `prompt` ou `agent`. Eventos relevantes:
 
 | Hook | Trigger | Uso para protocolo |
 |---|---|---|
@@ -232,14 +257,16 @@ Hooks executam shell commands. Eventos relevantes:
 | `PostToolUse` | Depois de cada tool call | Turn counter, cost emission, audit |
 | `UserPromptSubmit` | Cada prompt do user | Injetar harness preamble |
 | `Stop` | Fim de turn | Persistir mention/ticket inbox |
+| `SubagentStop` | Um subagent termina | Recolher handoff artifacts |
 | `SessionStart` | Início de sessão | Carregar memory + verificar pending tickets |
-| `Compact` | Antes de auto-compaction | Salvar state crítico (Business v1 §9.3) |
+| `PreCompact` | Antes da compaction (manual ou auto) | Salvar state crítico (Business v1 §9.3) |
+| `PostCompact` | Depois que a compaction termina | Reinjetar o state que o resumo perdeu |
 
-Configuração em `settings.json`. Ver `update-config` skill para syntax exata.
+Configuração em `settings.json` (user, project ou local), no `hooks/hooks.json` de um plugin ou no frontmatter de skill e subagent. O `--bare` pula os hooks de settings e plugins. No `-p`, um settings que falha na validação é ignorado em silêncio. Ver `update-config` skill para syntax exata.
 
 ---
 
-## 11. Invocation Examples
+## 11. Invocation examples
 
 ### Exemplo 1 — Squad capability (Squad v5)
 
@@ -304,7 +331,7 @@ Budget breach detected (Harness §H6):
 
 ---
 
-## 12. Runtime-Specific Validators
+## 12. Runtime-specific validators
 
 Além de `validators.ts/.py`, Claude Code requer:
 
@@ -314,9 +341,9 @@ Além de `validators.ts/.py`, Claude Code requer:
 
 ---
 
-## 13. Known Limitations
+## 13. Known limitations
 
-1. **Sem maxTurns hard nativo no Agent tool.** Mitigação via hook (§6).
+1. **O engine não passa `--max-turns`.** O runtime impõe limite de turns (§6), mas o `max_turns` de um employee chega ao worker headless só como texto no prompt e como budget.
 2. **Sem broker de eventos.** Mentions/tickets dependem de file-system + memory; race conditions possíveis em multi-process. Para v1: single-process.
 3. **OTel não é built-in.** Requer config externa (`OTEL_EXPORTER_OTLP_ENDPOINT` env var) ou fallback jsonl.
 4. **Subagent context não tem quota explícita.** Cada `Agent` cria um fork novo; o budget é macroscópico (cost USD), não micro (tokens por sub).
@@ -327,9 +354,9 @@ Além de `validators.ts/.py`, Claude Code requer:
 
 ---
 
-## 14. Source References
+## 14. Source references
 
-- Claude Code public docs: https://docs.claude.com/en/docs/claude-code
+- Claude Code public docs: https://code.claude.com/docs (headless: `/en/headless`, hooks: `/en/hooks`, permission modes: `/en/permission-modes`, workflows: `/en/workflows`, custo: `/en/agent-sdk/cost-tracking`)
 - Referência de implementação (caminhos relativos ao código do Claude Code):
   - `Skill.md` — modelo de skill
   - `src/tools/AgentTool/` — AgentTool, forkSubagent
@@ -342,8 +369,9 @@ Além de `validators.ts/.py`, Claude Code requer:
 
 ---
 
-## 15. Version History
+## 15. Version history
 
 | Versão | Data | Mudanças |
 |---|---|---|
 | 1.0.0 | 2026-05-02 | Doc inicial — cobre Squad 5.0 + Business 1.0 + Harness 1.0 contra Claude Code 1.x (Opus 4.7) |
+| 1.1.0 | 2026-10-11 | Auditado contra o Claude Code 2.1.296 (Opus 5.5 como Opus padrão). Os eventos `PreCompact`/`PostCompact` substituem o inexistente `Compact`; o JSON de hook usa o schema `{matcher, hooks:[{type, command}]}`; `maxTurns`/`--max-turns` nativos e `error_max_turns`; modo de permissão inicial (`auto` em provedores terceiros ou com telemetria desligada desde o 2.1.285) e opções de `--permission-mode`; o argv headless real; a tool `Workflow` e a cerca do worker (`--disallowedTools Task Agent Workflow`, `CLAUDE_CODE_DISABLE_WORKFLOWS=1`); custo cumulativo em resume e a diferença registrada no ledger; `--bare` nunca passado; docs migrados para code.claude.com |

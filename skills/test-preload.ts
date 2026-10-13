@@ -31,6 +31,13 @@ if (!process.env.NIRVANA_STATE_DB) {
   process.env.NIRVANA_STATE_DB = path.join(process.env.HARNESS_LOGS_DIR!, "state.db");
 }
 
+// And the run ledger. Every claude run now records its session's cumulative
+// cost there (claude-session-cost.ts), so a test that does not pin the ledger
+// would write into the user's ~/.nirvana/run-ledger.sqlite.
+if (!process.env.NIRVANA_RUN_LEDGER_DB) {
+  process.env.NIRVANA_RUN_LEDGER_DB = path.join(process.env.HARNESS_LOGS_DIR!, "run-ledger.sqlite");
+}
+
 // The LLM judge runs by default on report deliverables, through whatever
 // runtime is on PATH. On a machine that has a real one installed, every test
 // that reaches the gate would call it (and spend) where CI, with none installed,

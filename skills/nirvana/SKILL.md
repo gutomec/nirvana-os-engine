@@ -36,7 +36,7 @@ Found: go to section 2. Not found: install it, then come back.
 **What the install changes.** Bun in user space (`~/.bun`) if it is missing; the
 engine in `~/.nirvana`; the `nrv` launcher in `~/.local/bin` plus one PATH line
 in the user's shell rc; audit hooks in the settings of the agent runtimes it
-finds (`~/.claude`, `~/.gemini`, `~/.codex`, `~/.antigravity`); the empty content
+finds (`~/.claude`, `~/.codex`, `~/.gemini/config` for Antigravity); the empty content
 roots `~/squads`, `~/businesses`, `~/businesses/_library/dna`. Network once, no
 project code touched, no sudo, idempotent, reversible with `nrv uninstall --engine`.
 
@@ -105,10 +105,10 @@ engine, and this file is the door to it.
 
 | Your runtime | How to hand over |
 |---|---|
-| Any runtime that can read a file (Claude Code, Codex, Gemini CLI, Antigravity, Pi, OpenClaw, Cursor…) | read `~/.nirvana/skills/harness/SKILL.md` and follow it as your operating instructions for this brief; its `../_shared/…` references resolve against `~/.nirvana/skills/harness/` |
-| Shell-only and sub-process runtimes (Hermes, legacy gemini-cli, headless) | `nrv dispatch --auto --exec "<the user's brief, verbatim>"` (`--exec=<runtime>` pins one; without `--exec` the command only scaffolds and delivers nothing) |
+| Any runtime that can read a file (Claude Code, Codex, Antigravity, Pi, OpenClaw, Cursor…) | read `~/.nirvana/skills/harness/SKILL.md` and follow it as your operating instructions for this brief; its `../_shared/…` references resolve against `~/.nirvana/skills/harness/` |
+| Shell-only and sub-process runtimes (Hermes, headless) | `nrv dispatch --auto --exec "<the user's brief, verbatim>"` (`--exec=<runtime>` pins one; without `--exec` the command only scaffolds and delivers nothing) |
 
-Dispatch needs one agent CLI on PATH (`claude`, `codex`, `gemini`, `agy`, `pi`,
+Dispatch needs one agent CLI on PATH (`claude`, `codex`, `agy`, `pi`,
 `kimi`, `grok`, `qwen`, `opencode`). With none, Nirvana still answers discovery
 but cannot dispatch production: say so rather than producing inline. Every
 dispatch writes its audit chain to `~/.harness-logs/<date>/audit.jsonl`.
@@ -152,10 +152,17 @@ sees the global library, its own `.nirvana/` one, or both.
 
 | Goal | Command |
 |---|---|
-| Update the engine | `nrv update` |
-| Update this skill | `npx skills update` |
+| Update the engine (and the `nirvana` skill it links) | `nrv update`; `nrv update --check` names the release first |
+| Update an installed pack | `nrv update <pack>` |
+| Update this skill when skills.sh installed it | `npx skills update` |
 | Remove the engine, keep the content | `nrv uninstall --engine` |
-| Remove only this skill | `npx skills remove nirvana` |
+| Remove only this skill, when skills.sh installed it | `npx skills remove nirvana` |
+
+An engine update never installs an older or equal release: a stable engine
+moves to the newest greater stable, a beta to the newest greater release, beta
+or stable. When `nrv update <pack>` fails with a license error, tell the user to
+download the pack again from squads.sh and run its setup (`bash setup.sh`, or
+`powershell -ExecutionPolicy Bypass -File setup.ps1` on Windows).
 
 This skill is thin by design: discovery goes to `nrv`, production goes to
 `harness`, and the library lives on disk. It produces no artifacts itself.

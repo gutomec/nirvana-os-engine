@@ -1,4 +1,4 @@
-# Project guidelines (universal — Claude Code · Gemini-CLI · Codex · Cursor · Antigravity · any agent runtime)
+# Project guidelines (universal — Claude Code · Codex · Cursor · Antigravity · any agent runtime)
 
 This file is the contract every agent must read **before doing anything**.
 Copies named `CLAUDE.md` and `GEMINI.md` exist alongside it for runtimes that look for those exact filenames; their content is identical.
@@ -65,38 +65,35 @@ powershell -c "irm bun.sh/install.ps1 | iex"        # Windows
 ```
 
 <!-- nirvana:deps-rule:v1 -->
-## Dependencies — one home, `~/.nirvana`, never anywhere else
+## Dependencies — never where you are standing
 
-Every dependency this system installs lives in ONE place. Node packages in
-`~/.nirvana/node_modules`, Python packages in `~/.nirvana/python`, and the
-runtimes tools download for themselves (Chromium for Puppeteer, browsers for
-Playwright, model weights) in `~/.nirvana/cache/<tool>`. One copy on disk,
-shared by every squad and every project.
+Each squad has its own environment, `~/.nirvana/envs/<squad>`, holding the Node
+and Python packages its `dependencies.yaml` declares, versions as written (Python
+in `.venv`). Every squad dispatch prepares it before the worker starts and
+reaches it through the run's `NODE_PATH`, `PATH` and an `npx` shim; the squad
+folder gets only a `node_modules` link to it. The runtimes tools download for
+themselves (Chromium for Puppeteer, browsers for Playwright, model weights) go to
+`~/.nirvana/cache/<tool>`.
 
 **Never run `bun install`, `bun add`, `npm install`, `pnpm add` or `pip install`
 inside a squad, a business, a pack or the project you are working in.** Doing it
-writes a full dependency tree into that directory — hundreds of megabytes,
-duplicated for every squad that needs the same package, scattered across the
-user's disk. It is the single most expensive mistake available in this system.
+writes a full dependency tree into that directory, duplicated for every squad
+that needs the same package and scattered across the user's disk.
 
-Use the command instead:
+Use the commands instead:
 
 ```
-nrv deps install <pkg>[@version] …   # add to the shared store
-nrv deps link <squad-slug|dir>       # point a directory at the store
-nrv deps status                      # where things are, and what escaped
-nrv activate <squad>                 # installs what a squad DECLARES, centrally
+nrv activate <squad>                 # prepare a squad's environment now (or --all)
+nrv activate status <squad>          # the squad's activation state
+nrv deps                             # the squad environments, the caches, what escaped them
+nrv deps install <pkg>[@version] …   # a package outside any squad: the shared store ~/.nirvana/node_modules
 ```
 
-If a script cannot resolve a package, the fix is `nrv deps link <dir>` (which
-symlinks `node_modules` to the store) or running under `nrv deps env`. It is
-never a local install.
-
-`npm install` is the worst offender: run inside a linked directory it deletes
-the link without asking ("Removing non-directory node_modules") and rebuilds a
-private copy, so the scatter returns silently. `nrv deps status` and
-`nrv doctor` report any tree that reappears; `nrv deps adopt --apply` folds it
-back in.
+When `nrv activate` fails it prints a block between
+`=== nrv activate: issues for the agent ===` markers: run each fix it lists, ask
+the user first where it says the fix needs their permission, then run the
+re-check it names. Never edit the squad folder to make it pass. `nrv deps status`
+and `nrv doctor` report any dependency tree that appears outside these homes.
 
 The one exception is a real system program — `ffmpeg`, `git`, `pandoc`,
 `epubcheck` — which belongs to the machine's package manager (`brew`, `apt`) and
@@ -112,8 +109,8 @@ You don't pre-route by shell. You don't decide the cascade in your own head. You
 How invocation looks per runtime:
 
 - Claude Code / Anthropic SDK: `Skill("nirvana", "<user's brief verbatim>")` (or trust the auto-activation by description match); the door reads the harness.
-- Any runtime that can read a file (Codex, Gemini-CLI, Antigravity, Pi, OpenClaw, Cursor…): read `~/.nirvana/skills/harness/SKILL.md` and follow it as your operating instructions for this brief (its `../_shared/…` references resolve against `~/.nirvana/skills/harness/`).
-- Shell-only runtimes (Hermes, legacy gemini-cli, headless): `nrv dispatch --auto --exec "<user's brief verbatim>"` (`--exec=<runtime>` pins one; without `--exec` the command only scaffolds).
+- Any runtime that can read a file (Codex, Antigravity, Pi, OpenClaw, Cursor…): read `~/.nirvana/skills/harness/SKILL.md` and follow it as your operating instructions for this brief (its `../_shared/…` references resolve against `~/.nirvana/skills/harness/`).
+- Shell-only runtimes (Hermes, headless): `nrv dispatch --auto --exec "<user's brief verbatim>"` (`--exec=<runtime>` pins one; without `--exec` the command only scaffolds).
 
 Pass the user's brief verbatim. Don't reformulate before invocation — the harness handles amplification, briefing, and clarification on its own.
 
@@ -324,7 +321,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 Install never touches the user's global config, and neither do you unprompted. The rules in this contract load only inside projects created with `nrv init`. When the user explicitly asks to "make this work everywhere", "improve my setup", or "adjust my global", you may install them globally for the runtime in use.
 
-Write a single MARKED, IDEMPOTENT block into the global instructions file your runtime reads. For Claude Code that is `~/.claude/CLAUDE.md`; for Gemini-CLI, Codex, or any other runtime, the global instructions file that runtime documents (you are that runtime — use your own global path). Use these exact markers so the block stays removable and never duplicates:
+Write a single MARKED, IDEMPOTENT block into the global instructions file your runtime reads. For Claude Code that is `~/.claude/CLAUDE.md`; for Antigravity, Codex, or any other runtime, the global instructions file that runtime documents (you are that runtime — use your own global path). Use these exact markers so the block stays removable and never duplicates:
 
 ```
 <!-- BEGIN nirvana-os (managed) -->

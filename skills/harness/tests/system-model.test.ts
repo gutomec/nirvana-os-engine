@@ -55,7 +55,7 @@ describe("resolveSystemModel — nothing unless the user pinned it", () => {
   afterEach(() => { process.env = { ...saved }; });
 
   test("no pin: every runtime gets nothing, so every CLI keeps its own default", () => {
-    for (const rt of ["claude-code", "codex", "gemini-cli", "antigravity-cli", "kimi-cli", "grok-cli", "pi", "qwen-code", "opencode"]) {
+    for (const rt of ["claude-code", "codex", "antigravity-cli", "kimi-cli", "grok-cli", "pi", "qwen-code", "opencode"]) {
       expect(resolveSystemModel(rt), `${rt} was given a model nobody asked for`).toBeNull();
     }
   });
@@ -63,12 +63,12 @@ describe("resolveSystemModel — nothing unless the user pinned it", () => {
   test("a VENDOR env var is not a pin — this is the leak that made it into nine CLIs", () => {
     // ANTHROPIC_MODEL is set on many machines and has nothing to do with
     // Nirvana. Measured before this cut: with it exported, the resolver
-    // answered `opus` for all nine runtimes, so the driver ran
-    // `gemini --model opus`, `pi --model opus`, `qwen --model opus` — ids those
+    // answered `opus` for every runtime, so the driver ran
+    // `agy --model opus`, `pi --model opus`, `qwen --model opus` — ids those
     // vendors do not have.
     process.env.ANTHROPIC_MODEL = "claude-opus-5";
     expect(resolveSystemModel("claude-code")).toBeNull();
-    expect(resolveSystemModel("gemini-cli")).toBeNull();
+    expect(resolveSystemModel("antigravity-cli")).toBeNull();
     expect(resolveSystemModel("pi")).toBeNull();
   });
 

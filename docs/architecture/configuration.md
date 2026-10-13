@@ -53,7 +53,7 @@ Gerada a partir do schema. `nrv config explain <chave>` mostra a descrição de 
 | `gauntlet.auto_allowed` | `NIRVANA_ALLOW_AUTO_GAUNTLET` | `false` | global, projeto | true / false |
 | `gauntlet.requirements_source` | `NIRVANA_GAUNTLET_REQUIREMENTS_SOURCE` | `brief` | global, projeto | brief / capability |
 | `delivery.produces_to_rubric` | `NIRVANA_PRODUCES_TO_RUBRIC` | `true` | global, projeto | true / false |
-| `execution.default_runtime` | `NIRVANA_DEFAULT_RUNTIME` | `""` | global, projeto | nome de runtime (claude-code, codex, gemini-cli, ...) ou vazio |
+| `execution.default_runtime` | `NIRVANA_DEFAULT_RUNTIME` | `""` | global, projeto | nome de runtime (claude-code, codex, antigravity-cli, ...) ou vazio |
 | `execution.model` | `NIRVANA_MODEL` | `""` | global, projeto | id ou alias de modelo (opus, sonnet, haiku, fable, ...) ou vazio |
 | `execution.dna_injection` | `NIRVANA_DNA_INJECTION` | `reference` | global, projeto | reference / fragments / full |
 | `briefing.altitude` | `NIRVANA_BRIEF_ALTITUDE` | `outcome` | global, projeto | outcome / guided / prescriptive |

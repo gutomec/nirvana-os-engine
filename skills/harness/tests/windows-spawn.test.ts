@@ -130,7 +130,7 @@ describe("whichProbe", () => {
 
   test("on POSIX it stays the `command -v` builtin the PATH scan falls back from", () => {
     expect(whichProbe("claude", "linux")).toEqual({ command: "command", args: ["-v", "claude"] });
-    expect(whichProbe("gemini", "darwin")).toEqual({ command: "command", args: ["-v", "gemini"] });
+    expect(whichProbe("qwen", "darwin")).toEqual({ command: "command", args: ["-v", "qwen"] });
   });
 });
 
@@ -154,21 +154,21 @@ describe("firstExecutablePath", () => {
 describe("resolveExecutable", () => {
   test("on POSIX it is the identity — same command, same args, no shell", () => {
     asPlatform("linux");
-    const r = resolveExecutable("gemini");
-    expect(r.command).toBe("gemini");
+    const r = resolveExecutable("qwen");
+    expect(r.command).toBe("qwen");
     expect(r.shell).toBe(false);
     expect(r.args(["-p", "hello world"])).toEqual(["-p", "hello world"]);
   });
 
   test("a .cmd whose shape cannot be read keeps the shell route — degrading, not breaking", () => {
     const dir = tempDir("nrv-win-cmd-");
-    fs.writeFileSync(path.join(dir, "gemini.cmd"), "@echo off\r\n");
+    fs.writeFileSync(path.join(dir, "qwen.cmd"), "@echo off\r\n");
     asPlatform("win32");
     process.env.PATH = `${dir}${path.delimiter}${REAL_PATH}`;
 
-    const r = resolveExecutable("gemini");
+    const r = resolveExecutable("qwen");
     expect(r.shell).toBe(true);
-    expect(r.command).toContain("gemini.cmd");
+    expect(r.command).toContain("qwen.cmd");
   });
 
   test("an npm shim is read and its interpreter spawned directly — no shell, nothing re-parsed", () => {
@@ -225,7 +225,7 @@ describe("quoteForCmd", () => {
   });
 
   test("an empty argument survives as an empty argument", () => {
-    // gemini's adapter passes `-p ""`; losing it changes the command's meaning.
+    // qwen's adapter passes `-p ""`; losing it changes the command's meaning.
     expect(quoteForCmd("")).toBe('""');
   });
 

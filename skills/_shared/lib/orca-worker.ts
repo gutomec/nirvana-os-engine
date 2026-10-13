@@ -44,7 +44,6 @@ import { RUN_WORKSPACE_ENV } from "./run-workspace.ts";
 export const ORCA_AGENT_ID: Partial<Record<Runtime, string>> = {
   "claude-code": "claude",
   codex: "codex",
-  "gemini-cli": "gemini",
   "antigravity-cli": "antigravity",
   "kimi-cli": "kimi",
   "grok-cli": "grok",
@@ -62,7 +61,7 @@ const INJECT_MS = 90_000;
 
 /** What a first-run workspace trust dialog looks like on screen. Claude Code
  *  ("Accessing workspace … Is this a project you created or one you trust?"),
- *  Codex ("Do you trust the files in this folder?"), Gemini ("Do you trust
+ *  Codex ("Do you trust the files in this folder?"), qwen-code ("Do you trust
  *  this folder?"). A TUI parked on one is idle to `terminal wait` and deaf to
  *  the injected preamble — measured: the inject call sat until its timeout. */
 const TRUST_PROMPT = /Accessing workspace|trust (the files|this (folder|project|directory|workspace))|Is this a project you created|Do you trust/i;
@@ -79,7 +78,7 @@ const TRUST_PROMPT = /Accessing workspace|trust (the files|this (folder|project|
  * Records, verified on the installed CLIs on 2026-09-09:
  *   claude-code  ~/.claude.json            projects["<cwd>"].hasTrustDialogAccepted = true
  *   codex        ~/.codex/config.toml      [projects."<cwd>"] trust_level = "trusted"
- *   gemini-cli / qwen-code  ~/.gemini/trustedFolders.json  { "<cwd>": "TRUST_FOLDER" }
+ *   qwen-code    ~/.qwen/trustedFolders.json  { "<cwd>": "TRUST_FOLDER" }
  */
 export function preTrustWorkspace(runtime: Runtime, cwd: string, env: NodeJS.ProcessEnv = process.env): string[] {
   const written: string[] = [];
@@ -108,8 +107,8 @@ export function preTrustWorkspace(runtime: Runtime, cwd: string, env: NodeJS.Pro
         fs.writeFileSync(file, text + (text && !text.endsWith("\n") ? "\n" : "") + block, "utf8");
         written.push(file);
       }
-    } else if (runtime === "gemini-cli" || runtime === "qwen-code") {
-      const file = path.join(home, runtime === "qwen-code" ? ".qwen" : ".gemini", "trustedFolders.json");
+    } else if (runtime === "qwen-code") {
+      const file = path.join(home, ".qwen", "trustedFolders.json");
       const doc = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : {};
       let changed = false;
       for (const d of dirs) if (doc[d] !== "TRUST_FOLDER") { doc[d] = "TRUST_FOLDER"; changed = true; }
@@ -139,15 +138,13 @@ export interface OrcaWorkerHooks {
 
 /**
  * The interactive command for a runtime, as argv. Autonomy flags match the
- * headless runners': claude runs in auto mode (`--permission-mode auto`,
- * `claude --help` audited 2026-09-29), and the others keep the flags audited
- * against the installed CLIs on 2026-09-09 (`codex
- * --dangerously-bypass-approvals-and-sandbox`, `gemini --approval-mode yolo`,
- * `agy --dangerously-skip-permissions`, `grok --always-approve`); `--safe`
+ * headless runners' (audited against the installed CLIs on 2026-09-09:
+ * `claude --dangerously-skip-permissions`, `codex
+ * --dangerously-bypass-approvals-and-sandbox`, `agy --dangerously-skip-permissions`, `grok --always-approve`); `--safe`
  * (yolo false) drops them, and claude takes `--permission-mode acceptEdits`
  * like its headless twin. Null for a runtime Orca has no agent id for.
  */
-export function interactiveArgv(opts: Pick<RunHeadlessOpts, "runtime" | "yolo" | "model" | "effort" | "addDirs" | "claudeSettings">): string[] | null {
+export function interactiveArgv(opts: Pick<RunHeadlessOpts, "runtime" | "yolo" | "model" | "effort" | "addDirs" | "claudeSettings"> & Partial<Pick<RunHeadlessOpts, "allowSubagents">>): string[] | null {
   if (!ORCA_AGENT_ID[opts.runtime]) return null;
   const yolo = opts.yolo !== false;
   // The caller's value, else the user's pin, else nothing — a bare CLI uses the
@@ -167,11 +164,15 @@ export function interactiveArgv(opts: Pick<RunHeadlessOpts, "runtime" | "yolo" |
   const dirs = opts.addDirs ?? [];
   switch (opts.runtime) {
     case "claude-code": {
-      const a = ["claude", "--permission-mode", yolo ? "auto" : "acceptEdits"];
+      const a = ["claude", ...(yolo ? ["--dangerously-skip-permissions"] : ["--permission-mode", "acceptEdits"])];
       if (model) a.push("--model", model);
       if (effort) a.push("--effort", effort);
-      // The run's deny rules (run-workspace.ts): the same fence as headless.
+      // The project's own deny rules (run-workspace.ts), as headless.
       if (opts.claudeSettings) a.push("--settings", opts.claudeSettings);
+      // The headless runner's rule: a dispatched worker does not open its own
+      // agents (Task/Agent multiply inside one child and never pass through the
+      // engine's depth counter), nor a workflow, which can fan out to 1,000.
+      if (!opts.allowSubagents) a.push("--disallowedTools", "Task", "Agent", "Workflow");
       for (const d of dirs) a.push("--add-dir", d);
       return a;
     }
@@ -179,11 +180,11 @@ export function interactiveArgv(opts: Pick<RunHeadlessOpts, "runtime" | "yolo" |
       const a = ["codex", ...(yolo ? ["--dangerously-bypass-approvals-and-sandbox"] : [])];
       if (model) a.push("-m", model);
       if (effort) a.push("-c", `model_reasoning_effort=${JSON.stringify(effort)}`);
+      // The headless runner's rule: no subagents unless the caller orchestrates.
+      if (!opts.allowSubagents) a.push("-c", "agents.enabled=false");
       for (const d of dirs) a.push("--add-dir", d);
       return a;
     }
-    case "gemini-cli":
-      return ["gemini", "--approval-mode", yolo ? "yolo" : "auto_edit", ...(model ? ["-m", model] : [])];
     case "antigravity-cli":
       return ["agy", ...(yolo ? ["--dangerously-skip-permissions"] : []), ...(model ? ["--model", model] : [])];
     case "grok-cli":
@@ -333,6 +334,11 @@ export function runOrcaWorker(opts: RunHeadlessOpts, hooks: OrcaWorkerHooks = {}
   // (driverSpawnSync), so what it dispatches nests inside its run.
   const workerEnv = forwardedEnv(process.env, opts.runtime);
   if (opts.workspace) workerEnv[RUN_WORKSPACE_ENV] = cwd;
+  Object.assign(workerEnv, opts.env ?? {});
+  // The second workflow fence, as the headless claude child gets it
+  // (headlessClaudeEnv): forced over anything set above, unless the caller
+  // orchestrates.
+  if (opts.runtime === "claude-code" && !opts.allowSubagents) workerEnv.CLAUDE_CODE_DISABLE_WORKFLOWS = "1";
   const command = workerCommand(argv, cwd, workerEnv);
   // The terminal starts in the run folder (cwd); the worktree Orca files it
   // under is the project's, which is the caller's own cwd when the driver

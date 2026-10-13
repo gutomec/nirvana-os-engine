@@ -319,7 +319,7 @@ export function agentsDirCandidates(): string[] {
 /**
  * Resolve the agent-x persona file for a runtime. The dir ships
  * agent-x.<flavor>.md where flavor is the runtime without the -cli suffix
- * (claude-code, codex, gemini, antigravity, kimi, grok, pi). Fallback order:
+ * (claude-code, codex, antigravity, kimi, grok, pi). Fallback order:
  * exact flavor → agent-x.claude-code.md → first agent-x.*.md present.
  */
 export function resolveAgentXPromptPath(runtime: Runtime, agentsDir?: string): string | null {
@@ -399,7 +399,8 @@ export function runAgentX(args: RunAgentXArgs): AgentXResult {
     "",
     "## Output",
     `Write every final deliverable as a file under: ${args.outputsRoot}`,
-    "Other runs' folders beside this one are not your input: do not list, read or edit them.",
+    "When the brief's work lives in another folder (a project to review or fix, a new project to create), do that work there and list every path you created or changed.",
+    "Earlier runs beside this one are not your input unless the brief points to them.",
     "Do not print a summary of what you would do — deliver files. Record",
     'assumptions under "## Premissas assumidas" in the main deliverable.',
     scopeBoundary("en"),

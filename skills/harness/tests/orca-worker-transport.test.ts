@@ -69,17 +69,22 @@ describe("the interactive command per runtime", () => {
   });
 
   test("autonomy flags match the headless runners, and --safe drops them", () => {
-    expect(interactiveArgv({ runtime: "claude-code", yolo: true, model: "opus", addDirs: ["/p"] })).toEqual(["claude", "--permission-mode", "auto", "--model", "opus", "--add-dir", "/p"]);
-    expect(interactiveArgv({ runtime: "claude-code", yolo: false, model: "opus" })).toEqual(["claude", "--permission-mode", "acceptEdits", "--model", "opus"]);
-    expect(interactiveArgv({ runtime: "codex", yolo: true, model: "gpt-5" })).toEqual(["codex", "--dangerously-bypass-approvals-and-sandbox", "-m", "gpt-5"]);
-    expect(interactiveArgv({ runtime: "gemini-cli", yolo: false, model: "g" })).toEqual(["gemini", "--approval-mode", "auto_edit", "-m", "g"]);
+    expect(interactiveArgv({ runtime: "claude-code", yolo: true, model: "opus", addDirs: ["/p"] })).toEqual(["claude", "--dangerously-skip-permissions", "--model", "opus", "--disallowedTools", "Task", "Agent", "Workflow", "--add-dir", "/p"]);
+    expect(interactiveArgv({ runtime: "claude-code", yolo: false, model: "opus" })).toEqual(["claude", "--permission-mode", "acceptEdits", "--model", "opus", "--disallowedTools", "Task", "Agent", "Workflow"]);
+    expect(interactiveArgv({ runtime: "codex", yolo: true, model: "gpt-5" })).toEqual(["codex", "--dangerously-bypass-approvals-and-sandbox", "-m", "gpt-5", "-c", "agents.enabled=false"]);
+    expect(interactiveArgv({ runtime: "codex", yolo: true, model: "gpt-5", allowSubagents: true })).toEqual(["codex", "--dangerously-bypass-approvals-and-sandbox", "-m", "gpt-5"]);
+    expect(interactiveArgv({ runtime: "gemini-cli" as any, yolo: true })).toBeNull();
     expect(interactiveArgv({ runtime: "antigravity-cli", yolo: true, model: "a" })).toEqual(["agy", "--dangerously-skip-permissions", "--model", "a"]);
     expect(interactiveArgv({ runtime: "grok-cli", yolo: true, model: "x" })).toEqual(["grok", "--always-approve", "-m", "x"]);
   });
 
   test("a confined claude worker carries its run's deny rules, as the headless runner does", () => {
     expect(interactiveArgv({ runtime: "claude-code", yolo: true, model: "opus", addDirs: ["/p"], claudeSettings: "/tmp/fence.json" }))
-      .toEqual(["claude", "--permission-mode", "auto", "--model", "opus", "--settings", "/tmp/fence.json", "--add-dir", "/p"]);
+      .toEqual(["claude", "--dangerously-skip-permissions", "--model", "opus", "--settings", "/tmp/fence.json", "--disallowedTools", "Task", "Agent", "Workflow", "--add-dir", "/p"]);
+  });
+
+  test("subagents and workflows are denied unless the caller is an orchestrator", () => {
+    expect(interactiveArgv({ runtime: "claude-code", yolo: true, allowSubagents: true })).toEqual(["claude", "--dangerously-skip-permissions"]);
   });
 
   test("the terminal command enters the run's directory and pins the engine's environment", () => {
@@ -148,7 +153,7 @@ describe("with canned Orca answers", () => {
     expect(taskCreate).toContain("--task-title");
     const termCreate = c.calls[2];
     expect(termCreate[termCreate.indexOf("--title") + 1]).toBe("brandcraft/writer · claude");
-    expect(termCreate[termCreate.indexOf("--command") + 1]).toContain("'--permission-mode' 'auto'");
+    expect(termCreate[termCreate.indexOf("--command") + 1]).toContain("'--dangerously-skip-permissions'");
     expect(c.calls[3]).toEqual(["terminal", "wait", "--terminal", "term_1", "--for", "tui-idle", "--timeout-ms", "120000"]);
     expect(c.calls[4]).toEqual(["terminal", "read", "--terminal", "term_1", "--limit", "80"]);
     expect(c.calls[5]).toEqual(["orchestration", "dispatch", "--run", "run_1", "--task", "task_1", "--to", "term_1", "--inject"]);
@@ -156,6 +161,26 @@ describe("with canned Orca answers", () => {
     // The delivery is acknowledged and the finished worker's tab is closed.
     expect(c.fired).toContainEqual(["orchestration", "check", "--run", "run_1", "--ack", "d1"]);
     expect(c.fired).toContainEqual(["terminal", "close", "--terminal", "term_1"]);
+  });
+
+  test("the run's own variables (a squad's environment) reach the worker terminal", () => {
+    const c = canned(HAPPY);
+    runOrcaWorker(base({ env: { NODE_PATH: "/env/brandcraft/node_modules" } }), c.hooks);
+    const termCreate = c.calls.find((a) => a[0] === "terminal" && a[1] === "create")!;
+    // POSIX `NODE_PATH='…'`, PowerShell `$env:NODE_PATH='…'`: the pin is there either way.
+    expect(termCreate[termCreate.indexOf("--command") + 1]).toContain("NODE_PATH='/env/brandcraft/node_modules'");
+  });
+
+  test("a claude worker runs with CLAUDE_CODE_DISABLE_WORKFLOWS=1 over the run's own value; an orchestrator does not", () => {
+    const worker = canned(HAPPY);
+    runOrcaWorker(base({ env: { CLAUDE_CODE_DISABLE_WORKFLOWS: "0" } }), worker.hooks);
+    const cmd = (c: ReturnType<typeof canned>) => { const t = c.calls.find((a) => a[0] === "terminal" && a[1] === "create")!; return t[t.indexOf("--command") + 1]; };
+    expect(cmd(worker)).toContain("CLAUDE_CODE_DISABLE_WORKFLOWS='1'");
+    expect(cmd(worker)).toContain("'Workflow'");
+    const orchestrator = canned(HAPPY);
+    runOrcaWorker(base({ allowSubagents: true }), orchestrator.hooks);
+    expect(cmd(orchestrator)).not.toContain("CLAUDE_CODE_DISABLE_WORKFLOWS");
+    expect(cmd(orchestrator)).not.toContain("'Workflow'");
   });
 
   test("a question on the way is answered with the defaults policy, then the worker finishes", () => {
@@ -286,9 +311,12 @@ describe("the workspace trust record", () => {
       expect(toml).toContain(`[projects.${JSON.stringify(cwd)}]\ntrust_level = "trusted"`);
       expect(preTrustWorkspace("codex", cwd, env)).toEqual([]);
       expect(fs.readFileSync(path.join(home, ".codex", "config.toml"), "utf8")).toBe(toml);
-      // gemini: the trusted-folders map.
-      expect(preTrustWorkspace("gemini-cli", cwd, env)).toEqual([path.join(home, ".gemini", "trustedFolders.json")]);
-      expect(JSON.parse(fs.readFileSync(path.join(home, ".gemini", "trustedFolders.json"), "utf8"))[cwd]).toBe("TRUST_FOLDER");
+      // qwen-code: the trusted-folders map, in its own home.
+      expect(preTrustWorkspace("qwen-code", cwd, env)).toEqual([path.join(home, ".qwen", "trustedFolders.json")]);
+      expect(JSON.parse(fs.readFileSync(path.join(home, ".qwen", "trustedFolders.json"), "utf8"))[cwd]).toBe("TRUST_FOLDER");
+      // The Gemini CLI is no longer a runtime: its trust file is never written.
+      expect(preTrustWorkspace("gemini-cli" as any, cwd, env)).toEqual([]);
+      expect(fs.existsSync(path.join(home, ".gemini"))).toBe(false);
       // a runtime with no known record writes nothing.
       expect(preTrustWorkspace("grok-cli", cwd, env)).toEqual([]);
     } finally {
@@ -404,7 +432,9 @@ describe("through the driver, with real fakes on PATH", () => {
     // `cd '<run>' && …` on POSIX, `Set-Location -LiteralPath '<run>'; …` on Windows.
     expect(command.indexOf(run)).toBeGreaterThanOrEqual(0);
     expect(command.indexOf(run)).toBeLessThan(command.indexOf("claude"));
-    expect(command).toContain("--settings");
+    // The run beside it (run-0) is not fenced off: no folder is denied, and
+    // with no project deny rules there is no settings file at all.
+    expect(command).not.toContain("--settings");
     process.env.ORCA_WORKTREE_ID = "r::/w";
   });
 });

@@ -512,9 +512,8 @@ Parse failures default to sequential (fail-closed).
 
 A squad never runs an MCP server, and the harness never starts, stops or
 configures one. MCP servers belong to the **host runtime** that executes the
-squad (Claude Code, Codex, Gemini CLI, Antigravity, …), in that runtime's own
-configuration (`~/.claude.json` or a project `.mcp.json`, `~/.codex/config.toml`,
-`~/.gemini/settings.json`).
+squad (Claude Code, Codex, Antigravity, …), in that runtime's own
+configuration (`~/.claude.json` or a project `.mcp.json`, `~/.codex/config.toml`).
 
 What a squad does is **declare** the servers it needs or works better with, in
 `dependencies.yaml` under `mcps:`, beside the other host-side dependencies

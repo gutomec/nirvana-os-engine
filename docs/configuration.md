@@ -1,5 +1,9 @@
 # Your configuration, and what survives an update
 
+You normally change settings by asking your agent ("what is configured?",
+"cap each run at US$ 5"); it runs `nrv config` for you. This page explains
+where those settings live.
+
 Nirvana-OS reads settings from five places. Four of them belong to the engine,
 a project or your shell. **One belongs to you and is never replaced:**
 

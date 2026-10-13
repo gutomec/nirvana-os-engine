@@ -56,9 +56,15 @@ describe("the rules editor round-trips what it read", () => {
   });
 
   test("a short alias keeps the exact key it was read from — no churn in the user's .env", () => {
+    const app = editor([{ key: "USE_AGY", value: "contexto gigante" }]);
+    expect(app.rulesDraft[0].runtime).toBe("antigravity-cli");
+    expect(Object.keys(app.rulesToEnv())).toEqual(["USE_AGY"]);   // not USE_ANTIGRAVITY_CLI
+  });
+
+  test("a USE_GEMINI rule (Gemini CLI, no longer a runtime) is not mapped and travels back untouched", () => {
     const app = editor([{ key: "USE_GEMINI", value: "contexto gigante" }]);
-    expect(app.rulesDraft[0].runtime).toBe("gemini-cli");
-    expect(Object.keys(app.rulesToEnv())).toEqual(["USE_GEMINI"]);   // not USE_GEMINI_CLI
+    expect(app.rulesDraft[0].runtime).toBe("");
+    expect(app.rulesToEnv()).toEqual({ USE_GEMINI: "contexto gigante" });
   });
 
   test("a key this build does not recognise travels back untouched", () => {

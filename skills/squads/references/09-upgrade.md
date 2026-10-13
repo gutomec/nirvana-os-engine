@@ -167,7 +167,6 @@ Adapter-specific migration notes (per-runtime config mappings):
 | Runtime | See |
 |---------|-----|
 | Claude Code | [_shared/adapters/claude-code.md §4](../../_shared/adapters/claude-code.md#4-frontmatter-mapping) |
-| Gemini CLI | [_shared/adapters/gemini-cli.md §4](../../_shared/adapters/gemini-cli.md#4-frontmatter-mapping) |
 | Codex | [_shared/adapters/codex.md §4](../../_shared/adapters/codex.md#4-frontmatter-mapping) |
 | Antigravity | [_shared/adapters/antigravity-cli.md §4](../../_shared/adapters/antigravity-cli.md#4-frontmatter-mapping) |
 | Kimi | [_shared/adapters/kimi-cli.md §4](../../_shared/adapters/kimi-cli.md#4-frontmatter-mapping) |

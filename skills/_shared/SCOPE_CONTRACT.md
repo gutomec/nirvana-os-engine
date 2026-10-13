@@ -133,4 +133,4 @@ bun ~/.nirvana/skills/_shared/tests/scope-isolation-smoke.ts
 | `[scope] NIRVANA_SCOPE=project but no project root found` | Running outside any tracked project | `cd` into a project, or `NIRVANA_PROJECT_ROOT=…` |
 | Registry shows global squads in `scope=project` | Stale registry from before scope-aware refactor | Delete `<project>/.nirvana/.squads-registry.json` and re-run `index-squads` |
 | Activate-squad finds nothing in `scope=project` | Squad not authored under `.nirvana/squads/` | `mkdir .nirvana/squads/<slug>` and add `squad.yaml` |
-| State written to `~/.claude/squads-state/` despite `scope=project` | Bypassed `activate-squad.ts` and called `activator.js` directly | Always go through `activate-squad.{ts,sh,cmd}` |
+| State written to `~/.nirvana/squads-state/` despite `scope=project` | Bypassed `activate-squad.ts` and called `activator.js` directly | Always go through `activate-squad.{ts,sh,cmd}` |

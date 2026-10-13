@@ -24,7 +24,7 @@ describe("listRuntimes is the roster, verbatim", () => {
     // through without editing this test. What IS pinned is non-emptiness and
     // uniqueness — an empty or duplicated roster is a broken driver.
     const names = listRuntimes().map((r) => r.name);
-    expect(names.length).toBeGreaterThanOrEqual(9);
+    expect(names.length).toBeGreaterThanOrEqual(8);
     expect(new Set(names).size).toBe(names.length);
   });
 

@@ -29,8 +29,6 @@
   const HOST_LABELS = {
     'claude-code': 'CC',
     'claude-code-hook': 'CC',
-    'gemini-cli': 'GE',
-    'gemini-cli-hook': 'GE',
     'codex': 'CX',
     'fs-watch': 'FS',
   };

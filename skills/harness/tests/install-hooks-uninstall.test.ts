@@ -243,15 +243,25 @@ describe("nrv install — Codex: hooks.json AND the trust record, symmetric on u
 });
 
 describe("nrv install — existing JSON settings are preserved", () => {
-  test("is byte-idempotent for Claude Code, Gemini-CLI and Antigravity", () => {
+  // Each JSON harness and the file it reads hooks from.
+  const HARNESS_FILES: Array<[string, string[]]> = [
+    ["Claude Code", [".claude", "settings.json"]],
+    ["Antigravity", [".gemini", "config", "hooks.json"]],
+  ];
+  const fileOf = (root: string, parts: string[]) => join(root, ...parts);
+  const dirOf = (root: string, parts: string[]) => join(root, ...parts.slice(0, -1));
+
+  test("is byte-idempotent for Claude Code and Antigravity", () => {
     const root = home();
-    for (const dir of [".claude", ".gemini", ".antigravity"]) mkdirSync(join(root, dir), { recursive: true });
+    for (const [, parts] of HARNESS_FILES) mkdirSync(dirOf(root, parts), { recursive: true });
     expect(run([], root).code).toBe(0);
-    const first = new Map([".claude", ".gemini", ".antigravity"].map((dir) => [dir, readFileSync(join(root, dir, "settings.json"), "utf8")]));
+    const first = new Map(HARNESS_FILES.map(([name, parts]) => [name, readFileSync(fileOf(root, parts), "utf8")]));
     expect(run([], root).code).toBe(0);
-    for (const [dir, raw] of first) {
-      expect(readFileSync(join(root, dir, "settings.json"), "utf8")).toBe(raw);
+    for (const [name, parts] of HARNESS_FILES) {
+      const raw = first.get(name)!;
+      expect(readFileSync(fileOf(root, parts), "utf8")).toBe(raw);
       const doc = JSON.parse(raw);
+      if (name === "Antigravity") { expect(Object.keys(doc)).toEqual(["nirvana-os"]); continue; }
       for (const groups of Object.values(doc.hooks) as any[]) {
         expect(groups.flatMap((group: any) => group.hooks)).toHaveLength(1);
       }
@@ -260,16 +270,16 @@ describe("nrv install — existing JSON settings are preserved", () => {
 
   test("refuses malformed settings for every JSON harness without overwriting any of them", () => {
     const root = home();
-    for (const dir of [".claude", ".gemini", ".antigravity"]) {
-      mkdirSync(join(root, dir), { recursive: true });
-      writeFileSync(join(root, dir, "settings.json"), '{"hooks": [}', "utf8");
+    for (const [, parts] of HARNESS_FILES) {
+      mkdirSync(dirOf(root, parts), { recursive: true });
+      writeFileSync(fileOf(root, parts), '{"hooks": [}', "utf8");
     }
     const install = run([], root);
     expect(install.code).toBe(1);
-    for (const dir of [".claude", ".gemini", ".antigravity"]) {
-      expect(install.out).toMatch(new RegExp(`${dir === ".claude" ? "Claude Code" : dir === ".gemini" ? "Gemini-CLI" : "Antigravity"} — invalid JSON:.*; left untouched`));
-      expect(readFileSync(join(root, dir, "settings.json"), "utf8")).toBe('{"hooks": [}');
-      expect(readdirSync(join(root, dir)).filter((name) => name.includes("nirvana-backup")).length).toBe(0);
+    for (const [name, parts] of HARNESS_FILES) {
+      expect(install.out).toMatch(new RegExp(`${name} — invalid JSON:.*; left untouched`));
+      expect(readFileSync(fileOf(root, parts), "utf8")).toBe('{"hooks": [}');
+      expect(readdirSync(dirOf(root, parts)).filter((n) => n.includes("nirvana-backup")).length).toBe(0);
     }
   }, 30_000);
 
@@ -292,5 +302,177 @@ describe("nrv install — existing JSON settings are preserved", () => {
     expect(run(["--uninstall"], root).code).toBe(0);
     const afterUninstall = JSON.parse(readFileSync(join(claudeDir, "settings.json"), "utf8"));
     expect(afterUninstall.hooks.PreToolUse).toEqual([{ matcher: "Bash", enabled: false, hooks: [{ name: "user-own-hook", type: "command", command: "echo mine" }] }]);
+  }, 30_000);
+});
+
+describe("Antigravity: the hook goes where agy reads it", () => {
+  // agy reads named hooks from ~/.gemini/config/hooks.json. They used to be
+  // written to ~/.antigravity/settings.json, which agy never reads, so an agy
+  // session never got Nirvana's context.
+  const ORCA = { "orca-status": { PreInvocation: [{ type: "command", command: "sh orca-hook.sh", timeout: 10 }] } };
+  const oldSettings = {
+    theme: "dark",
+    hooks: {
+      SessionStart: [{ hooks: [
+        { name: "nirvana-session-start", type: "command", command: 'bun "/x/gemini-session-start.ts"', timeout: 5000 },
+        { name: "mine", type: "command", command: "echo mine" },
+      ] }],
+      BeforeTool: [{ matcher: "write_file", hooks: [{ name: "nirvana-audit-pre", type: "command", command: 'bun "/x/audit-emit-from-hook.ts" pre antigravity-cli' }] }],
+    },
+  };
+
+  test("install adds a named nirvana-os PreInvocation hook beside the user's, cleans the old file, and uninstall takes it out", () => {
+    const root = home();
+    mkdirSync(join(root, ".gemini", "config"), { recursive: true });
+    mkdirSync(join(root, ".antigravity"), { recursive: true });
+    const hooksFile = join(root, ".gemini", "config", "hooks.json");
+    const oldFile = join(root, ".antigravity", "settings.json");
+    writeFileSync(hooksFile, JSON.stringify(ORCA, null, 2));
+    writeFileSync(oldFile, JSON.stringify(oldSettings, null, 2));
+
+    expect(run([], root).code).toBe(0);
+    const hooks = JSON.parse(readFileSync(hooksFile, "utf8"));
+    expect(hooks["orca-status"]).toEqual(ORCA["orca-status"]);
+    const ours = hooks["nirvana-os"].PreInvocation;
+    expect(ours).toHaveLength(1);
+    expect(ours[0].command).toContain("gemini-session-start.ts");
+    expect(ours[0].command).toContain("--agy");
+    const old = JSON.parse(readFileSync(oldFile, "utf8"));
+    expect(old.theme).toBe("dark");
+    expect(JSON.stringify(old)).not.toContain("gemini-session-start.ts");
+    expect(JSON.stringify(old)).not.toContain("audit-emit-from-hook.ts");
+    expect(old.hooks.SessionStart[0].hooks).toEqual([{ name: "mine", type: "command", command: "echo mine" }]);
+
+    const first = readFileSync(hooksFile, "utf8");
+    expect(run([], root).code).toBe(0);
+    expect(readFileSync(hooksFile, "utf8")).toBe(first);
+
+    expect(run(["--uninstall"], root).code).toBe(0);
+    expect(JSON.parse(readFileSync(hooksFile, "utf8"))).toEqual(ORCA);
+  }, 60_000);
+
+  test("--check names the new location, and fails while our hooks sit in the old one", () => {
+    const root = home();
+    mkdirSync(join(root, ".gemini", "config"), { recursive: true });
+    mkdirSync(join(root, ".antigravity"), { recursive: true });
+    const hooksFile = join(root, ".gemini", "config", "hooks.json");
+    const oldFile = join(root, ".antigravity", "settings.json");
+    writeFileSync(oldFile, JSON.stringify(oldSettings, null, 2));
+    // --check before install: needs install at the new path, stale old entries named, nothing written
+    const before = run(["--check"], root);
+    expect(before.code).toBe(1);
+    expect(before.out).toContain(`Antigravity — Nirvana hooks left in ${oldFile}`);
+    expect(existsSync(hooksFile)).toBe(false);
+    expect(readFileSync(oldFile, "utf8")).toBe(JSON.stringify(oldSettings, null, 2));
+    // after install: the new file is reported by path and the check passes
+    expect(run([], root).code).toBe(0);
+    const after = run(["--check"], root);
+    expect(after.out).toContain(`Antigravity — already installed (${hooksFile})`);
+    expect(after.out).not.toContain("Nirvana hooks left in");
+  }, 60_000);
+
+  test("no ~/.gemini/config (agy absent): nothing is created", () => {
+    const root = home();
+    expect(run([], root).code).toBe(0);
+    expect(existsSync(join(root, ".gemini", "config", "hooks.json"))).toBe(false);
+  }, 30_000);
+});
+
+describe("the agy hook speaks the same contract", () => {
+  test("--agy answers with an ephemeral message carrying the session context, and writes no audit event", () => {
+    const root = home();
+    const script = join(REPO, "skills", "_shared", "scripts", "gemini-session-start.ts");
+    const r = spawnSync(process.execPath, [script, "--agy"], {
+      cwd: root, input: JSON.stringify({ workspacePaths: [root] }), encoding: "utf8", windowsHide: true,
+      env: { ...(process.env as Record<string, string>), HOME: root, USERPROFILE: root, HARNESS_LOGS_DIR: join(root, "logs") },
+    });
+    expect(r.status).toBe(0);
+    const out = JSON.parse(r.stdout);
+    expect(out.injectSteps[0].ephemeralMessage).toContain("harness/SKILL.md");
+    expect(existsSync(join(root, "logs"))).toBe(false);
+  }, 30_000);
+});
+
+describe("Gemini CLI is no longer a runtime: the hooks an older engine wrote come out", () => {
+  // Engines that drove the Gemini CLI wrote three hooks into its own
+  // ~/.gemini/settings.json. Install, update and uninstall take OURS out; the
+  // user's keys and handlers stay, and agy's ~/.gemini/config/hooks.json (a
+  // different file) keeps its nirvana-os entry.
+  const ORCA = { "orca-status": { PreInvocation: [{ type: "command", command: "sh orca-hook.sh", timeout: 10 }] } };
+  const userHandler = { name: "mine", type: "command", command: "echo mine" };
+  const geminiSettings = {
+    theme: "dark",
+    mcpServers: { files: { command: "files-mcp" } },
+    hooks: {
+      BeforeTool: [{ matcher: "write_file|replace|run_shell_command", hooks: [
+        { name: "nirvana-audit-pre", type: "command", command: 'bun "/x/_shared/scripts/audit-emit-from-hook.ts" pre gemini-cli', timeout: 5000 },
+        userHandler,
+      ] }],
+      AfterTool: [{ matcher: "write_file|replace|run_shell_command", hooks: [
+        { name: "nirvana-audit-post", type: "command", command: 'bun "/x/_shared/scripts/audit-emit-from-hook.ts" post gemini-cli', timeout: 5000 },
+      ] }],
+      SessionStart: [{ hooks: [
+        { name: "nirvana-session-start", type: "command", command: 'bun "/x/_shared/scripts/gemini-session-start.ts"', timeout: 5000 },
+      ] }],
+      Notification: [{ hooks: [{ name: "user-notify", type: "command", command: "say done" }] }],
+    },
+  };
+
+  test("--check flags them, install removes only ours and keeps agy wired, uninstall leaves the user's intact", () => {
+    const root = home();
+    mkdirSync(join(root, ".gemini", "config"), { recursive: true });
+    const settingsFile = join(root, ".gemini", "settings.json");
+    const hooksFile = join(root, ".gemini", "config", "hooks.json");
+    writeFileSync(settingsFile, JSON.stringify(geminiSettings, null, 2));
+    writeFileSync(hooksFile, JSON.stringify(ORCA, null, 2));
+
+    const check = run(["--check"], root);
+    expect(check.code).toBe(1);
+    expect(check.out).toContain("Gemini CLI is no longer supported");
+    // --check writes nothing.
+    expect(JSON.parse(readFileSync(settingsFile, "utf8"))).toEqual(geminiSettings);
+
+    const install = run([], root);
+    expect(install.code, install.out).toBe(0);
+    expect(install.out).toContain("removed Nirvana hooks from");
+    const after = JSON.parse(readFileSync(settingsFile, "utf8"));
+    expect(after.theme).toBe("dark");
+    expect(after.mcpServers).toEqual(geminiSettings.mcpServers);
+    expect(after.hooks.BeforeTool).toEqual([{ matcher: "write_file|replace|run_shell_command", hooks: [userHandler] }]);
+    expect(after.hooks.AfterTool).toBeUndefined();
+    expect(after.hooks.SessionStart).toBeUndefined();
+    expect(after.hooks.Notification).toEqual(geminiSettings.hooks.Notification);
+    expect(JSON.stringify(after)).not.toContain("audit-emit-from-hook.ts");
+    expect(JSON.stringify(after)).not.toContain("gemini-session-start.ts");
+
+    // agy's file: the user's hook untouched, ours present and pointing at --agy.
+    const hooks = JSON.parse(readFileSync(hooksFile, "utf8"));
+    expect(hooks["orca-status"]).toEqual(ORCA["orca-status"]);
+    expect(hooks["nirvana-os"].PreInvocation[0].command).toContain("--agy");
+
+    // Idempotent: a second install changes neither file, and --check is clean.
+    const settingsRaw = readFileSync(settingsFile, "utf8");
+    const hooksRaw = readFileSync(hooksFile, "utf8");
+    expect(run([], root).code).toBe(0);
+    expect(readFileSync(settingsFile, "utf8")).toBe(settingsRaw);
+    expect(readFileSync(hooksFile, "utf8")).toBe(hooksRaw);
+    const recheck = run(["--check"], root);
+    expect(recheck.out).not.toContain("Gemini CLI is no longer supported");
+
+    expect(run(["--uninstall"], root).code).toBe(0);
+    expect(readFileSync(settingsFile, "utf8")).toBe(settingsRaw);
+    expect(JSON.parse(readFileSync(hooksFile, "utf8"))).toEqual(ORCA);
+  }, 90_000);
+
+  test("uninstall alone also takes the old Gemini CLI hooks out", () => {
+    const root = home();
+    mkdirSync(join(root, ".gemini"), { recursive: true });
+    const settingsFile = join(root, ".gemini", "settings.json");
+    writeFileSync(settingsFile, JSON.stringify(geminiSettings, null, 2));
+    expect(run(["--uninstall"], root).code).toBe(0);
+    const after = JSON.parse(readFileSync(settingsFile, "utf8"));
+    expect(JSON.stringify(after)).not.toContain("audit-emit-from-hook.ts");
+    expect(after.hooks.BeforeTool[0].hooks).toEqual([userHandler]);
+    expect(after.theme).toBe("dark");
   }, 30_000);
 });

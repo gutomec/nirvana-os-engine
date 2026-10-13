@@ -109,8 +109,8 @@ function serverSideFailure(text: string): QuotaClass | undefined {
 /**
  * "The plan's allowance is spent", in the phrasings the CLIs print.
  *
- * Four classifiers carried their own spelling of this and `classifyGemini`
- * carried none at all, so one sentence was a quota on four runtimes and a
+ * Four classifiers carried their own spelling of this and the Gemini CLI one
+ * (since removed) carried none at all, so one sentence was a quota on four runtimes and a
  * generic error on the fifth — and a generic error neither cools the runtime
  * down nor hands off. The older `you'?ve?` also failed to match the written-out
  * "you have", which is how a real ceiling read as an unknown failure.
@@ -180,10 +180,9 @@ function classifyCodex(text: string): QuotaClass {
   return { kind: "error", hint: text.slice(0, 200) };
 }
 
-// Antigravity CLI shares the Google backend (Gemini models) — error surfaces
-// reuse the same vocabulary plus the Antigravity-specific "compute budget"
-// language for the 5h-window of consumer tiers. Replaces gemini-cli for
-// consumer accounts after 2026-06-18.
+// Antigravity CLI runs on the Google backend (Gemini models): the Google
+// quota vocabulary plus the Antigravity-specific "compute budget" language for
+// the 5h-window of consumer tiers.
 function classifyAntigravity(text: string): QuotaClass {
   // Antigravity-specific window phrasings (Pro/Ultra/Free 5h rolling cap).
   if (/compute[\s_-]?budget|compute[\s_-]?used|5[\s_-]?hour\s+(limit|cap|window)/i.test(text)) {
@@ -213,42 +212,6 @@ function classifyAntigravity(text: string): QuotaClass {
   }
   if (AUTH_PATTERN.test(text)) {
     return { kind: "auth_failed", hint: "Antigravity auth missing/invalid (try `agy` to re-auth)" };
-  }
-  return { kind: "error", hint: text.slice(0, 200) };
-}
-
-function classifyGemini(text: string): QuotaClass {
-  if (/resource\s+has\s+been\s+exhausted|RESOURCE_EXHAUSTED/i.test(text)) {
-    return { kind: "quota_exhausted", ttlSec: DEFAULT_TTL["5h"], hint: "Gemini quota exhausted (free or paid tier)", window: "5h" };
-  }
-  if (/quota\s+(exceeded|reached)|daily\s+(limit|quota)/i.test(text)) {
-    return { kind: "quota_exhausted", ttlSec: DEFAULT_TTL["5h"], hint: "Gemini daily quota reached", window: "5h" };
-  }
-  if (USAGE_LIMIT_PATTERN.test(text)) {
-    return { kind: "quota_exhausted", ttlSec: DEFAULT_TTL["5h"], hint: "Gemini usage limit reached", window: "5h" };
-  }
-  if (/rate[ _-]?limit|too\s+many\s+requests|\b429\b/i.test(text)) {
-    const retry = findRetryAfterSec(text);
-    if (retry !== undefined && retry < 120) return { kind: "transient", retryAfterSec: retry, hint: "Gemini rate limit (transient)" };
-    return { kind: "quota_exhausted", ttlSec: retry ?? DEFAULT_TTL["5h"], hint: "Gemini rate limit (treating as quota)", window: "5h" };
-  }
-  // ModelNotFoundError / 404 = wrong model name in cascade entry. Don't
-  // classify as auth_failed — it's a config error. Treat as quota_exhausted
-  // with short TTL so cascade tries the next entry; user must fix the model.
-  if (/ModelNotFoundError|model[\s_-]+not[\s_-]+found|\bnot\s+found\b.*model/i.test(text)
-   || (/code["\s:]*404/i.test(text) && /model/i.test(text))) {
-    return { kind: "quota_exhausted", ttlSec: 60 * 60, hint: "Gemini model not found (check --model name in LLM_CASCADE)", window: "5h" };
-  }
-  // Google retired the individual Code Assist tier: gemini-cli authenticates and
-  // is then refused, pointing at Antigravity. No credential the user can fix, so
-  // the hint names the successor runtime instead of asking them to re-auth.
-  if (/IneligibleTierError|UNSUPPORTED_CLIENT|no\s+longer\s+supported\s+for\s+Gemini\s+Code\s+Assist|migrate\s+to\s+the\s+Antigravity/i.test(text)) {
-    return { kind: "auth_failed", hint: "gemini-cli individual tier retired by Google — use antigravity-cli (`agy`)" };
-  }
-  // Real auth failure (not the informative "Both *_API_KEY are set" warning).
-  // Require explicit failure context, not just the var names.
-  if (AUTH_PATTERN.test(text)) {
-    return { kind: "auth_failed", hint: "Gemini auth missing/invalid" };
   }
   return { kind: "error", hint: text.slice(0, 200) };
 }
@@ -292,7 +255,6 @@ export function classify(runtime: Runtime, r: RunResultLike): QuotaClass {
   if (!text) return { kind: "error", hint: `runtime ${runtime} exit ${r.exitCode} with no output` };
   if (runtime === "claude-code") return refineServerFailure(classifyClaudeCode(text), text);
   if (runtime === "codex") return refineServerFailure(classifyCodex(text), text);
-  if (runtime === "gemini-cli") return refineServerFailure(classifyGemini(text), text);
   if (runtime === "antigravity-cli") return refineServerFailure(classifyAntigravity(text), text);
   if (runtime === "pi") return refineServerFailure(classifyPi(text), text);
   return { kind: "error", hint: `unknown runtime ${runtime}` };

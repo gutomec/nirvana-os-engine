@@ -303,6 +303,9 @@ export interface DeliveryArgs {
   /** The role the producing run carried. A revision round continues that run,
    *  so it carries the same stamp. Absent when the producer ran without one. */
   producerRole?: DispatchRole;
+  /** The producer's squad environment (squad-env.ts squadRunEnv): a revision
+   *  round continues a squad's work, so it runs with the same variables. */
+  env?: Record<string, string>;
   rulesDirective?: string;
   /** --force-deliver: deliver despite a failed gate (gate:"fail-forced"). */
   forceDeliver?: boolean;
@@ -524,6 +527,7 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
       appendSystemPrompt: AUTONOMOUS_DIRECTIVE + (args.rulesDirective ?? ""),
       maxBudgetUsd: args.maxBudgetUsd, timeoutMs: args.timeoutMs, yolo: args.yolo,
       ...(args.producerRole ? { dispatchRole: args.producerRole } : {}),
+      ...(args.env && Object.keys(args.env).length ? { env: args.env } : {}),
       label: `revision ${revUsed}`,
       // The producer's run folder, which is also where its session lives: a
       // runtime that keys sessions by directory resumes only from there.
@@ -540,7 +544,14 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
       warn(`  revision ${revUsed}: the session did not resume — retrying cold`);
       rr = revise(undefined, [fixPrompt, "", "O brief que estes entregáveis atendem:", args.brief].join("\n"));
     }
-    emit("revision_auto", { trace_id: args.pid, project_id: args.pid, business_slug: args.slug, attempt: revUsed, ok: rr.ok, ...(coldRetry ? { cold_retry: true } : {}) });
+    // The runtime answered from another conversation (agy's `--continue` with
+    // nothing to continue): the correction ran without the run's context. Not
+    // re-run (the turn was paid); said here and in the audit.
+    if (rr.resumeLost) {
+      warn(`  revision ${revUsed}: the session did NOT resume — this correction ran without the previous context`);
+      for (const w of rr.warnings ?? []) warn(`    ${w}`);
+    }
+    emit("revision_auto", { trace_id: args.pid, project_id: args.pid, business_slug: args.slug, attempt: revUsed, ok: rr.ok, ...(coldRetry ? { cold_retry: true } : {}), ...(rr.resumeLost ? { resume_lost: true } : {}) });
     if (rr.sessionId) {
       sessionId = rr.sessionId;
       args.onSession?.(rr.sessionId);

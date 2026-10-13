@@ -8,6 +8,10 @@
 # codes: 0 present or installed, 2 usage, 3 no consent, 4 missing prerequisite,
 # 5 download failed, 6 checksum mismatch, 7 installer failed.
 #
+# Release channel: with an engine already installed and no NIRVANA_ENGINE_URL
+# or NIRVANA_ENGINE_TARBALL, the installed version's channel picks the release
+# (engine-release.ts beside this file); an older version is never installed.
+#
 # Console strings stay unaccented on purpose: PowerShell 5.1 reads a BOM-less
 # .ps1 as ANSI and a non-ASCII character reaches the user as mojibake.
 param(
@@ -23,6 +27,10 @@ $engineDir = Join-Path $profileDir ".nirvana\skills\harness"
 $repo = if ($env:NIRVANA_ENGINE_REPO) { $env:NIRVANA_ENGINE_REPO } else { "gutomec/nirvana-os-engine" }
 $url = if ($env:NIRVANA_ENGINE_URL) { $env:NIRVANA_ENGINE_URL } else { "https://github.com/$repo/releases/latest/download/nirvana-os-engine.tar.gz" }
 if ($env:NIRVANA_BOOTSTRAP_YES -eq "1") { $Yes = $true }
+$installedVerFile = Join-Path $profileDir ".nirvana\skills\VERSION"
+$installedVer = if (Test-Path $installedVerFile) { (Get-Content $installedVerFile -Raw).Trim() } else { "" }
+$helper = Join-Path $PSScriptRoot "engine-release.ts"
+$explicitSource = [bool]($env:NIRVANA_ENGINE_URL -or $env:NIRVANA_ENGINE_TARBALL)
 
 # 1. Already here?
 $nrvOnPath = [bool](Get-Command nrv -ErrorAction SilentlyContinue)
@@ -39,8 +47,8 @@ Write-Host "Nirvana-OS bootstrap will change this machine:"
 Write-Host "  - Bun in user space ($profileDir\.bun) if it is missing, no admin"
 Write-Host "  - the engine in $profileDir\.nirvana (skills + shared node_modules)"
 Write-Host "  - the nrv launcher in $profileDir\.local\bin, plus that directory in the user PATH"
-Write-Host "  - audit hooks in the settings of the agent runtimes it finds (.claude, .gemini, .codex, .antigravity)"
-Write-Host "  - runtime skill copies in .claude\skills, .codex\skills, .gemini\skills, .antigravity\skills, .pi\agent\skills, .agents\skills"
+Write-Host "  - audit hooks in the settings of the agent runtimes it finds (.claude, .codex, .gemini\config for Antigravity)"
+Write-Host "  - runtime skill copies in .claude\skills, .codex\skills, .gemini\config\skills, .pi\agent\skills, .agents\skills"
 Write-Host "  - the empty content roots squads, businesses, businesses\_library\dna under the user profile"
 Write-Host "  Source: $source"
 Write-Host "  Reversible with: nrv uninstall --engine"
@@ -78,6 +86,10 @@ if (-not $bun) {
 }
 if (-not $bun) {
   if (Get-Command node -ErrorAction SilentlyContinue) {
+    if ($installedVer -like "*-*" -and -not $explicitSource) {
+      Write-Host "Bun could not be installed, and npx @nirvana-os/cli would replace the installed $installedVer with an older stable. Install Bun and re-run."
+      exit 4
+    }
     Write-Host "Bun could not be installed; falling back to npx @nirvana-os/cli (Node)."
     & npx -y @nirvana-os/cli
     exit $LASTEXITCODE
@@ -87,6 +99,19 @@ if (-not $bun) {
   exit 4
 }
 $env:Path = (Split-Path -Parent $bun) + ";" + $env:Path
+
+# 5b. The release, by the installed engine's channel (see bootstrap.sh).
+$guard = $false
+if ($installedVer -and -not $explicitSource -and (Test-Path $helper)) {
+  $plan = @(& $bun $helper plan --installed $installedVer --repo $repo)
+  $parts = if ($plan.Count -gt 0 -and $plan[0]) { "$($plan[0])".Trim() -split ' ' } else { @() }
+  if ($plan.Count -gt 1 -and $plan[1]) { Write-Host "Release: $($plan[1])" }
+  if ($parts.Count -ge 3 -and $parts[0] -eq "install") { $url = $parts[2] }
+  elseif ($parts.Count -ge 3 -and $parts[0] -eq "current") {
+    if ($Update) { Write-Host "Nirvana-OS engine $installedVer kept: nothing newer to install."; exit 0 }
+    $url = $parts[2]
+  } else { $guard = $true }
+}
 
 # 6-7. The tarball, extracted with RELATIVE paths (an absolute path carries a ":").
 $work = Join-Path ([IO.Path]::GetTempPath()) ("nrv-engine-" + [IO.Path]::GetRandomFileName())
@@ -138,6 +163,19 @@ try {
     if ($entries.Count -eq 1 -and (Test-Path (Join-Path $entries[0].FullName "scripts\install.ts"))) { $root = $entries[0].FullName }
   }
   if (-not (Test-Path (Join-Path $root "scripts\install.ts"))) { Write-Host "Invalid engine asset (no scripts/install.ts)."; exit 5 }
+  if ($guard) {
+    $newVerFile = Join-Path $root "skills\VERSION"
+    $newVer = if (Test-Path $newVerFile) { (Get-Content $newVerFile -Raw).Trim() } else { "" }
+    # Never an empty argument: Windows PowerShell drops it and shifts the rest.
+    $mayArgs = @("may-replace", $(if ($newVer) { $newVer } else { "unknown" }), $installedVer)
+    if (-not $Update) { $mayArgs += "--allow-equal" }
+    & $bun $helper @mayArgs
+    if ($LASTEXITCODE -ne 0) {
+      $shown = if ($newVer) { $newVer } else { "unknown version" }
+      Write-Host "The latest release ($shown) is not newer than the installed engine ($installedVer); nothing changed."
+      exit 0
+    }
+  }
 
   # 8. The engine's own installer, run from the profile dir so its post-install
   # index builds the GLOBAL registry.

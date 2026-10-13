@@ -103,16 +103,6 @@ const RUNTIMES = [
     envHints: ['CODEX_HOME'],
   },
   {
-    name: 'gemini-cli',
-    cli: 'gemini',
-    buildArgs(persona, userMsg) {
-      const merged = persona ? `${persona}\n\n---\n\n${userMsg}` : userMsg;
-      return ['-p', merged];
-    },
-    parseStdout(stdout) { return stdout.trim(); },
-    envHints: ['GEMINI_API_KEY', 'GOOGLE_API_KEY'],
-  },
-  {
     name: 'qwen-code',
     cli: 'qwen',
     buildArgs(_persona, userMsg) { return ['-p', userMsg]; },

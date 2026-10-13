@@ -91,16 +91,6 @@ beforeAll(() => {
     console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 10, cached_input_tokens: 4, cache_write_input_tokens: 0, output_tokens: 5, reasoning_output_tokens: 2 } }));
   `);
 
-  // gemini — STDIN delivery (-p "" + stdin); error field in envelope; no USD.
-  fake("gemini", `
-    const len = await stdinLen();
-    if (process.env.FAKE_MODE === "error") {
-      process.stdout.write(JSON.stringify({ error: { type: "QuotaError", message: "quota exhausted" }, session_id: "g1" }));
-      process.exit(0);
-    }
-    process.stdout.write(JSON.stringify({ response: "ok", session_id: "g1", stats: { models: { m: { tokens: { input: len, candidates: 3 } } } } }));
-  `);
-
   // agy — argv small / bootstrap prompt-file large; is_error envelope; no USD.
   fake("agy", `
     const plen = promptFileLen();
@@ -147,7 +137,7 @@ beforeAll(() => {
     console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "plen:" + plen }], usage: { cost: { total: 0.05 } } } }));
   `);
 
-  // qwen — STDIN delivery (gemini fork); plain text happy path; no USD.
+  // qwen — STDIN delivery (Gemini CLI fork); plain text happy path; no USD.
   fake("qwen", `
     const len = await stdinLen();
     if (process.env.FAKE_REJECT_INCLUDE && argv.includes("--include-directories")) {
@@ -248,19 +238,13 @@ describe("driver adapters — 300KB prompt delivery + cost matrix", () => {
     assertArgvSafe("codex");
   }, spawnBudgetMs(2));
 
-  test("gemini-cli: STDIN via -p ''; costUnavailable", () => {
-    const r = run("gemini-cli");
-    expect(r.ok).toBe(true);
-    expect(r.result).toContain('"input":300000'); // full envelope kept for cost-estimator
-    expect(r.sessionId).toBe("g1");
-    expect(r.costUsd).toBeNull();
-    expect(r.costUnavailable).toBe(true);
-    const args = capturedArgs("gemini");
-    const p = args.indexOf("-p");
-    expect(p).toBeGreaterThanOrEqual(0);
-    expect(args[p + 1]).toBe(""); // prompt rides stdin, not argv
-    assertArgvSafe("gemini");
-  }, spawnBudgetMs(2));
+  test("gemini-cli, no longer a runtime: a clear refusal, nothing spawned", () => {
+    const r = runWith("gemini-cli" as Runtime, {});
+    expect(r.ok).toBe(false);
+    expect(r.exitCode).toBe(2);
+    expect(r.error).toContain("Gemini CLI is no longer supported; pick another runtime");
+    expect(__testables.RUNTIMES.some((a: { name: string }) => a.name === "gemini-cli")).toBe(false);
+  });
 
   test("antigravity-cli: bootstrap prompt-file above threshold; costUnavailable", () => {
     const r = run("antigravity-cli");
@@ -388,13 +372,6 @@ describe("driver adapters — failure contract (error envelope on exit 0 → ok:
     expect(r.error).toContain("upstream 500");
   }, spawnBudgetMs(2));
 
-  test("gemini-cli: error field in envelope", () => {
-    const r = run("gemini-cli", "error");
-    expect(r.exitCode).toBe(0);
-    expect(r.ok).toBe(false);
-    expect(r.error).toContain("quota exhausted");
-  }, spawnBudgetMs(2));
-
   test("antigravity-cli: is_error + error object", () => {
     const r = run("antigravity-cli", "error");
     expect(r.exitCode).toBe(0);
@@ -488,12 +465,12 @@ describe("directory grants — every runtime that has a flag passes it; the rest
   test("the grant table names a flag for the runtimes whose CLIs have one", () => {
     expect(RUNTIME_DIR_GRANT_FLAG["claude-code"]).toBe("--add-dir");
     expect(RUNTIME_DIR_GRANT_FLAG.codex).toBe("--add-dir");
-    expect(RUNTIME_DIR_GRANT_FLAG["gemini-cli"]).toBe("--include-directories");
     expect(RUNTIME_DIR_GRANT_FLAG["antigravity-cli"]).toBe("--add-dir");
     expect(RUNTIME_DIR_GRANT_FLAG["qwen-code"]).toBe("--include-directories");
+    expect(RUNTIME_DIR_GRANT_FLAG["kimi-cli"]).toBe("--add-dir");
   });
 
-  for (const [runtime, cli] of [["claude-code", "claude"], ["codex", "codex"], ["gemini-cli", "gemini"], ["antigravity-cli", "agy"], ["qwen-code", "qwen"]] as const) {
+  for (const [runtime, cli] of [["claude-code", "claude"], ["codex", "codex"], ["antigravity-cli", "agy"], ["qwen-code", "qwen"], ["kimi-cli", "kimi"]] as const) {
     test(`${runtime}: each extra directory rides argv behind ${RUNTIME_DIR_GRANT_FLAG[runtime]}`, () => {
       const r = runWith(runtime, { addDirs: dirs });
       expect(r.ok).toBe(true);
@@ -509,7 +486,7 @@ describe("directory grants — every runtime that has a flag passes it; the rest
     }, spawnBudgetMs(2));
   }
 
-  for (const runtime of ["grok-cli", "pi", "kimi-cli", "opencode"] as const) {
+  for (const runtime of ["grok-cli", "pi", "opencode"] as const) {
     test(`${runtime}: no flag → the result says the grant did not happen`, () => {
       const r = runWith(runtime, { addDirs: dirs });
       expect(RUNTIME_DIR_GRANT_FLAG[runtime]).toBeNull();
@@ -531,13 +508,13 @@ describe("directory grants — every runtime that has a flag passes it; the rest
 
 describe("codex — flags audited against 0.153.4, usage and notices", () => {
   test("trust: bypass flag; grants, model and provider as -c", () => {
-    const r = runWith("codex", { addDirs: [path.join(TMP, "biz")], model: "gpt-5.5", providerHint: "openai" });
+    const r = runWith("codex", { addDirs: [path.join(TMP, "biz")], model: "gpt-6.1-sol", providerHint: "openai" });
     expect(r.ok).toBe(true);
     const args = capturedArgs("codex");
     expect(args).toContain("--dangerously-bypass-approvals-and-sandbox");
     expect(args).not.toContain("--provider");
     expect(args).toContain('model_provider="openai"');
-    expect(args[args.indexOf("--model") + 1]).toBe("gpt-5.5");
+    expect(args[args.indexOf("--model") + 1]).toBe("gpt-6.1-sol");
     expect(args).not.toContain("--ephemeral");
     expect(args).not.toContain("-s");
   }, spawnBudgetMs(2));

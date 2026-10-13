@@ -8,49 +8,48 @@
 | Runtime | Vendor | Doc | Status |
 |---|---|---|---|
 | `claude-code` | Anthropic | [`claude-code.md`](./claude-code.md) | Reference (todos os 15 seções) |
-| `codex` | OpenAI | [`codex.md`](./codex.md) | Estável (15 seções, gaps em hooks/scheduled) |
-| `antigravity-cli` | Google | [`antigravity-cli.md`](./antigravity-cli.md) | Não verificado — docs completos (15 seções), mas as flags do driver NUNCA foram confirmadas contra o binário `agy` real (§13). Trate como experimental até `agy --help` autenticado confirmar. |
-| `gemini-cli` | Google | [`gemini-cli.md`](./gemini-cli.md) | Legado — sunset 2026-06-18 (15 seções, gaps em hooks/event_bus/teammate) |
+| `codex` | OpenAI | [`codex.md`](./codex.md) | Estável. Argv do `codex exec` verificado contra o help do 0.159.2 e o código do 0.162.1 (2026-10-11); hooks com trust, skills em `~/.agents/skills`, agentes customizados em TOML. |
+| `antigravity-cli` | Google | [`antigravity-cli.md`](./antigravity-cli.md) | Flags verificadas contra o `agy --help` 1.3.3 (2026-10-11): `-p … --output-format json [--continue] --dangerously-skip-permissions --add-dir`. Um spawn por turno: um erro de modelo no meio do turno sai com exit 3 e `AGY_ERROR`. |
 | `hermes` | Hermes Agent | [`hermes.md`](./hermes.md) | Estável (15 seções; dispatch via `hermes -z`, teto = Codex) |
-| `kimi-cli` | Moonshot AI | [`kimi-cli.md`](./kimi-cli.md) | Novo — código (`runKimi`) + docs completos; invocação (`kimi -m <model> -p … --output-format stream-json`) NÃO verificada contra o binário `kimi` real. Grátis via OAuth Kimi.com (K3/K2.7); pago via `~/.kimi-code/config.toml`. |
-| `grok-cli` | xAI | [`grok-cli.md`](./grok-cli.md) | Invocação (`grok -p … --output-format json --always-approve --cwd`) VERIFICADA contra o binário real (`grok 0.2.103`): flags aceitas, JSON de volta com `text`/`sessionId`/`total_cost_usd`. Coding agêntico + geração de mídia (image/i2v) nativa. Assinatura ou API xAI (`XAI_API_KEY`). |
-| `pi` | Earendil (pi.dev) | [`pi.md`](./pi.md) | Invocação (`pi -p --mode json --session-id <uuid> --append-system-prompt …`) **VERIFICADA contra o binário real (`pi 0.82.1`)**: event stream JSONL confirmado, sessão determinística, erro de provider detectado no stream (o pi sai com exit 0 mesmo em erro — §13). UM runtime → 15+ providers (Anthropic, OpenAI, Google, OpenRouter…) **incluindo modelos LOCAIS** (Ollama, llama.cpp, LM Studio, vLLM via `models.json`). Resume/fork nativos; `@provider` do cascade vira `--provider` de verdade. |
+| `kimi-cli` | Moonshot AI | [`kimi-cli.md`](./kimi-cli.md) | Invocação (`kimi -p … --output-format stream-json -m <model> --add-dir <d>`) tirada da referência oficial do Kimi Code 2.x (2026-10-11); não rodada contra um binário local. Só mensagens do assistente formam o resultado. Grátis via OAuth Kimi.com; pago via `~/.kimi-code/config.toml`. |
+| `grok-cli` | xAI | [`grok-cli.md`](./grok-cli.md) | Invocação (`grok --prompt-file <f> --output-format json --cwd <d> [-r <id>] --always-approve --trust`) conferida contra o `grok --help` 1.0.44 (2026-10-11). O trust de pasta controla AGENTS.md, skills e MCP do projeto; o resume é `-r`. Assinatura ou API xAI (`XAI_API_KEY`). |
+| `pi` | Earendil (pi.dev) | [`pi.md`](./pi.md) | Invocação (`pi -p --mode json --session-id <uuid> --append-system-prompt … -- <prompt>`) conferida contra o `pi --help` 0.84.3; mudanças do 1.x pelo changelog oficial (2026-10-11). O erro de provider chega no stream (o pi sai com exit 0 mesmo em erro, §13). UM runtime para muitos providers, **incluindo modelos LOCAIS** (Ollama, llama.cpp, LM Studio, vLLM). O `@provider` do cascade vira `--provider`, passado só junto com `--model` (o pi 1.0.0 recusa sozinho). |
 | `orca` (host) | Orca (orca.dev) | [`orca.md`](./orca.md) | **Host, não runtime.** Dentro de um terminal do Orca o engine carimba o audit com o workspace, projeta cada run no card (comentário e coluna), abre o Glance no browser embutido e roda cada despacho headless como terminal de worker (orquestração do Orca), com fallback para o processo filho. Fora do Orca nada muda; um `orca` falso nos testes prova que nada é chamado. Medido no Orca 1.4.198 (2026-09-09). ADR-009. |
 
 ## Comparativo rápido (matriz cruzada)
 
-| Feature | claude-code | codex | antigravity-cli | gemini-cli | hermes | Notas |
-|---|---|---|---|---|---|---|
-| `max_turns` per-employee | ~ (via hook, sem hard limit) | ~ (CLI flag global) | ~ (CLI flag global) | ~ (CLI flag global) | ~ (profile global) | Nenhum runtime tem max_turns hard nativo. Em todos é workaround; nested invocations escapam fora do Claude Code. |
-| `tool_whitelist` | ✓ | ✓ | ✓ | ✓ | ✓ (`-t/--toolsets`) | Todos suportam. |
-| `subagent_spawning` (in-process) | ✓ Agent tool (native, in-process) | ✓ native `[agents]` | ✓ native dynamic | ~ sub-process (legado) | ~ sub-process (`hermes -z`, mono-nível) | claude/codex/antigravity in-process nativo; gemini (legado) e hermes via sub-process. |
-| `audit_trail` | ✓ | ✓ | ✓ | ~ | ~ (hooks + fs-watch) | Gemini/Hermes via shell hooks. |
-| `scheduled_invocation` | ✓ ScheduleWakeup | ✗ | ✗ | ✗ | ✓ `hermes cron` | Hermes tem cron nativo (vantagem sobre codex/gemini/antigravity). |
-| `event_bus` | ~ | ~ | ~ | ~ | ~ | Nenhum tem broker; file-system mais memory. |
-| `hooks` | ✓ | ~ | ~ | ✗ | ~ (`pre/post_tool_call`) | Claude Code granular; Hermes shell-based consent-gated. |
-| `sandboxing` | ~ permissions | ✓ profiles | ~ approval modes | ~ container | ✓ 6 backends + Tirith | Codex/Hermes mais ricos. |
-| `session_memory` | ✓ | ✓ | ✓ | ✓ | ✓ | Todos. |
-| `project_memory` | ✓ CLAUDE.md | ✓ AGENTS.md | ✓ AGENTS.md | ✓ GEMINI.md | ✓ AGENTS.md | Convenção semelhante. |
-| `global_memory` rico | ✓ | ~ | ~ | ~ | ✓ SOUL+SQLite+Honcho | Claude Code e Hermes têm memória global rica. |
-| `handoff_artifacts` | ✓ | ✓ | ✓ | ✓ | ✓ (texto→JSON) | JSON em tool_result ou file. |
-| `teammate_primitive` | ~ TeamCreate (deferred) | ✗ | ~ Managed Agents | ✗ | ~ delegation (mono-nível) | Antigravity tem Managed Agents para long runs; Hermes delegation nativo de 1 nível. |
-| `telemetry_otel` | ✓ | ~ | ~ | ~ | ~ | Os outros via SDK externo. |
-| `messaging_escalation` | ~ | ~ | ~ | ~ | ✓ Slack/Telegram/WhatsApp | Hermes ganha em escalação humana. |
-| Janela contexto | 200K | 128K a 200K | 1M (2M no roadmap) | 1M (2M no roadmap) | depende do provider | Hermes roteia para o provider do profile. |
+| Feature | claude-code | codex | antigravity-cli | hermes | Notas |
+|---|---|---|---|---|---|
+| `max_turns` per-employee | ✓ (`--max-turns`, `maxTurns` do subagent) | ✗ (sem teto de turnos no `codex exec`) | ✗ (sem flag de turnos) | ~ (profile global) | O engine não passa teto de turnos a nenhum runtime hoje. |
+| `tool_whitelist` | ✓ | ✓ | ✓ | ✓ (`-t/--toolsets`) | Todos suportam. |
+| `subagent_spawning` (in-process) | ✓ Agent tool (native, in-process) | ✓ native `[agents]` | ✓ native dynamic | ~ sub-process (`hermes -z`, mono-nível) | claude/codex/antigravity in-process nativo; hermes via sub-process. |
+| `audit_trail` | ✓ | ✓ | ✓ | ~ (hooks + fs-watch) | Hermes via shell hooks. |
+| `scheduled_invocation` | ✓ ScheduleWakeup | ✗ | ✗ | ✓ `hermes cron` | Hermes tem cron nativo (vantagem sobre codex/antigravity). |
+| `event_bus` | ~ | ~ | ~ | ~ | Nenhum tem broker; file-system mais memory. |
+| `hooks` | ✓ | ✓ (trust por hash) | ✓ (`hooks.json`, cinco eventos) | ~ (`pre/post_tool_call`) | Os hooks do Codex precisam de trust; o `PreInvocation` do agy roda antes de cada chamada ao modelo; Hermes é shell-based e consent-gated. |
+| `sandboxing` | ~ permissions | ✓ profiles | ~ approval modes | ✓ 6 backends + Tirith | Codex/Hermes mais ricos. |
+| `session_memory` | ✓ | ✓ | ✓ | ✓ | Todos. |
+| `project_memory` | ✓ CLAUDE.md | ✓ AGENTS.md | ✓ AGENTS.md | ✓ AGENTS.md | Convenção semelhante. |
+| `global_memory` rico | ✓ | ~ | ~ | ✓ SOUL+SQLite+Honcho | Claude Code e Hermes têm memória global rica. |
+| `handoff_artifacts` | ✓ | ✓ | ✓ | ✓ (texto→JSON) | JSON em tool_result ou file. |
+| `teammate_primitive` | ~ TeamCreate (deferred) | ✗ | ~ Managed Agents | ~ delegation (mono-nível) | Antigravity tem Managed Agents para long runs; Hermes delegation nativo de 1 nível. |
+| `telemetry_otel` | ✓ | ~ | ~ | ~ | Os outros via SDK externo. |
+| `messaging_escalation` | ~ | ~ | ~ | ✓ Slack/Telegram/WhatsApp | Hermes ganha em escalação humana. |
+| Janela contexto | 200K | 128K a 200K | 1M (2M no roadmap) | depende do provider | Hermes roteia para o provider do profile. |
 
 > Linhas extras fora da feature matrix canônica de Business v1 §6 (não fazem parte do enum `features_required` mas viram o critério de escolha de runtime):
 >
-> - **MCP servers**: claude-code ✓ (estável), codex ~ (parcial), antigravity-cli ✓ (nativo), gemini-cli ✓ (experimental, legado), hermes ✓ (nativo).
+> - **MCP servers**: claude-code ✓ (estável), codex ~ (parcial), antigravity-cli ✓ (nativo), hermes ✓ (nativo).
 > - **Janela de contexto**: ver linha acima.
 
 ## Quando usar qual
 
 - **`claude-code`**: produção principal — todos os primitives e hooks suportados nativamente. Recomendado para businesses long-running com escalation, mind-clones, e auditoria rica.
-- **`codex`**: quando sandboxing forte é prioridade (workspace-write/read-only/danger-full-access) e o uso é dominado por code-related capabilities. Trade-off: sem hooks granulares, sem ScheduleWakeup.
-- **`antigravity-cli`**: sucessor do gemini-cli (a partir de 2026-06-18) para o tier consumer Google. Mesma janela grande (1M+), subagents dinâmicos nativos in-process e Managed Agents para long runs. **NÃO verificado contra o binário real** — as flags do driver (approval-mode, etc.) são baseadas em pesquisa, não em `agy --help` autenticado (§13). Use apenas se o `agy` estiver instalado e você confirmar a superfície de flags; não é preferencial por padrão.
-- **`gemini-cli`**: **legado — sunset 2026-06-18.** Quando o brief consome >100K tokens de context (análise de código grande, document review extenso) e a instalação ainda não migrou. Trade-off: agent system experimental, hooks ausentes, audit limitado. Migrar para `antigravity-cli`.
+- **`codex`**: quando sandboxing forte é prioridade (workspace-write/read-only/danger-full-access) e o uso é dominado por code-related capabilities. Trade-off: sem teto de turnos por execução, sem ScheduleWakeup.
+- **`antigravity-cli`**: o CLI de agente do Google (modelos Gemini), e o caminho até eles agora que o Gemini CLI deixou de ser um runtime. Janela grande, subagents de projeto (`.agents/agents/`, `--agent`) e plugins. As flags do driver são conferidas contra o `agy --help` 1.3.3. Não é preferencial por padrão.
+- **`gemini-cli`**: deixou de ser um runtime. Uma configuração, regra ou entrada de cascade que ainda o nomeie é ignorada com "Gemini CLI is no longer supported; pick another runtime". Use `antigravity-cli` para os modelos Gemini.
 - **`hermes`**: quando o usuário já roda o Hermes Agent e quer empresas/squads/mind-clones lá — consulta (`nrv list/inspect/search/ask`) sem degradação, dispatch determinístico (`nrv dispatch`) e orquestração in-runtime via `hermes -z` (teto = Codex). Vantagens: `hermes cron` (scheduled) e escalação via Slack/Telegram. Trade-off: dispatch é texto→JSON (sem `--output-format json`), hooks shell consent-gated.
-- **`pi`**: quando quiser UM runtime com acesso a 15+ providers (API keys ou OAuth das assinaturas Claude/ChatGPT/Copilot) e a **modelos locais** (Ollama, llama.cpp, LM Studio, vLLM) — briefs privacy-sensitive rodando 100% offline, fallback de custo $0/token em hardware próprio, ou um provider que nenhum CLI oficial cobre. Resume (`--session`) e fork de sessão nativos; skills no padrão Agent Skills (lê `~/.pi/agent/skills` — o `nrv install` symlinka a árvore do Nirvana lá). Trade-off: sem MCP nativo, sem subagents built-in, sem hooks de shell (extensões TypeScript cobrem), e o exit code não sinaliza erro de provider (o driver detecta pelo stream).
+- **`pi`**: quando quiser UM runtime com acesso a 15+ providers (API keys ou OAuth das assinaturas Claude/ChatGPT/Copilot) e a **modelos locais** (Ollama, llama.cpp, LM Studio, vLLM) — briefs privacy-sensitive rodando 100% offline, fallback de custo $0/token em hardware próprio, ou um provider que nenhum CLI oficial cobre. Resume (`--session`) e fork de sessão nativos; skills no padrão Agent Skills (lê `~/.pi/agent/skills` — o `nrv install` symlinka a árvore do Nirvana lá). O MCP é nativo desde o 0.99. Trade-off: sem subagents built-in, sem hooks de shell (extensões TypeScript cobrem), e o exit code não sinaliza erro de provider (o driver detecta pelo stream).
 
 ### Roteamento automático por regras USE_*
 
@@ -59,8 +58,7 @@ Em vez de decidir na mão a cada dispatch, o usuário declara as regras em lingu
 ```dotenv
 USE_CODEX="Quando precisar gerar imagens ou refinar visuais"
 USE_ANTIGRAVITY="Quando for fazer deep research na internet"
-USE_GEMINI="Quando o contexto for gigante (1M tokens)"
-NOT_USE_GEMINI="Quando for análise de codebase"   # veto: vence a regra positiva
+NOT_USE_ANTIGRAVITY="Quando for análise de codebase"   # veto: vence a regra positiva
 USE_HERMES="Quando precisar interagir com o usuário via mensageria"
 USE_PI="Quando precisar de modelos locais (Ollama/llama.cpp) ou de um provider fora dos CLIs oficiais"
 ```

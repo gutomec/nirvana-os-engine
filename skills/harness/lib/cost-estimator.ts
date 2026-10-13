@@ -1,11 +1,11 @@
 // cost-estimator.ts — produces a per-dispatch USD figure for any runtime.
 //
 // Why we need this: only claude-code returns cost_usd in its JSON output.
-// codex, gemini-cli and antigravity-cli return token counts in events/stderr
-// but never a dollar figure (subscription users especially have no notion of
-// cost). antigravity-cli shares the Google backend with gemini-cli, so it
-// uses the same Gemini model IDs in PRICE_TABLE and the same token-extraction
-// shape (the `stats.models.*.tokens` JSON block).
+// codex and antigravity-cli return token counts in events/stderr but never a
+// dollar figure (subscription users especially have no notion of cost).
+// antigravity-cli runs Google's Gemini models, so it uses the Gemini model IDs
+// in PRICE_TABLE and the Google token-extraction shape (the
+// `stats.models.*.tokens` JSON block).
 // To enforce the $N suffix on LLM_CASCADE entries we estimate locally.
 //
 // The estimate has two ingredients: TOKEN COUNTS (parsed from CLI output)
@@ -41,7 +41,7 @@ const PRICE_TABLE: Record<string, Price> = {
   "gpt-5.3":               [ 3.00, 15.00],
   "gpt-5.2":               [ 1.75, 14.00, 0.175],
   "gpt-5.1":               [ 1.25, 10.00, 0.125],
-  // Google (shared by gemini-cli + antigravity-cli)
+  // Google (antigravity-cli, and any multi-provider CLI on a Gemini model)
   "gemini-3.5-flash":      [ 1.50,  9.00],
   "gemini-3.1-pro-preview":[ 2.00, 12.00],
   "gemini-3-pro":          [ 1.25, 10.00],
@@ -72,7 +72,7 @@ function priceFor(model: string | null): Price | null {
   return envPrice(model) ?? PRICE_TABLE[model] ?? null;
 }
 
-/** Best-effort token extraction from codex/gemini output. Format reverse-
+/** Best-effort token extraction from codex/Google-backend output. Format reverse-
  * engineered May 2026 from live captures.
  *
  * Codex CLI (--json output, on turn.completed):
@@ -80,10 +80,10 @@ function priceFor(model: string | null): Price | null {
  *     "cached_input_tokens":N,"reasoning_output_tokens":N,"total_tokens":N}}
  *   Also appears in payload.type=="token_count" rollouts with same field names.
  *
- * Gemini CLI (-o json output):
+ * Google backend JSON (antigravity-cli):
  *   {"stats":{"models":{"<model>":{"tokens":{"input":N,"prompt":N,
  *     "candidates":N,"total":N,"cached":N,"thoughts":N,"tool":N}}}}}
- *   Gemini calls output "candidates"; input==prompt.
+ *   Google calls output "candidates"; input==prompt.
  *
  * Strategy: try both shapes (specific keys, last match wins since totals are
  * cumulative or final). Sum across multiple models if present (multi-model
@@ -122,7 +122,7 @@ export function estimateCostUsd(runtime: Runtime, model: string | null, r: RunHe
   if (runtime === "claude-code" && typeof r.costUsd === "number" && Number.isFinite(r.costUsd)) {
     return r.costUsd;
   }
-  // For codex/gemini (and claude-code when costUsd is null), estimate via tokens.
+  // For the other runtimes (and claude-code when costUsd is null), estimate via tokens.
   const price = priceFor(model);
   if (!price) return null;
   const [inUsd, outUsd, cachedUsd] = price;

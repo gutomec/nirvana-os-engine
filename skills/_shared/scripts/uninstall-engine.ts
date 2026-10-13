@@ -31,7 +31,9 @@ const NIRVANA_DIR = join(HOME, ".nirvana");
 const NIRVANA_SKILLS = join(NIRVANA_DIR, "skills");
 const NIRVANA_DEPS = join(NIRVANA_DIR, "node_modules");
 const LOCAL_BIN = join(HOME, ".local", "bin");
-const BINARIES = ["nrv", "nrv-gemini", "nrv-hermes"];
+// nrv-gemini is no longer shipped; it stays here so an uninstall still
+// removes the copy an older engine left in ~/.local/bin.
+const BINARIES = ["nrv", "nrv-hermes", "nrv-gemini"];
 // Roots a runtime entry may legitimately point at: the canonical tree, plus the
 // legacy pre-~/.nirvana root that machines installed before the migration use.
 const OWNED_SKILL_ROOTS = [NIRVANA_SKILLS, join(HOME, ".claude", "skills")];
@@ -57,7 +59,7 @@ console.log("  keeps:   ~/squads, ~/businesses, installed packs, license, audit 
 const hookInstaller = join(NIRVANA_SKILLS, "_shared", "scripts", "install.ts");
 if (existsSync(hookInstaller)) {
   console.log("[1/4] Audit hooks");
-  if (DRY) console.log("  [dry] would run the hook uninstaller (Claude / Gemini / Antigravity)");
+  if (DRY) console.log("  [dry] would run the hook uninstaller (Claude / Codex / Antigravity)");
   else spawnSync(process.execPath, [hookInstaller, "--uninstall"], { windowsHide: true, stdio: "inherit" });
 } else {
   console.log("[1/4] Audit hooks — hook uninstaller not found, skipping");
@@ -123,4 +125,5 @@ if (existsSync(join(HOME, ".hermes", "config.yaml"))) {
 }
 
 console.log(`\n${DRY ? "Dry run complete — nothing changed." : "Done. Engine removed; your content was kept."}`);
-console.log("Reinstall anytime:  npx @nirvana-os/cli");
+console.log("Reinstall anytime:  curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | bash");
+console.log("  (Windows PowerShell: irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex)");

@@ -4,13 +4,13 @@
  *
  * Watches a project directory and emits `artifact_touched` audit events
  * whenever files are created/modified/renamed inside it. Independent of
- * any agent — works for Cursor, Antigravity, Aider, future Gemini, anything.
+ * any agent — works for Cursor, Antigravity, Aider, anything.
  * If the agent lies about what it did, the filesystem doesn't.
  *
  * Usage:
  *   nrv watch-fs <project_path>                    # watch one project, emit events
  *   nrv watch-fs <project> --trace abc123          # tag events with given trace_id
- *   nrv watch-fs <project> --label gemini-real     # custom host label
+ *   nrv watch-fs <project> --label agy-real        # custom host label
  *   nrv watch-fs <project> --quiet                 # suppress stdout, only emit events
  *
  * Each event written:
@@ -112,7 +112,7 @@ USAGE
 WHAT IT DOES
   Watches the project dir and emits audit events for every file create/modify/
   delete. Independent of any agent — works for Cursor, Antigravity, Aider,
-  Gemini, Claude, anything. Use it when an agent doesn't have hooks (or when
+  Claude, anything. Use it when an agent doesn't have hooks (or when
   you don't trust its claims).
 
   Events written to ~/.harness-logs/<today>/audit.jsonl with host="fs-watch"
@@ -120,7 +120,7 @@ WHAT IT DOES
 
 EXAMPLES
   nrv watch-fs ~/projects/meu-novo-projeto
-  nrv watch-fs ~/projects/meu-novo-projeto --trace gemini-2026-05
+  nrv watch-fs ~/projects/meu-novo-projeto --trace agy-2026-05
   nrv watch-fs ~/projects/foo --label cursor-fs
 `);
     process.exit(EXIT.OK);

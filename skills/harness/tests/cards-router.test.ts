@@ -5,7 +5,7 @@
 // `claude` on PATH, so the no-tools argv and the empty working directory are
 // read off a real process. Covers the card lines, the builder writing the
 // cards beside the digest, the prompt, the parser (prefixed ids, fenced JSON,
-// gemini's envelope), the one retry on a target that is not installed, the
+// a JSON envelope), the one retry on a target that is not installed, the
 // drop-and-report of voices and squads, and the mapping onto the decision
 // contract the dispatch consumes.
 import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
@@ -101,7 +101,7 @@ describe("parseCardsAnswer", () => {
     expect(r.answer).toEqual({ target: "business:acme-web", voices: ["jane-doe"], squads: ["squad-a"], done: ["a", "b", "c", "d", "e"], reason: "Web object." });
   });
 
-  test("gemini's envelope is unwrapped to the model's text", () => {
+  test("a JSON envelope is unwrapped to the model's text", () => {
     const envelope = JSON.stringify({ session_id: "s", response: '{"target":"solo","done":["x"],"reason":"r"}', stats: {} });
     const r = parseCardsAnswer(envelope);
     expect(r.ok && r.answer.target).toBe("solo");

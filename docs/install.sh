@@ -73,7 +73,7 @@ if [ -n "${NIRVANA_ENGINE_TARBALL:-}" ]; then
   say "Engine local: $NIRVANA_ENGINE_TARBALL"
   cp "$NIRVANA_ENGINE_TARBALL" "$WORK/engine.tar.gz"
 else
-  say "Baixando o engine mais recente…"
+  say "Baixando o engine: $URL"
   if command -v curl >/dev/null 2>&1; then
     curl -fsSL "$URL" -o "$WORK/engine.tar.gz" \
       || die "Falha ao baixar o engine. Verifique a internet, ou baixe o .tar.gz e use NIRVANA_ENGINE_TARBALL=…"

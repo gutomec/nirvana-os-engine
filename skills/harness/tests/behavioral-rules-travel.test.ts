@@ -4,7 +4,7 @@
 // + CLAUDE.md + GEMINI.md. Two independent failure modes: most projects never
 // run `nrv init`, and the file a runtime reads differs across the eight adapters
 // (AGENTS.md for antigravity/codex/grok/kimi/pi, CLAUDE.md for claude-code,
-// GEMINI.md for gemini-cli). Anything that depends on a project file is
+// GEMINI.md read by antigravity beside AGENTS.md). Anything that depends on a project file is
 // therefore unreliable twice over.
 //
 // So the rules travel with what is always present: the dispatch instruction for

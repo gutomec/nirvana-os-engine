@@ -2,7 +2,7 @@
 //
 // A squad never runs an MCP server. It declares one (dependencies.yaml,
 // `mcps:`) so the operator knows what the runtime that executes the squad
-// (Claude Code, Codex, Gemini CLI, Antigravity, …) must have configured. This
+// (Claude Code, Codex, Antigravity, …) must have configured. This
 // module answers one question for that declaration: in which of the host
 // configuration files this machine has does a server of that name appear?
 // Plain CommonJS so the activator (JS) and the TypeScript callers share it.
@@ -12,7 +12,7 @@ const os = require("node:os");
 const path = require("node:path");
 
 /** The files each runtime documents for MCP servers, label first. Presence is
- *  a name match inside the file: a `mcpServers` map key (Claude Code, Gemini,
+ *  a name match inside the file: a `mcpServers` map key (Claude Code,
  *  a project `.mcp.json`) or a `[mcp_servers.<name>]` table (Codex). */
 function hostMcpConfigFiles(cwd) {
   const home = os.homedir();
@@ -20,7 +20,6 @@ function hostMcpConfigFiles(cwd) {
     ["claude-code (~/.claude.json)", path.join(home, ".claude.json")],
     ["claude-code (~/.claude/settings.json)", path.join(home, ".claude", "settings.json")],
     ["codex (~/.codex/config.toml)", path.join(home, ".codex", "config.toml")],
-    ["gemini-cli (~/.gemini/settings.json)", path.join(home, ".gemini", "settings.json")],
     ["antigravity (~/.antigravity/settings.json)", path.join(home, ".antigravity", "settings.json")],
   ];
   if (cwd) files.push(["project (.mcp.json)", path.join(cwd, ".mcp.json")]);

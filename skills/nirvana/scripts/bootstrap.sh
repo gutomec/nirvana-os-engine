@@ -14,6 +14,11 @@
 # Environment (all optional):
 #   NIRVANA_ENGINE_TARBALL   local tarball, used instead of any download
 #   NIRVANA_ENGINE_URL       full URL override
+#
+# Release channel: with an engine already installed and no override above, the
+# installed version's channel picks the release (engine-release.ts beside this
+# file): a prerelease moves to the newest greater release, a stable engine to
+# the newest greater stable, and an older version is never installed.
 #   NIRVANA_ENGINE_REPO      owner/repo (default gutomec/nirvana-os-engine)
 #   NIRVANA_BOOTSTRAP_YES=1  same as --yes
 #   NIRVANA_SKIP_PATH_PERSIST, NIRVANA_HOME, SQUADS_DIR, BUSINESSES_DIR,
@@ -37,7 +42,7 @@ for a in "$@"; do
     --yes) YES=1 ;;
     --dry-run) DRY=1 ;;
     --update) UPDATE=1 ;;
-    -h|--help) sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "bootstrap.sh: unknown option '$a' (accepted: --yes --dry-run --update)" >&2; exit 2 ;;
   esac
 done
@@ -48,6 +53,8 @@ ENGINE_DIR="$HOME_DIR/.nirvana/skills/harness"
 REPO="${NIRVANA_ENGINE_REPO:-gutomec/nirvana-os-engine}"
 URL="${NIRVANA_ENGINE_URL:-https://github.com/$REPO/releases/latest/download/nirvana-os-engine.tar.gz}"
 PATH_LINE='export PATH="$HOME/.local/bin:$PATH"'
+INSTALLED_VER="$(tr -d '[:space:]' < "$HOME_DIR/.nirvana/skills/VERSION" 2>/dev/null || true)"
+HELPER="$(cd "$(dirname "$0")" && pwd)/engine-release.ts"
 
 # 1. Already here?
 if [ -z "$UPDATE" ] && [ -d "$ENGINE_DIR" ] && { command -v nrv >/dev/null 2>&1 || [ -x "$LOCAL_NRV" ]; }; then
@@ -64,8 +71,8 @@ Nirvana-OS bootstrap will change this machine:
   - Bun in user space ($HOME_DIR/.bun) if it is missing, no sudo
   - the engine in $HOME_DIR/.nirvana (skills + shared node_modules)
   - the nrv launcher in $HOME_DIR/.local/bin, plus one PATH line in the shell rc
-  - audit hooks in the settings of the agent runtimes it finds (~/.claude, ~/.gemini, ~/.codex, ~/.antigravity)
-  - runtime skill links in ~/.claude/skills, ~/.codex/skills, ~/.gemini/skills, ~/.antigravity/skills, ~/.pi/agent/skills, ~/.agents/skills
+  - audit hooks in the settings of the agent runtimes it finds (~/.claude, ~/.codex, ~/.gemini/config for Antigravity)
+  - runtime skill links in ~/.claude/skills, ~/.codex/skills, ~/.gemini/config/skills, ~/.pi/agent/skills, ~/.agents/skills
   - the empty content roots ~/squads, ~/businesses, ~/businesses/_library/dna
   Source: ${NIRVANA_ENGINE_TARBALL:-$URL}
   Reversible with: nrv uninstall --engine
@@ -108,6 +115,12 @@ if [ -z "$BUN" ]; then
 fi
 if [ -z "$BUN" ]; then
   if command -v node >/dev/null 2>&1; then
+    case "$INSTALLED_VER" in
+      *-*) if [ -z "${NIRVANA_ENGINE_URL:-}${NIRVANA_ENGINE_TARBALL:-}" ]; then
+             echo "Bun could not be installed, and npx @nirvana-os/cli would replace the installed $INSTALLED_VER with an older stable. Install Bun and re-run." >&2
+             exit 4
+           fi ;;
+    esac
     echo "Bun could not be installed; falling back to npx @nirvana-os/cli (Node)."
     exec npx -y @nirvana-os/cli
   fi
@@ -116,6 +129,31 @@ if [ -z "$BUN" ]; then
   exit 4
 fi
 PATH="$(dirname "$BUN"):$PATH"; export PATH
+
+# 5b. The release, by the installed engine's channel. "current" means nothing
+# greater exists: --update stops there, and a repair (engine folder present, nrv
+# missing) reinstalls the installed version from its own release. When the
+# release list cannot be read, "latest" is downloaded and installed only if it
+# is newer (GUARD, checked after extraction).
+GUARD=""
+if [ -n "$INSTALLED_VER" ] && [ -z "${NIRVANA_ENGINE_URL:-}" ] && [ -z "${NIRVANA_ENGINE_TARBALL:-}" ] && [ -f "$HELPER" ]; then
+  OUT="$("$BUN" "$HELPER" plan --installed "$INSTALLED_VER" --repo "$REPO" || true)"
+  PLAN="$(printf '%s\n' "$OUT" | sed -n 1p)"
+  REASON="$(printf '%s\n' "$OUT" | sed -n 2p)"
+  [ -n "$REASON" ] && echo "Release: $REASON"
+  set -f; set -- $PLAN; set +f
+  case "${1:-}" in
+    install) URL="$3" ;;
+    current)
+      if [ -n "$UPDATE" ]; then
+        echo "Nirvana-OS engine $INSTALLED_VER kept: nothing newer to install."
+        echo "$PATH_LINE"
+        exit 0
+      fi
+      URL="$3" ;;
+    *) GUARD=1 ;;
+  esac
+fi
 
 # 6-7. The tarball, extracted with RELATIVE paths: an absolute Windows path
 # carries a ":" and the GNU tar of Git Bash reads it as a remote host.
@@ -165,6 +203,15 @@ if [ ! -f "$ROOT/scripts/install.ts" ]; then
   for d in "$ROOT"/*/; do [ -f "${d}scripts/install.ts" ] && ROOT="${d%/}"; done
 fi
 [ -f "$ROOT/scripts/install.ts" ] || { echo "Invalid engine asset (no scripts/install.ts)." >&2; exit 5; }
+if [ -n "$GUARD" ]; then
+  NEW_VER="$(tr -d '[:space:]' < "$ROOT/skills/VERSION" 2>/dev/null || true)"
+  if [ -n "$UPDATE" ]; then EQ=""; else EQ="--allow-equal"; fi
+  if ! "$BUN" "$HELPER" may-replace "${NEW_VER:-unknown}" "$INSTALLED_VER" $EQ; then
+    echo "The latest release (${NEW_VER:-unknown version}) is not newer than the installed engine ($INSTALLED_VER); nothing changed."
+    echo "$PATH_LINE"
+    exit 0
+  fi
+fi
 
 # 8. The engine's own installer, run from HOME so its post-install index builds
 # the GLOBAL registry (from inside a project it would anchor to <project>/.nirvana/).

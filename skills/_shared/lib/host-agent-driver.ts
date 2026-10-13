@@ -15,14 +15,15 @@
  * there again — the pre-unification split is exactly the divergence this
  * module closes.
  *
- * Adapters (9): claude-code, codex, gemini-cli, antigravity-cli, kimi-cli,
- * grok-cli, pi, qwen-code, opencode.
+ * Adapters (8): claude-code, codex, antigravity-cli, kimi-cli, grok-cli, pi,
+ * qwen-code, opencode. Gemini CLI (`gemini-cli`) was removed: a config that
+ * still names it reads as an unavailable runtime (retiredRuntimeMessage).
  *
  * PROMPT DELIVERY (ARG_MAX safety): Linux caps a single argv element at
  * MAX_ARG_STRLEN (~128 KiB) and macOS shares a ~256 KiB pool across argv+env,
  * so a large prompt must NEVER travel as one argv string. Each adapter uses
  * its verified best channel:
- *   - STDIN when the CLI documents it (claude, codex, gemini, qwen).
+ *   - STDIN when the CLI documents it (claude, codex, qwen).
  *   - A native prompt-file flag when the CLI has one (grok --prompt-file).
  *   - Otherwise argv for small prompts, degrading to a temp prompt file plus
  *     a short bootstrap argv ("read the file and execute it") above
@@ -32,12 +33,14 @@
  *
  * HEADLESS AUTONOMY: a non-interactive child cannot answer an approval prompt,
  * so every adapter passes its CLI's autonomy flag by default, in BOTH layers.
- * Claude Code runs in auto mode (`--permission-mode auto`, `claude --help`
- * audited 2026-09-29): a classifier reviews risky actions instead of a person,
- * and it never bypasses the permission system. The others keep their approval
- * bypass (per-CLI --help audits, 2026-08-26: codex --dangerously-bypass-
- * approvals-and-sandbox, gemini --approval-mode yolo, agy --dangerously-skip-
- * permissions, grok --always-approve). NIRVANA_HEADLESS_SKIP_PERMISSIONS=0
+ * Every one passes its approval bypass, Claude Code included (per-CLI --help
+ * audits, 2026-08-26: claude --dangerously-skip-permissions, codex
+ * --dangerously-bypass-approvals-and-sandbox, agy --dangerously-skip-permissions,
+ * grok --always-approve). Claude Code ran in
+ * auto mode for a while (0.14.9), where a classifier decides each action: a
+ * worker must reach any folder and run any command its brief needs, as the
+ * owner decided, and auto mode also falls back to refusing everything on a
+ * model it does not support. NIRVANA_HEADLESS_SKIP_PERMISSIONS=0
  * turns autonomy off everywhere (headlessSkipPermissions): the light layer then
  * omits the flag and runHeadless takes each runner's restricted path (the
  * --safe path).
@@ -59,6 +62,7 @@ import { childEnvFor, type ChildEnvMode } from "./child-env.ts";
 import { childDepth, currentDepth, currentRole, DEFAULT_MAX_DEPTH, DEPTH_ENV, mayDispatch, refusalMessage, roleMayDispatch, roleRefusalMessage, ROLE_ENV, type DispatchRole } from "./dispatch-depth.ts";
 import { runOrcaWorker } from "./orca-worker.ts";
 import { confineToWorkspace, FENCE_FILE_PREFIX, RUN_WORKSPACE_ENV } from "./run-workspace.ts";
+import { claudeRunCost } from "./claude-session-cost.ts";
 
 /** `execution.child_env`. The variable NIRVANA_CHILD_ENV wins over any file
  *  (settings precedence), which is how a child that was itself filtered — it
@@ -130,8 +134,14 @@ export function headlessSkipPermissions(): boolean {
  *  already says so; this makes it hold in the runtime: `claude` documents
  *  CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1 as turning off all background task
  *  functionality. A value the user set explicitly is left as it is. */
-export function headlessClaudeEnv<T extends Record<string, string | undefined>>(env: T): T {
+export function headlessClaudeEnv<T extends Record<string, string | undefined>>(env: T, opts: { denySubagents?: boolean } = {}): T {
   if (env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS === undefined) (env as Record<string, string | undefined>).CLAUDE_CODE_DISABLE_BACKGROUND_TASKS = "1";
+  // A worker that may not open subagents may not open a workflow either: the
+  // Workflow tool runs in `-p`, bypass mode approves it, and one run may fan out
+  // to 1,000 agents (code.claude.com/docs/en/workflows). The `--disallowedTools`
+  // deny is one fence; this variable, documented on the same page, is the
+  // second. Forced, not defaulted: it is a fence, like the deny it backs.
+  if (opts.denySubagents) (env as Record<string, string | undefined>).CLAUDE_CODE_DISABLE_WORKFLOWS = "1";
   return env;
 }
 
@@ -149,7 +159,7 @@ function clampPersona(persona: string, cliName: string, max: number = PERSONA_MA
  * Benign chatter agent CLIs print to stderr before (and after) the real failure.
  * A failed run reports ONLY `error` — quota-detector classifies from that string
  * and the ledger shows it to the user — so taking the first N bytes of stderr let
- * noise like gemini-cli's "YOLO mode is enabled" headline the failure and, when
+ * noise like qwen-code's "YOLO mode is enabled" headline the failure and, when
  * the chatter was long enough, push the actual cause out of the window entirely.
  * Then nothing classifies it and the cascade cannot fail over. Match on whole
  * lines only: a line that merely CONTAINS one of these is still a real message.
@@ -572,15 +582,15 @@ const RUNTIMES: RuntimeAdapter[] = [
     cli: "claude",
     // `claude -p` reads the prompt from STDIN when no positional is given
     // (same channel runClaudeCode uses) — argv stays small no matter the
-    // prompt size. `claude -p` starts in Manual mode, where a headless child
-    // is refused the first tool that needs approval; auto mode (`claude
-    // --help`, audited 2026-09-29) lets a classifier approve instead.
+    // prompt size. `claude --help` (audited 2026-08-26): "--dangerously-skip-
+    // permissions  Bypass all permission checks" — without it a headless
+    // child dies on the first tool that needs approval.
     buildCall(persona, userMsg) {
       // System model (what the user's session runs) propagated to the child —
       // without this, judge/gate/verify fell to the CLI default (sonnet)
       // instead of inheriting fable/opus. null → no --model (keeps the default).
       const args = ["-p", "--no-session-persistence", "--output-format", "json"];
-      if (headlessSkipPermissions()) args.push("--permission-mode", "auto");
+      if (headlessSkipPermissions()) args.push("--dangerously-skip-permissions");
       const model = resolveSystemModel("claude-code");
       if (model) args.push("--model", model);
       if (persona) args.push("--append-system-prompt", clampPersona(persona, "claude-code"));
@@ -636,8 +646,7 @@ const RUNTIMES: RuntimeAdapter[] = [
     envHints: ["CODEX_HOME"],
   },
   {
-    // Antigravity CLI (`agy`) — replaces gemini-cli for the consumer tier after
-    // 2026-06-18. Same Google backend, different binary + flags. `agy --help`
+    // Antigravity CLI (`agy`) — Google's agent CLI (Gemini models). `agy --help`
     // (audited 2026-08-06): -p/--print runs a single prompt non-interactively;
     // NO stdin channel and NO prompt-file flag documented, so large prompts
     // degrade to the temp-file bootstrap. --dangerously-skip-permissions for
@@ -650,23 +659,6 @@ const RUNTIMES: RuntimeAdapter[] = [
       const merged = persona ? `${persona}\n\n---\n\n${userMsg}` : userMsg;
       const autonomy = headlessSkipPermissions() ? ["--dangerously-skip-permissions"] : [];
       return argvOrPromptFile(merged, (p) => ["-p", p, ...autonomy]);
-    },
-    parseStdout(stdout) { return stdout.trim(); },
-    envHints: ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
-  },
-  {
-    name: "gemini-cli",
-    cli: "gemini",
-    // `gemini --help` (audited 2026-08-06): "-p ... Appended to input on
-    // stdin (if any)" — stdin is a documented prompt channel. The prompt goes
-    // via STDIN; `-p ""` keeps headless mode without duplicating content.
-    // Autonomy (`gemini --help`, audited 2026-08-26): "--approval-mode ...
-    // yolo (auto-approve all tools)" — the same flag runGemini passes.
-    buildCall(persona, userMsg) {
-      const merged = persona ? `${persona}\n\n---\n\n${userMsg}` : userMsg;
-      const args = ["-p", ""];
-      if (headlessSkipPermissions()) args.push("--approval-mode", "yolo");
-      return { args, input: merged };
     },
     parseStdout(stdout) { return stdout.trim(); },
     envHints: ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
@@ -685,6 +677,8 @@ const RUNTIMES: RuntimeAdapter[] = [
       // Persona via --append-system-prompt (native, confirmed on pi 0.82.1).
       const args = ["-p", "--no-approve"];
       if (persona) args.push("--append-system-prompt", clampPersona(persona, "pi"));
+      // `--` ends the options (runPi's rule): a message starting with `-` or `---` stays a message.
+      args.push("--");
       if (Buffer.byteLength(userMsg, "utf8") <= MAX_ARGV_PROMPT_BYTES) {
         args.push(userMsg);
         return { args };
@@ -721,7 +715,8 @@ const RUNTIMES: RuntimeAdapter[] = [
       const merged = persona ? `${persona}\n\n---\n\n${userMsg}` : userMsg;
       const f = writePromptFile(merged);
       const args = ["--prompt-file", f];
-      if (headlessSkipPermissions()) args.push("--always-approve");
+      // --trust: the folder-trust grant runGrok passes, under the same switch.
+      if (headlessSkipPermissions()) args.push("--always-approve", "--trust");
       return { args, tmpFiles: [f] };
     },
     parseStdout(stdout) {
@@ -751,7 +746,8 @@ const RUNTIMES: RuntimeAdapter[] = [
     cli: "opencode",
     buildCall(persona, userMsg) {
       const merged = persona ? `${persona}\n\n---\n\n${userMsg}` : userMsg;
-      return argvOrPromptFile(merged, (p) => ["run", p]);
+      // `--auto` under the headless switch, as runOpencode passes it.
+      return argvOrPromptFile(merged, (p) => ["run", p, ...(headlessSkipPermissions() ? ["--auto"] : [])]);
     },
     parseStdout(stdout) { return stdout.trim(); },
     envHints: [],
@@ -856,7 +852,7 @@ export function callHostAgent(persona: string, userMessage: string, opts: CallOp
  *    on until the inactivity budget.
  *
  * `heartbeatMs` defaults to 0 — DISARMED — because most adapters here are not
- * streaming: `claude -p --output-format json`, gemini, grok, kimi and
+ * streaming: `claude -p --output-format json`, grok, kimi and
  * antigravity all print one JSON object at the END of the call. For those,
  * "no bytes yet" is not a stall signal, it is the normal shape of a call in
  * progress, and the old 60 s default was a 60-second wall clock on an LLM
@@ -1142,8 +1138,26 @@ export function callHostAgentAsync(persona: string, userMessage: string, opts: C
 // ══════════════════════════════════════════════════════════════════════════
 
 export type Runtime =
-  | "claude-code" | "codex" | "gemini-cli" | "antigravity-cli"
+  | "claude-code" | "codex" | "antigravity-cli"
   | "kimi-cli" | "grok-cli" | "pi" | "qwen-code" | "opencode";
+
+/**
+ * Runtimes the engine no longer drives. A setting, a USE_* rule or an
+ * LLM_CASCADE entry written for one of them is not an error to crash on: it is
+ * an unavailable runtime, said in these words, and the usual fallback (the
+ * next cascade entry, the next installed runtime) takes over.
+ */
+const RETIRED_RUNTIMES: Record<string, string> = {
+  "gemini-cli": "Gemini CLI is no longer supported; pick another runtime",
+};
+
+/** The notice for a retired runtime name (`gemini-cli`, `gemini`, `GEMINI_CLI`),
+ *  or null when the name is not a retired runtime. */
+export function retiredRuntimeMessage(name: unknown): string | null {
+  const key = String(name ?? "").trim().toLowerCase().replace(/_/g, "-");
+  if (key === "gemini") return RETIRED_RUNTIMES["gemini-cli"];
+  return Object.prototype.hasOwnProperty.call(RETIRED_RUNTIMES, key) ? RETIRED_RUNTIMES[key] : null;
+}
 
 export interface RunHeadlessOpts {
   runtime: Runtime;
@@ -1158,8 +1172,7 @@ export interface RunHeadlessOpts {
   /** Tool allowlist. Default: file + web tools, no Bash. */
   allowedTools?: string[];
   /** An answer-only call: the child gets no tools at all where the CLI can
-   *  say so (claude `--tools ""`, codex's read-only sandbox, gemini's plan
-   *  mode). A decision step that only returns JSON has nothing to do with a
+   *  say so (claude `--tools ""`, codex's read-only sandbox). A decision step that only returns JSON has nothing to do with a
    *  tool, and a model holding tools reports its work instead of answering.
    *  Runtimes without such a switch run as before; the caller contains them
    *  with an empty working directory. */
@@ -1173,8 +1186,8 @@ export interface RunHeadlessOpts {
    * with exit 143). Callers that want a cap pass it explicitly (e.g. the fast
    * router sets 5 min; `nrv dispatch --timeout=<min>`). */
   timeoutMs?: number;
-  /** Autonomy: claude runs in auto mode (`--permission-mode auto`), the other
-   * runtimes pass their approval bypass. Default true; `false` is the restricted path
+  /** Bypass all permission checks (claude --dangerously-skip-permissions and
+   * each runtime's equivalent). Default true; `false` is the restricted path
    * (`nrv dispatch --safe`). NIRVANA_HEADLESS_SKIP_PERMISSIONS=0 forces
    * `false` for every run (see headlessSkipPermissions). */
   yolo?: boolean;
@@ -1243,6 +1256,10 @@ export interface RunHeadlessOpts {
    *  workspace: a host that addresses the project (Orca's worktree selector)
    *  still needs it. */
   hostCwd?: string;
+  /** Variables set on THIS run's child only, over everything else: a squad's
+   *  environment (squad-env.ts squadRunEnv) puts its PATH, NODE_PATH and
+   *  NODE_OPTIONS here. Applied after the declared-mode filter, so it survives it. */
+  env?: Record<string, string>;
 }
 
 export interface LedgerHeartbeatOpts {
@@ -1346,6 +1363,12 @@ export interface RunHeadlessResult {
    * fail the turn (codex: skills budget, an MCP server that did not start), or a
    * grant this runtime's CLI has no flag for. Delivered, not swallowed. */
   warnings?: string[];
+  /** A resume was asked for and the CLI ran the turn in another conversation
+   *  instead (agy: `--continue` lands on whatever conversation it finds, or a
+   *  new one). The run happened without the previous context; `warnings` says
+   *  so in words, and `sessionId` is the conversation it ran in. Never re-run:
+   *  the turn was paid. */
+  resumeLost?: boolean;
   exitCode: number;
   stderr: string;
   durationMs: number;
@@ -1358,16 +1381,17 @@ export interface RunHeadlessResult {
  * squad dir on top of cwd; under a sandbox those grants are what lets a seat
  * read its playbooks and write its deliverables. A runtime without a flag gets
  * a warning on the result, never silence. Audited on the installed CLIs,
- * 2026-09-05 (claude, codex 0.153, gemini, agy); qwen-code is a gemini-cli
- * fork and takes the same flag, with a retry without it for older builds.
+ * 2026-09-05 (claude, codex 0.153, agy); qwen-code takes
+ * `--include-directories`, with a retry without it for older builds.
  */
 export const RUNTIME_DIR_GRANT_FLAG: Record<Runtime, string | null> = {
   "claude-code": "--add-dir",
   codex: "--add-dir",
-  "gemini-cli": "--include-directories",
   "antigravity-cli": "--add-dir",
   "qwen-code": "--include-directories",
-  "kimi-cli": null,
+  // Kimi Code 2.x documents `--add-dir <dir>`, repeatable (kimi-command
+  // reference, audited 2026-10-11); a build that rejects it is retried without.
+  "kimi-cli": "--add-dir",
   "grok-cli": null,
   pi: null,
   opencode: null,
@@ -1444,6 +1468,13 @@ let spawnAsRole: string | null = null;
  *  its environment so a dispatch it starts nests inside the same run. Same
  *  save-and-restore idiom as the two above. */
 let spawnInWorkspace: string | null = null;
+/** The run's own variables (RunHeadlessOpts.env), laid over the child's
+ *  environment last. Same save-and-restore idiom as the three above. */
+let spawnExtraEnv: Record<string, string> | null = null;
+/** True while runClaudeCode spawns a worker that may not open its own agents,
+ *  so the claude child also gets CLAUDE_CODE_DISABLE_WORKFLOWS. Same
+ *  save-and-restore idiom as the four above. */
+let spawnDenySubagents = false;
 
 /** All runners spawn their child through this. Pass-through to spawnSync when
  * unledgered (zero behavior change); with an active ledger context, stdout/
@@ -1477,7 +1508,8 @@ function driverSpawnSync(cmd: string, args: string[], options: SpawnSyncOptions 
   if (spawnAsRole) baseEnv[ROLE_ENV] = spawnAsRole;
   // And WHERE it runs, so what it dispatches belongs to its run.
   if (spawnInWorkspace) baseEnv[RUN_WORKSPACE_ENV] = spawnInWorkspace;
-  if (isClaude) headlessClaudeEnv(baseEnv);
+  if (spawnExtraEnv) Object.assign(baseEnv, spawnExtraEnv);
+  if (isClaude) headlessClaudeEnv(baseEnv, { denySubagents: spawnDenySubagents });
   options = {
     // Windows: a process without its own console makes Windows allocate a VISIBLE
     // one for every child it spawns, and `stdio: "ignore"` does not prevent it.
@@ -1573,14 +1605,15 @@ function runWithLedgerHeartbeat(opts: RunHeadlessOpts, runner: (o: RunHeadlessOp
 //   codex: JSONL event stream; a terminal `error` event or `turn.failed`
 //     with no subsequent `turn.completed` (a later completed turn = internal
 //     retry succeeded, clears the failure).
-//   gemini-cli / qwen-code: single JSON object; an `error` field in the
+//   qwen-code: single JSON object; an `error` field in the
 //     envelope marks a failed run even on exit 0.
 //   antigravity-cli: single JSON object; `is_error: true` or an `error`
 //     field.
 //   kimi-cli: NDJSON stream; an `error` event or a terminal `result` event
 //     with `is_error: true` (a result with is_error:false clears earlier
 //     error events — internal retry).
-//   grok-cli: single JSON object; `is_error: true` or an `error` field.
+//   grok-cli: single JSON object; `is_error: true`, an `error` field, or the
+//     `{"type":"error","message":...}` failure envelope.
 //   pi: JSONL stream; assistant `message_end` with `stopReason: "error"` /
 //     `errorMessage` (a later successful turn clears it).
 //   opencode: no machine envelope verified — exit code is the only signal.
@@ -1610,7 +1643,7 @@ function runClaudeCode(opts: RunHeadlessOpts): RunHeadlessResult {
   const ccEffort = effortFor(opts, "claude-code");
   if (ccEffort) args.push("--effort", ccEffort);
 
-  // Auto mode by default. EXPLICIT caller settings (allowedTools / permissionMode)
+  // Full access by default. EXPLICIT caller settings (allowedTools / permissionMode)
   // always take precedence — so focused text-only calls like the brief-proxy or
   // the team-orchestrator director can lock down permissions without the trust
   // default overriding them.
@@ -1634,7 +1667,7 @@ function runClaudeCode(opts: RunHeadlessOpts): RunHeadlessResult {
   } else if (safe) {
     args.push("--permission-mode", "acceptEdits");
   } else {
-    args.push("--permission-mode", "auto");
+    args.push("--dangerously-skip-permissions");
   }
 
   // A dispatched worker does not open its own agents. This is the leg of the
@@ -1653,7 +1686,12 @@ function runClaudeCode(opts: RunHeadlessOpts): RunHeadlessResult {
   //
   // A caller that genuinely orchestrates — not a worker — opts back in with
   // `allowSubagents: true`.
-  if (!opts.allowSubagents) args.push("--disallowedTools", "Task", "Agent");
+  //
+  // `Workflow` joins the list: the dynamic-workflow tool runs in `-p`, bypass
+  // mode approves it, and one call may spawn up to 1,000 agents
+  // (code.claude.com/docs/en/workflows, audited 2026-10-11 on 2.1.296). The
+  // child env also carries CLAUDE_CODE_DISABLE_WORKFLOWS=1 (headlessClaudeEnv).
+  if (!opts.allowSubagents) args.push("--disallowedTools", "Task", "Agent", "Workflow");
 
   if (typeof opts.maxBudgetUsd === "number") args.push("--max-budget-usd", String(opts.maxBudgetUsd));
   if (opts.claudeSettings) args.push("--settings", opts.claudeSettings);
@@ -1668,6 +1706,8 @@ function runClaudeCode(opts: RunHeadlessOpts): RunHeadlessResult {
   args.push(...directive.args);
 
   let r!: SpawnSyncReturns<string>;
+  const previousDenySubagents = spawnDenySubagents;
+  spawnDenySubagents = !opts.allowSubagents;
   try {
     r = driverSpawnSync("claude", args, {
       cwd: opts.cwd,
@@ -1677,6 +1717,7 @@ function runClaudeCode(opts: RunHeadlessOpts): RunHeadlessResult {
       maxBuffer: 64 * 1024 * 1024,
     });
   } finally {
+    spawnDenySubagents = previousDenySubagents;
     removeTmpFiles(directive.tmpFiles);
   }
 
@@ -1696,7 +1737,9 @@ function runClaudeCode(opts: RunHeadlessOpts): RunHeadlessResult {
     const parsed = JSON.parse(stdout.trim());
     sessionId = parsed.session_id ?? null;
     result = typeof parsed.result === "string" ? parsed.result : JSON.stringify(parsed.result ?? "");
-    costUsd = typeof parsed.total_cost_usd === "number" ? parsed.total_cost_usd : null;
+    // A resumed session reports its cumulative total (claude 2.1.277+): the
+    // run's own spend is the difference from the total last recorded for it.
+    costUsd = claudeRunCost({ resumedFrom: opts.sessionId, sessionId, reportedUsd: typeof parsed.total_cost_usd === "number" ? parsed.total_cost_usd : null });
     if (typeof parsed.subtype === "string") resultSubtype = parsed.subtype;
     if (typeof parsed.is_error === "boolean") isError = isError || parsed.is_error;
   } catch {
@@ -1726,7 +1769,7 @@ function runClaudeCode(opts: RunHeadlessOpts): RunHeadlessResult {
   };
 }
 
-// codex / gemini lack a --append-system-prompt flag, so we fold the directive
+// codex / qwen lack a --append-system-prompt flag, so we fold the directive
 // into the user prompt as a preamble for those runtimes.
 function withPreamble(opts: RunHeadlessOpts): string {
   return opts.appendSystemPrompt ? `${opts.appendSystemPrompt}\n\n---\n\n${opts.prompt}` : opts.prompt;
@@ -1779,6 +1822,12 @@ function runCodex(opts: RunHeadlessOpts): RunHeadlessResult {
   // the user's own value in force.
   const cxEffort = effortFor(opts, "codex");
   if (cxEffort) args.push("-c", `model_reasoning_effort=${JSON.stringify(cxEffort)}`);
+  // A dispatched worker does not open its own agents (the claude runner's rule):
+  // codex ships `multi_agent` on by default, and `agents.enabled = false` is
+  // the documented switch (developers.openai.com/codex/subagents, audited
+  // 2026-10-11). A config key, not `--disable multi_agent`: an unknown `-c`
+  // key is tolerated by older builds, an unknown `--disable` feature exits 1.
+  if (!opts.allowSubagents) args.push("-c", "agents.enabled=false");
   // `--provider` no longer exists on `codex exec` ("unexpected argument" on
   // 0.153); the provider is a config key, overridable per run with -c.
   if (opts.providerHint) args.push("-c", `model_provider=${JSON.stringify(opts.providerHint)}`);
@@ -1882,87 +1931,62 @@ function runCodex(opts: RunHeadlessOpts): RunHeadlessResult {
   };
 }
 
-// Gemini CLI. We set a known --session-id on first run so revise can resume it
-// deterministically with -r. auto_edit auto-approves file writes (yolo = all).
-// Prompt via STDIN (verified `gemini --help`: "-p ... Appended to input on
-// stdin (if any)") — `-p ""` keeps headless mode, content rides stdin, argv
-// stays small no matter the prompt size.
-function runGemini(opts: RunHeadlessOpts): RunHeadlessResult {
-  const started = Date.now();
-  const sid = opts.sessionId || randomUUID();
-  const args = ["-p", "", "-o", "json", "--skip-trust"];
-  if (opts.sessionId) args.push("-r", opts.sessionId);
-  else args.push("--session-id", sid);
-  const gmModel = opts.model ?? resolveSystemModel("gemini-cli");
-  if (gmModel) args.push("--model", gmModel);
-  // Workspace grants (`gemini --help`, audited 2026-09-05: "--include-directories
-  // Additional directories to include in the workspace", repeatable).
-  for (const d of opts.addDirs ?? []) args.push("--include-directories", d);
-  // Trust by default (--yolo); --safe (opts.yolo===false) → auto_edit; an
-  // answer-only call → plan, which `gemini --help` (audited 2026-09-29) calls
-  // "read-only mode".
-  args.push("--approval-mode", opts.noTools ? "plan" : opts.yolo === false ? "auto_edit" : "yolo");
-
-  const r = driverSpawnSync("gemini", args, {
-    cwd: opts.cwd,
-    input: withPreamble(opts),
-    encoding: "utf8",
-    ...(typeof opts.timeoutMs === "number" ? { timeout: opts.timeoutMs } : {}),
-    maxBuffer: 64 * 1024 * 1024,
-  });
-
-  const durationMs = Date.now() - started;
-  const exitCode = r.status ?? (r.signal ? 124 : 1);
-  const stderr = (r.stderr || "").trim();
-
-  const rawStdout = (r.stdout || "").trim();
-  let sessionId: string | null = sid;
-  let envelopeError: string | null = null;
-  let costUsd: number | null = null;
-  try {
-    const j = JSON.parse(rawStdout);
-    sessionId = j.session_id || j.sessionId || sid;
-    // Failure contract: an `error` field in the envelope = failed run even
-    // when the process exits 0.
-    if (j.error != null) envelopeError = envelopeErrorMessage(j.error);
-    if (typeof j.total_cost_usd === "number" && Number.isFinite(j.total_cost_usd)) costUsd = j.total_cost_usd;
-  } catch { /* keep sid */ }
-  // CRITICAL: keep the FULL JSON stdout in result, not just j.response — the
-  // cost-estimator needs the `stats.models.*.tokens` block to compute spend.
-  // Slicing to j.response throws that data away and forces $0 tracking.
-  const result = rawStdout;
-
-  const ok = exitCode === 0 && envelopeError === null;
-  return {
-    ok, runtime: "gemini-cli", sessionId, result,
-    costUsd, ...(costUsd === null ? { costUnavailable: true } : {}),
-    exitCode, stderr, durationMs,
-    error: ok ? undefined : (envelopeError || salientError(stderr, "gemini failed")),
-  };
-}
-
-// Antigravity CLI (`agy`). Replaces gemini-cli for consumer tier after 2026-06-18.
-// Same Google backend (Gemini models), different binary + flag conventions.
+// Antigravity CLI (`agy`), Google's agent CLI (Gemini models).
 // Prompt delivery: `agy --help` (audited 2026-08-06) documents NO stdin
 // channel and NO prompt-file flag — argv for small prompts, temp-file
 // bootstrap above MAX_ARGV_PROMPT_BYTES. Note: the bootstrap needs the child
 // to READ the file, so in --safe mode (no skip-permissions) a large-prompt
 // run can block on approval — a pre-existing agy constraint (headless agy
 // without the skip flag halts anyway).
+/**
+ * A resume agy did not honour, read from its output, or null when it held (or
+ * nothing says otherwise). This line resumes with `--continue`, which agy
+ * 1.3.3 points at the most recent non-empty conversation of the directory and,
+ * when there is none, at a new conversation, with exit 0 and no warning. So
+ * the sign is the envelope: a conversation id that differs from the one the
+ * run recorded. (`conversation "<id>" not found` on stderr, agy's answer to an
+ * unknown `--conversation <id>`, counts too.) The turn ran, so the caller must
+ * not re-run it: the result carries the warning and the id agy answered from.
+ */
+export function agyResumeLost(requested: string, stdout: string, stderr: string): { newId: string | null; warning: string } | null {
+  let returned: string | null = null;
+  try {
+    const j = JSON.parse(stdout);
+    const id = j?.session_id || j?.sessionId || j?.conversation_id;
+    if (typeof id === "string" && id) returned = id;
+  } catch { /* no envelope: only stderr can tell */ }
+  const notFound = /conversation\s+["'`]?[^"'`\s]*["'`]?\s+not found/i.test(stderr);
+  if (!notFound && (returned === null || returned === requested)) return null;
+  const newId = returned !== null && returned !== requested ? returned : null;
+  const why = notFound ? `agy reported conversation "${requested}" not found` : `agy answered from conversation ${returned}`;
+  return {
+    newId,
+    warning: `agy: resume failed: --continue did not resume conversation ${requested} (${why}); `
+      + `this run went to ${newId ? `conversation ${newId}` : "another conversation"} (a new one, or another of this directory) WITHOUT the previous context`,
+  };
+}
+
 function runAntigravity(opts: RunHeadlessOpts): RunHeadlessResult {
   const started = Date.now();
   const sid = opts.sessionId || randomUUID();
   // agy headless: -p / --print / --prompt all accept the prompt as argv value.
   // Output formats: "json" (single object) or "stream-json" (NDJSON events).
-  // We use single-object json for parity with runGemini/runClaudeCode.
+  // We use single-object json for parity with runClaudeCode.
   // Resume = --continue (most recent conversation); we can't set our own id
   // upfront. Autonomy = --dangerously-skip-permissions (without it agy hangs
   // waiting for approval).
   //
   // --output-format json: under non-TTY, `agy -p` in TEXT mode can drop the
   // final response from stdout (documented terminal-render bug); JSON does not
-  // suffer from it. Old builds do NOT have the flag (confirmed via --help on
-  // installed versions) — if the spawn fails with a flag error, retry without it.
+  // suffer from it.
+  //
+  // ONE spawn, never a re-spawn. Since agy 1.2.10 a model or agent error in the
+  // middle of a turn exits 3 with an `AGY_ERROR` line, after the turn was paid
+  // for. The retry that used to sit here (without --output-format on any
+  // stderr naming "unknown"/"invalid") matched those messages and ran the whole
+  // turn again. Every supported agy has --output-format (1.3.3 help), so it is
+  // gone: a failed run is reported as failed, and the callers' own recovery
+  // decides.
   const delivery = argvOrPromptFile(withPreamble(opts), (p) => ["-p", p]);
   const args = [...delivery.args, "--output-format", "json"];
   if (opts.sessionId) args.push("--continue");
@@ -1980,10 +2004,6 @@ function runAntigravity(opts: RunHeadlessOpts): RunHeadlessResult {
   let r!: SpawnSyncReturns<string>;
   try {
     r = driverSpawnSync("agy", args, spawnOpts);
-    if ((r.status ?? 1) !== 0 && /output[- ]format|unknown|unrecognized|invalid (option|flag|argument)/i.test(r.stderr || "")) {
-      const i = args.indexOf("--output-format");
-      r = driverSpawnSync("agy", [...args.slice(0, i), ...args.slice(i + 2)], spawnOpts);
-    }
   } finally {
     removeTmpFiles(delivery.tmpFiles);
   }
@@ -2029,14 +2049,51 @@ function runAntigravity(opts: RunHeadlessOpts): RunHeadlessResult {
     if (typeof j.total_cost_usd === "number" && Number.isFinite(j.total_cost_usd)) costUsd = j.total_cost_usd;
   } catch { /* plain text — keep the whole stdout */ }
 
+  // A resume agy did not honour: `--continue` with no conversation to continue
+  // (or another one more recent in the directory) exits 0 having run the turn,
+  // paid, elsewhere. Not re-run; said, and the id it ran in kept.
+  const lost = opts.sessionId ? agyResumeLost(opts.sessionId, rawStdout, stderr) : null;
+  if (lost) sessionId = lost.newId;
+
   const ok = exitCode === 0 && envelopeError === null;
   return {
     ok, runtime: "antigravity-cli", sessionId, result,
     costUsd, ...(costUsd === null ? { costUnavailable: true } : {}),
     ...(usage ? { usage } : {}),
+    ...(lost ? { resumeLost: true, warnings: [lost.warning] } : {}),
     exitCode, stderr, durationMs,
     error: ok ? undefined : (envelopeError || salientError(stderr, "agy failed")),
   };
+}
+
+/**
+ * True only when the CLI provably refused `flag` while parsing argv, so no
+ * model call happened and running again without the flag cannot pay for a
+ * turn twice. All of it must hold: a non-zero exit (exactly `usageExit` when
+ * the CLI reserves one for usage errors, as clap does with 2); stderr naming
+ * THAT flag in an unknown / unrecognized / unexpected / no-such option or
+ * argument message, or an invalid value for it; and no JSON object on stdout
+ * (a session, a usage block or a stream event means a turn started). A word
+ * like "unknown" anywhere else (a model error, a tool's output) proves nothing.
+ */
+export function argvRejectedFlag(
+  res: { status: number | null; stdout?: string | null; stderr?: string | null },
+  flag: string,
+  usageExit?: number,
+): boolean {
+  const status = res.status ?? 1;
+  if (status === 0 || (usageExit !== undefined && status !== usageExit)) return false;
+  for (const line of String(res.stdout ?? "").split("\n")) {
+    const t = line.trim();
+    if (!t.startsWith("{")) continue;
+    try { const j = JSON.parse(t); if (j && typeof j === "object") return false; } catch { /* not JSON */ }
+  }
+  const name = flag.replace(/^-+/, "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const named = `["'\`]?(?:--?)?${name}(?![\\w-])`;
+  const unknown = new RegExp(`(?:unknown|unrecognized|unexpected|no such)\\s+(?:option|argument|flag)s?\\b[^\\n]*?(?<![\\w-])${named}`, "i");
+  const badValue = new RegExp(`invalid value\\b[^\\n]*?(?<![\\w-])["'\`]?--${name}(?![\\w-])`, "i");
+  const err = String(res.stderr ?? "");
+  return unknown.test(err) || badValue.test(err);
 }
 
 // Kimi Code CLI (`kimi`, MoonshotAI/kimi-code). Open-weight Moonshot models
@@ -2062,6 +2119,8 @@ function runKimi(opts: RunHeadlessOpts): RunHeadlessResult {
   const args = [...delivery.args, "--output-format", "stream-json"];
   const kmModel = opts.model ?? resolveSystemModel("kimi-cli");
   if (kmModel) args.push("-m", kmModel);
+  for (const d of opts.addDirs ?? []) args.push("--add-dir", d);
+  const warnings: string[] = [];
 
   const spawnOpts = {
     cwd: opts.cwd,
@@ -2072,7 +2131,18 @@ function runKimi(opts: RunHeadlessOpts): RunHeadlessResult {
   let r!: SpawnSyncReturns<string>;
   try {
     r = driverSpawnSync("kimi", args, spawnOpts);
-    if ((r.status ?? 1) !== 0 && /output[- ]format|unknown|unrecognized|invalid (option|flag|argument)/i.test(r.stderr || "")) {
+    // A build without --add-dir (the legacy Python kimi-cli line) rejects it
+    // while parsing argv, before the model: drop the grants once, and say so.
+    // Only on that proof (argvRejectedFlag): kimi reserves no usage exit code
+    // (commander exits 1, click 2), so the rejected flag must be named and
+    // stdout must carry no event. Anything else is a turn that ran, and paid.
+    if (args.includes("--add-dir") && argvRejectedFlag(r, "--add-dir")) {
+      for (let i = args.indexOf("--add-dir"); i >= 0; i = args.indexOf("--add-dir")) args.splice(i, 2);
+      warnings.push(`kimi-cli: this version does not know --add-dir; retried without it (not granted by the CLI: ${(opts.addDirs ?? []).join(", ")})`);
+      r = driverSpawnSync("kimi", args, spawnOpts);
+    }
+    // A build without stream-json output, on the same proof.
+    if (argvRejectedFlag(r, "--output-format")) {
       const i = args.indexOf("--output-format");
       r = driverSpawnSync("kimi", [...args.slice(0, i), ...args.slice(i + 2)], spawnOpts);
     }
@@ -2085,11 +2155,26 @@ function runKimi(opts: RunHeadlessOpts): RunHeadlessResult {
   const stderr = (r.stderr || "").trim();
   const rawStdout = (r.stdout || "").trim();
 
-  // stream-json = NDJSON events. Extract the assistant's final text defensively
-  // (schema varies by build), accumulating any assistant-content field; if the
+  // stream-json = one message per line: "an Assistant message; when the model
+  // calls a tool, an Assistant message with `tool_calls` is emitted first,
+  // followed by the corresponding Tool message, then subsequent Assistant
+  // messages" (kimi-command reference, audited 2026-10-11). Only assistant
+  // messages make the result: a Tool message carries the tool's output (file
+  // dumps, command output), which used to land in the worker's result. The
+  // answer is the last assistant message without tool_calls (else the last
+  // assistant text). Lines with no role keep the older event reading; if the
   // output isn't NDJSON (plain-text fallback path) keep the whole stdout.
+  const roleOf = (j: any): string | null =>
+    typeof j?.role === "string" ? j.role : typeof j?.message?.role === "string" ? j.message.role : null;
+  const textOf = (content: unknown): string => typeof content === "string" ? content
+    : Array.isArray(content) ? content.map((part: any) => typeof part === "string" ? part
+      : (part?.type === undefined || part?.type === "text") && typeof part?.text === "string" ? part.text : "").join("")
+    : "";
   let sessionId: string | null = sid;
   let assistant = "";
+  let sawRole = false;
+  let lastAssistant = "";
+  let finalAssistant = "";
   let sawJson = false;
   let streamError: string | null = null;
   let costUsd: number | null = null;
@@ -2110,6 +2195,19 @@ function runKimi(opts: RunHeadlessOpts): RunHeadlessResult {
         else if (j.is_error === false) streamError = null;
         if (typeof j.total_cost_usd === "number" && Number.isFinite(j.total_cost_usd)) costUsd = j.total_cost_usd;
       }
+      const role = roleOf(j);
+      if (role !== null) {
+        sawRole = true;
+        if (role === "assistant") {
+          const message = typeof j.role === "string" ? j : j.message;
+          const text = textOf(message?.content);
+          if (text.trim()) {
+            lastAssistant = text;
+            if (!(Array.isArray(message?.tool_calls) && message.tool_calls.length)) finalAssistant = text;
+          }
+        }
+        continue;
+      }
       const piece = typeof j.text === "string" ? j.text
         : typeof j.content === "string" ? j.content
         : typeof j.response === "string" ? j.response
@@ -2120,12 +2218,13 @@ function runKimi(opts: RunHeadlessOpts): RunHeadlessResult {
       if (piece) assistant += piece;
     } catch { /* not a json line */ }
   }
-  const result = (sawJson && assistant) ? assistant.trim() : rawStdout;
+  const result = sawRole ? (finalAssistant || lastAssistant).trim()
+    : (sawJson && assistant) ? assistant.trim() : rawStdout;
 
   const ok = exitCode === 0 && streamError === null;
   return {
     ok, runtime: "kimi-cli", sessionId, result,
-    ...noDirGrantWarning("kimi-cli", opts.addDirs),
+    ...(warnings.length ? { warnings } : {}),
     costUsd, ...(costUsd === null ? { costUnavailable: true } : {}),
     exitCode, stderr, durationMs,
     error: ok ? undefined : (streamError || salientError(stderr, "kimi failed")),
@@ -2148,14 +2247,34 @@ function runKimi(opts: RunHeadlessOpts): RunHeadlessResult {
 // json` returns a single object (real keys: text/sessionId/total_cost_usd).
 // Old builds may lack `--output-format` (retry without it) or even
 // `--prompt-file` (retry with -p argv — small prompts only at that point).
+//
+// Folder trust (grok 1.0.x): project AGENTS.md, project skills under
+// `.agents/skills`, project hooks and project MCP load only in a trusted
+// folder, and "headless startup with these sources requires `--trust` or a
+// prior grant" (~/.grok/docs/user-guide/22-permissions-and-safety.md, 1.0.44).
+// A run folder is new on every dispatch, so the autonomous path passes the
+// hidden `--trust` (parsed by 1.0.44: `grok --trust --version`); `--safe`
+// leaves trust to the user. A build that does not know the flag rejects it
+// while parsing argv, before any model call, so that one error is retried
+// without it.
+//
+// Resume: `-r <id>` continues the session (`grok --help`, 1.0.44: "-r,
+// --resume [<SESSION_ID_OR_TITLE>]"); without it a revise started a fresh
+// conversation.
+/** clap's exit code for a usage error (grok 1.0.44: an unknown flag exits 2). */
+const GROK_USAGE_EXIT = 2;
+
 function runGrok(opts: RunHeadlessOpts): RunHeadlessResult {
   const started = Date.now();
   const sid = opts.sessionId || randomUUID();
   const merged = withPreamble(opts);
   const promptFile = writePromptFile(merged);
+  let withTrust = opts.yolo !== false;
   const buildArgs = (delivery: string[], withFormat: boolean): string[] => {
     const a = [...delivery, ...(withFormat ? ["--output-format", "json"] : []), "--cwd", opts.cwd];
+    if (opts.sessionId) a.push("-r", opts.sessionId);
     if (opts.yolo !== false) a.push("--always-approve");
+    if (withTrust) a.push("--trust");
     const gkModel = opts.model ?? resolveSystemModel("grok-cli");
     if (gkModel) a.push("-m", gkModel);
     return a;
@@ -2167,19 +2286,27 @@ function runGrok(opts: RunHeadlessOpts): RunHeadlessResult {
     ...(typeof opts.timeoutMs === "number" ? { timeout: opts.timeoutMs } : {}),
     maxBuffer: 64 * 1024 * 1024,
   };
-  const flagError = (res: SpawnSyncReturns<string>): boolean =>
-    (res.status ?? 1) !== 0 && /unknown|unrecognized|unexpected|invalid (option|flag|argument)/i.test(res.stderr || "");
+  // A retry runs only on proof the flag was refused while parsing argv: grok
+  // parses with clap, which exits 2 on a usage error (`error: unexpected
+  // argument '--x' found`, grok 1.0.44) before any model call; a turn that
+  // failed exits 1, 130 or 143 and was paid for. argvRejectedFlag also wants
+  // the flag named and no JSON on stdout.
+  const rejected = (res: SpawnSyncReturns<string>, flag: string): boolean => argvRejectedFlag(res, flag, GROK_USAGE_EXIT);
   let r!: SpawnSyncReturns<string>;
   try {
     let delivery = ["--prompt-file", promptFile];
     r = driverSpawnSync("grok", buildArgs(delivery, true), spawnOpts);
-    if (flagError(r) && /prompt[- ]file/i.test(r.stderr || "")) {
+    if (withTrust && rejected(r, "--trust")) {
+      withTrust = false;
+      r = driverSpawnSync("grok", buildArgs(delivery, true), spawnOpts);
+    }
+    if (rejected(r, "--prompt-file")) {
       // Very old build without --prompt-file → argv fallback (ARG_MAX-unsafe
       // above MAX_ARGV_PROMPT_BYTES, but the flagless build leaves no choice).
       delivery = ["-p", merged];
       r = driverSpawnSync("grok", buildArgs(delivery, true), spawnOpts);
     }
-    if (flagError(r) && /output[- ]format/i.test(r.stderr || "")) {
+    if (rejected(r, "--output-format")) {
       r = driverSpawnSync("grok", buildArgs(delivery, false), spawnOpts);
     }
   } finally {
@@ -2207,6 +2334,9 @@ function runGrok(opts: RunHeadlessOpts): RunHeadlessResult {
     // Failure contract: is_error / error in the envelope = failed run.
     if (j.is_error === true) envelopeError = envelopeErrorMessage(j.error) || "grok returned is_error";
     else if (j.error != null) envelopeError = envelopeErrorMessage(j.error);
+    // grok's failure envelope (1.0.44): `{"type":"error","message":"..."}`,
+    // with neither field above. Its message is the error, not stderr's noise.
+    else if (j.type === "error") envelopeError = envelopeErrorMessage(j.message ?? j) || "grok reported an error";
     const cost = j.total_cost_usd ?? j.totalCostUsd ?? j.cost_usd;
     if (typeof cost === "number" && Number.isFinite(cost)) costUsd = cost;
   } catch { /* plain text — keep stdout */ }
@@ -2234,7 +2364,7 @@ function runGrok(opts: RunHeadlessOpts): RunHeadlessResult {
 // "<uuid>", ...} and the assistant text in `message_end` events with
 // message.content = [{type:"text",text}]. Deterministic session via
 // `--session-id <uuid>` ("exact project session ID, creating it if missing")
-// — same pattern as runGemini: we generate the id on the 1st run and `nrv
+// — we generate the id on the 1st run and `nrv
 // revise` resumes with the SAME id. `--append-system-prompt` exists (the
 // directive goes as a REAL system prompt, not folded into the user prompt).
 //
@@ -2260,8 +2390,17 @@ function runPi(opts: RunHeadlessOpts): RunHeadlessResult {
   if (opts.appendSystemPrompt) flags.push("--append-system-prompt", opts.appendSystemPrompt);
   const piModel = opts.model ?? resolveSystemModel("pi");
   if (piModel) flags.push("--model", piModel);
-  if (opts.providerHint) flags.push("--provider", opts.providerHint);
+  // `--provider` travels only WITH `--model`: since pi 1.0.0 "--provider
+  // without --model now fails with an error" (CHANGELOG, issue #10236), where
+  // 0.8x ignored it. Alone, it is dropped and pi uses its configured default.
+  const droppedProvider = !!opts.providerHint && !piModel;
+  if (opts.providerHint && piModel) flags.push("--provider", opts.providerHint);
   flags.push(opts.yolo === false ? "--no-approve" : "--approve");
+  // The prompt goes after `--`: a brief that starts with `-` or `---` (YAML
+  // front matter, a bullet) is otherwise parsed as an option (`pi --help`:
+  // `pi -p -- "- Summarize"`). `@file` attachments still work after it
+  // (verified in pi 0.84.3 dist/cli/args.js).
+  flags.push("--");
 
   let promptArgs: string[] = [opts.prompt];
   let tmpFiles: string[] | undefined;
@@ -2332,9 +2471,13 @@ function runPi(opts: RunHeadlessOpts): RunHeadlessResult {
   const result = (sawJson && assistant) ? assistant.trim() : rawStdout;
   const ok = exitCode === 0 && streamError === null;
 
+  const piWarnings = [
+    ...(((noDirGrantWarning("pi", opts.addDirs) as { warnings?: string[] }).warnings) ?? []),
+    ...(droppedProvider ? [`pi: --provider ${opts.providerHint} needs --model (pi 1.0.0 rejects it alone); not passed, pi used its configured provider`] : []),
+  ];
   return {
     ok, runtime: "pi", sessionId, result,
-    ...noDirGrantWarning("pi", opts.addDirs),
+    ...(piWarnings.length ? { warnings: piWarnings } : {}),
     costUsd, ...(costUsd === null ? { costUnavailable: true } : {}),
     exitCode, stderr, durationMs,
     error: ok ? undefined : (streamError || salientError(stderr, "pi failed")),
@@ -2398,9 +2541,14 @@ function runQwen(opts: RunHeadlessOpts): RunHeadlessResult {
 // verified (binary not auditable here): argv for small prompts, temp-file
 // bootstrap above MAX_ARGV_PROMPT_BYTES; exit code is the only failure
 // signal. No session capture, no native USD figure → costUnavailable.
+//
+// Autonomy: `opencode run --auto` "Auto-approve[s] permissions that are not
+// explicitly denied" (opencode.ai/docs/cli, audited 2026-10-11), the bypass
+// every other adapter passes by default; `--safe` (yolo false) leaves the
+// user's own permission config in charge.
 function runOpencode(opts: RunHeadlessOpts): RunHeadlessResult {
   const started = Date.now();
-  const delivery = argvOrPromptFile(withPreamble(opts), (p) => ["run", p]);
+  const delivery = argvOrPromptFile(withPreamble(opts), (p) => ["run", p, ...(opts.yolo !== false ? ["--auto"] : [])]);
 
   let r!: SpawnSyncReturns<string>;
   try {
@@ -2495,13 +2643,16 @@ function dispatchToRunner(opts: RunHeadlessOpts): RunHeadlessResult {
   warnEffortUnsupported(opts, opts.runtime);
   const previousSpawnAs = spawnAsRuntime;
   const previousSpawnRole = spawnAsRole;
+  const previousExtraEnv = spawnExtraEnv;
   spawnAsRuntime = opts.runtime;
   spawnAsRole = opts.dispatchRole ?? null;
+  spawnExtraEnv = opts.env && Object.keys(opts.env).length ? opts.env : null;
   try {
     return dispatchToRunnerInner(opts);
   } finally {
     spawnAsRuntime = previousSpawnAs;
     spawnAsRole = previousSpawnRole;
+    spawnExtraEnv = previousExtraEnv;
   }
 }
 
@@ -2531,8 +2682,6 @@ function runConfined(opts: RunHeadlessOpts): RunHeadlessResult {
       return runClaudeCode(opts);
     case "codex":
       return runCodex(opts);
-    case "gemini-cli":
-      return runGemini(opts);
     case "antigravity-cli":
       return runAntigravity(opts);
     case "kimi-cli":
@@ -2545,12 +2694,15 @@ function runConfined(opts: RunHeadlessOpts): RunHeadlessResult {
       return runQwen(opts);
     case "opencode":
       return runOpencode(opts);
-    default:
+    default: {
+      const retired = retiredRuntimeMessage(opts.runtime);
+      const known = "claude-code | codex | antigravity-cli | kimi-cli | grok-cli | pi | qwen-code | opencode";
       return {
         ok: false, runtime: opts.runtime, sessionId: null, result: "", costUsd: null, costUnavailable: true,
         exitCode: 2, stderr: "", durationMs: 0,
-        error: `unknown runtime '${opts.runtime}'. Use claude-code | codex | gemini-cli | antigravity-cli | kimi-cli | grok-cli | pi | qwen-code | opencode.`,
+        error: retired ? `${retired} (${known}).` : `unknown runtime '${opts.runtime}'. Use ${known}.`,
       };
+    }
   }
 }
 
@@ -2570,7 +2722,6 @@ export function listRuntimes(): { name: Runtime; cli: string }[] {
 const RUNTIME_BINS: Record<Runtime, string> = {
   "claude-code": "claude",
   "codex": "codex",
-  "gemini-cli": "gemini",
   "antigravity-cli": "agy",
   "kimi-cli": "kimi",
   "grok-cli": "grok",
@@ -2582,7 +2733,11 @@ const RUNTIME_BINS: Record<Runtime, string> = {
 /** True if the runtime's CLI binary is on PATH. Cross-platform: uses `where`
  * on Windows, `which` elsewhere. */
 export function runtimeAvailable(runtime: Runtime): boolean {
-  const bin = RUNTIME_BINS[runtime] ?? "gemini";
+  // An unknown name is NOT installed, and neither is a retired one (gemini-cli):
+  // the old `?? "gemini"` fallback made any typo report whatever gemini
+  // reported, so a typo or an old config could pass an availability gate.
+  const bin = Object.prototype.hasOwnProperty.call(RUNTIME_BINS, runtime) ? RUNTIME_BINS[runtime] : undefined;
+  if (!bin) return false;
   const probe = process.platform === "win32" ? "where" : "which";
   // `env` is passed EXPLICITLY: under Bun a spawn without it uses the
   // environment captured at process start, not the current `process.env`. The

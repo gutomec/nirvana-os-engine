@@ -199,7 +199,7 @@ export const SETTINGS = {
 
   "execution.default_runtime": stringSetting("execution.default_runtime",
     "Runtime usado quando a sessão não é identificada; vazio = primeiro disponível no PATH.",
-    { env: "NIRVANA_DEFAULT_RUNTIME", type: z.string().regex(/^[A-Za-z0-9._-]*$/), expects: "nome de runtime (claude-code, codex, gemini-cli, ...) ou vazio" }),
+    { env: "NIRVANA_DEFAULT_RUNTIME", type: z.string().regex(/^[A-Za-z0-9._-]*$/), expects: "nome de runtime (claude-code, codex, antigravity-cli, ...) ou vazio" }),
   // Empty is the default, and empty means PASS NOTHING: the child CLI uses what
   // its own configuration says, which is the user's default. Dispatching codex
   // is running `codex` with no `--model` and no effort; dispatching claude is a
@@ -235,7 +235,7 @@ export const SETTINGS = {
     "Profundidade da injeção de DNA dos mind-clones: reference = cartão (caminho, one_liner, routing) e o executor lê o arquivo quando precisar; fragments = camadas da fase; full = persona inteira.",
     ["reference", "fragments", "full"], { default: "reference", env: "NIRVANA_DNA_INJECTION" }),
   "execution.headless_skip_permissions": booleanSetting("execution.headless_skip_permissions",
-    "Filhos headless rodam com autonomia: o claude em modo auto (um classificador aprova no lugar de uma pessoa), os outros runtimes pulam as aprovações do próprio CLI; false = caminho restrito.",
+    "Headless children run with full access: every runtime skips its own CLI approvals (claude --dangerously-skip-permissions); false = restricted path.",
     { default: true, env: "NIRVANA_HEADLESS_SKIP_PERMISSIONS", fromEnv: offWordDisables }),
 
   "briefing.altitude": enumSetting("briefing.altitude",

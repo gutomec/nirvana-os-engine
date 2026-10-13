@@ -20,7 +20,7 @@
  *   <target>/.nirvana/{squads,businesses,mind-clones}/
  *
  * Universal agents (Antigravity, Codex, Cursor, Copilot, OpenCode, Cline,
- * Replit, Warp, Amp, Gemini CLI, Deep Agents, Firebender, Dexto, Kimi CLI)
+ * Replit, Warp, Amp, Deep Agents, Firebender, Dexto, Kimi CLI)
  * already read from .agents/skills directly — no symlink needed.
  *
  * Usage:
@@ -92,7 +92,7 @@ const PER_AGENT_SYMLINKS: Array<{ name: string; rel: string }> = [
 // Universal agents: read directly from .agents/skills, no symlink needed
 const UNIVERSAL_AGENTS = [
   "antigravity", "codex", "cursor", "github-copilot", "opencode",
-  "cline", "replit", "warp", "amp", "gemini-cli", "deepagents",
+  "cline", "replit", "warp", "amp", "deepagents",
   "firebender", "dexto", "kimi-cli", "universal",
 ];
 
@@ -251,11 +251,11 @@ CREATES (default — minimal)
   <target>/README.md             quickstart pointer
   <target>/AGENTS.md             universal agent contract (canonical)
   <target>/CLAUDE.md             same content — Claude Code reads this
-  <target>/GEMINI.md             same content — Gemini-CLI reads this
+  <target>/GEMINI.md             same content — Antigravity (agy) reads it beside AGENTS.md
   <target>/.nirvana/             squads/ businesses/ mind-clones/ outputs/
 
   Note: by default the project does NOT create .agents/skills/ or per-agent
-  symlinks. Every modern agent runtime (Gemini-CLI, Cursor, Codex, OpenCode,
+  symlinks. Every modern agent runtime (Cursor, Codex, OpenCode,
   Cline, Warp, …) reads from your HOME (~/.agents/skills which links to
   ~/.nirvana/skills), so duplicating in the project would only trigger
   "skill conflict" warnings.
@@ -329,8 +329,8 @@ async function main() {
   const linkOnly = !!flags.link;
   const useCopy = !!flags.copy;
   // Skills materialization is opt-in. By default we do NOT create
-  // `<project>/.agents/skills` because every modern agent runtime (Gemini-CLI,
-  // Cursor, Codex, etc.) already reads from `~/.agents/skills` (which we link
+  // `<project>/.agents/skills` because every modern agent runtime (Cursor,
+  // Codex, etc.) already reads from `~/.agents/skills` (which we link
   // to ~/.nirvana/skills globally). Creating both would cause "skill conflict"
   // warnings — the project would shadow the home library with the same files.
   // Use `--with-skills` (or `--copy`) when you need a portable client delivery
@@ -385,14 +385,16 @@ async function main() {
     const writingContractSnippet = path.join(SKILLS_ROOT, "_shared", "templates", "writing-contract-snippet.md");
     const onDemandSnippet = path.join(SKILLS_ROOT, "_shared", "templates", "on-demand-contract-snippet.md");
     const WRITING_CONTRACT_MARKER = "<!-- nirvana-os:writing-contract:v2 -->";
-    const INVOCATION_CONTRACT_MARKER = "<!-- nirvana-os:invocation-contract:v2 -->";
+    const INVOCATION_CONTRACT_MARKER = "<!-- nirvana-os:invocation-contract:v3 -->";
     // Markers of earlier contracts. A project initialised under one of them
     // kept the old text forever: the marker check made init skip the file, so
     // the fix that renamed the entry skill and added the discovery commands
     // reached new projects only. The block under an older marker (up to the
     // next nirvana-os marker, or the end of the file) is replaced by the
     // current template; the user's own lines above it and the other contracts
-    // below it stay where they are.
+    // below it stay where they are. v3 (invocation) and v2 (on-demand): the
+    // dependency text names the per-squad environments (~/.nirvana/envs/<squad>),
+    // not the shared store, and the on-demand note names the `nirvana` skill.
     const refreshManagedBlock = (dst: string, label: string, olderMarkers: string[], currentMarker: string, templatePath: string, endSentinel?: string): boolean => {
       if (!fs.existsSync(dst) || !fs.existsSync(templatePath)) return false;
       const existing = fs.readFileSync(dst, "utf8");
@@ -429,10 +431,14 @@ async function main() {
       return true;
     };
     const refreshInvocationContract = (dst: string) =>
-      refreshManagedBlock(dst, "invocation contract", ["<!-- nirvana-os:invocation-contract:v1 -->"], INVOCATION_CONTRACT_MARKER, agentsTemplate);
+      refreshManagedBlock(dst, "invocation contract", ["<!-- nirvana-os:invocation-contract:v1 -->", "<!-- nirvana-os:invocation-contract:v2 -->"], INVOCATION_CONTRACT_MARKER, agentsTemplate);
     const refreshWritingContract = (dst: string) =>
       refreshManagedBlock(dst, "writing contract", ["<!-- nirvana-os:writing-contract:v1 -->"], WRITING_CONTRACT_MARKER, writingContractSnippet, "Gate flags = build fails. No auto-rewrite.");
-    const ON_DEMAND_MARKER = "<!-- nirvana-os:on-demand-contract:v1 -->";
+    const ON_DEMAND_MARKER = "<!-- nirvana-os:on-demand-contract:v2 -->";
+    // The v1 note is the last block init appends, so lines the user wrote after
+    // it end at its own last line, not at the end of the file.
+    const refreshOnDemandContract = (dst: string) =>
+      refreshManagedBlock(dst, "on-demand contract", ["<!-- nirvana-os:on-demand-contract:v1 -->"], ON_DEMAND_MARKER, onDemandSnippet, "`nrv glance`.");
 
     // How Nirvana behaves in THIS project is the owner's call, and it matters
     // most exactly when the project already has instruction files: appending
@@ -474,6 +480,7 @@ async function main() {
       // explicit request. No invocation contract, no writing contract — the
       // project's configured behavior stays its own.
       for (const name of ["AGENTS.md", "CLAUDE.md", "GEMINI.md"]) {
+        refreshOnDemandContract(path.join(target, name));
         appendWithMarker(onDemandSnippet, path.join(target, name), ON_DEMAND_MARKER, "on-demand contract");
       }
     } else if (fs.existsSync(agentsTemplate)) {
@@ -531,7 +538,7 @@ async function main() {
   // Canonical source-of-truth dir — OPT-IN ONLY.
   //
   // Default behavior (no --with-skills, no --copy): we do NOT create
-  // `<project>/.agents/skills`. Every modern agent runtime (Gemini-CLI, Cursor,
+  // `<project>/.agents/skills`. Every modern agent runtime (Cursor,
   // Codex, OpenCode, Cline, Warp, Antigravity, …) already reads from
   // `~/.agents/skills` (which links to ~/.nirvana/skills globally), so the
   // project would only duplicate the same paths and trigger "skill conflict"
@@ -674,12 +681,12 @@ async function main() {
     const result = require("node:child_process").spawnSync("bun", [path.join(SKILLS_ROOT, "_shared", "scripts", "install.ts"), "--check"], { windowsHide: true, encoding: "utf8" });
     if (result.status !== 0) {
       log.warn(`Audit hooks are NOT yet wired into your agents. Run: nrv setup`);
-      log.info(`(this configures Claude Code + Gemini-CLI to emit audit events automatically)`);
+      log.info(`(this configures Claude Code and Codex to emit audit events automatically, and Antigravity to load the Nirvana context)`);
     } else {
       log.ok(`Audit hooks active across installed agents — runs auto-track in 'nrv glance'.`);
     }
   } catch { /* check is best-effort */ }
-  // The claws. Claude, Codex, Gemini and Hermes work where they are started, so
+  // The claws. Claude, Codex, Antigravity and Hermes work where they are started, so
   // "open it here" is the whole recipe. OpenClaw works in an agent's workspace,
   // and the way this directory becomes that agent's home is one command — said
   // here, once, because nothing in OpenClaw will ever say it.

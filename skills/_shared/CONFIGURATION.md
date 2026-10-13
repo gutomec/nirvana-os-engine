@@ -17,7 +17,7 @@ schemas/core-schemas.json                ← bundle: employee, org_chart, routin
 schemas/dna.schema.json                  ← mind-clone DNA file
 validators/validators.ts                 ← Zod (TypeScript)
 validators/validators.py                 ← Pydantic v2 (Python)
-adapters/{claude-code,codex,gemini-cli}.md ← runtime-neutral specs
+adapters/{claude-code,codex,antigravity-cli}.md ← runtime-neutral specs
 ```
 
 A configuração relevante aqui é estática (governance + versioning), não env vars.
@@ -243,7 +243,7 @@ Test: `cd ~/.nirvana/skills/_shared/validators && python3 -m pytest validators.p
 
 ## 5. Adapters — runtime-neutral specs
 
-`adapters/{claude-code,codex,gemini-cli}.md` descrevem como cada runtime implementa as 15 seções canônicas:
+`adapters/{claude-code,codex,antigravity-cli}.md` descrevem como cada runtime implementa as 15 seções canônicas:
 
 1. Skill discovery
 2. Subagent spawning
@@ -455,7 +455,7 @@ isso é seguro (rejeita a mais, nunca a menos).
 - **schemas/{business,capability,core-schemas,dna}.schema.json**
 - **validators/{validators.ts, validators.py, limits.ts, limits.py}**
 - **~/.claude/nirvana-limits.yaml** — override de limites nível usuário
-- **adapters/{claude-code,codex,gemini-cli}.md** + `adapters/README.md`
+- **adapters/{claude-code,codex,antigravity-cli}.md** + `adapters/README.md`
 - **~/.nirvana/skills/businesses/CONFIGURATION.md** — consumer downstream
 - **~/.nirvana/skills/squads/CONFIGURATION.md** — consumer downstream
 - **~/.nirvana/skills/harness/CONFIGURATION.md** — consumer downstream

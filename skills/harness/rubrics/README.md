@@ -28,7 +28,7 @@ Após o frontmatter, o corpo Markdown contém:
 | Módulo | Função |
 |---|---|
 | `lib/rubric-selector.ts` | Carrega todas as rubrics; mapeia `produces[]` → rubrics aplicáveis. |
-| `lib/judge.ts` | Recebe `(rubric, artifact)`, invoca o host-agent (Claude Code / Codex / Gemini), valida resposta contra schema. |
+| `lib/judge.ts` | Recebe `(rubric, artifact)`, invoca o host-agent (Claude Code / Codex / Antigravity), valida resposta contra schema. |
 | `lib/critique.ts` | Transforma critique em instrução acionável de revisão. |
 | `lib/revision-dispatch.ts` | Orquestra `judge → critique → revise → judge` em loop até converger ou estourar `max_revisions`. |
 

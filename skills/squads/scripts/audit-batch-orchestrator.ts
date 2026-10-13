@@ -2,7 +2,7 @@
 /**
  * audit-batch-orchestrator.ts — sequentially runs improve-squad over all
  * red+yellow squads in current scope, with progress tracking + final summary.
- * Pure Bun: cross-OS + cross-agent-runtime (Claude Code / Codex / Gemini CLI).
+ * Pure Bun: cross-OS + cross-agent-runtime (Claude Code / Codex / Antigravity).
  *
  * Replaces audit-batch-orchestrator.sh — bash is no longer accepted in this
  * system per SCRIPT_CONTRACT.md.

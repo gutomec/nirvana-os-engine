@@ -108,11 +108,11 @@ describe('runtime_requirements.policy', () => {
   test('discovery preserves policy and all runtime list types', () => {
     const parsed = { runtime_requirements: {
       policy: 'active', minimum: [{ runtime: 'codex' }],
-      compatible: [{ runtime: 'gemini-cli' }], incompatible: [{ runtime: 'openclaw' }],
+      compatible: [{ runtime: 'antigravity-cli' }], incompatible: [{ runtime: 'openclaw' }],
     } }
     expect(SquadDiscovery.parseRuntimes(parsed)).toEqual([
       { runtime: 'codex', type: 'minimum' },
-      { runtime: 'gemini-cli', type: 'compatible' },
+      { runtime: 'antigravity-cli', type: 'compatible' },
       { runtime: 'openclaw', type: 'incompatible' },
     ])
   })

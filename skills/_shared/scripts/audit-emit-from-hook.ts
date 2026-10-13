@@ -162,7 +162,7 @@ function inNirvanaScope(p: string | undefined): boolean {
   // 3. Inside a Nirvana project — the same walk log-paths uses to decide where
   //    the event lands. Without this rung a project named anything that misses
   //    the heuristics below (most projects) dropped every hook event: the
-  //    Claude/Gemini hooks had been wired for months and a `nrv init` project
+  //    Claude hooks had been wired for months and a `nrv init` project
   //    called `acme-site` produced nothing.
   try {
     const start = fs.existsSync(p) && fs.statSync(p).isDirectory() ? p : path.dirname(p);
@@ -195,10 +195,9 @@ function readStdin(): Promise<string> {
 
 async function main() {
   const stage = (process.argv[2] || "").toLowerCase(); // "pre" | "post"
-  // Optional 3rd arg: agent identifier (claude-code | gemini-cli | codex). Defaults to claude-code-hook.
+  // Optional 3rd arg: agent identifier (claude-code | codex | hermes). Defaults to claude-code-hook.
   const agentArg = (process.argv[3] || "claude-code").toLowerCase();
   const hostLabel = agentArg.includes("hermes") ? "hermes-cli-hook"
-                  : agentArg.includes("gemini") ? "gemini-cli-hook"
                   : agentArg.includes("codex") ? "codex-hook"
                   : "claude-code-hook";
   const raw = await readStdin();
@@ -275,10 +274,10 @@ async function main() {
     base.target_project = deriveTargetProject(filePath);
   }
 
-  // Tool name mapping — Claude Code and Gemini-CLI use different names for the same operations.
+  // Tool name mapping — runtimes use different names for the same operations.
   // Normalize to action types so the audit log is uniform regardless of agent.
-  const writeTools = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit", "write_file", "replace"]);
-  const bashTools = new Set(["Bash", "run_shell_command", "shell"]);
+  const writeTools = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
+  const bashTools = new Set(["Bash", "shell"]);
 
   // Codex edits files through `apply_patch`; the patch text names them:
   //   *** Add File: <path> / *** Update File: <path> / *** Delete File: <path>
@@ -299,7 +298,7 @@ async function main() {
   }
 
   if (writeTools.has(tool)) {
-    const action = (tool === "Write" || tool === "write_file") ? "write" : "edit";
+    const action = tool === "Write" ? "write" : "edit";
     if (stage === "pre") {
       appendEvent({ ...base, event: "tool_invoked", action, file_path: filePath });
     } else {

@@ -38,7 +38,7 @@ class AdapterLoader {
 
   /**
    * Load an adapter manifest by runtime_id
-   * @param {string} runtimeId - e.g., 'claude-code', 'codex', 'gemini-cli'
+   * @param {string} runtimeId - e.g., 'claude-code', 'codex', 'antigravity-cli'
    * @returns {object|null} Parsed adapter manifest or null on error
    */
   loadAdapter(runtimeId) {

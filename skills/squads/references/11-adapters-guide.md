@@ -182,7 +182,6 @@ This discipline keeps adapters honest. When a line changes, the citation becomes
 |---------|--------|---------|
 | Claude Code | stable (reference) | [claude-code.md](../../_shared/adapters/claude-code.md) |
 | Codex | beta | [codex.md](../../_shared/adapters/codex.md) |
-| Gemini CLI | beta | [gemini-cli.md](../../_shared/adapters/gemini-cli.md) |
 | Antigravity | experimental | [antigravity.md](../../_shared/adapters/antigravity-cli.md) |
 | Kimi | experimental | [antigravity.md](../../_shared/adapters/kimi-cli.md) |
 | Grok | experimental | [antigravity.md](../../_shared/adapters/grok-cli.md) |

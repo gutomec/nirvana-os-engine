@@ -27,6 +27,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { paths as nrvPaths } from "../../../_shared/lib/bun-helpers.ts";
+import { claudeRunCost } from "../../../_shared/lib/claude-session-cost.ts";
 import { DEFAULT_ALLOWED_TOOLS, headlessClaudeEnv, resolveExecutable, runHeadless, runtimeAvailable, type Runtime } from "../../../_shared/lib/host-agent-driver.ts";
 import { harnessLogsDir } from "../../../_shared/lib/log-paths.ts";
 import { resolveSetting, settingsEnvForChild } from "../../../_shared/lib/settings.ts";
@@ -116,7 +117,7 @@ export interface TurnCommand {
 
 /** The `claude -p` command line of a turn. A conversation without a session gets a fresh
  * `--session-id`, so the id is known before the child answers; one with a session resumes it.
- * The autonomy flag follows the driver's rule: auto mode, or the restricted path (`acceptEdits`
+ * The autonomy flag follows the driver's rule: the bypass, or the restricted path (`acceptEdits`
  * plus the driver's tool allowlist) when execution.headless_skip_permissions is off.
  *
  * The directive spans several lines. On Windows a `.cmd` whose shape `resolveExecutable` cannot
@@ -140,7 +141,7 @@ export function claudeTurnCommand(input: { sessionId: string | null; directive: 
     args.push("--append-system-prompt", input.directive);
   }
   if (input.model) args.push("--model", input.model);
-  if (input.skipPermissions) args.push("--permission-mode", "auto");
+  if (input.skipPermissions) args.push("--dangerously-skip-permissions");
   else args.push("--allowedTools", DEFAULT_ALLOWED_TOOLS.join(" "), "--permission-mode", "acceptEdits");
   if (input.maxBudgetUsd > 0) args.push("--max-budget-usd", String(input.maxBudgetUsd));
   return { command: executable.command, args: executable.args(args), shell: executable.shell, sessionId, ...(tmpFiles.length ? { tmpFiles } : {}) };
@@ -214,7 +215,6 @@ export function resumeCommand(runtime: Runtime, sessionId: string): string {
   switch (runtime) {
     case "claude-code": return `claude --resume ${sessionId}`;
     case "codex": return `codex resume ${sessionId}`;
-    case "gemini-cli": return `gemini -r ${sessionId}`;
     case "pi": return `pi --session ${sessionId}`;
     default: return `${runtime}: sessão ${sessionId}`;
   }
@@ -263,8 +263,12 @@ export function startMaestroTurn(input: StartTurnInput): StartedTurn {
       settled = true;
       parser.end();
       for (const file of command.tmpFiles ?? []) { try { fs.rmSync(path.dirname(file), { recursive: true, force: true }); } catch { /* already gone */ } }
+      // A resumed claude session reports its cumulative total (2.1.277+): the
+      // turn's own spend is the difference from the session's last total.
+      const streamedSession = parser.sessionId ?? command.sessionId;
       const base = streaming
-        ? { ok: exitCode === 0 && !parser.isError, result: parser.result, sessionId: parser.sessionId ?? command.sessionId, costUsd: parser.costUsd, subtype: parser.subtype }
+        ? { ok: exitCode === 0 && !parser.isError, result: parser.result, sessionId: streamedSession,
+            costUsd: claudeRunCost({ resumedFrom: input.sessionId, sessionId: streamedSession, reportedUsd: parser.costUsd }), subtype: parser.subtype }
         : { ok: childDone?.ok === true && exitCode === 0, result: childDone?.result ?? "", sessionId: childDone?.sessionId ?? null, costUsd: childDone?.costUsd ?? null };
       const error = base.ok ? undefined : (spawnError ?? childDone?.error ?? stderr.trim().split("\n").filter(Boolean).at(-1) ?? `runtime exited with ${exitCode ?? signal ?? "a signal"}`);
       resolve({ ...base, exitCode, signal, durationMs: Date.now() - started, ...(error ? { error } : {}) });
@@ -509,7 +513,7 @@ export class MaestroTurnQueue {
       clearTimeout(timer);
       watcher.stop();
       item.child = null;
-      // Runtimes prune their sessions (claude cleanupPeriodDays, gemini maxAge): a resume the
+      // Runtimes prune their sessions (claude cleanupPeriodDays, for one): a resume the
       // runtime no longer has ends with no result. The turn then starts a NEW session for the same
       // conversation, with a short recap of the visible transcript, instead of failing for good.
       const staleSession = !outcome.ok && sessionId && !outcome.result.trim() && !item.cancelRequested && !item.timedOut && !outcome.signal;

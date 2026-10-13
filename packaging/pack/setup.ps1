@@ -1,6 +1,6 @@
 # setup.ps1 — bootstrap de 1 comando no Windows, sem pré-requisito além do PowerShell.
 #
-#   powershell -ExecutionPolicy Bypass -File setup.ps1
+#   powershell -ExecutionPolicy Bypass -File setup.ps1 [args passed on to setup.ts]
 #
 # Instala o Bun (user-space, em %USERPROFILE%\.bun) se faltar, garante o binário no
 # PATH DESTA sessão e roda o setup.ts do pack com esse Bun. Idempotente.
@@ -36,7 +36,7 @@ if (-not $bun) {
 }
 
 $env:Path = (Split-Path -Parent $bun) + ";" + $env:Path
-& $bun (Join-Path $here "setup.ts")
+& $bun (Join-Path $here "setup.ts") @args
 # Propagate the installer's exit code. Without this the script always returned 0,
 # so a Windows buyer whose setup failed saw a shell that said everything was fine
 # — on the exact platform the last two license reports came from. setup.sh gets

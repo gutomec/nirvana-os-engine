@@ -34,7 +34,7 @@ import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { runHeadless, runtimeAvailable, AUTONOMOUS_DIRECTIVE, LEDGER_DEFAULT_TIMEOUT_MS, type Runtime } from "../lib/host-agent-driver.ts";
-import { listRuntimes } from "../../_shared/lib/host-agent-driver.ts";
+import { listRuntimes, retiredRuntimeMessage } from "../../_shared/lib/host-agent-driver.ts";
 import { amplify } from "../lib/amplifier.ts";
 import { proxyEnrichBrief } from "../lib/brief-proxy.ts";
 import { resolveRoutingMode, routingModeOrigin } from "../../_shared/lib/routing-mode.ts";
@@ -59,6 +59,7 @@ import { loadHarnessConfig } from "../lib/harness-config.ts";
 import { describeSettingSource, resolveSetting, settingsEnvForChild } from "../../_shared/lib/settings.ts";
 import { planRouteWithFallback, resolveDispatchPlan, runAgentX, type DispatchPlan } from "../lib/dispatch-cascade.ts";
 import { runSquadHeadless } from "../lib/squad-exec.ts";
+import { squadRunEnv } from "../../_shared/lib/squad-env.ts";
 import { parseSquadTarget, resolveSquadCapability } from "../lib/capability-resolver.ts";
 import { parseMessageTargetSpec } from "../lib/control-plane/agent-x-canary-queue.ts";
 import { runDelivery, deliverAfterRuntimeError, gateableFiles, producesForRubric, runGateOnce, type DeliveryArgs, type DeliveryResult, type RuntimeErrorOutcome } from "../lib/delivery-pipeline.ts";
@@ -354,7 +355,7 @@ const forceTeam = process.argv.includes("--team");
 const autoBriefEq = process.argv.find(a => a.startsWith("--auto-brief="));
 const autoBriefMode = autoBriefEq ? autoBriefEq.split("=")[1] : (process.argv.includes("--auto-brief") ? "inferred" : null);
 const wantAutoBrief = autoBriefMode !== null;
-// Default = autonomy (Bash enabled; claude in auto mode, the other runtimes skip approvals)
+// Default = autonomy (Bash enabled; every runtime skips its approvals, claude included)
 // so the agent can delegate to colleagues and deliver with quality.
 // --safe opts into the old restricted mode (allowlist + acceptEdits / workspace-write).
 const safeMode = process.argv.includes("--safe");
@@ -473,7 +474,7 @@ if (!slug && !autoMode && !explicitTarget) {
   console.error("    --manifest=<path>       deliverables.json (expected paths)");
   console.error("    --project=<id>          Custom project ID (default: auto)");
   console.error("    --outputs-root=<dir>    Where final artifacts are written");
-  console.error("    --runtime=<name>        claude-code|codex|antigravity-cli|gemini-cli|kimi-cli|grok-cli|pi (default: claude-code)");
+  console.error("    --runtime=<name>        claude-code|codex|antigravity-cli|kimi-cli|grok-cli|pi (default: claude-code)");
   console.error("");
   console.error("  Exec (autopilot):");
   console.error("    --auto                  no business named: the router picks the best one for the brief");
@@ -656,11 +657,13 @@ const envDefault = defaultRuntimeSetting.value.trim();
 const firstAvailable = (): Runtime | null =>
   (listRuntimes().map(r => r.name).find(n => runtimeAvailable(n)) ?? null);
 const hostDefault: Runtime = resolveDefaultRuntime({ detectedHost, envDefault, normalize: normRuntime, firstAvailable }).runtime;
+// A default left on a retired runtime (gemini-cli) was skipped above, with the reason.
+const envDefaultUsed = !!envDefault && !retiredRuntimeMessage(envDefault);
 if (!detectedHost) {
-  const how = envDefault ? `execution.default_runtime=${hostDefault} (${describeSettingSource(defaultRuntimeSetting)})` : `first available on PATH: ${hostDefault}`;
+  const how = envDefaultUsed ? `execution.default_runtime=${hostDefault} (${describeSettingSource(defaultRuntimeSetting)})` : `first available on PATH: ${hostDefault}`;
   console.error(c("yellow", "⚠") + ` host runtime not identified — using ${how}.`
     + " Pin it with NIRVANA_DEFAULT_RUNTIME in .env, nrv config set execution.default_runtime <runtime>, --runtime, or by naming it in the brief.");
-  emit("x_host_runtime_undetected", { used: hostDefault, from: envDefault ? defaultRuntimeSetting.source : "path-scan", cwd: process.cwd() });
+  emit("x_host_runtime_undetected", { used: hostDefault, from: envDefaultUsed ? defaultRuntimeSetting.source : "path-scan", cwd: process.cwd() });
 }
 let runtimeDecision: RuntimeDecision = decideRuntime({
   brief, explicitRuntime, defaultRuntime: hostDefault,
@@ -1206,6 +1209,8 @@ interface DeliverOpts {
   acceptancePromisesPaths?: boolean;
   afterGate?: Parameters<typeof runDelivery>[0]["afterGate"];
   onSession?: (sid: string) => void;
+  /** The squads' environment (squad-env.ts squadRunEnv) for revision rounds. */
+  env?: Record<string, string>;
 }
 
 function deliveryArgs(opts: DeliverOpts): DeliveryArgs {
@@ -1231,6 +1236,7 @@ function deliveryArgs(opts: DeliverOpts): DeliveryArgs {
     // (runAgentX), so their revisions do too.
     ...(opts.targetKind === "squad" ? { producerRole: "squad" as const } : {}),
     ...(opts.targetKind === "agent-x" ? { producerRole: "agent-x" as const } : {}),
+    ...(opts.env ? { env: opts.env } : {}),
     rulesDirective,
     forceDeliver,
     config: harnessConfig,
@@ -1474,6 +1480,9 @@ if (pendingCascade?.kind === "squad-only") {
   const squadDeliverOpts = {
     pid, slugOrNull: null, targetKind: "squad" as const, rt, oroot,
     projDir, projectRoot, sessionId: lastSession, withManifest: false, produces: squadProduces,
+    // A revision round resumes the last squad's worker: its packages and Python
+    // come first (squadRunEnv resolves a name to the first squad that has it).
+    env: squadRunEnv([...squads].reverse()),
   };
   publication.verify();
   if (squadError) {
@@ -1758,8 +1767,7 @@ console.log(c("lime", "▶") + c("bold", ` Step 2/4 — buildEmployeePrompt (${i
 // inside the business subdir. That root is the scaffold's, never the project's — see PROJECT_ROOT.
 const scaffoldRoot = path.resolve(projDir, "..", "..");
 const projectRoot = PROJECT_ROOT;
-// The run's own folder: where the intake starts, fenced off from the runs
-// beside it (run-workspace.ts).
+// The run's own folder: where the intake starts (run-workspace.ts).
 const runWorkspace = runFolderOf(projDir, projectRoot) ?? undefined;
 // In exec mode the agent writes deliverables here (a clean subfolder export
 // includes but the scaffold dirs handoffs/tickets/employees are excluded).
@@ -2141,7 +2149,7 @@ if (wantExec) {
     session_id: res.sessionId, project_dir: projDir, project_root: projectRoot,
     outputs_root: oroot, zip_path: null, created_at: new Date().toISOString(),
     // Where the session was started: `nrv revise` resumes from the same folder,
-    // since claude and gemini keep a session under its working directory.
+    // since claude keeps a session under its working directory.
     workspace: runWorkspace ?? null,
     // The manifest travels with the session: without it `nrv revise` loses the
     // one completeness proof the system has (promised paths vs disk truth) and

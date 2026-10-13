@@ -31,12 +31,11 @@ export const BASE_ENV_NAMES = [
 ];
 
 /** What each runtime CLI authenticates with when it is not logged in by file.
- *  A file login (`~/.claude`, `~/.codex/auth.json`, `~/.gemini`) needs none of
+ *  A file login (`~/.claude`, `~/.codex/auth.json`, `~/.gemini` for agy) needs none of
  *  these, which is the recommended shape on a server. */
 export const RUNTIME_AUTH_ENV: Record<string, string[]> = {
   "claude-code": ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "CLAUDE_CONFIG_DIR", "CLAUDECODE"],
   "codex": ["OPENAI_API_KEY", "OPENAI_BASE_URL", "CODEX_HOME"],
-  "gemini-cli": ["GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_CLOUD_PROJECT", "GOOGLE_CLOUD_LOCATION", "GOOGLE_APPLICATION_CREDENTIALS", "GOOGLE_GENAI_USE_VERTEXAI"],
   "antigravity-cli": ["GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_CLOUD_PROJECT", "GOOGLE_APPLICATION_CREDENTIALS"],
   "grok-cli": ["XAI_API_KEY", "GROK_API_KEY"],
   "kimi-cli": ["MOONSHOT_API_KEY", "KIMI_API_KEY"],

@@ -50,13 +50,17 @@ const PACKS_DIR = process.env.NIRVANA_PACKS_DIR ?? join(HOME, "nirvana-packs");
 const STARTER_PACK = join(PACKS_DIR, "starter-pack");
 
 // Canonical SHARED location — the skills tree + deps live ONCE under ~/.nirvana
-// so every runtime (claude-code, codex, antigravity, gemini, pi, hermes) shares
+// so every runtime (claude-code, codex, antigravity, pi, hermes) shares
 // one copy and the system survives removal of any single runtime, including
 // Claude Code. Each runtime consumes the tree via per-entry symlinks.
 const NIRVANA_DIR = join(HOME, ".nirvana");
 const NIRVANA_SKILLS = join(NIRVANA_DIR, "skills");
 const NIRVANA_DEPS = join(NIRVANA_DIR, "node_modules");
-const BINARIES = ["nrv", "nrv-gemini", "nrv-hermes"];
+const BINARIES = ["nrv", "nrv-hermes"];
+// Dispatchers an earlier engine put in ~/.local/bin and this one no longer
+// ships (nrv-gemini went with the Gemini CLI runtime). copyBinaries removes
+// them, and only when the file names itself: a user's own script stays.
+const RETIRED_BINARIES = ["nrv-gemini"];
 const IS_WINDOWS = process.platform === "win32";
 
 const args = process.argv.slice(2);
@@ -348,7 +352,7 @@ function linkRuntimes(): void {
       rmSync(p, { recursive: true, force: true });
       const bak = findParkedBackup(p);
       if (bak) { try { renameSync(bak, p); } catch { /* best-effort */ } }
-      console.log(`  ✓ ${legacy.runtime}: unlinked '${s}' from ${legacy.skillsDir} (a directory that runtime never read)${bak ? " (restored pre-Nirvana backup)" : ""}`);
+      console.log(`  ✓ ${legacy.runtime}: unlinked '${s}' from ${legacy.skillsDir} (${legacy.why ?? "no supported runtime reads it"})${bak ? " (restored pre-Nirvana backup)" : ""}`);
     }
   }
   let linked = 0;
@@ -527,13 +531,20 @@ function copyBinaries(): void {
     chmodSync(dst, 0o755);
     if (IS_WINDOWS) {
       // ASCII, CRLF, no BOM — so cmd parses it cleanly. `nrv` runs via Bun
-      // directly (no Git Bash); `nrv-gemini` keeps the Git Bash delegation
+      // directly (no Git Bash); `nrv-hermes` keeps the Git Bash delegation
       // (its fs-watch trap logic is bash-specific).
       const launcher = bin === "nrv" ? windowsLauncherNrv() : windowsLauncher(bin);
       writeFileSync(dst + ".cmd", launcher, { encoding: "ascii" });
     }
   }
   console.log(`  ✓ ${BINARIES.join(", ")}${IS_WINDOWS ? " (+ .cmd launchers — nrv via Bun, no Git Bash needed)" : ""}`);
+  for (const bin of RETIRED_BINARIES) {
+    for (const f of [join(LOCAL_BIN, bin), join(LOCAL_BIN, `${bin}.cmd`)]) {
+      try {
+        if (existsSync(f) && readFileSync(f, "utf8").includes(bin)) { rmSync(f, { force: true }); console.log(`  ✓ removed ${f} (no longer shipped)`); }
+      } catch { /* best-effort: a leftover dispatcher breaks nothing */ }
+    }
+  }
 
   // Detect case/separator-insensitively: Windows PATH uses ';' and entries vary
   // in case and trailing backslash. `pathParts.includes(LOCAL_BIN)` (exact) gave
@@ -1121,7 +1132,7 @@ function summary(): void {
   console.log();
   console.log("Verify this install:");
   console.log("  nrv install --check       # hooks wired");
-  console.log("  nrv validate              # registries smoke-test");
+  console.log("  nrv doctor                # full health check (exit 1 = warnings only)");
 }
 
 async function main(): Promise<void> {

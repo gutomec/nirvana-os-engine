@@ -26,7 +26,7 @@ const ACTIVATOR = join(REPO, "skills", "squads", "lib", "activator.js");
 const POSIX = process.platform !== "win32";
 const { _pythonCandidates } = createRequire(import.meta.url)(ACTIVATOR) as { _pythonCandidates: (platform: string) => string[][] };
 
-interface Fixture { root: string; squadDir: string; binDir: string; venvDir: string; satisfied: string; oldPip: string; }
+interface Fixture { root: string; squadDir: string; binDir: string; venvDir: string; satisfied: string; }
 
 function fixture(pythonDeps: string): Fixture {
   const root = mkdtempSync(join(tmpdir(), "activator-python-"));
@@ -39,8 +39,8 @@ function fixture(pythonDeps: string): Fixture {
   // Every probed name is dead until a test brings one to life, so the machine
   // running the suite cannot answer for the machine under test.
   if (POSIX) deadShims(binDir);
-  // NIRVANA_HOME points at the fixture, so the shared venv lands here.
-  return { root, squadDir, binDir, venvDir: join(root, ".nirvana", "python", "venv"), satisfied: join(root, "pip-satisfied"), oldPip: join(root, "pip-old") };
+  // NIRVANA_HOME points at the fixture, so the squad's own venv lands here.
+  return { root, squadDir, binDir, venvDir: join(root, ".nirvana", "envs", "py-squad", ".venv"), satisfied: join(root, "pip-satisfied") };
 }
 
 /** A PATH holding ONLY the fixture's fakes plus the directory bun lives in, so
@@ -85,26 +85,8 @@ describe("where python3 is tried", () => {
   });
 });
 
-describe("proof of presence", () => {
-  test.skipIf(!POSIX)("a venv that already satisfies every token is proven present, and pip install never runs", () => {
-    const f = fixture(DEPS_ONE);
-    const log = join(f.root, "py.log");
-    const py = fakePython(f.binDir, "python3", log, { version: "3.11", satisfiedFlag: f.satisfied });
-    seedFakeVenv(f.venvDir, py);
-    writeFileSync(f.satisfied, "");
-    try {
-      const r = activate(f);
-      expect(r.status).toBe(0);
-      const calls = callsOf(log);
-      expect(dryRuns(calls)).toHaveLength(1);
-      expect(installs(calls)).toHaveLength(0);
-      expect(r.result.steps.python).toMatchObject({ status: "already_present", via: "pip-dry-run" });
-      // The proof is pip's own resolver, offline, version specifiers included.
-      expect(dryRuns(calls)[0]).toEqual(["-m", "pip", "install", "--dry-run", "--no-index", "--quiet", "--report", "-", "pyyaml>=6.0"]);
-    } finally { rmSync(f.root, { recursive: true, force: true }); }
-  }, 30_000);
-
-  test.skipIf(!POSIX)("not satisfied: the install runs INTO the venv, with the token as one argument", () => {
+describe("when the install runs", () => {
+  test.skipIf(!POSIX)("the first activation installs INTO the squad's own venv, with the token as one argument", () => {
     const f = fixture(DEPS_ONE);
     const log = join(f.root, "py.log");
     const py = fakePython(f.binDir, "python3", log, { version: "3.11", satisfiedFlag: f.satisfied });
@@ -113,38 +95,27 @@ describe("proof of presence", () => {
       const r = activate(f);
       expect(r.status).toBe(0);
       const calls = callsOf(log);
-      expect(dryRuns(calls)).toHaveLength(1);
+      expect(dryRuns(calls)).toHaveLength(0);
       expect(installs(calls)).toEqual([["-m", "pip", "install", "pyyaml>=6.0"]]);
-      expect(r.result.steps.python).toMatchObject({ status: "installed", manager: "pip", venv: f.venvDir });
+      expect(r.result.steps.python).toMatchObject({ status: "installed", venv: f.venvDir });
+      // Never the venv the squads used to share.
+      expect(existsSync(join(f.root, ".nirvana", "python", "venv"))).toBe(false);
     } finally { rmSync(f.root, { recursive: true, force: true }); }
   }, 30_000);
 
-  test.skipIf(!POSIX)("a pip too old for --dry-run is not a proof — the install runs", () => {
+  test.skipIf(!POSIX)("an unchanged declaration installs nothing on the next activation; a changed one installs again", () => {
     const f = fixture(DEPS_ONE);
     const log = join(f.root, "py.log");
-    const py = fakePython(f.binDir, "python3", log, { version: "3.11", satisfiedFlag: f.satisfied, oldPipFlag: f.oldPip });
+    const py = fakePython(f.binDir, "python3", log, { version: "3.11", satisfiedFlag: f.satisfied });
     seedFakeVenv(f.venvDir, py);
-    writeFileSync(f.satisfied, "");   // it WOULD be satisfied, but this pip cannot say so
-    writeFileSync(f.oldPip, "");
     try {
-      const r = activate(f);
-      expect(r.status).toBe(0);
-      const calls = callsOf(log);
-      expect(dryRuns(calls)).toHaveLength(1);
-      expect(installs(calls)).toHaveLength(1);
-      expect(r.result.steps.python.status).toBe("installed");
-    } finally { rmSync(f.root, { recursive: true, force: true }); }
-  }, 30_000);
-
-  test.skipIf(!POSIX)("the author's explicit check: still wins, and no interpreter is even probed", () => {
-    const f = fixture('python:\n  packages:\n    - name: pyyaml\n      check: "true"\n');
-    const log = join(f.root, "py.log");
-    fakePython(f.binDir, "python3", log, { version: "3.11", satisfiedFlag: f.satisfied });
-    try {
-      const r = activate(f);
-      expect(r.status).toBe(0);
-      expect(r.result.steps.python).toMatchObject({ status: "already_present", via: "check" });
-      expect(callsOf(log)).toHaveLength(0);
+      expect(activate(f).status).toBe(0);
+      const second = activate(f);
+      expect(second.result.steps.python).toMatchObject({ status: "already_present" });
+      expect(installs(callsOf(log))).toHaveLength(1);
+      writeFileSync(join(f.squadDir, "dependencies.yaml"), 'python:\n  - "pyyaml>=6.0.1"\n');
+      expect(activate(f).result.steps.python).toMatchObject({ status: "installed" });
+      expect(installs(callsOf(log)).at(-1)).toEqual(["-m", "pip", "install", "pyyaml>=6.0.1"]);
     } finally { rmSync(f.root, { recursive: true, force: true }); }
   }, 30_000);
 });
@@ -164,7 +135,8 @@ describe("which interpreter", () => {
       expect(r.status).toBe(0);
       expect(probes(callsOf(deadLog))).toHaveLength(1);          // asked, and it failed
       expect(installs(callsOf(deadLog))).toHaveLength(0);        // never trusted with anything
-      expect(r.result.steps.python).toMatchObject({ status: "installed", manager: "pip" });
+      expect(r.result.steps.python).toMatchObject({ status: "installed" });
+      expect(installs(callsOf(liveLog))).toHaveLength(1);
       expect(existsSync(join(f.venvDir, "pyvenv.cfg"))).toBe(true);
     } finally { rmSync(f.root, { recursive: true, force: true }); }
   }, 30_000);
@@ -198,7 +170,7 @@ describe("which interpreter", () => {
 });
 
 describe("uv, when it is on the machine", () => {
-  test.skipIf(!POSIX)("creates the venv with --seed --no-project and installs with --python <venv>; the proof is still pip's", () => {
+  test.skipIf(!POSIX)("creates the venv with --seed --no-project and installs with --python <venv>; the next activation spawns nothing", () => {
     const f = fixture(DEPS_ONE);
     const uvLog = join(f.root, "uv.log");
     const pyLog = join(f.root, "py.log");
@@ -211,14 +183,13 @@ describe("uv, when it is on the machine", () => {
       const uv = callsOf(uvLog);
       expect(uv).toContainEqual(["venv", "--seed", "--no-project", f.venvDir]);
       expect(uv).toContainEqual(["pip", "install", "--python", join(f.venvDir, "bin", "python"), "pyyaml>=6.0"]);
-      expect(first.result.steps.python).toMatchObject({ status: "installed", manager: "uv" });
-      // Second activation: the venv exists, pip's dry-run proves presence, uv installs nothing.
-      writeFileSync(f.satisfied, "");
+      expect(first.result.steps.python).toMatchObject({ status: "installed" });
+      // Second activation: the declared specs hash the same, so neither uv nor pip runs.
       const second = activate(f);
       expect(second.status).toBe(0);
-      expect(dryRuns(callsOf(pyLog))).toHaveLength(1);
+      expect(dryRuns(callsOf(pyLog))).toHaveLength(0);
       expect(callsOf(uvLog).filter((c) => c[0] === "pip" && c[1] === "install")).toHaveLength(1);
-      expect(second.result.steps.python).toMatchObject({ status: "already_present", via: "pip-dry-run" });
+      expect(second.result.steps.python).toMatchObject({ status: "already_present" });
     } finally { rmSync(f.root, { recursive: true, force: true }); }
   }, 30_000);
 });

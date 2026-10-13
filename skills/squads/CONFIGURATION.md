@@ -58,7 +58,7 @@ Valida manifest. Branches por `protocol`:
 |---|---|---|
 | `<path-or-slug>` (positional) | obrigatório | Path absoluto ou slug (resolvido contra `$SQUADS_DIR`) |
 | `--report` | (off) | Output em formato AI-friendly com remediation guidance por erro |
-| `--runtime <id>` | (off) | Valida features_required contra capabilities específicas do runtime (claude-code, codex, gemini-cli) |
+| `--runtime <id>` | (off) | Valida features_required contra capabilities específicas do runtime (claude-code, codex, antigravity-cli) |
 
 ### `index-squads.ts [opções]`
 
@@ -141,7 +141,7 @@ inicia ou troca de runtime.
 
 | Campo | Função |
 |---|---|
-| `minimum[]` | Lista de `{runtime: <id>, version?: <v>}`. Runtimes aceitos: `claude-code, codex, antigravity-cli, antigravity, gemini-cli, pi, kimi-cli, grok-cli, qwen-code, opencode, cursor, openclaw` |
+| `minimum[]` | Lista de `{runtime: <id>, version?: <v>}`. Runtimes aceitos: `claude-code, codex, antigravity-cli, antigravity, gemini-cli, pi, kimi-cli, grok-cli, qwen-code, opencode, cursor, openclaw` (`gemini-cli` só segue aceito nos manifestos existentes; não é mais um runtime) |
 | `compatible[]` | Runtimes que também funcionam (sem garantia) |
 | `incompatible[]` | Runtimes que NÃO funcionam |
 

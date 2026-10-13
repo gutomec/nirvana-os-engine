@@ -33,7 +33,6 @@ describe("the default is the session the caller is in", () => {
     ["claude-code", { CLAUDE_CODE_SESSION_ID: "s1" }],
     ["codex", { CODEX_THREAD_ID: "t1" }],
     ["codex", { CODEX_SANDBOX: "1" }],
-    ["gemini-cli", { GEMINI_SESSION_ID: "g1" }],
     ["antigravity-cli", { ANTIGRAVITY_SESSION_ID: "a1" }],
     ["kimi-cli", { KIMI_SESSION_ID: "k1" }],
     ["grok-cli", { GROK_SESSION_ID: "x1" }],

@@ -153,7 +153,7 @@ describe("each reader: global, project over global, variable over both", () => {
     const env = { NIRVANA_HOME: home, NIRVANA_PROJECT_ROOT: project, PATH: process.env.PATH };
     projectConfig("execution:\n  default_runtime: codex\n");
     expect(detectExecutionRuntime(env).runtime).toBe("codex");
-    expect(detectExecutionRuntime({ ...env, NIRVANA_DEFAULT_RUNTIME: "gemini-cli" }).runtime).toBe("gemini-cli");
+    expect(detectExecutionRuntime({ ...env, NIRVANA_DEFAULT_RUNTIME: "kimi-cli" }).runtime).toBe("kimi-cli");
   });
 
   test("runtime.provider_catalog_dir and runtime.allow_stale_catalog (runtime-snapshot.ts)", () => {

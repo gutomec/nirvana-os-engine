@@ -45,7 +45,7 @@ Este documento é a referência visual. Para detalhes legais do contrato:
 │  ├── .squads-registry.json         ← cache: índice de squads                │
 │  ├── .businesses-registry.json     ← cache: índice de businesses            │
 │  ├── .harness-logs/                ← logs de execução do harness            │
-│  └── .claude/squads-state/         ← state SQLite por squad (modo global)   │
+│  └── .nirvana/squads-state/        ← state SQLite por squad (modo global)   │
 └──────────────────────────────────────────────────────────────────────────────┘
 
 ┌──────────────────────── PROJECT  (qualquer projeto) ────────────────────────┐
@@ -57,7 +57,7 @@ Este documento é a referência visual. Para detalhes legais do contrato:
 │  │                                                                           │
 │  ├── .agents/skills/               ← canonical "skills.sh" (15+ runtimes    │
 │  │                                   leem direto: Codex, Cursor, OpenCode,  │
-│  │                                   Cline, Gemini CLI, Warp, Amp, …)      │
+│  │                                   Cline, Warp, Amp, …)                  │
 │  ├── .claude/skills        ─────→ symlink → ../.agents/skills              │
 │  ├── .continue/skills      ─────→ symlink → ../.agents/skills              │
 │  ├── .windsurf/skills      ─────→ symlink → ../.agents/skills              │
@@ -95,7 +95,7 @@ Este documento é a referência visual. Para detalhes legais do contrato:
 | Squads registry (cache)     | `~/.squads-registry.json`                    | re-gerado em modo project                          | `SQUADS_REGISTRY_PATH`          |
 | Businesses registry (cache) | `~/.businesses-registry.json`                | re-gerado em modo project                          | `BUSINESSES_REGISTRY_PATH`      |
 | Harness logs                | `~/.harness-logs/`                           | `~/.harness-logs/` (compartilhado)                 | `HARNESS_LOGS_DIR`              |
-| Squad state (SQLite)        | `~/.claude/squads-state/`                    | `<proj>/.nirvana/state/squads/`                    | `NIRVANA_STATE_DIR`             |
+| Squad state (SQLite)        | `~/.nirvana/squads-state/`                   | `<proj>/.nirvana/state/squads/`                    | `NIRVANA_STATE_DIR`             |
 | Outputs                     | (não aplicável)                              | `<proj>/.nirvana/outputs/`                         | `PROJECTS_OUTPUT_DIR`           |
 | Project root detection      | (n/a)                                        | walk-up até `.env` / `.nirvana` / `.git`           | `NIRVANA_PROJECT_ROOT`          |
 

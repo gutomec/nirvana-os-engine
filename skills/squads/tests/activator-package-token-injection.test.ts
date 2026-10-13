@@ -109,9 +109,10 @@ describe("a node package token cannot become a second command", () => {
     const log = join(f.root, "bun-calls.log");
     const token = `left-pad; touch ${sentinel}`;
     writeFileSync(join(f.squadDir, "dependencies.yaml"), `node:\n  - ${JSON.stringify(token)}\n`);
-    // A LOCAL node dep is installed into the shared store with `bun add --cwd`,
-    // so bun is the binary whose argv carries the token now. The property under
-    // test is unchanged: one argument, no shell, no second command.
+    // A LOCAL node dep goes into the squad's own environment: the token is
+    // written as a key of <env>/package.json and `bun install` runs there, so
+    // it never reaches an argv at all. The property under test is unchanged:
+    // data, no shell, no second command.
     fakeManager(f, "bun", log);
     try {
       const r = activate(f);
@@ -120,10 +121,11 @@ describe("a node package token cannot become a second command", () => {
       // The second command never ran: `touch` was never a command at all.
       expect(existsSync(sentinel)).toBe(false);
 
-      // And the installer was called once, with the whole token as ONE
-      // argument. Under a shell string this reads ["add", …, "left-pad"], with
-      // `touch` executed separately by the shell.
-      expect(calls(log)).toEqual([["add", "--cwd", join(f.root, ".nirvana"), token]]);
+      // And the installer was called once, with no token in its argv; the
+      // whole token is ONE dependency name in the manifest it reads.
+      expect(calls(log)).toEqual([["install"]]);
+      const manifest = JSON.parse(readFileSync(join(f.root, ".nirvana", "envs", "token-squad", "package.json"), "utf8"));
+      expect(Object.keys(manifest.dependencies)).toEqual([token]);
     } finally {
       rmSync(f.root, { recursive: true, force: true });
     }
@@ -196,13 +198,14 @@ describe("the plan says which fields are argv and which are a shell line", () =>
       expect(r.status).toBe(0);
       const j = JSON.parse(r.stdout);
 
-      expect(j.steps.node.argv).toEqual(["bun", "add", "--cwd", join(f.root, ".nirvana"), nodeToken]);
+      expect(j.steps.node.argv).toEqual(["bun", "install"]);
+      expect(j.steps.node.packages).toEqual([nodeToken]);
       const py = j.steps.python;
       if (py.status === "would_install") {
         expect(Array.isArray(py.argv)).toBe(true);
         expect(py.argv).toContain("install");
         expect(py.argv.at(-1)).toBe(pyToken);
-        expect(py.venv).toBe(join(f.root, ".nirvana", "python", "venv"));
+        expect(py.venv).toBe(join(f.root, ".nirvana", "envs", "token-squad", ".venv"));
         expect(py.cmd).toBeDefined();   // a rendering for humans, derived from the argv
       } else {
         expect(py.status).toBe("python_unavailable");
@@ -318,21 +321,22 @@ describe("the Windows command line, built here instead of left to the runtime", 
     // decision made before any spawn: only the node path passes `windowsShim`.
     const src = readFileSync(ACTIVATOR, "utf8");
     // The node path is the only one that spawns a `.cmd` shim, and after local
-    // installs moved to the shared store it is the GLOBAL branch that still
-    // does: `npm install -g <tool>` is the machine-level carve-out.
+    // installs moved to each squad's environment it is the GLOBAL branch that
+    // still does: `npm install -g <tool>` is the machine-level carve-out.
     expect(src).toContain("runArgv(argv, { windowsShim: true })");
     // The Python branch spawns the discovered interpreter and uv directly —
     // real executables on every platform — through `runArgv` with no shim: the
-    // probe, the venv creation, pip's dry-run proof and the install. Asserted
-    // on that region of the file, not on a global count of shim call sites,
-    // which other branches are free to add to.
+    // probe, the venv creation and the install. Asserted on that region of the
+    // file, not on a global count of shim call sites, which other branches are
+    // free to add to.
     const pythonBranch = src.slice(src.indexOf("function pythonCandidates("), src.indexOf("function installNode("));
     expect(pythonBranch.length).toBeGreaterThan(1000);
     expect(pythonBranch).not.toContain("windowsShim");
-    expect(pythonBranch).toContain("'-m', 'pip', 'install', '--dry-run', '--no-index', '--quiet', '--report', '-'");
+    expect(pythonBranch).toContain("['uv', 'pip', 'install', '--python', env.python, ...tokens]");
     expect(src).toContain("runArgv(argv, { timeoutMs: 7200000 })");
-    // And the local branch spawns bun directly, never through a shell.
-    expect(src).toContain("DEPS.install(tokens)");
+    // And the local branch spawns bun directly, never through a shell
+    // (squad-env.ts, `spawnSync(bun, ["install"], …)`).
+    expect(readFileSync(join(REPO, "skills", "_shared", "lib", "squad-env.ts"), "utf8")).toContain('spawnSync(bun, ["install"], {');
   });
 });
 

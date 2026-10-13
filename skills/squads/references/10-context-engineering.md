@@ -97,7 +97,6 @@ Absolute token budgets, compaction thresholds, and memory injection mechanics ar
 | Runtime | See |
 |---------|-----|
 | Claude Code | [_shared/adapters/claude-code.md §9](../../_shared/adapters/claude-code.md#9-context-window--compaction) |
-| Gemini CLI | [_shared/adapters/gemini-cli.md §9](../../_shared/adapters/gemini-cli.md#9-context-window--compaction) |
 | Codex | [_shared/adapters/codex.md §9](../../_shared/adapters/codex.md#9-context-window--compaction) |
 | Antigravity | [_shared/adapters/antigravity-cli.md §9](../../_shared/adapters/antigravity-cli.md#9-context-window--compaction) |
 | Kimi | [_shared/adapters/kimi-cli.md §9](../../_shared/adapters/kimi-cli.md#9-context-window--compaction) |

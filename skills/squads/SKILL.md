@@ -1,7 +1,7 @@
 ---
 name: squads
 description: "Squad lifecycle skill. Use when asked to create, validate, inspect, list, or migrate squads — portable AI agent teams with workflows. Triggers on: create squad, list squads, inspect squad, validate squad, migrate squad, adapters. For EXECUTION of production briefs ('use the squad X', 'orquestre via squad', 'rode via squad'), hand it to the harness (read `~/.nirvana/skills/harness/SKILL.md` and follow it) instead — it carries the maestro intelligence and dispatches the right squad capability."
-compatibility: "Requires the Nirvana-OS engine: the `nrv` CLI and Bun on PATH. Install: npx @nirvana-os/cli. Runtime-agnostic — no dependency on any specific agent CLI. Squad activation may install large dependencies and needs an interactive consent primitive."
+compatibility: "Requires the Nirvana-OS engine: the `nrv` CLI and Bun on PATH. Install: curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | bash (Windows: irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex). Runtime-agnostic — no dependency on any specific agent CLI. Squad activation may install large dependencies and needs an interactive consent primitive."
 tools: [Read, Write, Edit, Glob, Grep, Bash]
 maxTurns: 50
 metadata:
@@ -19,7 +19,7 @@ metadata:
 
 > Requires the Nirvana-OS engine (`nrv` on PATH). If it is absent, use the `nirvana` skill, which installs it. This skill is not standalone.
 
-You orchestrate multi-agent squads following the **Squad Protocol v6.0**. You are runtime-agnostic: squads you create work on Claude Code, Codex, Gemini CLI, Cursor, Antigravity, and any runtime with an adapter declared in `~/.nirvana/skills/_shared/adapters/`.
+You orchestrate multi-agent squads following the **Squad Protocol v6.0**. You are runtime-agnostic: squads you create work on Claude Code, Codex, Cursor, Antigravity, and any runtime with an adapter declared in `~/.nirvana/skills/_shared/adapters/`.
 
 ---
 
@@ -69,7 +69,7 @@ Sources of truth, in resolution order:
 - `SQUAD_PROTOCOL.md` (v2.0, deprecated, kept for legacy squads).
 
 Schemas in `~/.nirvana/skills/_shared/schemas/{capability,business,core-schemas}.json`.
-Adapters in `~/.nirvana/skills/_shared/adapters/{claude-code,codex,gemini-cli,hermes}.md` (cover squads + businesses + harness).
+Adapters in `~/.nirvana/skills/_shared/adapters/{claude-code,codex,antigravity-cli,hermes}.md` (cover squads + businesses + harness).
 Read sections on demand via TOC. NEVER load the full ~1600-line v4 protocol plus the v5 delta into context.
 
 ## Squad Roots & Project Scoping
@@ -148,7 +148,7 @@ All squad outputs write to a **standard workspace** inside the project:
 ├── schemas/{capability,business,core-schemas}.json   ← validation
 ├── catalogs/CAPABILITY_CATALOG_V1.yaml               ← App-C catalog
 ├── validators/{validators.ts,validators.py}          ← TS + Python
-└── adapters/{claude-code,codex,gemini-cli,hermes}.md ← 4 runtime adapters
+└── adapters/{claude-code,codex,antigravity-cli,hermes}.md ← runtime adapters
 ```
 
 ## First Invocation
@@ -199,7 +199,7 @@ Activation is end-to-end: validate, install everything declared in `<squad>/depe
 - `*squad activate {name}` — full activation (delegates to `agents/squad-activator.md` persona)
 - `*squad activate {name} --dry-run` — preview only, no installs run
 - `*squad activate {name} --confirm-heavy` — auto-accept downloads >1 GB, sudo installs, and installers that fetch a remote script and execute it
-- `*squad status {name}` — show activation state from `~/.claude/squads-state/<name>/activated.json`
+- `*squad status {name}` — show activation state from `~/.nirvana/squads-state/<name>/activated.json`
 - `*squad deactivate {name}` — clear state file (does NOT uninstall packages)
 
 **How it works.** When the user says "ative o squad X":
@@ -216,6 +216,9 @@ that pipe a remote script into a shell). Activation is
 advisory — nothing blocks a dispatch — but a squad whose task shells out to
 ffmpeg or epubcheck fails MID-RUN when the tool is absent, after the dispatch
 is already paid for. `nrv doctor` warns when a declared tool is missing.
+When activation fails, an agent reads the issues block it prints (or
+`--json`): each entry has the fix, the `nrv activate <slug>` to check again,
+and whether the user must approve the fix first.
 
 3. Persona runs `bun scripts/activate-squad.ts status <slug>` first; if already active, asks reverify vs reactivate.
 4. Persona runs `bun scripts/activate-squad.ts activate <slug> --dry-run` to compute scope, then translates the JSON into a human summary listing CLIs, services to clone, custom nodes, model downloads (with sizes), env vars to check.
@@ -228,17 +231,17 @@ is already paid for. `nrv doctor` warns when a declared tool is missing.
 | Category | Purpose |
 |---|---|
 | `system` | CLIs (ffmpeg, git, uv) — checked then installed via brew/apt/choco per OS |
-| `python` | pip / uv packages → shared Python home `~/.nirvana/python` |
-| `node` | packages → shared store `~/.nirvana/node_modules`, squad dir symlinked to it (`global: true` = a command on PATH, installed by npm) |
+| `python` | pip / uv packages → the squad's own venv `~/.nirvana/envs/<slug>/.venv` |
+| `node` | packages → the squad's own environment `~/.nirvana/envs/<slug>/`, versions as declared, squad dir linked to it best-effort (`global: true` = a command on PATH, installed by npm) |
 | `services` | Long-lived daemons cloned from git (Pixelle, ComfyUI, Ollama) — installed but NOT started |
 | `custom_nodes` | ComfyUI custom node repos cloned to `~/comfyui/custom_nodes/` |
 | `models` | HuggingFace / URL downloads. Items with `size_gb > 1` require explicit consent |
 | `env_vars` | Checked only (never written) — surfaced as set / missing_required / missing_optional |
 | `post_install` | Hooks run after everything else (e.g. re-index, ping health check) |
 
-Template: `templates/dependencies.template.yaml`. Reference impl: `lib/activator.js`. State per squad: `~/.claude/squads-state/<slug>/activated.json`.
+Template: `templates/dependencies.template.yaml`. Reference impl: `lib/activator.js`. State per squad: `~/.nirvana/squads-state/<slug>/activated.json`.
 
-**Synthesis fallback.** If a squad has no `dependencies.yaml` but contains `package.json`, `pyproject.toml`, or `requirements.txt`, the activator auto-synthesizes a manifest and caches it at `~/.claude/squads-state/<slug>/synth-deps.yaml`. The persona surfaces this and offers to promote it to a real sidecar.
+**Synthesis fallback.** If a squad has no `dependencies.yaml` but contains `package.json`, `pyproject.toml`, or `requirements.txt`, the activator auto-synthesizes a manifest and caches it at `~/.nirvana/squads-state/<slug>/synth-deps.yaml`. The persona surfaces this and offers to promote it to a real sidecar.
 
 **Idempotent.** Re-activation is fast — every check passes, nothing reinstalls.
 
@@ -276,7 +279,7 @@ Template: `templates/dependencies.template.yaml`. Reference impl: `lib/activator
 When creating a NEW squad, ALWAYS:
 
 1. Set `protocol: "6.0"` in squad.yaml (`"5.0"` stays valid; the gate judges each squad by what it declares).
-2. Ask for target runtimes → set `runtime_requirements.minimum` (`claude-code`, `codex`, `gemini-cli`, etc., per `~/.nirvana/skills/_shared/adapters/`).
+2. Ask for target runtimes → set `runtime_requirements.minimum` (`claude-code`, `codex`, `antigravity-cli`, etc., per `~/.nirvana/skills/_shared/adapters/`).
 3. Set `features_required` (whitelist in `business.schema.json`) and `features_optional`.
 4. Every agent MUST have `maxTurns` (default 25 for simple, 50 for complex).
 5. Declare `capabilities[]` in the v5 shape: `id` (dotted, ≥3 segments), `description`, `domains[]` from `CAPABILITY_CATALOG_V1.yaml`, `invoke{type,ref}`, `examples[]`. Without capabilities the squad is invisible to harness discovery.

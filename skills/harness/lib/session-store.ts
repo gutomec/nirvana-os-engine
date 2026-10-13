@@ -55,7 +55,7 @@ export function getSession(projectDir: string, key: string): string | null {
 }
 
 /** Records the session returned by the run. No-op when the runtime returns no
- *  id (gemini-cli, for example) — in that case the entity simply keeps
+ *  id (qwen-code, for example) — in that case the entity simply keeps
  *  starting cold, without error. */
 export function putSession(projectDir: string, key: string, runtime: string, sessionId: string | null): void {
   if (!sessionId) return;

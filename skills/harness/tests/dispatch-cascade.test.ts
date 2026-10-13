@@ -252,7 +252,7 @@ describe("planRouteWithFallback — router-failure ladder", () => {
 
 describe("resolveAgentXPromptPath — persona survey", () => {
   test("real shipped dir: every runtime resolves to an existing agent-x file", () => {
-    for (const rt of ["claude-code", "codex", "gemini-cli", "antigravity-cli", "kimi-cli", "grok-cli", "pi"] as const) {
+    for (const rt of ["claude-code", "codex", "antigravity-cli", "kimi-cli", "grok-cli", "pi"] as const) {
       const p = resolveAgentXPromptPath(rt);
       expect(p).toBeTruthy();
       expect(fs.existsSync(p!)).toBe(true);
@@ -260,9 +260,9 @@ describe("resolveAgentXPromptPath — persona survey", () => {
     }
   });
 
-  test("-cli suffix is stripped (gemini-cli → agent-x.gemini.md)", () => {
-    const p = resolveAgentXPromptPath("gemini-cli");
-    expect(path.basename(p!)).toBe("agent-x.gemini.md");
+  test("-cli suffix is stripped (antigravity-cli → agent-x.antigravity.md)", () => {
+    const p = resolveAgentXPromptPath("antigravity-cli");
+    expect(path.basename(p!)).toBe("agent-x.antigravity.md");
   });
 
   test("unknown flavor in a fixture dir falls back to agent-x.claude-code.md", () => {
@@ -326,6 +326,10 @@ describe("runAgentX — the cascade bottom (injected runWithCascade seam)", () =
       expect(seen[0].prompt).toContain("Deliver the impossible artifact.");
       expect(seen[0].prompt).toContain(oroot);
       expect(seen[0].prompt).toContain("router no_match: nothing fits");
+      // Work the brief places elsewhere is done there; earlier runs are input only when pointed to.
+      expect(seen[0].prompt).toContain("When the brief's work lives in another folder");
+      expect(seen[0].prompt).toContain("Earlier runs beside this one are not your input unless the brief points to them.");
+      expect(seen[0].prompt).not.toContain("do not list, read or edit them");
       // The persona fixture carries no guard of its own: this line is runAgentX's.
       expect(seen[0].prompt).toContain(SCOPE_GUARD_EN);
       // A worker: the stamp is what makes "agent-x dispatches nothing" enforced.

@@ -27,7 +27,7 @@ Todo Run dos três canários e do multi-target congela a decisão de execução 
 
 Catálogo vencido marca `catalog.stale: true` e deixa a execução seguir sem resolução; `NIRVANA_ALLOW_STALE_CATALOG=1` aceita o dado vencido com aviso. Feature obrigatória ausente ou provider sem modelo compatível encerra o Run em `rolled_back` com `reason: runtime_incompatible` antes do producer e grava `x_runtime_incompatible` no audit legado; não há troca silenciosa nem fallback para o executor anterior. A prova hermética `runtime-snapshot-after-catalog-update.e2e.test.ts` reescreve o catálogo entre dois Runs e confirma que o primeiro devolve o mesmo `policySnapshotRef` e o mesmo payload pelo kernel e pelo Glance depois de um restart. Detalhes em [Snapshot de runtime](runtime-snapshot.md).
 
-Manifests legados continuam usando `declared`. A ausência de `runtime_requirements` não cria obrigação de instalar Claude Code, Codex, Gemini CLI ou outro produto enumerado.
+Manifests legados continuam usando `declared`. A ausência de `runtime_requirements` não cria obrigação de instalar Claude Code, Codex, Antigravity ou outro produto enumerado.
 
 ### Run Kernel
 

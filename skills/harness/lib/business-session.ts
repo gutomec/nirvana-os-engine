@@ -287,7 +287,7 @@ export function buildSessionBrief(args: BusinessSessionArgs, seats: SessionSeat[
     "4. You are the business, not one of its seats (NIRVANA_DISPATCH_ROLE=business), and you are the one agent in this run the engine allows to open subagents: open one per chosen seat. The project contract (AGENTS.md, CLAUDE.md, GEMINI.md) tells a dispatched agent not to open subagents; that rule binds the seat subagents you open, which open none of their own, and it does not bind you.",
     "5. If your runtime has no subagents, play each chosen seat yourself, from its file, one after the other.",
     "6. Wait until every subagent has finished before you end your turn. This session ends the moment your last turn does, and a subagent still running then is lost.",
-    `7. Write the deliverables under \`${args.outputsRoot}\`, final files at its top level and a seat's working files under \`_team/<seat>/\` when you keep them. Write nothing anywhere else except the file below.`,
+    `7. Write the deliverables under \`${args.outputsRoot}\`, final files at its top level and a seat's working files under \`_team/<seat>/\` when you keep them. When the request's work lives in another folder (a project to review or fix, a new project to create), do that work there and list every path you created or changed in the summary.`,
     "8. Deliverables are in the language of the request.",
     "",
   );
@@ -331,9 +331,9 @@ export function sessionDirective(rulesDirective = ""): string {
 /** The hook registration for this run: every subagent call the session makes
  *  is recorded against the seat it worked as. claude-code only.
  *
- *  A caller-set settings file replaces the run folder's fence in the driver
- *  (run-workspace.ts), so the fence's deny rules travel in this same file. */
-function writeClaudeSettings(args: BusinessSessionArgs, seats: SessionSeat[], workspace: string | undefined, prompt: string): string {
+ *  A caller-set settings file replaces the run folder's settings in the driver
+ *  (run-workspace.ts), so the project's deny rules travel in this same file. */
+function writeClaudeSettings(args: BusinessSessionArgs, seats: SessionSeat[], workspace: string | undefined): string {
   const dir = path.join(args.projectDir, ".business-session");
   fs.mkdirSync(dir, { recursive: true });
   const seatsFile = path.join(dir, "seats.json");
@@ -342,7 +342,7 @@ function writeClaudeSettings(args: BusinessSessionArgs, seats: SessionSeat[], wo
     seats: seats.map((s) => ({ slug: s.slug, file: s.file })),
   }, null, 2));
   const settingsFile = path.join(dir, "claude-settings.json");
-  const fence = workspace ? fenceSettings(workspace, args.projectRoot, process.platform, prompt) : null;
+  const fence = workspace ? fenceSettings(workspace, args.projectRoot, process.platform) : null;
   fs.writeFileSync(settingsFile, JSON.stringify({
     ...(fence ?? {}),
     hooks: {
@@ -438,10 +438,10 @@ export function runBusinessSession(args: BusinessSessionArgs): BusinessSessionRe
   fs.mkdirSync(args.outputsRoot, { recursive: true });
   try { fs.rmSync(participationFile(args.projectDir), { force: true }); } catch { /* a stale file would credit this run */ }
   fs.writeFileSync(path.join(args.projectDir, "session-brief.md"), prompt);
-  // The run folder, like every other worker: the session starts there, fenced
-  // off from the runs beside it, and what its seats dispatch nests inside it.
+  // The run folder, like every other worker: the session starts there, and
+  // what its seats dispatch nests inside it.
   const workspace = runFolderOf(args.projectDir, args.projectRoot) ?? undefined;
-  const claudeSettings = HOOK_RUNTIMES.has(args.runtime) ? writeClaudeSettings(args, seats, workspace, prompt) : undefined;
+  const claudeSettings = HOOK_RUNTIMES.has(args.runtime) ? writeClaudeSettings(args, seats, workspace) : undefined;
 
   const allowedSquads = allowedSessionSquads(args);
   emit("x_business_session_started", {

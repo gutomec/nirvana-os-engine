@@ -105,7 +105,7 @@ function engineVersion(): string | null {
   const eng = engineVersion();
   if (req && eng && cmpVer(eng, req) < 0) {
     console.error(`install-content: engine ${eng} is older than the pack '${SLUG}' requires (>=${req}).`);
-    console.error(`  Update the engine first:     npx @nirvana-os/cli   (or: nrv update)`);
+    console.error(`  Update the engine first:     nrv update`);
     console.error(`  Then reinstall the pack:     nrv update ${SLUG}`);
     process.exit(3);
   }
