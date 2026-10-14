@@ -52,7 +52,7 @@ body{
 a{color:var(--accent-ink); text-decoration:none; border-bottom:1px solid transparent}
 a:hover{border-bottom-color:currentColor}
 code{font-family:var(--mono); font-size:.9em; background:color-mix(in srgb,var(--text) 7%,transparent);
-     padding:.12em .38em; border-radius:5px}
+     padding:.12em .38em; border-radius:5px; overflow-wrap:anywhere}
 h1,h2,h3{font-family:var(--display); letter-spacing:-.022em; line-height:1.16; margin:0}
 strong{font-weight:600}
 
@@ -197,6 +197,7 @@ footer .links{display:flex; gap:18px; flex-wrap:wrap; margin-bottom:14px}
       <a href="#materiais">Materiais</a>
       <a href="#comecar">Começar</a>
       <a href="./install.html">Instalação</a>
+      <a href="./beta.html">Beta</a>
     </nav>
     <button class="tt" id="tt" type="button">tema</button>
   </div>
@@ -212,7 +213,7 @@ footer .links{display:flex; gap:18px; flex-wrap:wrap; margin-bottom:14px}
       <span class="cmd"><span class="p">$</span><span id="cmd">curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | bash</span><button id="cp" type="button">copiar</button></span>
       <a class="ghost" href="#runtimes">Ver funcionando</a>
     </div>
-    <p class="sub">macOS e Linux. No Windows, no PowerShell: <code>irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex</code>. Um comando instala o Bun se faltar, instala o motor, se conecta aos runtimes que encontrar e pode rodar de novo quando quiser.</p>
+    <p class="sub">macOS, Linux e WSL. No Windows, no PowerShell: <code>irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex</code>. Um comando instala o Bun se faltar, instala o motor, se conecta aos runtimes que encontrar e pode rodar de novo quando quiser. O passo a passo de cada sistema está no <a href="./install.html">guia de instalação</a>.</p>
   </section>
 
   <section class="blk" id="runtimes">
@@ -292,7 +293,7 @@ footer .links{display:flex; gap:18px; flex-wrap:wrap; margin-bottom:14px}
       <span class="cmd"><span class="p">$</span><span>curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | bash</span></span>
       <a class="ghost" href="./install.html">Guia ilustrado, passo a passo</a>
     </div>
-    <p class="sub">Windows (PowerShell): <code>irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex</code></p>
+    <p class="sub">Windows (PowerShell): <code>irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex</code>. No Ubuntu e no WSL, instale antes o <code>curl</code> e o <code>unzip</code>; o <a href="./install.html">guia</a> tem cada sistema.</p>
     <table class="tbl">
       <thead><tr><th>Você diz ao agente</th><th>Ele roda</th></tr></thead>
       <tbody>
@@ -302,7 +303,7 @@ footer .links{display:flex; gap:18px; flex-wrap:wrap; margin-bottom:14px}
         <tr><td>"Atualize o Nirvana-OS."</td><td><code>nrv update</code></td></tr>
       </tbody>
     </table>
-    <p class="sub" style="margin-top:16px">Os comandos são do seu agente. Essa é a regra que a página inteira prova: <strong>você fala, o agente executa</strong>. Para instalar um beta ou voltar à versão estável, veja o <a href="./install.html#betas">guia de instalação</a>.</p>
+    <p class="sub" style="margin-top:16px">Os comandos são do seu agente. Essa é a regra que a página inteira prova: <strong>você fala, o agente executa</strong>. Para instalar o beta ou voltar à versão estável, veja a <a href="./beta.html">página do beta</a>.</p>
   </section>
 
 </div>
@@ -311,6 +312,8 @@ footer .links{display:flex; gap:18px; flex-wrap:wrap; margin-bottom:14px}
   <div class="wrap">
     <div class="links">
       <a href="./install.html">Instalação</a>
+      <a href="./beta.html">Beta</a>
+      <a href="./install.html#problemas">Solução de problemas</a>
       <a href="https://github.com/gutomec/nirvana-os-engine">Código no GitHub</a>
       <a href="https://github.com/gutomec/nirvana-os-engine/blob/main/docs/CLI.md">Referência do nrv</a>
       <a href="https://github.com/gutomec/nirvana-os-engine/blob/main/CHANGELOG.md">Changelog</a>

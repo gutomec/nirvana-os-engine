@@ -11,7 +11,7 @@
 [![CI](https://github.com/gutomec/nirvana-os-engine/actions/workflows/smoke.yml/badge.svg)](https://github.com/gutomec/nirvana-os-engine/actions/workflows/smoke.yml)
 [![license](https://img.shields.io/badge/license-SUL-lightgrey)](./LICENSE)
 
-**macOS / Linux**
+**macOS, Linux and WSL**
 
 ```bash
 curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | bash
@@ -23,7 +23,7 @@ curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | bash
 irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
 ```
 
-[Documentation](https://gutomec.github.io/nirvana-os-engine/) · [Packs](https://squads.sh/pt/packs) · [Illustrated install](https://gutomec.github.io/nirvana-os-engine/install.html) · [Changelog](./CHANGELOG.md)
+[Documentation](https://gutomec.github.io/nirvana-os-engine/) · [Packs](https://squads.sh/pt/packs) · [Illustrated install](https://gutomec.github.io/nirvana-os-engine/install.html) · [Beta](https://gutomec.github.io/nirvana-os-engine/beta.html) · [Changelog](./CHANGELOG.md)
 
 **Read this in your language:** [English](./README.md) · [Português](./README.pt-BR.md) · [Español](./README.es.md) · [中文](./README.zh.md) · [हिन्दी](./README.hi.md) · [العربية](./README.ar.md)
 
@@ -51,7 +51,14 @@ The engine ships with no content. You create businesses, squads and clones by as
 
 ## Install
 
-Run the one-liner at the top of this page. It needs `curl` (or `wget`) and `tar`, which macOS, Linux and Windows 10+ already have. Node is not needed. If [Bun](https://bun.sh) is missing, the installer puts it in your user folder (`~/.bun`) without sudo and carries on.
+Run the one-liner at the top of this page: the `bash` line on macOS, Linux and WSL, the PowerShell line on Windows. Node is not needed. If [Bun](https://bun.sh) is missing, the installer puts it in your user folder (`~/.bun`) without sudo or admin rights and carries on.
+
+Before you run it:
+
+- **macOS:** nothing to prepare.
+- **Windows (PowerShell):** nothing to prepare, and no administrator rights.
+- **Linux (Ubuntu):** `sudo apt update && sudo apt install -y curl unzip`.
+- **Windows with WSL (Ubuntu):** run `wsl --install` in a PowerShell opened as administrator, reboot, open the Ubuntu app and create your Linux user. Then install `curl` and `unzip` as on Linux and run the `bash` line inside Ubuntu. Your AI agent (Claude Code, Codex, Antigravity) must be installed inside Ubuntu too, and your projects belong in `~`, not under `/mnt/c`, which is slow.
 
 What it changes on your machine:
 
@@ -61,15 +68,17 @@ What it changes on your machine:
 - audit hooks in Claude Code, Antigravity and Codex;
 - the empty content folders `~/squads`, `~/businesses` and `~/businesses/_library/dna`.
 
-Running it again is safe. Open a new terminal afterwards so `nrv` is on your PATH, then ask your agent: *"Check that Nirvana-OS is installed correctly."* It runs `nrv doctor`. Exit 1 means warnings only; exit 2 lists what failed.
+Running it again is safe. **Close the terminal and open a new one** so `nrv` is on your PATH, and check with `nrv --version`. Then ask your agent: *"Check that Nirvana-OS is installed correctly."* It runs `nrv doctor`. Exit 1 means warnings only; exit 2 lists what failed.
 
-Other routes (the `nirvana` skill through skills.sh, installing from a clone) are in [INSTALL.md](./INSTALL.md).
+The step-by-step guide for each system, the beta and troubleshooting are on the [documentation site](https://gutomec.github.io/nirvana-os-engine/install.html) (in Portuguese) and in [INSTALL.md](./INSTALL.md), with the other routes (the `nirvana` skill through skills.sh, installing from a clone).
 
 ## Start a project
 
 Open the folder you want to work in, start your agent there, and say: *"Set up this folder as a Nirvana-OS project."* The agent runs `nrv init .`, which writes `.nirvana/project.yaml`, a `.env` with the project's library scope, and the project contract in `AGENTS.md`, `CLAUDE.md` and `GEMINI.md`. Deliverables land in `outputs/` inside the project.
 
-By default that contract makes Nirvana the orchestrator of every concrete deliverable in the project: ask for a report, a page or a campaign and your agent hands it to Nirvana. If you want Nirvana only when you ask for it by name, say so when you set the project up (*"set up this folder as a Nirvana project, on demand only"*). The agent runs `nrv init . --orchestrators=on-demand`, which writes a short note instead of the full contract.
+On 0.14.11 that contract makes Nirvana the orchestrator of every concrete deliverable in the project: ask for a report, a page or a campaign and your agent hands it to Nirvana. If you want Nirvana only when you ask for it by name, say so when you set the project up (*"set up this folder as a Nirvana project, on demand only"*). The agent runs `nrv init . --orchestrators=on-demand`, which writes a short note instead of the full contract. When you run `nrv init .` yourself in a terminal, in a folder that already has one of those files, it asks which mode to use. The 0.15 beta turns this around: on-demand is the default, and `--orchestrators=always` opts in.
+
+From then on you talk to your agent in plain language and it uses Nirvana-OS. You do not type commands day to day.
 
 ## What to ask your agent
 
@@ -113,16 +122,20 @@ The agent orchestrates and never writes the deliverable itself. It picks the bus
 Packs are curated businesses, squads and mind-clones sold on [squads.sh](https://squads.sh/pt/packs). The flagship is [Genesis Circle](https://squads.sh/pt/nirvana-os).
 
 1. Buy the pack on squads.sh and download its zip from your dashboard.
-2. Unzip the whole archive into a folder, open a terminal there and run the setup:
-   - macOS / Linux: `bash setup.sh`
+2. Unzip the whole archive and open a terminal in the folder that holds `setup.sh`:
+   - macOS: double-click the zip, type `cd ` in Terminal, drag the folder onto the window and press Enter;
+   - Windows: right-click the zip, choose **Extract All**, open the folder, right-click an empty area and choose **Open in Terminal**;
+   - Linux and WSL: `cd ~/Downloads && unzip <file>.zip -d <folder> && cd <folder>`. On WSL, first copy the zip from `/mnt/c/Users/<user>/Downloads` to `~/Downloads`.
+3. Run the setup:
+   - macOS, Linux and WSL: `bash setup.sh`
    - Windows: `powershell -ExecutionPolicy Bypass -File setup.ps1`
 
-   Setup installs Bun if needed, installs or updates the engine, copies the content into `~/squads`, `~/businesses` and `~/businesses/_library/dna`, rebuilds the indexes and stores the pack's license in `~/.nirvana-license/packs/<pack>/`.
-3. Talk to your agent: *"Use Nirvana to list what the Genesis Circle pack gave me"*, then ask for work by naming a business, a squad or the pack.
+   Setup installs Bun if needed, installs or updates the engine, copies the content into `~/squads`, `~/businesses` and `~/businesses/_library/dna`, rebuilds the indexes and stores the pack's license in `~/.nirvana-license/packs/<pack>/`. It never replaces the engine with an older release, so a beta stays a beta.
+4. Talk to your agent: *"Use Nirvana to list what the Genesis Circle pack gave me"*, then ask for work by naming a business, a squad or the pack.
 
-Squad dependencies install on demand the first time a squad runs. To prepare them all up front, ask your agent to install the dependencies of every squad (`nrv activate --all`).
+**Activating squads.** A squad's dependencies install on demand the first time it runs, in its own environment under `~/.nirvana/envs/<squad>`. To prepare them all up front, ask your agent: *"Activate all my Nirvana squads."* It runs `nrv activate --all`, which covers Node and Python packages, system programs, API keys and environment variables, MCP servers and models. The agent gets the list of failures with the exact command that fixes each one, and asks your permission before anything that uses `brew`, `sudo` or `winget`, and for any API key. A first run on a big pack takes several minutes.
 
-**Updating a pack.** Ask your agent to update it, or run `nrv update <pack>`. Components you edited are backed up under `~/.nirvana/backups/packs/<pack>/` before the update replaces them. If the update fails with a license error, download the pack again from squads.sh and run its setup once more; that also refreshes the license.
+**Updating a pack.** Ask your agent to update it, or run `nrv update <pack-slug>`, for example `nrv update genesis-circle`. Components you edited are backed up under `~/.nirvana/backups/packs/<pack>/` before the update replaces them. If the update fails with a license error, download the pack again from squads.sh and run its setup once more; that also refreshes the license.
 
 ## Updating the engine
 
@@ -132,27 +145,33 @@ An update never moves the engine to an older release. A stable engine moves only
 
 ## Betas
 
-Betas are GitHub prereleases. The one-liner installs the latest stable, so a beta is installed by pinning its tarball:
+Betas are GitHub prereleases. The one-liner installs the latest stable, so a beta is installed by pinning its tarball. The current beta is `v0.15.0-beta.7`. The tag has a leading `v`; without it the download returns 404. For a newer beta, replace that tag with one from the [release list](https://github.com/gutomec/nirvana-os-engine/releases).
+
+macOS, Linux and WSL:
 
 ```bash
-curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v<version>/nirvana-os-engine.tar.gz bash
+curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.7/nirvana-os-engine.tar.gz bash
 ```
+
+Windows (PowerShell), as one line:
 
 ```powershell
-$env:NIRVANA_ENGINE_URL = "https://github.com/gutomec/nirvana-os-engine/releases/download/v<version>/nirvana-os-engine.tar.gz"
-irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
-Remove-Item Env:NIRVANA_ENGINE_URL
+$env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.7/nirvana-os-engine.tar.gz'; irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
 ```
 
-Replace `<version>` with the release, for example `0.15.0-beta.5`. The tag has a leading `v`; without it the download returns 404. The release list is on [GitHub](https://github.com/gutomec/nirvana-os-engine/releases). In PowerShell the variable lives for the whole window, which is why the last line removes it: while it is set, `nrv update` reinstalls the pinned tarball.
+Then, if the window is still open, run `Remove-Item Env:NIRVANA_ENGINE_URL`: while the variable is set, `nrv update` reinstalls the pinned tarball. The Windows commands use single quotes because a double quote lost in a paste leaves PowerShell waiting on `>>`.
 
-Once on a beta, `nrv update` and every pack setup keep you on the beta channel. To go back to stable, run the plain one-liner from the top of this page: it installs the latest stable over the beta, and your content and settings stay.
+The beta brings performance profiles (`max`, `balanced`, `economy`) and makes `nrv init` on-demand by default. Once on a beta, `nrv update` and every pack setup keep you on the beta channel.
+
+**Back to stable.** On Windows, open a new PowerShell and run `Remove-Item Env:NIRVANA_ENGINE_URL`; an error saying it does not exist is fine. Run the plain one-liner from the top of this page. It installs the latest stable over the beta and keeps your content, packs and settings. Check that `nrv --version` no longer shows `beta`, then run `nrv init .` again in each project you used with the beta, after removing the block the beta wrote in `AGENTS.md`, `CLAUDE.md` and `GEMINI.md` ([details](./INSTALL.md#back-to-stable-from-a-beta)).
 
 ## Settings
 
 Settings change when you ask. *"What is configured?"*, *"cap each run at US$ 5"* or *"turn off the AI judge"* are enough; your agent runs `nrv config` and tells you what changed. `nrv config list` shows every setting, its value and where it came from: an environment variable, the project's `.nirvana/config.yaml`, your `~/.nirvana/config.yaml`, the engine or the default. Your global file survives every update.
 
 No model and no effort are set by default, so each runtime uses its own configuration. The full reference is [docs/configuration.md](./docs/configuration.md).
+
+**Per project.** `nrv config set briefing.altitude <outcome|guided|prescriptive> --project` sets how much a brief carries: `outcome`, the default, states the result, the guardrails and the definition of done; `guided` adds the structure the author suggests; `prescriptive` adds per-item criteria, the artifact list and the method. `nrv config get briefing.altitude` shows the value in effect. Rules in free text go in the project's `CLAUDE.md`, `AGENTS.md` or `GEMINI.md`, above the Nirvana block that `nrv init` rewrites; your agent reads them and carries them into the briefs it writes. Asking is enough: *"in this project, use guided briefs"*, *"add to this project's CLAUDE.md: every deliverable in Brazilian Portuguese"*.
 
 ## Why "the work is done" means something here
 
@@ -194,7 +213,15 @@ For agents and power users. `nrv help` lists everything; `nrv <command> --help` 
 
 **What if nothing in my library fits?** The request still runs, on `agent-x`, the generalist. You can also ask your agent to create the business or squad that is missing.
 
-**Windows?** Native, through Bun. No WSL.
+**Windows?** Native, through Bun, with no WSL needed. If you prefer WSL, install everything inside Ubuntu, your agent included.
+
+## Troubleshooting
+
+- **PowerShell shows `>>` and waits.** A quote was left open in the paste. Press Ctrl+C or open a new window, then paste the single line again.
+- **macOS prints "Saving session… [Processo concluído]" after you close Terminal.** That is Terminal closing the shell, not an error.
+- **The install returns 404.** The tag is missing its leading `v`, or that release does not exist.
+- **A pack update fails with a license error.** Download the pack again from squads.sh and run its setup.
+- **Anything else.** `nrv doctor` checks the whole install and `nrv install --check` checks the hooks and the PATH. More in [INSTALL.md](./INSTALL.md#troubleshooting).
 
 ## License, authorship, and status
 

@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Beta do Nirvana-OS</title>
+<meta name="description" content="Como instalar o beta 0.15 do Nirvana-OS no macOS, no Windows, no WSL e no Linux, o que muda em relação à 0.14.11, como ele se atualiza e como voltar para a versão estável.">
+<link rel="stylesheet" href="./assets/guide.css">
+<script src="./assets/guide.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#conteudo">Pular para o conteúdo</a>
+
+<header class="top">
+  <div class="bar">
+    <a class="brand" href="./index.html"><span class="dot" aria-hidden="true"></span>Nirvana-OS</a>
+    <nav aria-label="Site">
+      <a href="./index.html">Início</a>
+      <a href="./install.html">Instalação</a>
+      <a href="./beta.html" aria-current="page">Beta</a>
+      <a href="./install.html#problemas">Problemas</a>
+    </nav>
+    <button class="theme" id="theme" type="button">tema</button>
+  </div>
+</header>
+
+<main id="conteudo">
+  <section class="hero">
+    <p class="eyebrow">Canal beta</p>
+    <h1>Beta <span class="beta-tag">v0.15.0-beta.7</span></h1>
+    <p class="lede">O beta é uma prerelease no GitHub: a próxima versão, já usável, que ainda pode mudar até virar estável. O comando padrão de instalação nunca instala um beta; você o escolhe fixando a versão. Este é o beta atual, e a tag dele começa com <code>v</code>.</p>
+    <nav class="toc" aria-labelledby="toc-title">
+      <h2 id="toc-title">Nesta página</h2>
+      <ol>
+        <li><a href="#muda">O que muda na 0.15</a></li>
+        <li><a href="#instalar">Instale o beta</a></li>
+        <li><a href="#perfil">Escolha um perfil</a></li>
+        <li><a href="#atualizar">Pacotes e atualizações</a></li>
+        <li><a href="#projetos">Projetos que vieram da 0.14</a></li>
+        <li><a href="#voltar">Volte para a estável</a></li>
+      </ol>
+    </nav>
+  </section>
+
+  <section class="blk" id="muda" aria-labelledby="muda-h">
+    <h2 id="muda-h">O que muda na 0.15</h2>
+    <h3>O Nirvana entra só quando o pedido chama por ele</h3>
+    <p>Na 0.15 o <code>nrv init .</code> escreve, por padrão, uma nota curta em <code>AGENTS.md</code>, <code>CLAUDE.md</code> e <code>GEMINI.md</code>, sem perguntar. Com ela o agente trabalha como trabalharia sem o Nirvana, e usa o Nirvana quando o pedido:</p>
+    <ul>
+      <li>nomeia o Nirvana (<em>"use o Nirvana para…"</em>, <em>"via nirvana"</em>);</li>
+      <li>nomeia ou aponta uma das suas empresas, squads ou mind-clones (<em>"minha empresa de lançamentos"</em>, <em>"o squad de copy"</em>, <em>"com a voz do Hormozi"</em>), inclusive pelo nome de um pacote;</li>
+      <li>pede o trabalho, ou parte dele, em outro runtime (<em>"use o Codex para revisar"</em>).</li>
+    </ul>
+    <p>Para o Nirvana orquestrar todo entregável do projeto, diga <span class="say">"orquestre tudo neste projeto com o Nirvana"</span>. O agente roda <code>nrv init . --orchestrators=always</code>. Abra uma sessão nova para a mudança valer. Na 0.14.11 é o contrário: o padrão é <code>always</code>.</p>
+    <h3>Perfis de desempenho</h3>
+    <p>Só existem na 0.15. Um perfil ajusta várias configurações de uma vez:</p>
+    <div class="table">
+      <table>
+        <thead><tr><th scope="col">Perfil</th><th scope="col">Esforço</th><th scope="col">Teto de contexto por worker</th><th scope="col">Revisão</th></tr></thead>
+        <tbody>
+          <tr><td><code>max</code></td><td>xhigh</td><td>nenhum (padrão do runtime)</td><td>toda entrega, até duas rodadas de correção</td></tr>
+          <tr><td><code>balanced</code> (recomendado)</td><td>high</td><td>400 mil tokens</td><td>quando uma regra pede</td></tr>
+          <tr><td><code>economy</code></td><td>medium</td><td>200 mil tokens</td><td>só quando você pede</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>Um perfil nunca escolhe o modelo; quem escolhe é a configuração do seu runtime. Uma configuração que você muda explicitamente vence o perfil.</p>
+  </section>
+
+  <section class="blk" id="instalar" aria-labelledby="instalar-h">
+    <h2 id="instalar-h">Instale o beta</h2>
+    <p>Os preparativos de cada sistema (o <code>unzip</code> no Ubuntu, o WSL) estão no <a href="./install.html#instalar">guia de instalação</a>. O comando do beta instala por cima de uma estável, se você já tiver uma, e mantém o seu conteúdo, os pacotes e as configurações.</p>
+
+    <div data-tabs="os">
+      <div class="tablist" role="tablist" aria-label="Sistema operacional">
+        <button class="tab" type="button" role="tab" id="beta-tab-mac" data-os="mac" aria-controls="beta-mac" aria-selected="true">macOS</button>
+        <button class="tab" type="button" role="tab" id="beta-tab-win" data-os="win" aria-controls="beta-win" aria-selected="false">Windows</button>
+        <button class="tab" type="button" role="tab" id="beta-tab-wsl" data-os="wsl" aria-controls="beta-wsl" aria-selected="false">Windows com WSL</button>
+        <button class="tab" type="button" role="tab" id="beta-tab-linux" data-os="linux" aria-controls="beta-linux" aria-selected="false">Linux</button>
+      </div>
+
+      <div class="panel" role="tabpanel" id="beta-mac" aria-labelledby="beta-tab-mac" tabindex="0">
+        <h3 class="panel-title">macOS</h3>
+        <p>No Terminal:</p>
+        <div class="code"><pre><code>curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/<span class="beta-tag">v0.15.0-beta.7</span>/nirvana-os-engine.tar.gz bash</code></pre></div>
+      </div>
+
+      <div class="panel" role="tabpanel" id="beta-win" aria-labelledby="beta-tab-win" tabindex="0">
+        <h3 class="panel-title">Windows</h3>
+        <p>No PowerShell, sem administrador. É <strong>uma linha só</strong>, com aspas simples:</p>
+        <div class="code"><pre><code>$env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/download/<span class="beta-tag">v0.15.0-beta.7</span>/nirvana-os-engine.tar.gz'; irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex</code></pre></div>
+        <p>Se a janela continuar aberta no fim, rode:</p>
+        <div class="code"><pre><code>Remove-Item Env:NIRVANA_ENGINE_URL</code></pre></div>
+        <p class="muted">Enquanto a variável existir na janela, o <code>nrv update</code> e o setup de pacotes reinstalam exatamente esse beta. Se o PowerShell mostrar <code>&gt;&gt;</code>, uma aspa se perdeu na colagem: aperte <kbd>Ctrl</kbd>+<kbd>C</kbd> e cole a linha de novo.</p>
+      </div>
+
+      <div class="panel" role="tabpanel" id="beta-wsl" aria-labelledby="beta-tab-wsl" tabindex="0">
+        <h3 class="panel-title">Windows com WSL</h3>
+        <p>Dentro do Ubuntu, com <code>curl</code> e <code>unzip</code> instalados:</p>
+        <div class="code"><pre><code>curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/<span class="beta-tag">v0.15.0-beta.7</span>/nirvana-os-engine.tar.gz bash</code></pre></div>
+        <p>O seu agente de IA também precisa estar instalado dentro do Ubuntu.</p>
+      </div>
+
+      <div class="panel" role="tabpanel" id="beta-linux" aria-labelledby="beta-tab-linux" tabindex="0">
+        <h3 class="panel-title">Linux</h3>
+        <p>Com <code>curl</code> e <code>unzip</code> instalados:</p>
+        <div class="code"><pre><code>curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/<span class="beta-tag">v0.15.0-beta.7</span>/nirvana-os-engine.tar.gz bash</code></pre></div>
+      </div>
+    </div>
+
+    <p>Depois, feche o terminal, abra um novo e confira:</p>
+    <div class="code"><pre><code>nrv --version</code></pre></div>
+    <p>A saída mostra <code>0.15.0-beta.7</code>. Um 404 no download quer dizer tag sem o <code>v</code> ou versão inexistente; as versões publicadas estão na <a href="https://github.com/gutomec/nirvana-os-engine/releases">lista de releases</a>.</p>
+  </section>
+
+  <section class="blk" id="perfil" aria-labelledby="perfil-h">
+    <h2 id="perfil-h">Escolha um perfil</h2>
+    <p>Rodado num terminal interativo, o instalador pergunta o perfil uma vez. Pelo <code>curl … | bash</code> não há terminal para perguntar, então nada é gravado e valem os padrões do engine. Você escolhe depois pedindo ao agente:</p>
+    <p class="say">"Coloque o Nirvana no modo economia."</p>
+    <p class="say">"Quero qualidade máxima no Nirvana."</p>
+    <p>Ele roda, por exemplo:</p>
+    <div class="code"><pre><code>nrv config set execution.profile economy --global</code></pre></div>
+    <p>No macOS, no Linux e no WSL também dá para passar o perfil na instalação, no fim do comando do beta: troque <code>bash</code> por <code>bash -s -- --profile=balanced</code>.</p>
+  </section>
+
+  <section class="blk" id="atualizar" aria-labelledby="atualizar-h">
+    <h2 id="atualizar-h">Pacotes e atualizações</h2>
+    <ul>
+      <li><strong>Pacotes.</strong> Instale como no <a href="./install.html#pacote">guia</a>. O setup de um pacote nunca troca o engine por uma versão mais antiga, então quem está no beta continua no beta.</li>
+      <li><strong>Engine.</strong> <code>nrv update</code> (ou <span class="say">"atualize o Nirvana-OS"</span>) mantém você no canal beta: vai para betas mais novos e, quando a 0.15.0 sair, para ela. Nunca volta para a 0.14.</li>
+      <li><strong>Um pacote.</strong> <code>nrv update genesis-circle</code>, com o slug do pacote. Em erro de licença, baixe o pacote de novo e rode o setup.</li>
+    </ul>
+  </section>
+
+  <section class="blk" id="projetos" aria-labelledby="projetos-h">
+    <h2 id="projetos-h">Projetos que vieram da 0.14</h2>
+    <p>Um projeto preparado na 0.14.11 tem o contrato completo. Rodar <code>nrv init .</code> no beta troca esse bloco, no lugar, pela nota sob demanda; para manter a orquestração total, use <code>nrv init . --orchestrators=always</code>. As regras que você escreveu acima do bloco do Nirvana ficam.</p>
+  </section>
+
+  <section class="blk" id="voltar" aria-labelledby="voltar-h">
+    <h2 id="voltar-h">Volte para a estável</h2>
+    <ol>
+      <li><strong>No Windows</strong>, abra um PowerShell <strong>novo</strong> e rode o comando abaixo. Se aparecer um erro dizendo que a variável não existe, pode ignorar.
+        <div class="code"><pre><code>Remove-Item Env:NIRVANA_ENGINE_URL</code></pre></div>
+      </li>
+      <li>Rode o comando estável do seu sistema. Ele instala a última estável por cima do beta e mantém o seu conteúdo, os pacotes e as configurações.
+        <div class="code"><span class="label">macOS, Linux e WSL</span><pre><code>curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | bash</code></pre></div>
+        <div class="code"><span class="label">Windows</span><pre><code>irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex</code></pre></div>
+      </li>
+      <li>Feche o terminal, abra um novo e confira que <code>nrv --version</code> não mostra mais <code>beta</code>.</li>
+      <li>Em cada projeto que você usou com o beta, rode <code>nrv init .</code> de novo. A 0.14.11 não reconhece a nota que o beta escreveu, então antes apague das instruções do projeto (<code>AGENTS.md</code>, <code>CLAUDE.md</code>, <code>GEMINI.md</code>) o bloco do beta, que começa na linha <code>&lt;!-- nirvana-os:on-demand-contract:v3 --&gt;</code> ou <code>&lt;!-- nirvana-os:invocation-contract:v4 --&gt;</code>, e deixe as suas linhas. Pelo agente: <span class="say">"apague o bloco do Nirvana escrito pelo beta nos arquivos de instrução deste projeto e rode nrv init de novo"</span>. Para continuar sob demanda, use <code>nrv init . --orchestrators=on-demand</code>.</li>
+    </ol>
+    <p>Os pacotes continuam instalados. Para voltar ao beta depois, rode o comando do beta de novo.</p>
+  </section>
+</main>
+
+<footer>
+  <span>Nirvana-OS · engine source-available (SUL v1.0) · conteúdo nos pacotes do squads.sh</span>
+  <span><a href="https://github.com/gutomec/nirvana-os-engine/releases">Releases</a> · <a href="https://github.com/gutomec/nirvana-os-engine">GitHub</a></span>
+</footer>
+</body>
+</html>
