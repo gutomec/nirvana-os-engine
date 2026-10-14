@@ -6,6 +6,24 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that the
 one-line installers and pack setups consume.
 
+## 0.14.12 — 2026-10-14
+
+### Quota: a spent quota pauses the run instead of burning it
+
+Measured on 2026-10-14, on a Codex run that hit its plan's usage limit: the message classified as a generic error, the half-written delivery went into the gate and into corrections that met the same limit, and an unrelated dispatch from a folder outside any project started a sweep that resumed the run before the reset, burning a retry.
+
+- A usage-limit message now classifies as a quota whatever apostrophe it prints. Codex writes "You’ve hit your usage limit" with a typographic apostrophe, and every pattern expected a straight one. Quotes are normalised before any pattern runs, and the reset the message names is read ("try again at 1:21 AM", "try again at Oct 14th, 2026 1:21 AM", Claude's "resets 3am (America/Sao_Paulo)" and "resets May 26, 8pm", an epoch or an ISO time). A time with no date is its next occurrence in local time. The runtime cools down until that reset instead of a window default.
+- A worker that stops on a spent quota is paused, not judged: no gate, no correction, no judge run on the dead runtime. The ledger row is `failed` with `meta.stop_reason: "quota"` and `meta.quota_reset_at`, the event is `x_delivery_quota_wait`, and `nrv dispatch` and `nrv revise` exit 75. A correction whose runtime failed (quota, credential, transport) is no longer a round and does not spend the revision limit; a quota there pauses the delivery the same way. A judge that meets a spent quota makes the gate say it could not judge (`x_gate_unjudged_quota`, `quality-gate.ts` exits 3) instead of falling back to heuristics.
+- The supervisor leaves a run stopped on a quota alone until its reset, with one `x_ledger_quota_wait` per reset and no retry spent. A dispatch from a folder outside any project no longer sweeps every project on the machine: the lazy sweep covers the dispatch's own project, and the machine-wide sweep is `nrv supervisor sweep --all-projects` or `watch`. Sweep and ledger events go to the swept project's own audit, and a foreground `nrv supervisor sweep` stops on Ctrl+C or SIGTERM and ends every process it started.
+
+### The gate judges the run's work, never its dependencies
+
+Dependency trees, caches and lockfiles are never judged (`node_modules`, `vendor`, `.git`, `.venv`, `venv`, `__pycache__`, `.next`, `coverage` and the like, `package-lock.json`, `bun.lock`, `yarn.lock`, `pnpm-lock.yaml`, `Cargo.lock`, `poetry.lock`), and neither are licence and notice texts the brief did not ask for. Build output (`dist`, `build`, `out`) is left out while a source tree remains and kept when it is the whole delivery. One list, `skills/_shared/lib/deliverable-noise.ts`. Measured on the same incident: a website delivery sent 26 files to the judge, Playwright's README and `ThirdPartyNotices.txt` among them, for nine minutes of judging.
+
+### Resumes and revisions keep the brief's folder
+
+The supervisor's resume asked for "the final files under the outputs root", and a resumed worker copied the whole project it was fixing into its deliverables. The resume, `nrv revise` and correction prompts now keep the folder the brief places the work in and say never to copy it under the outputs root, naming the folders the brief gives as absolute paths; the revision and the corrections are granted them.
+
 ## 0.14.11 — 2026-10-10
 
 ### Each squad installs into its own environment, prepared when it runs
