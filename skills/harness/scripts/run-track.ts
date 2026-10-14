@@ -55,7 +55,7 @@ import { resolveScope } from "../../_shared/lib/scope.ts";
 import {
   openLedger, openAgenticRun, markState, abandon, renewLease, findNonTerminal, getRun, findByTraceId,
   resolveProjectRoot, sameProjectRoot, isTerminal, pidAlive, runSignalDir,
-  killProcessTree, processStartedAt, workerPidAlive, dispatcherAlive,
+  killProcessTree, processStartedAt, workerPidAlive, dispatcherAlive, runProcesses, quotaWaitOf,
   AGENTIC_LEASE_SEC, type RunState, type RunRow,
 } from "../lib/run-ledger.ts";
 import { notifyDesktop } from "../lib/os-notify.ts";
@@ -142,17 +142,46 @@ function usage(code: number): never {
  *  (resolveAgenticLiveness), not this quick check. */
 const WORKER_STATES: ReadonlySet<string> = new Set(["dispatched", "running"]);
 
+/** Something recorded on the row is still working on it: its worker, its
+ *  dispatcher (revise.ts records itself when it takes a row over), or a sweep
+ *  recovering it. */
+function anyoneAlive(row: RunRow): boolean {
+  return (!!row.child_pid && pidAlive(row.child_pid)) || dispatcherAlive(row) || runProcesses(row, null).length > 0;
+}
+
+/**
+ * Two more readings, both from 2026-10-14, where a `verifying` row whose
+ * dispatcher had died five hours earlier read as `verifying`, with an
+ * `ended_at`, and its usage-limit error in `error`:
+ *
+ *  - `quota_wait`: the row stopped on a spent quota whose reset is still
+ *    ahead (run-ledger.ts quotaWaitOf), whether it reads `failed` (the
+ *    pipeline's own quota stop) or a working state nobody drives any more.
+ *    The supervisor resumes it at `retry_at`. Exit 75, "not done yet".
+ *  - `stale`: a working state (verifying, gated, …) whose recorded dispatcher
+ *    and worker are both dead. Nobody will move it until the supervisor
+ *    sweeps it. Exit 1, like `killed`.
+ *
+ * A row with no dispatcher recorded (an agentic run, an older row) keeps its
+ * state: its liveness is the supervisor's call.
+ */
 function interpretState(row: RunRow): string {
-  if (isTerminal(row.state) || row.state === "failed") return row.state;
+  if (isTerminal(row.state)) return row.state;
+  // Only a RECORDED dispatcher can be found dead: in verifying and gated the
+  // worker has ended by design, so its pid alone says nothing.
+  const dead = Number(row.meta?.dispatcher_pid) > 0 && !anyoneAlive(row);
+  if (row.state === "failed") return quotaWaitOf(row) ? "quota_wait" : "failed";
+  if (dead && quotaWaitOf(row)) return "quota_wait";
   // A dead worker pid is a killed run only when the dispatcher is gone too:
   // the pid the sidecar recorded can be a launcher that exited while the real
   // agent kept working, and the status flipped between killed and running.
   if (WORKER_STATES.has(row.state) && row.child_pid && !pidAlive(row.child_pid) && !dispatcherAlive(row)) return "killed";
+  if (dead && row.state !== "stalled") return "stale";
   return row.state;
 }
 
-const DONE_STATES = new Set(["delivered", "withheld", "abandoned", "failed", "killed"]);
-const EXIT_BY_STATE: Record<string, number> = { delivered: 0, withheld: 2, failed: 1, abandoned: 1, killed: 1 };
+const DONE_STATES = new Set(["delivered", "withheld", "abandoned", "failed", "killed", "stale", "quota_wait"]);
+const EXIT_BY_STATE: Record<string, number> = { delivered: 0, withheld: 2, failed: 1, abandoned: 1, killed: 1, stale: 1, quota_wait: 75 };
 
 function findRowById(id: string): RunRow | null {
   return getRun(handle, id) ?? findByTraceId(handle, id);
@@ -165,16 +194,24 @@ function report(row: RunRow, state: string): never {
   const meta = row.meta ?? {};
   const outputsRoot = (typeof meta.outputs_root === "string" && meta.outputs_root)
     || (typeof meta.project_dir === "string" && meta.project_dir) || null;
+  // ended_at only for a run that ended: a `verifying` row reported its last
+  // update as `ended_at`, and the caller polled a "finished" run for minutes.
+  const wait = state === "quota_wait" ? quotaWaitOf(row) : null;
   const payload = {
     run_id: row.run_id, trace_id: row.trace_id, state,
-    outputs_root: outputsRoot, ended_at: row.terminal_at ?? row.updated_at,
+    ...(state !== row.state ? { ledger_state: row.state } : {}),
+    outputs_root: outputsRoot, ended_at: isTerminal(row.state) ? (row.terminal_at ?? row.updated_at) : null,
+    updated_at: row.updated_at, lease_expires_at: row.lease_expires_at,
+    dispatcher_alive: dispatcherAlive(row),
+    ...(wait ? { retry_at: wait.resetAt } : {}),
     error: row.last_error,
   };
   if (argv.includes("--json")) {
     process.stdout.write(JSON.stringify(payload) + "\n");
   } else {
     const why = row.last_error ? ` — ${row.last_error}` : "";
-    process.stdout.write(`${row.run_id} → ${state}${why}\n`);
+    const retry = wait ? ` (retry at ${wait.resetAt})` : "";
+    process.stdout.write(`${row.run_id} → ${state}${retry}${why}\n`);
   }
   process.exit(state in EXIT_BY_STATE ? EXIT_BY_STATE[state] : 75);
 }
@@ -276,6 +313,9 @@ try {
       // A pid whose start time no longer matches belongs to another process now.
       if (dispatcher > 0 && pidAlive(dispatcher) && (!startedAt || (processStartedAt(dispatcher) ?? startedAt) === startedAt)) pids.push(dispatcher);
       if (workerPidAlive(row)) pids.push(row.child_pid!);
+      // The pids on the row can be stale while the run still works: a sweep
+      // recovering it, a revise started for it. Found by what they run.
+      pids.push(...runProcesses(row));
       // Every process of the run, the dispatcher's and the worker's trees, from
       // one snapshot: a worker the CLI launcher started as a grandchild
       // outlived the stop when only the recorded pids were signalled.

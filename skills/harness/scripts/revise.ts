@@ -247,7 +247,27 @@ const ledgerRun: { handle: runLedger.LedgerHandle; runId: string } | null = (() 
   const { handle, row } = ledger;
   try {
     if (!runLedger.isTerminal(row.state)) {
-      if (row.state !== "running") runLedger.markState(handle, row.run_id, "running");
+      // This process now drives the row: `nrv run-track stop` must reach it.
+      // Left on the dead dispatcher's pid (the supervisor's resume, a run whose
+      // dispatcher died), stop found "no live process" while this revision
+      // and its judge kept running (2026-10-14). The earlier values come back
+      // on exit, while the row is still ours.
+      const previous = { dispatcher_pid: row.meta?.dispatcher_pid ?? null, dispatcher_started_at: row.meta?.dispatcher_started_at ?? null };
+      const mine = { dispatcher_pid: process.pid, dispatcher_started_at: runLedger.processStartedAt(process.pid) };
+      runLedger.patchMeta(handle, row.run_id, mine);
+      process.on("exit", () => {
+        try {
+          const now = runLedger.getRun(handle, row.run_id);
+          if (now && !runLedger.isTerminal(now.state) && Number(now.meta?.dispatcher_pid) === process.pid) runLedger.patchMeta(handle, row.run_id, previous);
+        } catch { /* the ledger is closing with the process */ }
+      });
+      // `verifying` and `gated` have no direct edge back to `running`: the
+      // hop goes through `failed`, as the supervisor's own resume does, instead
+      // of throwing and leaving the revision untracked.
+      if (row.state !== "running") {
+        if (!runLedger.canTransition(row.state, "running")) runLedger.markState(handle, row.run_id, "failed", { error: "taken over by nrv revise" });
+        runLedger.markState(handle, row.run_id, "running");
+      }
       return { handle, runId: row.run_id };
     }
     const fresh = runLedger.openRun(handle, {

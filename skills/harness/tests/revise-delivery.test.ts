@@ -396,6 +396,31 @@ describe("nrv revise continues the ORIGINAL worker", () => {
     expect(c.prompt).not.toContain("Rewrite or update the deliverables as files under");
   }, 30_000);
 
+  test("a revision that takes over a live row records itself as its dispatcher, so stop reaches it", () => {
+    // 2026-10-14: the supervisor's resume continued a `verifying` row whose
+    // dispatcher had died hours before; the row kept that pid, and
+    // `nrv run-track stop` found "no live process" while the revision judged.
+    let db = "";
+    let runId = "";
+    const c = runRevise({ "nota.md": PASSING_MD }, {
+      setup: (pid, home) => {
+        db = path.join(home, "ledger.sqlite");
+        const h = runLedger.openLedger(db);
+        const row = runLedger.openRun(h, { traceId: pid, projectId: pid, projectRoot: null, targetSlug: "biz", targetKind: "business", runtime: "claude-code",
+          meta: { mode: "solo", dispatch_role: "solo", runtime_source: "flag", dispatcher_pid: 4242424, dispatcher_started_at: "long ago" } });
+        runLedger.markState(h, row.run_id, "running");
+        runLedger.markState(h, row.run_id, "verifying", { error: "the dispatcher died" });
+        runId = row.run_id;
+      },
+    });
+    expect(c.status).toBe(0);
+    const row = runLedger.getRun(runLedger.openLedger(db), runId)!;
+    expect(row.state).toBe("delivered");                     // the same row, carried on to its end
+    expect(typeof row.meta.dispatcher_pid).toBe("number");
+    expect(row.meta.dispatcher_pid).not.toBe(4242424);
+    expect(c.audit.some(l => l.event === "x_ledger_meta_patched" && l.run_id === runId && (l.keys ?? []).includes("dispatcher_pid"))).toBe(true);
+  }, 30_000);
+
   test("a squad run from before squad runs recorded their session: refused with a clear message, exit 4", () => {
     const home = path.join(TMP, "squad-case");
     fs.mkdirSync(path.join(home, "outputs", "proj-squad", "squads", "copy"), { recursive: true });
