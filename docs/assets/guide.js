@@ -1,7 +1,7 @@
-/* Nirvana-OS guide pages (install.html, beta.html): theme toggle, operating
-   system tabs, copy buttons and the beta tag. Plain JS, no dependencies. Without
-   JS the pages still work: every panel shows under its own heading and every
-   command is selectable text. */
+/* Nirvana-OS guide pages (install.html, beta.html): operating system tabs,
+   copy buttons and the beta tag; the theme toggle lives in site.js. Plain JS,
+   no dependencies. Without JS the pages still work: every panel shows under
+   its own heading and every command is selectable text. */
 (function () {
   "use strict";
 
@@ -23,31 +23,6 @@
 
   /* Beta tag */
   Array.prototype.forEach.call(document.querySelectorAll(".beta-tag"), function (el) { el.textContent = BETA_TAG; });
-
-  /* Theme */
-  var themeBtn = document.getElementById("theme");
-  function effectiveTheme() {
-    var t = root.getAttribute("data-theme");
-    if (t) return t;
-    return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-  }
-  function paintTheme() {
-    if (!themeBtn) return;
-    var dark = effectiveTheme() === "dark";
-    themeBtn.textContent = dark ? "tema: escuro" : "tema: claro";
-    themeBtn.setAttribute("aria-label", dark ? "Mudar para o tema claro" : "Mudar para o tema escuro");
-  }
-  var savedTheme = store("nrv-guide-theme");
-  if (savedTheme === "dark" || savedTheme === "light") root.setAttribute("data-theme", savedTheme);
-  if (themeBtn) {
-    themeBtn.addEventListener("click", function () {
-      var next = effectiveTheme() === "dark" ? "light" : "dark";
-      root.setAttribute("data-theme", next);
-      store("nrv-guide-theme", next);
-      paintTheme();
-    });
-  }
-  paintTheme();
 
   /* Operating system tabs. Every group on the page follows the same choice. */
   var OS_NAMES = { mac: "macOS", win: "Windows", wsl: "WSL", linux: "Linux" };
