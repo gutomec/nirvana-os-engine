@@ -20,6 +20,7 @@
 //   1 = some warnings
 //   2 = critical failures
 
+import { jevDoctorLine } from "../../_shared/lib/typesafe-client.ts";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -1097,6 +1098,15 @@ try {
   }
 } catch (e) {
   add("routing: aliases", "WARN", `cannot read alias groups: ${(e as Error).message}`);
+}
+
+// TypeSafe's Jev, the optional first step of --auto (lib/jev-router.ts):
+// informative only. Without a key it is off and nothing changes; with one,
+// the request text goes to TypeSafe unless routing.jev is off.
+try {
+  add("routing: jev", "PASS", jevDoctorLine());
+} catch (e) {
+  add("routing: jev", "WARN", `cannot read the jev state: ${(e as Error).message}`);
 }
 
 // Invocation keys nothing reads. `triggers:` and `trigger_threshold:` name a

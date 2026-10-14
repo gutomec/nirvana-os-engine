@@ -63,3 +63,11 @@ if (process.env.NRV_HOST_ANCESTRY === undefined) process.env.NRV_HOST_ANCESTRY =
 if (!process.env.NIRVANA_AUDIT_KEY) {
   process.env.NIRVANA_AUDIT_KEY = path.join(process.env.HARNESS_LOGS_DIR!, "audit-key");
 }
+
+// TypeSafe's Jev is on wherever the owner keeps a TYPESAFE_API_KEY (~/.env is
+// one of the places it is read from), and every dispatch test would then send
+// its request text to TypeSafe and pay for it. Off for the suite, and the
+// endpoint points at a closed local port so a call that slips through fails
+// here instead of leaving the machine. A test that exercises the Jev sets both.
+if (process.env.NIRVANA_ROUTING_JEV === undefined) process.env.NIRVANA_ROUTING_JEV = "off";
+if (process.env.TYPESAFE_ENDPOINT === undefined) process.env.TYPESAFE_ENDPOINT = "http://127.0.0.1:9/v1/systemone";
