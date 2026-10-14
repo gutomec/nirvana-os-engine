@@ -1,6 +1,7 @@
 // clone-names.ts — who a request names, in the words people actually use.
 //
-// The clone library is keyed by slug, and a request names a person: "com a voz
+// The clone library is keyed by slug, and a request names a person (the quoted
+// requests are user input, i18n-user-facing): "com a voz
 // do Yoshua Bengio", "estilo Hormozi", "como o Naval pensaria", "à moda do
 // Godin", "tipo MKBHD". A substring test over the display name recognised 22
 // of 43 such phrasings (measured 2026-10-13), and every miss fell through to
@@ -72,7 +73,7 @@ const NAME_PARTICLES = new Set(["de", "da", "do", "dos", "das", "e", "van", "von
 
 /** What precedes a voice: "estilo", "como o", "à moda do", "na linha do", "tipo", "in the style of". */
 const CUE = String.raw`(?:estilo|stylo|style|voz|voice|tom|tone|jeito|maneira|metodo|method|abordagem|moda|linha|como|feito|segundo|tipo|inspirad[oa]s?|inspired|cabeca|olhar|visao|la|like|pelo|pela|according|persona|clone|mente)`;
-const FILLER = String.raw`(?:\s+(?:o|a|os|as|do|da|dos|das|de|of|the|by|to|um|uma|que|faria|escreveria|diria|pensaria|explicaria))*`;
+const FILLER = String.raw`(?:\s+(?:o|a|os|as|do|da|dos|das|de|of|the|by|to|um|uma|que|faria|escreveria|diria|pensaria|explicaria))*`; // i18n-user-facing: PT cue data matched against user input
 
 /** A display name without its role ("— Brand Practice Lead") and with its nicknames apart. */
 function splitDisplay(display: string): { base: string; nicknames: string[] } {
