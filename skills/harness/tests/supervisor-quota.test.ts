@@ -107,7 +107,11 @@ describe("a foreground sweep is stoppable", () => {
   // 2026-10-14: the coordinator's `nrv supervisor sweep` held a revision for
   // half an hour; SIGTERM ended the sweep and left the revision and its judge
   // running, and the tree had to be walked by hand.
-  test("SIGTERM ends the sweep and the worker it started", async () => {
+  // POSIX only: on Windows a SIGTERM sent by another process is TerminateProcess,
+  // which no handler can catch. There the user stops a foreground sweep with
+  // Ctrl+C, and the console delivers that to every process attached to it,
+  // the worker included.
+  test.skipIf(process.platform === "win32")("SIGTERM ends the sweep and the worker it started", async () => {
     const { writeFakeCli } = await import("./helpers/fake-cli.ts");
     const { spawn } = await import("node:child_process");
     const { pidAlive } = await import("../lib/run-ledger.ts");
