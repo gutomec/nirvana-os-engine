@@ -97,30 +97,30 @@ describe("loadHarnessConfig", () => {
   });
 
   // routing.on_router_failure — Phase 4 router-failure ladder policy.
-  test('on_router_failure defaults to "agent-x-only" (never BM25 without --fast) and accepts "cascade"/"fail"', () => {
+  test('on_router_failure defaults to "agent-x-only", accepts "fail", and reads the retired "cascade" as "agent-x-only"', () => {
     expect(loadHarnessConfig(path.join(tmp, "missing2.yaml")).routing.on_router_failure).toBe("agent-x-only");
     const p = write("orf.yaml", 'routing:\n  on_router_failure: "fail"\n');
     expect(loadHarnessConfig(p).routing.on_router_failure).toBe("fail");
     const p2 = write("orf2.yaml", 'routing:\n  on_router_failure: "cascade"\n');
-    expect(loadHarnessConfig(p2).routing.on_router_failure).toBe("cascade");
+    expect(loadHarnessConfig(p2).routing.on_router_failure).toBe("agent-x-only");
   });
 
   test("an unknown on_router_failure is a clear error", () => {
     const p = write("orf-bad.yaml", "routing:\n  on_router_failure: explode\n");
-    expect(() => loadHarnessConfig(p)).toThrow(/orf-bad\.yaml.*routing\.on_router_failure.*cascade \| agent-x-only \| fail/);
+    expect(() => loadHarnessConfig(p)).toThrow(/orf-bad\.yaml.*routing\.on_router_failure.*agent-x-only \| fail/);
   });
 
   test("without an explicit path the project and the global config apply over the engine file", () => {
     const home = path.join(tmp, "home-layers");
     const project = path.join(tmp, "project-layers");
-    write("home-layers/.nirvana/config.yaml", "quality_gate:\n  max_revisions: 5\nrouting:\n  on_router_failure: fail\n");
-    write("project-layers/.nirvana/config.yaml", "routing:\n  on_router_failure: cascade\n  dense: fallback\n");
+    write("home-layers/.nirvana/config.yaml", "quality_gate:\n  max_revisions: 5\nrouting:\n  on_router_failure: agent-x-only\n");
+    write("project-layers/.nirvana/config.yaml", "routing:\n  on_router_failure: fail\n  dense: fallback\n");
     process.env.NIRVANA_HOME = home;
     process.env.NIRVANA_PROJECT_ROOT = project;
     delete process.env.NIRVANA_ROUTER_DENSE;
     const cfg = loadHarnessConfig();
     expect(cfg.quality_gate.max_revisions).toBe(5);          // global
-    expect(cfg.routing.on_router_failure).toBe("cascade");   // project over global
+    expect(cfg.routing.on_router_failure).toBe("fail");      // project over global
     expect(cfg.routing.dense).toBe("fallback");              // project
     expect(cfg.config_path).toBe(path.join(import.meta.dir, "..", "config.yaml"));
   });

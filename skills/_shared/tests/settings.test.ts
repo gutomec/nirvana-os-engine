@@ -6,12 +6,12 @@
 // the per-process cache, and the variables a spawner pins into a child.
 // Hermetic: every layer is an explicit temp path, the environment is the
 // one the test passes. Runs with: bun test skills/_shared/tests
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
-  _resetSettingsCache, defaultWriteScope, describeSettingSource, discoverProjectRoot, editYamlScalar, engineConfigPath,
+  _resetRetiredWarnings, _resetSettingsCache, defaultWriteScope, describeSettingSource, discoverProjectRoot, editYamlScalar, engineConfigPath,
   globalConfigPath, projectConfigPath, resolveAllSettings, resolveSetting, resolveSettingsMap, SettingsError, setSetting,
   settingsEnvForChild, SETTINGS_SCHEMA, unsetSetting, type ResolveOptions,
 } from "../lib/settings.ts";
@@ -55,12 +55,12 @@ describe("the four origins", () => {
   });
 
   test("env > project > global > engine default > default, one key at a time", () => {
-    write(engine, "routing:\n  mode: fast\n");
-    expect(resolveSetting("routing.mode", base)).toEqual({ key: "routing.mode", value: "fast", source: "engine-default", path: engine });
+    write(engine, "routing:\n  mode: cards\n");
+    expect(resolveSetting("routing.mode", base)).toEqual({ key: "routing.mode", value: "cards", source: "engine-default", path: engine });
     write(base.globalPath!, "routing:\n  mode: agentic\n");
     expect(resolveSetting("routing.mode", base)).toMatchObject({ value: "agentic", source: "global", path: base.globalPath });
-    write(projectConfigPath(project), "locale: pt-BR\nrouting:\n  mode: fast\n");
-    expect(resolveSetting("routing.mode", base)).toMatchObject({ value: "fast", source: "project", path: projectConfigPath(project) });
+    write(projectConfigPath(project), "locale: pt-BR\nrouting:\n  mode: cards\n");
+    expect(resolveSetting("routing.mode", base)).toMatchObject({ value: "cards", source: "project", path: projectConfigPath(project) });
     expect(resolveSetting("routing.mode", { ...base, env: { NIRVANA_ROUTING_MODE: "agentic" } }))
       .toEqual({ key: "routing.mode", value: "agentic", source: "env", variable: "NIRVANA_ROUTING_MODE", raw: "agentic" });
   });
@@ -104,13 +104,13 @@ describe("clear errors, never silent defaults", () => {
 
   test("an invalid value names the file, the key and the choices", () => {
     write(projectConfigPath(project), "routing:\n  mode: turbo\n");
-    expect(() => resolveSetting("routing.mode", base)).toThrow(`${projectConfigPath(project)}: routing.mode: invalid value "turbo"; expected agentic | cards | fast`);
+    expect(() => resolveSetting("routing.mode", base)).toThrow(`${projectConfigPath(project)}: routing.mode: invalid value "turbo"; expected agentic | cards`);
     write(projectConfigPath(project), "quality_gate:\n  max_revisions: two\n");
     expect(() => resolveSetting("quality_gate.max_revisions", base)).toThrow(/quality_gate\.max_revisions: invalid value "two"; expected integer >= 0/);
   });
 
   test("a section that is not a mapping is refused, a scalar file too", () => {
-    write(projectConfigPath(project), "routing: fast\n");
+    write(projectConfigPath(project), "routing: cards\n");
     expect(() => resolveSetting("routing.mode", base)).toThrow(/"routing" must be a mapping/);
     write(projectConfigPath(project), "just a string\n");
     expect(() => resolveSetting("routing.mode", base)).toThrow(/must be a mapping/);
@@ -118,7 +118,7 @@ describe("clear errors, never silent defaults", () => {
 
   test("an invalid variable names the variable", () => {
     expect(() => resolveSetting("routing.mode", { ...base, env: { NIRVANA_ROUTING_MODE: "turbo" } }))
-      .toThrow("NIRVANA_ROUTING_MODE=turbo is invalid for routing.mode; expected agentic | cards | fast");
+      .toThrow("NIRVANA_ROUTING_MODE=turbo is invalid for routing.mode; expected agentic | cards");
   });
 });
 
@@ -146,11 +146,11 @@ describe("project discovery", () => {
   });
 
   test("the resolution discovers the project from cwd, and HOME's own .nirvana/ is the global layer, not a project", () => {
-    write(projectConfigPath(project), "routing:\n  mode: fast\n");
-    expect(resolveSetting("routing.mode", { env: {}, cwd: path.join(project, "anywhere"), globalPath: null, enginePath: null })).toMatchObject({ value: "fast", source: "project" });
-    write(path.join(home, ".nirvana", "config.yaml"), "routing:\n  mode: fast\n");
+    write(projectConfigPath(project), "routing:\n  mode: cards\n");
+    expect(resolveSetting("routing.mode", { env: {}, cwd: path.join(project, "anywhere"), globalPath: null, enginePath: null })).toMatchObject({ value: "cards", source: "project" });
+    write(path.join(home, ".nirvana", "config.yaml"), "routing:\n  mode: cards\n");
     const fromHome = resolveSetting("routing.mode", { env: { NIRVANA_HOME: home, HOME: home }, cwd: home, enginePath: null });
-    expect(fromHome).toMatchObject({ value: "fast", source: "global", path: path.join(home, ".nirvana", "config.yaml") });
+    expect(fromHome).toMatchObject({ value: "cards", source: "global", path: path.join(home, ".nirvana", "config.yaml") });
   });
 
   test("defaultWriteScope is the project inside one, global outside", () => {
@@ -163,12 +163,12 @@ describe("writing", () => {
   test("setSetting creates the file and its directory, quotes strings, writes numbers and booleans bare", () => {
     const fresh = path.join(tmp, "fresh-home");
     const opts = { ...base, globalPath: path.join(fresh, ".nirvana", "config.yaml") };
-    expect(setSetting("routing.mode", "fast", { ...opts, scope: "global" })).toEqual({ key: "routing.mode", scope: "global", path: opts.globalPath, from: null, to: "fast", changed: true });
+    expect(setSetting("routing.mode", "cards", { ...opts, scope: "global" })).toEqual({ key: "routing.mode", scope: "global", path: opts.globalPath, from: null, to: "cards", changed: true });
     setSetting("quality_gate.max_revisions", "3", { ...opts, scope: "global" });
     setSetting("multi_target.enabled", "off", { ...opts, scope: "global" });
     setSetting("budget.default_max_cost_usd", 2.5, { ...opts, scope: "global" });
     const body = [
-      "routing:", '  mode: "fast"', "", "quality_gate:", "  max_revisions: 3", "", "multi_target:", "  enabled: false", "", "budget:", "  default_max_cost_usd: 2.5", "",
+      "routing:", '  mode: "cards"', "", "quality_gate:", "  max_revisions: 3", "", "multi_target:", "  enabled: false", "", "budget:", "  default_max_cost_usd: 2.5", "",
     ].join("\n");
     // A file born blank now arrives with a header explaining what layer it is
     // and that `nrv update` does not replace it — the settings were documented
@@ -178,7 +178,7 @@ describe("writing", () => {
     expect(written.startsWith("# Nirvana-OS —")).toBe(true);
     expect(written).toContain("nrv config set <key> <value> --global");
     expect(written.endsWith(body)).toBe(true);
-    expect(resolveSettingsMap(opts)).toMatchObject({ "routing.mode": "fast", "quality_gate.max_revisions": 3, "multi_target.enabled": false, "budget.default_max_cost_usd": 2.5 });
+    expect(resolveSettingsMap(opts)).toMatchObject({ "routing.mode": "cards", "quality_gate.max_revisions": 3, "multi_target.enabled": false, "budget.default_max_cost_usd": 2.5 });
   });
 
   test("a line edit keeps every other byte: comments, inline comments, the locale, other sections", () => {
@@ -194,14 +194,14 @@ describe("writing", () => {
       "  default_intensity: light",
       "",
     ].join("\n"));
-    const change = setSetting("routing.mode", "fast", { ...base, scope: "project" });
-    expect(change).toMatchObject({ from: "agentic", to: "fast", changed: true, path: file });
+    const change = setSetting("routing.mode", "cards", { ...base, scope: "project" });
+    expect(change).toMatchObject({ from: "agentic", to: "cards", changed: true, path: file });
     expect(read(file)).toBe([
       "# project config",
       "locale: pt-BR",
       "routing:",
       "  # how targets are chosen",
-      '  mode: "fast"   # set by hand',
+      '  mode: "cards"   # set by hand',
       "  dense: off",
       "gauntlet:",
       "  default_intensity: light",
@@ -213,8 +213,8 @@ describe("writing", () => {
 
   test("unsetSetting removes the line, then the empty section, and reports nothing to remove", () => {
     const file = projectConfigPath(project);
-    write(file, "locale: pt-BR\nrouting:\n  mode: fast\n  dense: off\n");
-    expect(unsetSetting("routing.mode", { ...base, scope: "project" })).toMatchObject({ from: "fast", to: null, changed: true });
+    write(file, "locale: pt-BR\nrouting:\n  mode: cards\n  dense: off\n");
+    expect(unsetSetting("routing.mode", { ...base, scope: "project" })).toMatchObject({ from: "cards", to: null, changed: true });
     expect(read(file)).toBe("locale: pt-BR\nrouting:\n  dense: off\n");
     unsetSetting("routing.dense", { ...base, scope: "project" });
     expect(read(file)).toBe("locale: pt-BR\n");
@@ -225,22 +225,22 @@ describe("writing", () => {
     const events: Array<{ event: string; payload: Record<string, unknown> }> = [];
     const audit = (event: string, payload: Record<string, unknown>) => events.push({ event, payload });
     const opts = { ...base, scope: "global" as const, audit };
-    setSetting("routing.mode", "fast", opts);
+    setSetting("routing.mode", "cards", opts);
     const mtime = fs.statSync(base.globalPath!).mtimeMs;
-    expect(setSetting("routing.mode", "fast", opts).changed).toBe(false);
+    expect(setSetting("routing.mode", "cards", opts).changed).toBe(false);
     expect(fs.statSync(base.globalPath!).mtimeMs).toBe(mtime);
     unsetSetting("routing.mode", opts);
     expect(events).toEqual([
-      { event: "x_settings_changed", payload: { key: "routing.mode", scope: "global", path: base.globalPath, from: null, to: "fast" } },
-      { event: "x_settings_changed", payload: { key: "routing.mode", scope: "global", path: base.globalPath, from: "fast", to: null } },
+      { event: "x_settings_changed", payload: { key: "routing.mode", scope: "global", path: base.globalPath, from: null, to: "cards" } },
+      { event: "x_settings_changed", payload: { key: "routing.mode", scope: "global", path: base.globalPath, from: "cards", to: null } },
     ]);
   });
 
   test("refusals: an invalid value, a scope the key rejects, a project scope with no project, a section written in line", () => {
-    expect(() => setSetting("routing.mode", "turbo", { ...base, scope: "global" })).toThrow('routing.mode: invalid value "turbo"; expected agentic | cards | fast');
+    expect(() => setSetting("routing.mode", "turbo", { ...base, scope: "global" })).toThrow('routing.mode: invalid value "turbo"; expected agentic | cards');
     expect(() => setSetting("quality_gate.max_revisions", "many", { ...base, scope: "global" })).toThrow(/expected integer >= 0/);
     expect(() => setSetting("updates.check", "false", { ...base, scope: "project" })).toThrow(/updates\.check only accepts scope global/);
-    expect(() => setSetting("routing.mode", "fast", { env: {}, cwd: tmp, scope: "project", globalPath: base.globalPath, enginePath: null })).toThrow(/no Nirvana project/);
+    expect(() => setSetting("routing.mode", "cards", { env: {}, cwd: tmp, scope: "project", globalPath: base.globalPath, enginePath: null })).toThrow(/no Nirvana project/);
     write(base.globalPath!, "routing: { mode: agentic }\n");
     expect(() => setSetting("routing.dense", "fallback", { ...base, scope: "global" })).toThrow(/"routing:" is written inline/);
     expect(fs.existsSync(projectConfigPath(project))).toBe(false);
@@ -248,26 +248,26 @@ describe("writing", () => {
 
   test("a key pinned by a variable is refused with the variable named, unless the caller ignores the environment", () => {
     const env = { NIRVANA_ROUTING_MODE: "agentic" };
-    expect(() => setSetting("routing.mode", "fast", { ...base, env, scope: "global" })).toThrow(/routing\.mode is pinned by the variable NIRVANA_ROUTING_MODE=agentic/);
+    expect(() => setSetting("routing.mode", "cards", { ...base, env, scope: "global" })).toThrow(/routing\.mode is pinned by the variable NIRVANA_ROUTING_MODE=agentic/);
     expect(() => unsetSetting("routing.mode", { ...base, env, scope: "global" })).toThrow(/pinned by the variable/);
-    expect(setSetting("routing.mode", "fast", { ...base, env, scope: "global", ignoreEnv: true }).changed).toBe(true);
+    expect(setSetting("routing.mode", "cards", { ...base, env, scope: "global", ignoreEnv: true }).changed).toBe(true);
     // The variable still wins the resolution; the file holds the value for later.
     expect(resolveSetting("routing.mode", { ...base, env })).toMatchObject({ value: "agentic", source: "env" });
-    expect(resolveSetting("routing.mode", base)).toMatchObject({ value: "fast", source: "global" });
+    expect(resolveSetting("routing.mode", base)).toMatchObject({ value: "cards", source: "global" });
   });
 
   test("a bad value already in the file can be repaired: the write does not validate what it replaces", () => {
     write(base.globalPath!, "routing:\n  mode: turbo\n");
     expect(() => resolveSetting("routing.mode", base)).toThrow(/turbo/);
-    expect(setSetting("routing.mode", "fast", { ...base, scope: "global" })).toMatchObject({ from: "turbo", to: "fast", changed: true });
-    expect(resolveSetting("routing.mode", base).value).toBe("fast");
+    expect(setSetting("routing.mode", "cards", { ...base, scope: "global" })).toMatchObject({ from: "turbo", to: "cards", changed: true });
+    expect(resolveSetting("routing.mode", base).value).toBe("cards");
   });
 
   test("editYamlScalar alone: replace, insert after the section, append, remove; the file always ends with a newline", () => {
-    expect(editYamlScalar("", "routing.mode", '"fast"')).toBe('routing:\n  mode: "fast"\n');
-    expect(editYamlScalar("a: 1", "routing.mode", '"fast"')).toBe('a: 1\n\nrouting:\n  mode: "fast"\n');
-    expect(editYamlScalar("routing:\n    dense: off\n", "routing.mode", '"fast"')).toBe('routing:\n    mode: "fast"\n    dense: off\n');
-    expect(editYamlScalar("routing:\n  mode: agentic # c\nother:\n  mode: x\n", "routing.mode", '"fast"')).toBe('routing:\n  mode: "fast"   # c\nother:\n  mode: x\n');
+    expect(editYamlScalar("", "routing.mode", '"cards"')).toBe('routing:\n  mode: "cards"\n');
+    expect(editYamlScalar("a: 1", "routing.mode", '"cards"')).toBe('a: 1\n\nrouting:\n  mode: "cards"\n');
+    expect(editYamlScalar("routing:\n    dense: off\n", "routing.mode", '"cards"')).toBe('routing:\n    mode: "cards"\n    dense: off\n');
+    expect(editYamlScalar("routing:\n  mode: agentic # c\nother:\n  mode: x\n", "routing.mode", '"cards"')).toBe('routing:\n  mode: "cards"   # c\nother:\n  mode: x\n');
     expect(editYamlScalar("routing:\n  mode: agentic\nother:\n  mode: x\n", "routing.mode", null)).toBe("other:\n  mode: x\n");
     expect(editYamlScalar("other:\n  mode: x\n", "routing.mode", null)).toBe("other:\n  mode: x\n");
   });
@@ -275,13 +275,13 @@ describe("writing", () => {
 
 describe("cache", () => {
   test("a file is re-read when it changes on disk, and after a write through the module", () => {
-    write(base.globalPath!, "routing:\n  mode: fast\n");
-    expect(resolveSetting("routing.mode", base).value).toBe("fast");
+    write(base.globalPath!, "routing:\n  mode: cards\n");
+    expect(resolveSetting("routing.mode", base).value).toBe("cards");
     // Same size, different content: the cache keys on mtime too.
     const later = new Date(Date.now() + 5000);
-    fs.writeFileSync(base.globalPath!, "routing:\n  mode: slow\n".replace("slow", "fast"), "utf8");
+    fs.writeFileSync(base.globalPath!, "routing:\n  mode: slow\n".replace("slow", "cards"), "utf8");
     fs.utimesSync(base.globalPath!, later, later);
-    expect(resolveSetting("routing.mode", base).value).toBe("fast");
+    expect(resolveSetting("routing.mode", base).value).toBe("cards");
     setSetting("routing.mode", "agentic", { ...base, scope: "global" });
     expect(resolveSetting("routing.mode", base).value).toBe("agentic");
     fs.rmSync(base.globalPath!);
@@ -291,11 +291,11 @@ describe("cache", () => {
 
 describe("settingsEnvForChild", () => {
   test("pins every key that has a variable, in the variable's own spelling; empty strings and a true updates.check stay unset", () => {
-    write(projectConfigPath(project), "routing:\n  dense: fallback\n  mode: fast\nmulti_target:\n  enabled: false\nexecution:\n  model: opus\nsupervisor:\n  progress_ping_sec: 5\n");
+    write(projectConfigPath(project), "routing:\n  dense: fallback\n  mode: cards\nmulti_target:\n  enabled: false\nexecution:\n  model: opus\nsupervisor:\n  progress_ping_sec: 5\n");
     write(base.globalPath!, "updates:\n  check: false\n");
     const pinned = settingsEnvForChild(base);
     expect(pinned).toMatchObject({
-      NIRVANA_ROUTER_DENSE: "1", NIRVANA_ROUTING_MODE: "fast", NIRVANA_MULTI_TARGET_KILL_SWITCH: "1", NIRVANA_MODEL: "opus",
+      NIRVANA_ROUTER_DENSE: "1", NIRVANA_ROUTING_MODE: "cards", NIRVANA_MULTI_TARGET_KILL_SWITCH: "1", NIRVANA_MODEL: "opus",
       NIRVANA_PROGRESS_PING_SEC: "5", NIRVANA_NO_UPDATE_CHECK: "1", NIRVANA_EXECUTION_MODE: "standard", NIRVANA_HEADLESS_SKIP_PERMISSIONS: "1",
       NIRVANA_GLANCE_EXECUTION: "1", NIRVANA_DNA_INJECTION: "reference", NIRVANA_BRIEF_ALTITUDE: "outcome",
     });
@@ -307,22 +307,67 @@ describe("settingsEnvForChild", () => {
     expect(defaults.NIRVANA_MULTI_TARGET_KILL_SWITCH).toBe("0");
     // A child resolving for itself reads the pinned variables back to the same values.
     const child = resolveSettingsMap({ env: pinned, projectRoot: null, globalPath: null, enginePath: null });
-    expect(child).toMatchObject({ "routing.dense": "fallback", "routing.mode": "fast", "multi_target.enabled": false, "execution.model": "opus", "supervisor.progress_ping_sec": 5, "updates.check": false });
+    expect(child).toMatchObject({ "routing.dense": "fallback", "routing.mode": "cards", "multi_target.enabled": false, "execution.model": "opus", "supervisor.progress_ping_sec": 5, "updates.check": false });
   });
 
   test("a variable already in the child's environment wins and is pinned as is", () => {
-    write(projectConfigPath(project), "routing:\n  mode: fast\n");
+    write(projectConfigPath(project), "routing:\n  mode: cards\n");
     expect(settingsEnvForChild({ ...base, env: { NIRVANA_ROUTING_MODE: "agentic" } }).NIRVANA_ROUTING_MODE).toBe("agentic");
   });
 });
 
 describe("describeSettingSource", () => {
   test("names the variable, the file or the default", () => {
-    write(projectConfigPath(project), "routing:\n  mode: fast\n");
+    write(projectConfigPath(project), "routing:\n  mode: cards\n");
     expect(describeSettingSource(resolveSetting("routing.mode", base))).toBe(`project ${projectConfigPath(project)}`);
-    expect(describeSettingSource(resolveSetting("routing.mode", { ...base, env: { NIRVANA_ROUTING_MODE: "fast" } }))).toBe("env NIRVANA_ROUTING_MODE=fast");
+    expect(describeSettingSource(resolveSetting("routing.mode", { ...base, env: { NIRVANA_ROUTING_MODE: "cards" } }))).toBe("env NIRVANA_ROUTING_MODE=cards");
     expect(describeSettingSource(resolveSetting("routing.dense", base))).toBe("default");
     write(engine, "routing:\n  dense: fallback\n");
     expect(describeSettingSource(resolveSetting("routing.dense", base))).toBe(`engine ${engine}`);
+  });
+});
+
+describe("retired values: a machine that stored one keeps working", () => {
+  // `routing.mode: fast` and `routing.on_router_failure: cascade` were valid until
+  // 2026-10-13. A file or a variable that still says so must not break the
+  // machine: the value reads as unset (or as its replacement), once loudly.
+  let errors: string[];
+  let spy: ReturnType<typeof spyOn>;
+  beforeEach(() => {
+    _resetRetiredWarnings();
+    errors = [];
+    spy = spyOn(console, "error").mockImplementation((...args: unknown[]) => { errors.push(args.join(" ")); });
+  });
+  afterEach(() => spy.mockRestore());
+
+  test("routing.mode: fast in a config file falls back to the profile default, with one warning naming the file and the fix", () => {
+    write(base.globalPath!, "execution:\n  profile: balanced\nrouting:\n  mode: fast\n");
+    expect(resolveSetting("routing.mode", base)).toEqual({ key: "routing.mode", value: "cards", source: "profile", profile: "balanced" });
+    expect(resolveSetting("routing.mode", base).value).toBe("cards");
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain(`routing.mode: "fast" in ${base.globalPath} was retired`);
+    expect(errors[0]).toContain("nrv config unset routing.mode --global");
+  });
+
+  test("NIRVANA_ROUTING_MODE=fast is ignored the same way, naming the variable", () => {
+    write(projectConfigPath(project), "routing:\n  mode: fast\n");
+    const resolved = resolveSetting("routing.mode", { ...base, env: { NIRVANA_ROUTING_MODE: "fast" } });
+    expect(resolved).toMatchObject({ value: "agentic", source: "default" });
+    expect(errors.some((e) => e.includes("the variable NIRVANA_ROUTING_MODE") && e.includes("unset NIRVANA_ROUTING_MODE"))).toBe(true);
+    expect(errors.some((e) => e.includes("nrv config unset routing.mode --project"))).toBe(true);
+  });
+
+  test("on_router_failure: cascade reads as agent-x-only, with a warning", () => {
+    write(projectConfigPath(project), "routing:\n  on_router_failure: cascade\n");
+    expect(resolveSetting("routing.on_router_failure", base)).toMatchObject({ value: "agent-x-only", source: "project" });
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('read as "agent-x-only"');
+  });
+
+  test("writing a retired value is refused with why, and unset still clears it", () => {
+    expect(() => setSetting("routing.mode", "fast", { ...base, scope: "global" })).toThrow(/routing\.mode: "fast" was retired \(.*\); expected agentic \| cards/);
+    expect(() => setSetting("routing.on_router_failure", "cascade", { ...base, scope: "global" })).toThrow(/was retired/);
+    write(base.globalPath!, "routing:\n  mode: fast\n");
+    expect(unsetSetting("routing.mode", { ...base, scope: "global" })).toMatchObject({ from: "fast", to: null, changed: true });
   });
 });

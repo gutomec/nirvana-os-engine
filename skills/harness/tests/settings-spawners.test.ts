@@ -34,7 +34,7 @@ function fixture() {
   fs.mkdirSync(path.join(projectRoot, ".nirvana"), { recursive: true });
   fs.writeFileSync(path.join(home, ".nirvana", "config.yaml"), "supervisor:\n  progress_ping_sec: 7\nexecution:\n  model: opus\n", "utf8");
   fs.writeFileSync(path.join(projectRoot, ".nirvana", "config.yaml"),
-    "execution:\n  dna_injection: fragments\nrouting:\n  mode: fast\ngauntlet:\n  business_allowlist: other-business\n", "utf8");
+    "execution:\n  dna_injection: fragments\nrouting:\n  mode: cards\ngauntlet:\n  business_allowlist: other-business\n", "utf8");
   const briefFile = path.join(root, "brief.md");
   fs.writeFileSync(briefFile, "Produza o relatório", "utf8");
   const env = { NIRVANA_HOME: home, HARNESS_LOGS_DIR: path.join(root, "logs"), FAKE_DISPATCH_SPAWN_LOG: path.join(root, "spawns.log") };
@@ -46,7 +46,7 @@ const read = (file: string): Capture => JSON.parse(fs.readFileSync(file, "utf8")
 /** What every spawner must pin: the project's and the user's config, as the child's variables. */
 function expectPinned(env: Record<string, string>): void {
   expect(env).toMatchObject({
-    NIRVANA_DNA_INJECTION: "fragments", NIRVANA_ROUTING_MODE: "fast", NIRVANA_PROGRESS_PING_SEC: "7", NIRVANA_MODEL: "opus",
+    NIRVANA_DNA_INJECTION: "fragments", NIRVANA_ROUTING_MODE: "cards", NIRVANA_PROGRESS_PING_SEC: "7", NIRVANA_MODEL: "opus",
     NIRVANA_EXECUTION_MODE: "standard", NIRVANA_GAUNTLET_INTENSITY: "balanced", NIRVANA_HEADLESS_SKIP_PERMISSIONS: "1",
   });
 }

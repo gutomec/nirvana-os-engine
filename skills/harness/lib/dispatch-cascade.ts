@@ -17,10 +17,10 @@
 //
 // Router transport failure (ok:false) ladder (planRouteWithFallback):
 //   retry once → agent-x with a loud warning.
-//   Config routing.on_router_failure: "agent-x-only" (default) skips straight
-//   to agent-x — BM25 never runs unless the caller explicitly asked for
-//   --mode=fast; "cascade" tries a fast BM25 route before agent-x (the old
-//   default); "fail" gives up and dispatches nothing.
+//   Config routing.on_router_failure: "agent-x-only" (default) goes to
+//   agent-x; "fail" gives up and dispatches nothing. BM25 is never a rung: the
+//   old "cascade" policy (a BM25 pick before agent-x) was retired on
+//   2026-10-13 and a stored "cascade" reads as "agent-x-only".
 //
 // The agent-x rung itself (persona resolution + headless run + audit) also
 // lives here — it is the bottom of the cascade.
@@ -59,7 +59,6 @@ export type DispatchPlanSource =
   | "ambiguous-chosen"
   | "ambiguous-autopicked"
   | "no-match"
-  | "router-failure-bm25"
   | "router-failure-agent-x";
 
 export interface DispatchPlan {
@@ -231,8 +230,6 @@ export async function resolveDispatchPlan(decision: AgenticRouteDecision, opts: 
 export interface PlanRouteOpts extends ResolvePlanOpts {
   /** Re-run the agentic router (the one retry). */
   routeOnce: () => Promise<AgenticRouteDecision> | AgenticRouteDecision;
-  /** Fast BM25 business pick; null when BM25 cannot decide either. */
-  fastRoute?: () => Promise<string | null> | string | null;
   /** Config routing.on_router_failure (default "agent-x-only"). */
   onRouterFailure?: RouterFailurePolicy;
 }
@@ -241,12 +238,7 @@ export interface PlanRouteOpts extends ResolvePlanOpts {
  * Resolve a plan from a FIRST router decision, riding the failure ladder when
  * the router fails at the transport level: retry once → then, per
  * `routing.on_router_failure`:
- *   "agent-x-only" (default) — straight to agent-x, loudly. BM25 never runs;
- *                              it fires only when the caller explicitly asked
- *                              for --mode=fast, never as a silent substitute
- *                              for a dead runtime.
- *   "cascade"                — the old default: try a fast BM25 route first,
- *                              agent-x only if BM25 also can't decide.
+ *   "agent-x-only" (default) — straight to agent-x, loudly. BM25 never runs.
  *   "fail"                   — short-circuits the ladder after the retry;
  *                              nothing is dispatched.
  */
@@ -278,29 +270,12 @@ export async function planRouteWithFallback(first: AgenticRouteDecision, opts: P
     };
   }
 
-  // cascade: BM25 first (opt-in only — the default policy skips this block
-  // entirely so BM25 never fires without an explicit --mode=fast)…
-  if (policy === "cascade") {
-    const bm25Slug = opts.fastRoute ? await opts.fastRoute() : null;
-    if (bm25Slug) {
-      warn(`agentic router ${failed} — falling back to fast BM25 route: ${bm25Slug}`);
-      emit("x_router_failure_cascade", { stage: "bm25", picked: bm25Slug, error: decision.error ?? null });
-      return {
-        ok: true,
-        steps: [{ kind: "business", slug: bm25Slug, reason: "BM25 fallback after agentic router transport failure" }],
-        ...planBase("router-failure-bm25"),
-      };
-    }
-  }
-
-  // …then agent-x, loudly.
-  warn(policy === "cascade"
-    ? `agentic router ${failed} AND BM25 could not decide — dispatching agent-x (generalist fallback). Review the routing setup: this brief got NO specialist.`
-    : `agentic router ${failed} — dispatching agent-x (generalist fallback), never BM25. Review the routing setup: this brief got NO specialist.`);
+  // agent-x, loudly.
+  warn(`agentic router ${failed} — dispatching agent-x (generalist fallback), never BM25. Review the routing setup: this brief got NO specialist.`);
   emit("x_router_failure_cascade", { stage: "agent-x", error: decision.error ?? null, policy });
   return {
     ok: true,
-    steps: [{ kind: "agent-x", reason: "router transport failure — cascade bottom (BM25 also undecided)" }],
+    steps: [{ kind: "agent-x", reason: "router transport failure — cascade bottom" }],
     ...planBase("router-failure-agent-x"),
   };
 }

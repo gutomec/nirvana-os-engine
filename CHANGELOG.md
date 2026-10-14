@@ -24,6 +24,14 @@ The `agentic` router's re-ask runs without tools from the same empty folder, rea
 
 The voices the router picks now reach the worker. Business seats, squads and agent-x receive them after the voices the request names and before the lexical search, and agent-x never gets a searched voice. Names are recognized by surname, first name or nickname after a voice cue ("estilo Hormozi", "como o Naval"), with or without accents, one seat per person; a shared surname is reported as ambiguous and an unknown name as missing (46 of 46 forms recognized, 0 false requests in 16 generic texts). The clone search reads the run's own part and the business or squad context, and a seat lists at most six of its assigned voices.
 
+### The keyword router no longer decides who executes
+
+The `fast` routing mode is retired. On the 48 labeled requests it answered AMBIGUOUS for 42, found the right business for 4 of 42, and `nrv dispatch --auto --mode=fast` exited 1 on every ambiguous one; in a library written partly in Portuguese and partly in English, the language of the request decided the answer. BM25 stays as the retriever behind `nrv find`, the capability tiebreak inside a squad and the clone search, and never picks the target of a dispatch.
+
+`--mode=fast` and `nrv config set routing.mode fast` exit 4 and say the mode was retired. A machine that has the old value stored keeps working: `routing.mode: fast` in a global or project `config.yaml`, or `NIRVANA_ROUTING_MODE=fast` in the shell or a `.env`, reads as unset, so the profile default applies (`cards` in balanced and economy, `agentic` in max), and the first read in a process prints one warning naming the file or the variable and the command that clears it (`nrv config unset routing.mode --global`, `--project`, or unsetting the variable). `nrv config unset` removes the old value as before.
+
+`routing.on_router_failure` takes `agent-x-only` (default) or `fail`. The `cascade` value, which asked BM25 for a business before falling to agent-x, reads as `agent-x-only` with the same kind of warning, and setting it is refused. A router transport failure now always goes to agent-x or, with `fail`, to nothing. A Glance Message no longer has a `fast` branch either, and `nrv route --help` says it is a diagnostic that never dispatches.
+
 ## 0.15.0-beta.6 — 2026-10-13
 
 ### Runtime fixes from the 2026-10-11 runtime audit

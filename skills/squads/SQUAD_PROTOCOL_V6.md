@@ -630,7 +630,7 @@ A capability is what the squad promises, by name, and is discoverable. A workflo
 
 Cutting for **precision** is legitimate: a redundant keyword, a fourth synonym, a sentence a router cannot match on. Measure it: run the self-retrieval gate before and after, and on the neighbours. If retrieval does not improve, the cut was loss.
 
-Cutting for **cost** is prohibited: removing capabilities, shortening descriptions or dropping example briefs to save tokens. The default router is agentic and reads for meaning, so a more accurate description is strictly better, and `fast` mode is BM25 indexed per capability, so it does not pay for squad size either. Descriptions here were once truncated mid-word at 500 characters, and the fix was a rewrite as complete text. If a corpus does not fit a context budget, tier the digest or split the file; never make the library know less. A reviewer rejects a change justified by token cost and asks for the retrieval measurement.
+Cutting for **cost** is prohibited: removing capabilities, shortening descriptions or dropping example briefs to save tokens. The default router is agentic and reads for meaning, so a more accurate description is strictly better, and the BM25 shortlist is indexed per capability, so it does not pay for squad size either. Descriptions here were once truncated mid-word at 500 characters, and the fix was a rewrite as complete text. If a corpus does not fit a context budget, tier the digest or split the file; never make the library know less. A reviewer rejects a change justified by token cost and asks for the retrieval measurement.
 
 ---
 
@@ -663,11 +663,11 @@ A capability entry carries those keys always, and the others only when declared:
 
 ### 24.1 Routing mode
 
-The `routing.mode` setting picks the matcher. `agentic` (default): an agent inspects the registries and reasons about the best target. `cards`: one tool-less call over compiled one-line cards. `fast`: deterministic BM25 over the registry indexes, with no LLM call. Every mode sees the same input: the routing metadata a squad declares (§22.4). An entity with poor metadata does not exist for any of them.
+The `routing.mode` setting picks the matcher. `agentic` (default): an agent inspects the registries and reasons about the best target. `cards`: one tool-less call over compiled one-line cards. BM25 over the registry indexes builds the shortlists both of them, and the orchestrator, read (`nrv find`); it never decides the target (the `fast` mode where it did was retired on 2026-10-13). Every path sees the same input: the routing metadata a squad declares (§22.4). An entity with poor metadata does not exist for any of them.
 
 ### 24.2 The BM25 matcher
 
-BM25 is `fast` mode and the fallback. It indexes per capability (§22.10): `description`, `examples`, `keywords` (weight ×3), `example_briefs` (×2), `produces` and the workflow's `body_text`. `not_for` is not indexed: it is a penalty applied after retrieval (§33). `score_boost` and `fidelity.status` scale the score, and a domain outside the catalog costs a penalty. An optional dense retrieval (`routing.dense: fallback`, set by `nrv embeddings enable`) is consulted only when BM25 yields no match, and it can return only an ambiguous suggestion, never dispatch.
+BM25 is the retriever behind the shortlists, the capability tiebreak inside a squad and the clone search. It indexes per capability (§22.10): `description`, `examples`, `keywords` (weight ×3), `example_briefs` (×2), `produces` and the workflow's `body_text`. `not_for` is not indexed: it is a penalty applied after retrieval (§33). `score_boost` and `fidelity.status` scale the score, and a domain outside the catalog costs a penalty. An optional dense retrieval (`routing.dense: fallback`, set by `nrv embeddings enable`) is consulted only when BM25 yields no match, and it can return only an ambiguous suggestion, never dispatch.
 
 ### 24.3 Three signals
 

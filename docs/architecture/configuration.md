@@ -35,7 +35,7 @@ nrv config explain <chave> [--json]               descrição, tipo, padrão, es
 
 `set` e `unset` gravam no projeto quando rodam dentro de um (diretório `.nirvana/` no cwd ou num ancestral, ou `NIRVANA_PROJECT_ROOT`) e no global fora dele. A gravação edita uma linha por vez, `seção:` e `  chave:`, preservando todo o resto do arquivo, comentários inclusive, e é atômica (arquivo temporário e rename). Strings vão entre aspas duplas, para que `off`, `no` e `1.0` nunca virem outra coisa num leitor YAML 1.1.
 
-Recusas, cada uma com o motivo e exit 4: valor que o schema rejeita (`routing.mode: valor inválido "turbo"; esperado agentic | cards | fast`), escopo que a chave não aceita, chave fixada por variável no shell atual (o valor gravado só valeria sem a variável; o comando diz qual é) e `--project` fora de um projeto. Um arquivo que a resolução não consegue ler sai com exit 1 e o caminho. A gravação não valida o valor que substitui: um arquivo com um valor inválido pode ser consertado pelo próprio `nrv config set`.
+Recusas, cada uma com o motivo e exit 4: valor que o schema rejeita (`routing.mode: valor inválido "turbo"; esperado agentic | cards`; para um valor aposentado, como `fast`, a mensagem diz que ele foi aposentado e por quê), escopo que a chave não aceita, chave fixada por variável no shell atual (o valor gravado só valeria sem a variável; o comando diz qual é) e `--project` fora de um projeto. Um arquivo que a resolução não consegue ler sai com exit 1 e o caminho. A gravação não valida o valor que substitui: um arquivo com um valor inválido pode ser consertado pelo próprio `nrv config set`.
 
 Cada `set` e `unset` que muda um arquivo grava `x_settings_changed { key, scope, path, from, to }` no audit, pelo mesmo `lib/audit.js` do resto do engine. Um valor já igual não escreve nem audita.
 
@@ -68,9 +68,9 @@ Gerada a partir do schema. `nrv config explain <chave>` mostra a descrição de 
 | `glance.maestro_max_budget_usd` | nenhuma | `5` | global, projeto | número >= 0 (USD); 0 = sem teto |
 | `runtime.provider_catalog_dir` | `NIRVANA_PROVIDER_CATALOG_DIR` | `""` | global, projeto | lista de caminhos separados pelo delimitador do sistema, ou vazio |
 | `runtime.allow_stale_catalog` | `NIRVANA_ALLOW_STALE_CATALOG` | `false` | global, projeto | true / false |
-| `routing.mode` | `NIRVANA_ROUTING_MODE` | `agentic` | global, projeto | agentic / cards / fast. `cards` faz uma única chamada, sem ferramentas, sobre `.routing-cards.md` (uma linha por empresa e por squad, escrita pelo `nrv index` ao lado do digest) e leva os critérios de pronto do roteador ao brief |
+| `routing.mode` | `NIRVANA_ROUTING_MODE` | `agentic` | global, projeto | agentic / cards. `cards` faz uma única chamada, sem ferramentas, sobre `.routing-cards.md` (uma linha por empresa e por squad, escrita pelo `nrv index` ao lado do digest) e leva os critérios de pronto do roteador ao brief. O valor `fast` foi aposentado em 13/10/2026: o BM25 só monta listas curtas e nunca decide quem executa. Um `fast` gravado num arquivo ou em `NIRVANA_ROUTING_MODE` é ignorado, com um aviso que diz de onde veio e como limpar, e vale o padrão do perfil; `nrv config set routing.mode fast` e `--mode=fast` saem com exit 4 |
 | `routing.dense` | `NIRVANA_ROUTER_DENSE` (`1` = fallback, `0` = off) | `off` | global, projeto | off / fallback |
-| `routing.on_router_failure` | nenhuma | `agent-x-only` | global, projeto | cascade / agent-x-only / fail |
+| `routing.on_router_failure` | nenhuma | `agent-x-only` | global, projeto | agent-x-only / fail. O valor `cascade` (BM25 antes do agent-x) foi aposentado: um `cascade` gravado vale como `agent-x-only`, com aviso |
 | `routing.timeout_ms` | `NIRVANA_ROUTING_TIMEOUT_MS` | `300000` (5 min) | global, projeto | inteiro > 0 (ms) |
 | `routing.digest_token_budget` | nenhuma | `0` (sem teto) | global, projeto | inteiro >= 0 (tokens); 0 = sem teto |
 | `host.orca` | `NIRVANA_ORCA_HOST` | `auto` | global, projeto | auto (só dentro de um terminal do Orca) / on / off |

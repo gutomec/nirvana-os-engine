@@ -1,11 +1,12 @@
-# Reference 01 — Routing (the fast router, stage by stage)
+# Reference 01 — Routing (the deciders, and the keyword retriever stage by stage)
 
-> How a brief becomes a decision in **fast mode**. Source of truth:
-> `lib/router.js` (this file documents what that code does today, routing-360
-> state, 2026-08-06). The legacy 5-stage description in
-> the archived Harness Protocol v1 §6 is historical.
+> Who decides which business, squad or agent-x executes a request, and how the
+> keyword router (`lib/router.js`) builds the shortlists they read. The stage
+> sections document what `lib/router.js` does today (routing-360 state,
+> 2026-08-06). The legacy 5-stage description in the archived Harness
+> Protocol v1 §6 is historical.
 
-Three routers exist, and the mode decides which one speaks:
+Two routers decide, and `routing.mode` picks which one speaks:
 
 - **agentic (default)** — the model reads the brief plus a compact registry
   digest (`scripts/build-routing-digest.ts`, businesses + squads + per-squad
@@ -19,11 +20,26 @@ Three routers exist, and the mode decides which one speaks:
   answers `business:<slug>`, `squad:<slug>` or `solo` plus the brief's done
   states, mapped onto the same contract the cascade consumes. See
   [The cards call](#the-cards-call) for the prompt layout and the parts.
-- **fast** — `lib/router.js`, documented below. Deterministic, zero LLM tokens
-  by default. Used by `nrv route` / `nrv find`, `--mode=fast`, and as the
-  BM25 fallback rung when the agentic router fails at the transport level.
 
-The router does NOT execute anything. It returns a decision JSON; invocation
+The orchestrator path (the harness `SKILL.md`) decides with the session's own
+model, reading the `nrv find` shortlist and the finalists' cards.
+
+**The keyword router is a retriever, never a decider.** `lib/router.js` (BM25,
+documented stage by stage below) is deterministic and spends no tokens. It
+builds the `nrv find` shortlist, breaks capability ties inside a squad
+(`capability-resolver.ts`) and backs the clone search (`clone-search.ts`);
+`nrv route` shows its pipeline as a diagnostic. It never picks the target of a
+dispatch. The `fast` mode that let it do so was retired on 2026-10-13: on 48
+labeled requests it answered AMBIGUOUS for 42 and found the right business for
+4 of 42, and in a library written in two languages the request's language
+decided the answer. Since then `--mode=fast` and `nrv config set routing.mode
+fast` exit 4, a stored `routing.mode: fast` (config file or
+`NIRVANA_ROUTING_MODE`) reads as unset with one warning naming where it came
+from, and a router failure goes to agent-x: `routing.on_router_failure` takes
+`agent-x-only` (default) or `fail`, and a stored `cascade` reads as
+`agent-x-only`.
+
+A router does NOT execute anything. It returns a decision JSON; invocation
 belongs to the dispatch layer.
 
 ## The cards call
@@ -355,8 +371,8 @@ recalibrations must keep those green.
 
 - Do NOT auto-invoke on AMBIGUOUS. HP2: failure-loud; confirm with the user.
 - Do NOT load full manifests during Stage 2 — registries only (HP5).
-- Do NOT treat `nrv route`/`nrv find` output as authoritative in agentic mode
-  — there they are diagnostic peeks; the model's registry reasoning decides.
+- Do NOT treat `nrv route`/`nrv find` output as a decision. `nrv find` is the
+  shortlist a model reads before it decides; `nrv route` is a diagnostic.
 - Do NOT re-enable the dense fusion by "just trying it" — it was measured
   twice; the fallback slot is where the dense arm lives now.
 - Do NOT tune thresholds without re-running the eval suite; the golden set is

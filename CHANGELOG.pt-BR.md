@@ -24,6 +24,14 @@ A re-pergunta do roteador `agentic` roda sem ferramentas na mesma pasta vazia, l
 
 As vozes escolhidas pelo roteador agora chegam ao worker. Cargos de empresa, squads e o agent-x as recebem depois das vozes que o pedido nomeia e antes da busca léxica, e o agent-x nunca recebe uma voz da busca. Nomes são reconhecidos por sobrenome, primeiro nome ou apelido depois de uma pista de voz ("estilo Hormozi", "como o Naval"), com ou sem acento, uma vaga por pessoa; um sobrenome compartilhado sai como ambíguo e um nome desconhecido como ausente (46 de 46 formas reconhecidas, 0 falsos pedidos em 16 textos genéricos). A busca de clones lê a parte da própria run e o contexto da empresa ou do squad, e um cargo lista no máximo seis das vozes atribuídas.
 
+### O roteador por palavras não decide mais quem executa
+
+O modo de roteamento `fast` foi aposentado. Nos 48 pedidos rotulados ele respondeu AMBIGUOUS em 42, achou a empresa certa em 4 de 42, e o `nrv dispatch --auto --mode=fast` saía com 1 em todo pedido ambíguo; numa biblioteca escrita parte em português e parte em inglês, o idioma do pedido decidia a resposta. O BM25 continua como recuperador por trás do `nrv find`, do desempate de capability dentro de um squad e da busca de clones, e nunca escolhe o alvo de um dispatch.
+
+`--mode=fast` e `nrv config set routing.mode fast` saem com exit 4 e dizem que o modo foi aposentado. Uma máquina com o valor antigo gravado continua funcionando: `routing.mode: fast` num `config.yaml` global ou de projeto, ou `NIRVANA_ROUTING_MODE=fast` no shell ou num `.env`, é lido como ausente, então vale o padrão do perfil (`cards` no balanced e no economy, `agentic` no max), e a primeira leitura num processo imprime um aviso com o arquivo ou a variável e o comando que limpa o valor (`nrv config unset routing.mode --global`, `--project`, ou remover a variável). O `nrv config unset` remove o valor antigo como antes.
+
+`routing.on_router_failure` aceita `agent-x-only` (padrão) ou `fail`. O valor `cascade`, que pedia uma empresa ao BM25 antes de cair no agent-x, vale como `agent-x-only` com o mesmo tipo de aviso, e gravá-lo é recusado. Uma falha de transporte do roteador agora vai sempre para o agent-x ou, com `fail`, para nada. Uma Message do Glance também perdeu o ramo `fast`, e o `nrv route --help` diz que ele é um diagnóstico que nunca despacha.
+
 ## 0.15.0-beta.6 — 2026-10-13
 
 ### Correções de runtime da auditoria de 2026-10-11

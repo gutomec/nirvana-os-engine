@@ -37,7 +37,7 @@ import YAML from "yaml";
 import { isProjectRoot, pinnedProjectRoot } from "./project-root.js";
 import { profileValue } from "./profiles.ts";
 import {
-  coerceText, getSettingSpec, SETTINGS_SCHEMA, validateSettingValue,
+  coerceText, getSettingSpec, retiredValue, SETTINGS_SCHEMA, validateSettingValue,
   type SettingKey, type SettingScope, type SettingSpec, type SettingValue, type SettingValueOf, type SettingsEnv,
 } from "./settings-schema.ts";
 
@@ -200,11 +200,18 @@ function rawFileValue(file: string, data: Mapping, key: string): unknown {
   return value === null ? undefined : value;
 }
 
-function layerValue(layer: Layer, spec: SettingSpec): SettingValue | undefined {
+function layerValue(layer: Layer, spec: SettingSpec, retired?: RetiredHit[]): SettingValue | undefined {
   if (!layer.data) return undefined;
   if (layer.source !== "engine-default" && !spec.scopes.includes(layer.source)) return undefined;
   const raw = rawFileValue(layer.path, layer.data, spec.key);
   if (raw === undefined) return undefined;
+  const old = retiredValue(spec, raw);
+  if (old) {
+    const scope = layer.source === "engine-default" ? null : layer.source;
+    retired?.push({ raw: String(raw), why: old.why, to: old.to, where: layer.path,
+      clear: scope ? `nrv config unset ${spec.key} --${scope}` : `remove ${spec.key} from ${layer.path}` });
+    return old.to ?? undefined;
+  }
   const checked = validateSettingValue(spec, raw);
   if (!checked.ok) throw new SettingsError("invalid_value", `${layer.path}: ${checked.message}`, { path: layer.path, key: spec.key });
   return checked.value;
@@ -215,13 +222,20 @@ function layerValue(layer: Layer, spec: SettingSpec): SettingValue | undefined {
 export interface EnvReading { variable: string; raw: string; value: SettingValue }
 
 /** The variable that sets `spec` in `env`, decoded and validated; null when none does. */
-export function readSettingEnv(spec: SettingSpec, env: SettingsEnv = process.env): EnvReading | null {
+export function readSettingEnv(spec: SettingSpec, env: SettingsEnv = process.env, retired?: RetiredHit[]): EnvReading | null {
   if (!spec.env) return null;
   for (const variable of [spec.env, ...(spec.envAliases ?? [])]) {
     const raw = env[variable];
     if (raw === undefined || raw.trim() === "") continue;
     const candidate = spec.fromEnv ? spec.fromEnv(raw.trim(), variable) : coerceText(spec, raw);
     if (candidate === null) continue;
+    const old = retiredValue(spec, candidate);
+    if (old) {
+      retired?.push({ raw, why: old.why, to: old.to, where: `the variable ${variable}`,
+        clear: `unset ${variable} in your shell profile and in the project's .env` });
+      if (old.to === null) continue;
+      return { variable, raw, value: old.to };
+    }
     const checked = validateSettingValue(spec, candidate);
     if (!checked.ok) throw new SettingsError("invalid_env", `${variable}=${raw} is invalid for ${spec.key}; expected ${spec.expects}`, { variable, raw, key: spec.key });
     return { variable, raw, value: checked.value };
@@ -253,11 +267,41 @@ function loadLayers(opts: ResolveOptions): Layers {
   return { env, files, profile };
 }
 
+/** A retired value met while resolving a key (see `SettingSpec.retired`). */
+export interface RetiredHit { raw: string; why: string; to: SettingValue | null; where: string; clear: string }
+
+const retiredWarned = new Set<string>();
+
+/** One warning per process for each place a retired value was read from. */
+function warnRetired(spec: SettingSpec, hits: RetiredHit[], resolved: ResolvedSetting): void {
+  for (const hit of hits) {
+    const id = `${spec.key}\0${hit.where}\0${hit.raw}`;
+    if (retiredWarned.has(id)) continue;
+    retiredWarned.add(id);
+    const now = hit.to === null
+      ? `ignored; ${spec.key} is ${JSON.stringify(resolved.value)} (${describeSettingSource(resolved)})`
+      : `read as ${JSON.stringify(hit.to)}`;
+    console.error(`⚠ ${spec.key}: ${JSON.stringify(hit.raw)} in ${hit.where} was retired (${hit.why}); ${now}. Clear it: ${hit.clear}`);
+  }
+}
+
+/** Forget which retired values were already reported (tests). */
+export function _resetRetiredWarnings(): void {
+  retiredWarned.clear();
+}
+
 /** env > project > global > profile > engine default > schema default. The
  *  profile sits below the user's own files, so a key the user set explicitly
  *  wins, and above the engine defaults, which it exists to replace. */
 function resolveSpec(spec: SettingSpec, layers: Layers): ResolvedSetting {
-  const fromEnv = readSettingEnv(spec, layers.env);
+  const retired: RetiredHit[] = [];
+  const resolved = resolveSpecLayers(spec, layers, retired);
+  if (retired.length) warnRetired(spec, retired, resolved);
+  return resolved;
+}
+
+function resolveSpecLayers(spec: SettingSpec, layers: Layers, retired: RetiredHit[]): ResolvedSetting {
+  const fromEnv = readSettingEnv(spec, layers.env, retired);
   if (fromEnv) return { key: spec.key, value: fromEnv.value, source: "env", variable: fromEnv.variable, raw: fromEnv.raw };
   let profileChecked = false;
   const fromProfile = (): ResolvedSetting | null => {
@@ -274,7 +318,7 @@ function resolveSpec(spec: SettingSpec, layers: Layers): ResolvedSetting {
       const preset = fromProfile();
       if (preset) return preset;
     }
-    const value = layerValue(layer, spec);
+    const value = layerValue(layer, spec, retired);
     if (value !== undefined) return { key: spec.key, value, source: layer.source, path: layer.path };
   }
   if (!profileChecked) {

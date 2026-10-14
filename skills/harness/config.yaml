@@ -17,12 +17,14 @@ routing:
   # uses it at the top level, and business employees use it to find squads.
   #   agentic (default) — an agent inspects the registries and reasons about the
   #                       best target. Higher quality, costs tokens.
-  #   fast              — BM25/keyword matching over the registry indexes.
-  #                       Zero-token, deterministic, lower quality. Opt-in for
-  #                       cost-sensitive runs.
+  #   cards             — one tool-less call over the compiled routing cards.
+  #                       The balanced and economy profiles use it.
+  # The keyword router (BM25) never decides who executes: it builds the
+  # shortlist of `nrv find` and the clone search. A stored `fast` is ignored
+  # with a warning.
   # Override per-run with env NIRVANA_ROUTING_MODE or the --mode flag.
   mode: agentic
-  # dense — the neural (multilingual MiniLM) arm of the fast router.
+  # dense — the neural (multilingual MiniLM) arm of the keyword router.
   #   "off"      (default) — BM25 only. Measured 2026-08-05 (routing-360 Phase
   #              3.4): dense top-1 cosines of correct multilingual targets
   #              (0.371-0.655) overlap the out-of-domain negatives band

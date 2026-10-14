@@ -74,27 +74,27 @@ function auditEvents(setup: Fixture): Array<Record<string, unknown>> {
 describe("nrv config", () => {
   test("list prints every key with its effective value, origin and default; --json is the same as data", () => {
     const setup = fixture();
-    fs.writeFileSync(setup.globalFile, "routing:\n  mode: fast\n", "utf8");
+    fs.writeFileSync(setup.globalFile, "routing:\n  mode: cards\n", "utf8");
     const text = nrvConfig(setup, ["list"]);
     expect(text.status).toBe(0);
     expect(text.out).toMatch(/^key\s+value\s+source\s+default$/m);
-    expect(text.out).toMatch(/^routing\.mode\s+fast\s+global ~\/\.nirvana\/config\.yaml\s+agentic$/m);
+    expect(text.out).toMatch(/^routing\.mode\s+cards\s+global ~\/\.nirvana\/config\.yaml\s+agentic$/m);
     expect(text.out).toMatch(/^multi_target\.enabled\s+true\s+default\s+true$/m);
     const json = nrvConfig(setup, ["list", "--json"], { env: { NIRVANA_ROUTER_DENSE: "1" } });
     expect(json.status).toBe(0);
     const rows = JSON.parse(json.stdout) as Array<Record<string, unknown>>;
     expect(rows.map((row) => row.key)).toEqual(SETTINGS_SCHEMA.map((spec) => spec.key));
-    expect(rows.find((row) => row.key === "routing.mode")).toMatchObject({ value: "fast", source: "global", path: setup.globalFile, default: "agentic", kind: "enum", options: ["agentic", "cards", "fast"], env: "NIRVANA_ROUTING_MODE" });
+    expect(rows.find((row) => row.key === "routing.mode")).toMatchObject({ value: "cards", source: "global", path: setup.globalFile, default: "agentic", kind: "enum", options: ["agentic", "cards"], env: "NIRVANA_ROUTING_MODE" });
     expect(rows.find((row) => row.key === "routing.dense")).toMatchObject({ value: "fallback", source: "env", variable: "NIRVANA_ROUTER_DENSE", raw: "1" });
     expect(rows.every((row) => row.secret === false && typeof row.description === "string")).toBe(true);
   }, spawnBudgetMs(2));
 
   test("set writes the project inside one and the global outside, get reads the effective value, every write is audited", () => {
     const setup = fixture();
-    const inside = nrvConfig(setup, ["set", "routing.mode", "fast"], { cwd: path.join(setup.project, ".nirvana") });
+    const inside = nrvConfig(setup, ["set", "routing.mode", "cards"], { cwd: path.join(setup.project, ".nirvana") });
     expect(inside.status).toBe(0);
-    expect(inside.out).toContain(`routing.mode = fast written to ${slashes(setup.projectFile)} (project)`);
-    expect(body(setup.projectFile)).toBe('routing:\n  mode: "fast"\n');
+    expect(inside.out).toContain(`routing.mode = cards written to ${slashes(setup.projectFile)} (project)`);
+    expect(body(setup.projectFile)).toBe('routing:\n  mode: "cards"\n');
 
     const outside = nrvConfig(setup, ["set", "quality_gate.max_revisions", "4"]);
     expect(outside.status).toBe(0);
@@ -103,8 +103,8 @@ describe("nrv config", () => {
 
     const shadowed = nrvConfig(setup, ["set", "routing.mode", "agentic", "--global"], { cwd: setup.project });
     expect(shadowed.out).toContain("routing.mode = agentic written to ~/.nirvana/config.yaml (global)");
-    expect(shadowed.out).toContain(`effective value now: fast (project ${slashes(setup.projectFile)})`);
-    expect(nrvConfig(setup, ["get", "routing.mode"], { cwd: setup.project }).stdout.trim()).toBe("fast");
+    expect(shadowed.out).toContain(`effective value now: cards (project ${slashes(setup.projectFile)})`);
+    expect(nrvConfig(setup, ["get", "routing.mode"], { cwd: setup.project }).stdout.trim()).toBe("cards");
     expect(nrvConfig(setup, ["get", "routing.mode"]).stdout.trim()).toBe("agentic");
     expect(JSON.parse(nrvConfig(setup, ["get", "quality_gate.max_revisions", "--json"]).stdout)).toMatchObject({ key: "quality_gate.max_revisions", value: 4, source: "global" });
 
@@ -112,7 +112,7 @@ describe("nrv config", () => {
     expect(again.stdout).toContain("was already 4");
 
     expect(auditEvents(setup).filter((event) => event.event === "x_settings_changed")).toEqual([
-      expect.objectContaining({ key: "routing.mode", scope: "project", path: setup.projectFile, from: null, to: "fast" }),
+      expect.objectContaining({ key: "routing.mode", scope: "project", path: setup.projectFile, from: null, to: "cards" }),
       expect.objectContaining({ key: "quality_gate.max_revisions", scope: "global", path: setup.globalFile, from: null, to: 4 }),
       expect.objectContaining({ key: "routing.mode", scope: "global", path: setup.globalFile, from: null, to: "agentic" }),
     ]);
@@ -122,18 +122,18 @@ describe("nrv config", () => {
     const setup = fixture();
     const invalid = nrvConfig(setup, ["set", "routing.mode", "turbo"]);
     expect(invalid.status).toBe(4);
-    expect(invalid.stderr).toContain('nrv config: routing.mode: invalid value "turbo"; expected agentic | cards | fast');
+    expect(invalid.stderr).toContain('nrv config: routing.mode: invalid value "turbo"; expected agentic | cards');
     const unknown = nrvConfig(setup, ["get", "routing.nope"]);
     expect(unknown.status).toBe(4);
     expect(unknown.stderr).toContain("unknown key: routing.nope");
     const scope = nrvConfig(setup, ["set", "updates.check", "false", "--project"], { cwd: setup.project });
     expect(scope.status).toBe(4);
     expect(scope.stderr).toContain("updates.check only accepts scope global");
-    const pinned = nrvConfig(setup, ["set", "routing.mode", "fast"], { env: { NIRVANA_ROUTING_MODE: "agentic" } });
+    const pinned = nrvConfig(setup, ["set", "routing.mode", "cards"], { env: { NIRVANA_ROUTING_MODE: "agentic" } });
     expect(pinned.status).toBe(4);
     expect(pinned.stderr).toContain("routing.mode is pinned by the variable NIRVANA_ROUTING_MODE=agentic");
     expect(fs.existsSync(setup.globalFile)).toBe(false);
-    const noProject = nrvConfig(setup, ["set", "routing.mode", "fast", "--project"]);
+    const noProject = nrvConfig(setup, ["set", "routing.mode", "cards", "--project"]);
     expect(noProject.status).toBe(4);
     expect(noProject.stderr).toContain("no Nirvana project");
     expect(nrvConfig(setup, ["set", "routing.mode"]).status).toBe(4);
@@ -164,6 +164,23 @@ describe("nrv config", () => {
     expect(nrvConfig(setup, ["explain", "multi_target.enabled"]).stdout).toContain("(also NIRVANA_MULTI_TARGET_ENGINE)");
   }, spawnBudgetMs(4));
 
+  test("the retired routing.mode fast: set is refused with exit 4, a stored one reads as the profile default, once loudly", () => {
+    const setup = fixture();
+    const refused = nrvConfig(setup, ["set", "routing.mode", "fast"]);
+    expect(refused.status).toBe(4);
+    expect(refused.stderr).toContain('routing.mode: "fast" was retired');
+    expect(refused.stderr).toContain("expected agentic | cards");
+    expect(fs.existsSync(setup.globalFile)).toBe(false);
+
+    fs.writeFileSync(setup.globalFile, "execution:\n  profile: balanced\nrouting:\n  mode: fast\n", "utf8");
+    const got = nrvConfig(setup, ["get", "routing.mode"]);
+    expect(got.status).toBe(0);
+    expect(got.stdout.trim()).toBe("cards");
+    expect(got.err).toContain(`routing.mode: "fast" in ${slashes(setup.globalFile)} was retired`);
+    expect(got.stderr).toContain("nrv config unset routing.mode --global");
+    expect(got.stderr.split("was retired").length - 1).toBe(1);
+  }, spawnBudgetMs(2));
+
   test("a config file the resolver cannot read is reported with its path, exit 1", () => {
     const setup = fixture();
     fs.writeFileSync(setup.globalFile, "routing: [oops\n", "utf8");
@@ -175,7 +192,7 @@ describe("nrv config", () => {
     expect(bad.status).toBe(4);
     expect(bad.err).toContain(`${slashes(setup.globalFile)}: routing.mode: invalid value "turbo"`);
     // The write does not validate what it replaces, so the file can be repaired from the CLI.
-    expect(nrvConfig(setup, ["set", "routing.mode", "fast"]).status).toBe(0);
-    expect(nrvConfig(setup, ["get", "routing.mode"]).stdout.trim()).toBe("fast");
+    expect(nrvConfig(setup, ["set", "routing.mode", "cards"]).status).toBe(0);
+    expect(nrvConfig(setup, ["get", "routing.mode"]).stdout.trim()).toBe("cards");
   }, spawnBudgetMs(4));
 });

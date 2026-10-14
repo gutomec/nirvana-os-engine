@@ -1,5 +1,10 @@
-// router-fast-is-offline.test.ts — the `fast` mode spends nothing and answers
-// the same way twice.
+// router-fast-is-offline.test.ts — the keyword router's offline context
+// (`route(brief, { mode: "fast" })`) spends nothing and answers the same way twice.
+//
+// `fast` is no longer a dispatch mode (retired 2026-10-13: `routing.mode` takes
+// agentic or cards, see routing-fast-retired.e2e.test.ts). What stays is this
+// context option of lib/router.js, the retriever behind the diagnostics
+// (`nrv route`) and the shortlists, where determinism and zero tokens are the point.
 //
 // The amplifier is an LLM call at both of its trigger points (Stage -1.5 on a
 // WEAK brief, and the Stage 2.7 coverage bridge), and it has no deterministic

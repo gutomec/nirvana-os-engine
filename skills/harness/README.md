@@ -8,17 +8,16 @@ This skill turns the runtime model into the **maestro**: it reads a free-form br
 
 ---
 
-## Three routing modes
+## Two routing modes, one retriever
 
 Routing is a system property (`config.yaml → routing.mode`, env `NIRVANA_ROUTING_MODE`, flag `--mode`).
 
-| Mode | Who decides the target | Cost | Quality |
-|---|---|---|---|
-| **agentic** (default) | *You* (the model) reason over the registries and pick | tokens | high |
-| **cards** | One tool-less call over the compiled cards (`lib/cards-router.ts`, `.routing-cards.md`), which also returns the brief's done states | tokens, one turn | under measurement |
-| **fast** | The BM25/keyword router (`lib/router.js`, `scripts/find.ts`, `scripts/route.ts`) | zero-token, deterministic | lower |
+| Mode | Who decides the target | Cost |
+|---|---|---|
+| **agentic** (default) | *You* (the model) reason over the registries and pick | tokens |
+| **cards** (balanced and economy profiles) | One tool-less call over the compiled cards (`lib/cards-router.ts`, `.routing-cards.md`), which also returns the brief's done states and, for a request with several deliverables, its parts | tokens, one turn |
 
-In **agentic** mode the BM25 router is only a **diagnostic peek** — never the verdict. The router has known mis-routing failure modes (Stage 0 keyword short-circuit emits HIGH at a 0.5 score; meta-intent detection is keyword-fragile; it has no notion of "the right mind-clone for this voice"). `SKILL.md` documents when to overrule it. In **fast** mode the router *is* the decision — opt into it only for cost-sensitive runs that tolerate lower quality.
+The BM25/keyword router (`lib/router.js`, `scripts/find.ts`, `scripts/route.ts`) is a **retriever**: it builds the `nrv find` shortlist and the clone search, and never decides who executes. It has known failure modes (Stage 0 keyword short-circuit emits HIGH at a 0.5 score; meta-intent detection is keyword-fragile; it has no notion of "the right mind-clone for this voice"). The `fast` mode, where it decided, was retired on 2026-10-13 (`references/01-routing.md`): `--mode=fast` is refused and a stored `fast` reads as the profile default, with a warning.
 
 ---
 
@@ -38,7 +37,7 @@ Phase 6  Quality gate (verify-deliverable + rubric/visual gate) → gate_passed 
 Phase 7  Verify & deliver (artifact path + audit chain + what was actually used)
 ```
 
-The **fast**-mode BM25 engine, by contrast, runs a 6-stage classify→match→decide→budget→plan pipeline and stops at a plan (it does not execute). That pipeline is documented in `references/01-routing.md` and `HARNESS_PROTOCOL_V1.md` (legacy spec); it now lives *inside* fast mode.
+The BM25 engine, by contrast, runs a 6-stage classify→match→decide→budget→plan pipeline and stops at a plan (it does not execute). That pipeline is documented in `references/01-routing.md` and `HARNESS_PROTOCOL_V1.md` (legacy spec); today it feeds the shortlists and `nrv route`, and decides no dispatch.
 
 ---
 
@@ -65,8 +64,8 @@ bun ~/.nirvana/skills/harness/scripts/validate.ts   # auto-bootstrap config + sm
 ```
 
 The harness consumes registries created by the `businesses` and `squads` skills:
-- `${BUSINESSES_REGISTRY_PATH}` (with `_business_routing` extra for fast-mode Stage 0)
-- `${SQUADS_REGISTRY_PATH}` (with `capabilities` + `domains` index for fast-mode Stage 2)
+- `${BUSINESSES_REGISTRY_PATH}` (with `_business_routing` extra for the keyword router's Stage 0)
+- `${SQUADS_REGISTRY_PATH}` (with `capabilities` + `domains` index for the keyword router's Stage 2)
 
 Both paths are env-overridable (precedence: `process.env` → project `.nirvana/` → global `$HOME`). If the registries don't exist yet, the harness loads with empty stubs and emits warnings.
 
@@ -115,28 +114,28 @@ Full contract: `~/.nirvana/skills/_shared/SCOPE_CONTRACT.md`. Bootstrap a scoped
 
 ---
 
-## Diagnostic CLI (fast-mode engine + helpers — never authoritative in agentic mode)
+## Diagnostic CLI (keyword router + helpers; none of them decides who executes)
 
 | Script | Purpose |
 |---|---|
 | `find.ts "<brief>"` | The orchestrator's shortlist: businesses and squads ranked apart (8 each) with their routing cards, plus the target and clones the request names; `--json` adds the router decision |
-| `route.ts "<brief>"` | Full fast-mode pipeline JSON (all stages) + budget pre-flight |
+| `route.ts "<brief>"` | The keyword router's full pipeline (all stages) + budget pre-flight; a diagnostic that never dispatches |
 | `index.ts` | Rebuild registries after adding/editing businesses or squads |
 | `validate.ts` | Self-test (config, registries, BM25, audit) |
 | `glance.ts` | Web cockpit |
 | `quality-gate.ts <artifact> [--auto] [--with-revisions]` | Phase 6 gate (rubrics + visual + LLM judge) |
 
-In agentic mode treat `find.ts`/`route.ts` output as a *suggestion*; override when reasoning disagrees.
+Treat `find.ts`/`route.ts` output as candidates to read, never as the decision.
 
 ---
 
-## Tuning fast-mode thresholds
+## Tuning the keyword router's thresholds
 
 `config.yaml → routing`:
 
 ```yaml
 routing:
-  mode: agentic                       # agentic (default) | cards | fast
+  mode: agentic                       # agentic (default) | cards
   match_high_threshold: 0.80          # min top score for HIGH
   match_high_lead: 0.15               # min lead over second place
   match_ambiguous_threshold: 0.60     # min for AMBIGUOUS cluster
@@ -184,7 +183,7 @@ Event taxonomy: `references/03-audit.md`. Schema: `~/.nirvana/skills/_shared/sch
 ├── README.md                      ← this file (operator/reference companion)
 ├── config.yaml                    ← routing mode + thresholds, budget, telemetry
 ├── lib/
-│   ├── router.js                  ← fast-mode 6-stage pipeline (stages -1, 0, 1-5)
+│   ├── router.js                  ← keyword router, 6-stage pipeline (stages -1, 0, 1-5)
 │   ├── bm25.js                    ← classic BM25, snake_case-aware, normalized
 │   ├── registry-loader.js         ← reads both registries with graceful fallback
 │   ├── audit.js                   ← jsonl append-only event logger
@@ -205,9 +204,9 @@ Event taxonomy: `references/03-audit.md`. Schema: `~/.nirvana/skills/_shared/sch
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| Maestro follows a bad BM25 pick | Treating fast-mode router as authoritative in agentic mode | Override it; the router is a diagnostic, not a verdict |
+| Maestro follows a bad BM25 pick | Treating the shortlist's order as the decision | Read the finalists' cards; the order is a ranking by words, not a verdict |
 | `NO_MATCH` everywhere | Registries empty | `bun scripts/index.ts`, then re-run `index-businesses.ts` / `index-squads.ts` |
-| BM25 returns wrong squad (fast mode) | Brief vocabulary far from the examples | `keywords`/`example_briefs` are now indexed — align them; or `nrv embeddings enable` for semantic matching (BM25 + dense via RRF) |
+| A squad is missing from the `nrv find` shortlist | Brief vocabulary far from the examples | `keywords`/`example_briefs` are now indexed — align them; or `nrv embeddings enable` for semantic matching (BM25 + dense via RRF) |
 | Regression snapshot shows drift | Live registry grew (benign) | Expected; the snapshot is informational. Real guardrail: `tests/routing-eval/`. Refresh with `regression-runner.ts --save-golden` |
 | Audit log not appearing | Permissions or `HARNESS_LOGS_DIR` wrong | `mkdir -p ${HARNESS_LOGS_DIR} && chmod 755 ${HARNESS_LOGS_DIR}` |
 
@@ -215,8 +214,8 @@ Event taxonomy: `references/03-audit.md`. Schema: `~/.nirvana/skills/_shared/sch
 
 ## Related skills
 
-- **businesses** — provides the businesses registry (fast-mode Stages 0 + 2) and the dispatch primitives the maestro calls
-- **squads** — provides the squads registry (fast-mode Stage 2)
+- **businesses** — provides the businesses registry (keyword router Stages 0 + 2) and the dispatch primitives the maestro calls
+- **squads** — provides the squads registry (keyword router Stage 2)
 - **_shared** — schemas, validators, capability catalog, `agent-x` fallback, `paths.js`
 
 ---
@@ -224,5 +223,5 @@ Event taxonomy: `references/03-audit.md`. Schema: `~/.nirvana/skills/_shared/sch
 ## Spec & versioning
 
 - Protocol: **Harness Protocol v2.0 (Agentic Mode)** — `SKILL.md` is canonical.
-- Legacy spec: **v1.0** fast-mode 6-stage pipeline, archived in the repository's `docs/legacy/protocols/harness/`.
+- Legacy spec: **v1.0** keyword-router 6-stage pipeline, archived in the repository's `docs/legacy/protocols/harness/`.
 - Tests: smoke 6/6 + unit suites; routing behavior guarded by `tests/routing-eval/` (tolerance-based). The exact-match golden snapshot (`tests/regression-runner.ts`) is informational and drifts with the live registry by design.

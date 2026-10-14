@@ -35,7 +35,7 @@ afterEach(() => {
   while (roots.length) removeDir(roots.pop()!);
 });
 
-const AGENTIC: MessageRoutingSettings = { mode: "agentic", onRouterFailure: "cascade" };
+const AGENTIC: MessageRoutingSettings = { mode: "agentic", onRouterFailure: "agent-x-only" };
 const AGENT_X = { kind: "agent-x", slug: "agent-x" };
 
 function decision(overrides: Partial<AgenticRouteDecision> = {}): AgenticRouteDecision {
@@ -249,15 +249,11 @@ describe("resolveMessageTarget", () => {
     expect(recorded.events.map(item => item.event)).toEqual(["auto_route_selected"]);
   });
 
-  test("(f) routing.mode=fast skips the router; routing.on_router_failure=fail refuses the Run instead of falling to agent-x", async () => {
-    const fast = auditSink();
+  test("(f) the cards mode asks the router like agentic; routing.on_router_failure=fail refuses the Run instead of falling to agent-x", async () => {
     const { router, calls } = fakeRouter(decision({ primary_business: "web-studio" }));
-    const skipped = await resolveMessageTarget("Produza", deps(router, fast, { mode: "fast", onRouterFailure: "cascade" }));
-    expect(skipped.target).toEqual(AGENT_X);
-    expect(skipped.route.source).toBe("fallback");
-    expect(skipped.route.rationale).toContain("routing.mode=fast");
-    expect(calls).toHaveLength(0);
-    expect(fast.named("auto_route_selected")[0].payload).toMatchObject({ source: "fallback", target_kind: "agent-x" });
+    const routed = await resolveMessageTarget("Produza", deps(router, auditSink(), { mode: "cards", onRouterFailure: "agent-x-only" }));
+    expect(routed.target).toMatchObject({ kind: "business", slug: "web-studio" });
+    expect(calls).toHaveLength(1);
 
     const none = await resolveMessageTarget("Produza", deps(undefined, auditSink()));
     expect(none.target).toEqual(AGENT_X);

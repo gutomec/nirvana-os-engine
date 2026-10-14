@@ -89,7 +89,7 @@ function auditEvents(setup: Fixture): Array<Record<string, unknown>> {
 describe("Glance settings API", () => {
   test("GET lists the schema with the effective value, origin and lock of every key, and validates project_id", async () => {
     const setup = fixture();
-    fs.writeFileSync(setup.globalFile, "routing:\n  mode: fast\n", "utf8");
+    fs.writeFileSync(setup.globalFile, "routing:\n  mode: cards\n", "utf8");
     const project = new ProjectService().create({ projectRoot: setup.project });
     const base = await start();
     const response = await get(base);
@@ -98,7 +98,7 @@ describe("Glance settings API", () => {
     expect(body.schema.map((spec: any) => spec.key)).toEqual(SETTINGS_SCHEMA.map((spec) => spec.key));
     expect(body.schema.every((spec: any) => spec.secret === false && typeof spec.description === "string" && typeof spec.expects === "string")).toBe(true);
     expect(Object.keys(body.values)).toEqual(SETTINGS_SCHEMA.map((spec) => spec.key));
-    expect(body.values["routing.mode"]).toEqual({ value: "fast", source: "global", path: setup.globalFile, variable: null, raw: null, locked: false });
+    expect(body.values["routing.mode"]).toEqual({ value: "cards", source: "global", path: setup.globalFile, variable: null, raw: null, locked: false });
     expect(body.values["multi_target.enabled"]).toMatchObject({ value: true, source: "default", path: null, locked: false });
     expect(body.values["budget.default_max_cost_usd"]).toMatchObject({ value: 0, source: "engine-default" });
     expect(body.values["budget.default_max_cost_usd"].path.replace(/\\/g, "/")).toEndWith("skills/harness/config.yaml");
@@ -113,10 +113,10 @@ describe("Glance settings API", () => {
   test("writes take the authorization of every /api/v1 write: idempotency key, local origin, actions enabled", async () => {
     const setup = fixture();
     const base = await start();
-    const noKey = await put(base, "routing.mode", { value: "fast", scope: "project" }, { "content-type": "application/json", origin: base });
+    const noKey = await put(base, "routing.mode", { value: "cards", scope: "project" }, { "content-type": "application/json", origin: base });
     expect(noKey.status).toBe(400);
     expect(((await noKey.json()) as any).detail).toContain("Idempotency-Key");
-    expect((await put(base, "routing.mode", { value: "fast", scope: "project" }, { ...headers(base), origin: "https://evil.example" })).status).toBe(403);
+    expect((await put(base, "routing.mode", { value: "cards", scope: "project" }, { ...headers(base), origin: "https://evil.example" })).status).toBe(403);
     expect((await del(base, "routing.mode", "project", { "content-type": "application/json", origin: base })).status).toBe(400);
     expect(fs.existsSync(setup.projectFile)).toBe(false);
     servers.pop().close();
@@ -125,7 +125,7 @@ describe("Glance settings API", () => {
     const listed = await get(readOnly);
     expect(listed.status).toBe(200);
     expect(((await listed.json()) as any).allow_actions).toBe(false);
-    const refused = await put(readOnly, "routing.mode", { value: "fast", scope: "project" }, headers(readOnly));
+    const refused = await put(readOnly, "routing.mode", { value: "cards", scope: "project" }, headers(readOnly));
     expect(refused.status).toBe(403);
     expect(((await refused.json()) as any).detail).toBe("Glance actions are disabled");
     expect((await del(readOnly, "routing.mode", "project", headers(readOnly))).status).toBe(403);
@@ -136,20 +136,20 @@ describe("Glance settings API", () => {
   test("refusals: unknown key 404, invalid value 400 with the schema message, a scope the key rejects 400, malformed request 400", async () => {
     const setup = fixture();
     const base = await start();
-    const unknown = await put(base, "routing.nope", { value: "fast", scope: "project" });
+    const unknown = await put(base, "routing.nope", { value: "cards", scope: "project" });
     expect(unknown.status).toBe(404);
     expect(((await unknown.json()) as any).detail).toContain("unknown key: routing.nope");
     expect((await del(base, "routing.nope", "project")).status).toBe(404);
     const invalid = await put(base, "routing.mode", { value: "turbo", scope: "project" });
     expect(invalid.status).toBe(400);
-    expect((await invalid.json()) as any).toMatchObject({ title: "Invalid value", detail: 'routing.mode: invalid value "turbo"; expected agentic | cards | fast' });
+    expect((await invalid.json()) as any).toMatchObject({ title: "Invalid value", detail: 'routing.mode: invalid value "turbo"; expected agentic | cards' });
     const number = await put(base, "supervisor.progress_ping_sec", { value: "muitos", scope: "global" });
     expect(number.status).toBe(400);
     expect(((await number.json()) as any).detail).toContain("expected integer >= 0 (seconds)");
     const scope = await put(base, "updates.check", { value: false, scope: "project" });
     expect(scope.status).toBe(400);
     expect(((await scope.json()) as any).detail).toContain("updates.check only accepts scope global");
-    expect((await put(base, "routing.mode", { value: "fast", scope: "machine" })).status).toBe(400);
+    expect((await put(base, "routing.mode", { value: "cards", scope: "machine" })).status).toBe(400);
     expect((await put(base, "routing.mode", { scope: "project" })).status).toBe(400);
     expect((await del(base, "routing.mode", "")).status).toBe(400);
     expect(fs.existsSync(setup.projectFile)).toBe(false);
@@ -159,15 +159,15 @@ describe("Glance settings API", () => {
 
   test("a key pinned by a variable of the server is locked on read and refused on write, naming the variable", async () => {
     const setup = fixture();
-    process.env.NIRVANA_ROUTING_MODE = "fast";
+    process.env.NIRVANA_ROUTING_MODE = "cards";
     const base = await start();
     const body = await get(base).then((response) => response.json()) as any;
-    expect(body.values["routing.mode"]).toEqual({ value: "fast", source: "env", path: null, variable: "NIRVANA_ROUTING_MODE", raw: "fast", locked: true });
+    expect(body.values["routing.mode"]).toEqual({ value: "cards", source: "env", path: null, variable: "NIRVANA_ROUTING_MODE", raw: "cards", locked: true });
     const refused = await put(base, "routing.mode", { value: "agentic", scope: "project" });
     expect(refused.status).toBe(409);
     const problem = await refused.json() as any;
     expect(problem.title).toBe("Setting pinned by the environment");
-    expect(problem.detail).toContain("routing.mode is pinned by the variable NIRVANA_ROUTING_MODE=fast");
+    expect(problem.detail).toContain("routing.mode is pinned by the variable NIRVANA_ROUTING_MODE=cards");
     expect((await del(base, "routing.mode", "project")).status).toBe(409);
     expect(fs.existsSync(setup.projectFile)).toBe(false);
     expect(auditEvents(setup)).toEqual([]);
@@ -176,29 +176,29 @@ describe("Glance settings API", () => {
   test("round trip: set → get → unset in the project and in the global file; every write that changes a file is audited with actor glance", async () => {
     const setup = fixture();
     const base = await start();
-    const set = await put(base, "routing.mode", { value: "fast", scope: "project" });
+    const set = await put(base, "routing.mode", { value: "cards", scope: "project" });
     expect(set.status).toBe(200);
-    expect(await set.json()).toEqual({ key: "routing.mode", scope: "project", path: setup.projectFile, from: null, to: "fast", changed: true,
-      effective: { value: "fast", source: "project", path: setup.projectFile, variable: null, raw: null, locked: false } });
-    expect(body(setup.projectFile)).toBe('routing:\n  mode: "fast"\n');
-    expect(((await get(base).then((response) => response.json())) as any).values["routing.mode"]).toMatchObject({ value: "fast", source: "project" });
+    expect(await set.json()).toEqual({ key: "routing.mode", scope: "project", path: setup.projectFile, from: null, to: "cards", changed: true,
+      effective: { value: "cards", source: "project", path: setup.projectFile, variable: null, raw: null, locked: false } });
+    expect(body(setup.projectFile)).toBe('routing:\n  mode: "cards"\n');
+    expect(((await get(base).then((response) => response.json())) as any).values["routing.mode"]).toMatchObject({ value: "cards", source: "project" });
 
-    const again = await put(base, "routing.mode", { value: "fast", scope: "project" });
-    expect((await again.json()) as any).toMatchObject({ changed: false, from: "fast", to: "fast" });
+    const again = await put(base, "routing.mode", { value: "cards", scope: "project" });
+    expect((await again.json()) as any).toMatchObject({ changed: false, from: "cards", to: "cards" });
 
     const global = await put(base, "quality_gate.max_revisions", { value: "4", scope: "global" });
     expect((await global.json()) as any).toMatchObject({ scope: "global", path: setup.globalFile, from: null, to: 4, changed: true, effective: { value: 4, source: "global" } });
     expect(body(setup.globalFile)).toBe("quality_gate:\n  max_revisions: 4\n");
 
     const shadowed = await put(base, "routing.mode", { value: "agentic", scope: "global" });
-    expect((await shadowed.json()) as any).toMatchObject({ scope: "global", to: "agentic", changed: true, effective: { value: "fast", source: "project" } });
+    expect((await shadowed.json()) as any).toMatchObject({ scope: "global", to: "agentic", changed: true, effective: { value: "cards", source: "project" } });
 
     const toggled = await put(base, "multi_target.enabled", { value: false, scope: "project" });
     expect((await toggled.json()) as any).toMatchObject({ to: false, changed: true, effective: { value: false, source: "project" } });
 
     const unset = await del(base, "routing.mode", "project");
     expect(unset.status).toBe(200);
-    expect((await unset.json()) as any).toMatchObject({ key: "routing.mode", scope: "project", path: setup.projectFile, from: "fast", to: null, changed: true,
+    expect((await unset.json()) as any).toMatchObject({ key: "routing.mode", scope: "project", path: setup.projectFile, from: "cards", to: null, changed: true,
       effective: { value: "agentic", source: "global", path: setup.globalFile } });
     expect((await del(base, "routing.mode", "project").then((response) => response.json())) as any).toMatchObject({ changed: false, from: null, to: null });
     const projectFile = fs.readFileSync(setup.projectFile, "utf8");
@@ -206,23 +206,23 @@ describe("Glance settings API", () => {
     expect(projectFile).not.toContain("routing");
 
     expect(auditEvents(setup)).toEqual([
-      expect.objectContaining({ actor: "glance", key: "routing.mode", scope: "project", path: setup.projectFile, from: null, to: "fast" }),
+      expect.objectContaining({ actor: "glance", key: "routing.mode", scope: "project", path: setup.projectFile, from: null, to: "cards" }),
       expect.objectContaining({ actor: "glance", key: "quality_gate.max_revisions", scope: "global", path: setup.globalFile, from: null, to: 4 }),
       expect.objectContaining({ actor: "glance", key: "routing.mode", scope: "global", path: setup.globalFile, from: null, to: "agentic" }),
       expect.objectContaining({ actor: "glance", key: "multi_target.enabled", scope: "project", path: setup.projectFile, from: null, to: false }),
-      expect.objectContaining({ actor: "glance", key: "routing.mode", scope: "project", path: setup.projectFile, from: "fast", to: null }),
+      expect.objectContaining({ actor: "glance", key: "routing.mode", scope: "project", path: setup.projectFile, from: "cards", to: null }),
     ]);
   });
 
   test("the same Idempotency-Key with the same request replays the result without a second write; another request under it is refused", async () => {
     const setup = fixture();
     const base = await start();
-    const first = await put(base, "routing.mode", { value: "fast", scope: "project" }, headers(base, "settings-one"));
+    const first = await put(base, "routing.mode", { value: "cards", scope: "project" }, headers(base, "settings-one"));
     expect(first.status).toBe(200);
     const firstBody = await first.json();
     const stat = fs.statSync(setup.projectFile);
     fs.writeFileSync(setup.projectFile, 'routing:\n  mode: "agentic"\n', "utf8");
-    const replay = await put(base, "routing.mode", { value: "fast", scope: "project" }, headers(base, "settings-one"));
+    const replay = await put(base, "routing.mode", { value: "cards", scope: "project" }, headers(base, "settings-one"));
     expect(replay.status).toBe(200);
     expect(await replay.json()).toEqual(firstBody);
     // The replay wrote nothing: the file still holds what was written between the two calls.
@@ -235,7 +235,7 @@ describe("Glance settings API", () => {
     // A refusal is never stored: the same key succeeds once its cause is gone.
     const refused = await put(base, "routing.mode", { value: "turbo", scope: "project" }, headers(base, "settings-two"));
     expect(refused.status).toBe(400);
-    expect((await put(base, "routing.mode", { value: "fast", scope: "project" }, headers(base, "settings-two"))).status).toBe(200);
+    expect((await put(base, "routing.mode", { value: "cards", scope: "project" }, headers(base, "settings-two"))).status).toBe(200);
     expect(fs.statSync(setup.projectFile).mtimeMs).toBeGreaterThanOrEqual(stat.mtimeMs);
   });
 
@@ -248,8 +248,8 @@ describe("Glance settings API", () => {
     const problem = await listed.json() as any;
     expect(problem.title).toBe("Config file unreadable");
     expect(problem.detail).toContain(`${setup.globalFile}: invalid YAML`);
-    expect((await put(base, "routing.mode", { value: "fast", scope: "global" })).status).toBe(409);
-    fs.writeFileSync(setup.globalFile, "routing:\n  mode: fast\n", "utf8");
+    expect((await put(base, "routing.mode", { value: "cards", scope: "global" })).status).toBe(409);
+    fs.writeFileSync(setup.globalFile, "routing:\n  mode: cards\n", "utf8");
     expect((await get(base)).status).toBe(200);
   });
 });

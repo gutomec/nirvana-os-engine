@@ -95,8 +95,10 @@ describe("the table", () => {
 
 describe("validation", () => {
   const cases: Array<[string, unknown, boolean, RegExp?]> = [
-    ["routing.mode", "fast", true],
-    ["routing.mode", "turbo", false, /routing\.mode: invalid value "turbo"; expected agentic \| cards \| fast/],
+    ["routing.mode", "cards", true],
+    ["routing.mode", "fast", false, /routing\.mode: "fast" was retired \(.+\); expected agentic \| cards/],
+    ["routing.mode", "turbo", false, /routing\.mode: invalid value "turbo"; expected agentic \| cards/],
+    ["routing.on_router_failure", "cascade", false, /was retired/],
     ["multi_target.enabled", true, true],
     ["multi_target.enabled", "true", false, /expected true \| false/],
     ["quality_gate.max_revisions", 3, true],

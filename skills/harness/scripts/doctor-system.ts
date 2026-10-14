@@ -1147,13 +1147,13 @@ if (fs.existsSync(homeSquads)) {
   }
 }
 
-// Corpus language, because it decides how good `fast` mode can be.
+// Corpus language, because it decides how good the BM25 shortlist can be.
 //
-// The agentic router (the default) reads the digest and reasons, so it routes a
-// brief in any language against an entity declared in any other. `fast` is BM25:
-// it matches tokens, and a brief and an entity in different languages share
-// none. Measured on 20 held-out paraphrase pairs, cross-language parity in fast
-// mode was 25%.
+// The routers read the digest or the cards and reason, so they route a brief in
+// any language against an entity declared in any other. The shortlist (`nrv
+// find`, the clone search) is BM25: it matches tokens, and a brief and an
+// entity in different languages share none. Measured on 20 held-out paraphrase
+// pairs, cross-language parity of the keyword match was 25%.
 //
 // So this is a progress bar, not an error. A mixed corpus is not broken — it is
 // partway to one language, and this says how far.
@@ -1164,12 +1164,12 @@ try {
   const mix = corpusMix(req(path.join(SKILLS, "harness", "lib", "registry-loader.js")).loadAll());
   if (!mix) add("corpus: language", "PASS", "no content library — nothing to weigh");
   else if (mix.minorityPct < 10) {
-    add("corpus: language", "PASS", `${mix.enPct}% English / ${mix.ptPct}% Portuguese — fast mode is on solid ground`);
+    add("corpus: language", "PASS", `${mix.enPct}% English / ${mix.ptPct}% Portuguese — the keyword shortlists match in either language`);
   } else {
     add("corpus: language", "WARN",
       `${mix.enPct}% English / ${mix.ptPct}% Portuguese · ${mix.queue.length} entities still to translate. `
-      + `The agentic default is unaffected; 'fast' mode routes by token match, so a brief in one language `
-      + `can miss entities declared in the other.`);
+      + `The routers read, so the language does not decide who executes; the keyword shortlists (nrv find, `
+      + `the clone search) match by token, so a request in one language can miss entities declared in the other.`);
   }
 } catch (e) {
   add("corpus: language", "WARN", `could not weigh the corpus: ${(e as Error).message}`);

@@ -46,7 +46,7 @@ function fixture() {
 describe("doctor — config", () => {
   test("one line per key with the effective value and its origin: variable, project file, global file, default", () => {
     const setup = fixture();
-    fs.writeFileSync(setup.globalFile, "quality_gate:\n  max_revisions: 4\nrouting:\n  mode: fast\n", "utf8");
+    fs.writeFileSync(setup.globalFile, "quality_gate:\n  max_revisions: 4\nrouting:\n  mode: cards\n", "utf8");
     fs.writeFileSync(setup.projectFile, "routing:\n  mode: agentic\n", "utf8");
     const checks = runDoctor(setup, { NIRVANA_DNA_INJECTION: "fragments" });
     const config = checks.filter((check) => check.name.startsWith("config: "));

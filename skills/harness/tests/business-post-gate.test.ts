@@ -28,7 +28,7 @@ function fixture(overrides: Partial<BusinessPostGateInput> = {}, dependencyOverr
     projectRoot: "/project", outputsRoot: "/project/deliverables", skillsRoot: "/skills",
     sessionFile: "/project/session.json",
     sessionData: { zip_path: null }, rulesDirective: "rules", maxBudgetUsd: 5, timeoutMs: 1000,
-    yolo: true, wantPdf: true, skipHtml: false, offlineSnapshot: true, routingMode: "agentic", wantZip: true,
+    yolo: true, wantPdf: true, skipHtml: false, offlineSnapshot: true, wantZip: true,
     emit: (event, payload) => events.push({ event, payload }), log: () => {}, warn: warning => warnings.push(warning),
     dependencies, ...overrides,
   };
@@ -94,12 +94,5 @@ describe("Business post-gate boundary", () => {
     runBusinessPostGate(fx.input);
     expect(seen.ledger.runId).toBe("run-1");
     expect(fx.events.find(entry => entry.event === "x_report_publisher_failed")?.payload.reason).toBe("quota");
-  });
-
-  test("preserves the fast-mode HTML skip audit", () => {
-    const fx = fixture({ wantPdf: false, skipHtml: true, routingMode: "fast", wantZip: false });
-    expect(runBusinessPostGate(fx.input)).toEqual({ zipPath: null });
-    expect(fx.events.map(entry => entry.event)).toEqual(["report_skipped_fast"]);
-    expect(fx.calls).toEqual([]);
   });
 });

@@ -53,7 +53,7 @@ The trace-builder correlates Claude Code hook events (`session_id`) with harness
 | Command | Description |
 |---|---|
 | `nrv run <business> "<brief>"` / `nrv auto "<brief>"` | Process a brief end to end (dispatch + gate + deliver) |
-| `nrv find "<intent>"` / `*find` | BM25 discovery (`fast` mode; diagnostic in agentic) |
+| `nrv find "<intent>"` / `*find` | The shortlist: businesses and squads ranked apart by BM25, with their cards (zero tokens; you read it and decide) |
 | `nrv list-squads` / `nrv list-businesses` / `nrv list-clones` | List registry contents |
 | `nrv inspect-clone <slug>` | Inspect a mind-clone; squads/businesses: read their manifests |
 | `nrv index` / `*index` | Rebuild registries |
@@ -63,19 +63,19 @@ The trace-builder correlates Claude Code hook events (`session_id`) with harness
 
 When the user types "abra o glance" / "open the cockpit" / "show me the project state", invoke `glance --allow-actions`.
 
-## Diagnostic helpers (never authoritative in agentic mode)
+## Diagnostic helpers (they never decide who executes)
 
 | Tool | Purpose | When to use |
 |---|---|---|
-| `bun scripts/find.ts --json "<brief>"` | BM25 + keyword discovery (`fast` mode engine) | The fast-mode pick; in agentic mode, a sanity-check peek |
-| `bun scripts/route.ts "<brief>"` | Full BM25 routing pipeline (`fast` mode) | Same + budget pre-flight |
+| `bun scripts/find.ts --json "<brief>"` | The shortlist as data (`shortlist`) beside the keyword router's own decision | Scripts that need the candidates |
+| `bun scripts/route.ts "<brief>"` | Full BM25 pipeline, stage by stage | Debugging why an entity ranks where it does; budget pre-flight |
 | `bun scripts/index.ts` | Rebuild registries | After adding/editing businesses or squads |
 | `bun scripts/validate.ts` | Self-test (registries, BM25, audit) | Before a big production run |
 | `glance --allow-actions` | Web cockpit (live audit + decisions + gates) | When watching a run live |
 
-### The `fast` router (BM25 + optional dense fallback) — state, and when to still prefer agentic
+### The keyword router (BM25 + optional dense fallback): a retriever, never a decider
 
-The `fast` router was calibrated across routing-360 (full detail: `references/01-routing.md`):
+It builds the `nrv find` shortlist, the capability tiebreak inside a squad and the clone search. It stopped deciding dispatch targets on 2026-10-13 (the retired `fast` mode; `references/01-routing.md`). It was calibrated across routing-360:
 - Manifest `keywords` / `example_briefs` / `produces` are indexed with field weights, so narrow-vocabulary specialists are no longer invisible.
 - The intent FILTER is opt-in (`NIRVANA_ROUTER_INTENT_FILTER=1`) — measured against the census it only destroyed accuracy, so business nouns can no longer hide squad capabilities by class.
 - Stage 0 abstains on generic-object patterns (landing/page/copy/...), letting the matching decide by domain.
@@ -83,7 +83,7 @@ The `fast` router was calibrated across routing-360 (full detail: `references/01
 - Coverage gates make NO_MATCH honest: an out-of-domain brief abstains instead of dispatching a confident wrong target.
 - **Optional dense arm — fallback slot only:** `nrv embeddings enable` turns on a local neural model consulted ONLY when BM25 ends at NO_MATCH, returning an AMBIGUOUS suggestion (never a dispatch). The BM25/dense RRF fusion was measured twice and retired; without the backend the router is purely lexical (zero-dep).
 
-Residuals that keep agentic mode the source of truth:
+Residuals that keep a model the one that decides:
 - Stage 0 and Stage -1 remain keyword-based (pruned and gated, but not semantic).
 - The router has no notion of "the right mind-clone for this voice" — that is pure agentic reasoning; the script does not do it.
 - Without the dense fallback active, matching is lexical.

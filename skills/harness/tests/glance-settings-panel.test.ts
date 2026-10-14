@@ -15,7 +15,7 @@ const schema = SETTINGS_SCHEMA.map(settingInfo);
 const entry = (value: unknown, source = "default", extra: Record<string, unknown> = {}) =>
   ({ value, source, path: null, variable: null, raw: null, locked: source === "env", ...extra });
 const values: Record<string, unknown> = Object.fromEntries(schema.map((spec) => [spec.key, entry(spec.default)]));
-values["routing.mode"] = entry("fast", "project", { path: "/prj/.nirvana/config.yaml" });
+values["routing.mode"] = entry("cards", "project", { path: "/prj/.nirvana/config.yaml" });
 values["gauntlet.evaluator"] = entry("judge-x", "global", { path: "/home/.nirvana/config.yaml" });
 values["multi_target.enabled"] = entry(false, "env", { variable: "NIRVANA_MULTI_TARGET_KILL_SWITCH", raw: "1" });
 values["budget.default_max_cost_usd"] = entry(0, "engine-default", { path: "/engine/skills/harness/config.yaml" });
@@ -37,8 +37,8 @@ describe("Glance settings panel module", () => {
   test("a field carries the schema, the effective value, its origin in words and the control for its kind", () => {
     const fields = Object.fromEntries(buildSettingsPanel(payload).groups.flatMap((group: any) => group.fields).map((field: any) => [field.key, field]));
     expect(fields["routing.mode"]).toMatchObject({
-      section: "routing", name: "mode", kind: "enum", control: "select", options: ["agentic", "cards", "fast"], default: "agentic",
-      value: "fast", source: "project", sourceLabel: "project", origin: "/prj/.nirvana/config.yaml", locked: false, writable: true, env: "NIRVANA_ROUTING_MODE",
+      section: "routing", name: "mode", kind: "enum", control: "select", options: ["agentic", "cards"], default: "agentic",
+      value: "cards", source: "project", sourceLabel: "project", origin: "/prj/.nirvana/config.yaml", locked: false, writable: true, env: "NIRVANA_ROUTING_MODE",
     });
     expect(typeof fields["routing.mode"].description).toBe("string");
     expect(fields["gauntlet.evaluator"]).toMatchObject({ kind: "string", control: "text", value: "judge-x", sourceLabel: "global", origin: "/home/.nirvana/config.yaml" });
@@ -97,16 +97,16 @@ describe("Glance settings panel module", () => {
 
   test("requests target /api/v1/settings/<key> with the scope, and notices read the API's answer", () => {
     const field = { key: "routing.mode", kind: "enum", control: "select", value: "agentic", scopes: ["global", "project"] };
-    expect(writeRequest(field, "project", "fast")).toEqual({ method: "PUT", path: "/api/v1/settings/routing.mode", body: { value: "fast", scope: "project" } });
+    expect(writeRequest(field, "project", "cards")).toEqual({ method: "PUT", path: "/api/v1/settings/routing.mode", body: { value: "cards", scope: "project" } });
     expect(unsetRequest(field, "global")).toEqual({ method: "DELETE", path: "/api/v1/settings/routing.mode?scope=global", body: null });
-    expect(changeNotice({ key: "routing.mode", scope: "project", path: "/p/config.yaml", from: null, to: "fast", changed: true, effective: { value: "fast", source: "project" } }))
-      .toBe("routing.mode = fast written to project (/p/config.yaml)");
-    expect(changeNotice({ key: "routing.mode", scope: "global", path: "/g/config.yaml", from: "fast", to: "agentic", changed: true, effective: { value: "fast", source: "project" } }))
-      .toBe("routing.mode = agentic written to global (/g/config.yaml) (was fast) · effective value now: fast (project)");
-    expect(changeNotice({ key: "routing.mode", scope: "project", path: "/p/config.yaml", from: "fast", to: "fast", changed: false, effective: { value: "fast", source: "project" } }))
-      .toBe("routing.mode was already fast in project (/p/config.yaml); nothing changed");
-    expect(changeNotice({ key: "routing.mode", scope: "project", path: "/p/config.yaml", from: "fast", to: null, changed: true, effective: { value: "agentic", source: "default" } }))
-      .toBe("routing.mode removed from project (/p/config.yaml); was fast · effective value now: agentic (default)");
+    expect(changeNotice({ key: "routing.mode", scope: "project", path: "/p/config.yaml", from: null, to: "cards", changed: true, effective: { value: "cards", source: "project" } }))
+      .toBe("routing.mode = cards written to project (/p/config.yaml)");
+    expect(changeNotice({ key: "routing.mode", scope: "global", path: "/g/config.yaml", from: "cards", to: "agentic", changed: true, effective: { value: "cards", source: "project" } }))
+      .toBe("routing.mode = agentic written to global (/g/config.yaml) (was cards) · effective value now: cards (project)");
+    expect(changeNotice({ key: "routing.mode", scope: "project", path: "/p/config.yaml", from: "cards", to: "cards", changed: false, effective: { value: "cards", source: "project" } }))
+      .toBe("routing.mode was already cards in project (/p/config.yaml); nothing changed");
+    expect(changeNotice({ key: "routing.mode", scope: "project", path: "/p/config.yaml", from: "cards", to: null, changed: true, effective: { value: "agentic", source: "default" } }))
+      .toBe("routing.mode removed from project (/p/config.yaml); was cards · effective value now: agentic (default)");
     expect(changeNotice({ key: "routing.mode", scope: "project", path: "/p/config.yaml", from: null, to: null, changed: false, effective: { value: "agentic", source: "project" } }))
       .toBe("routing.mode was not set in project (/p/config.yaml); nothing changed");
     expect(changeNotice(null)).toBe("");

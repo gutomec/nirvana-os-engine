@@ -1,22 +1,18 @@
-// fast-is-not-advertised.test.ts — the keyword router is not offered to agents.
+// fast-is-not-advertised.test.ts — the keyword router is not offered to agents,
+// and since 2026-10-13 it decides nothing.
 //
 // It used to be sold in the highest-reach surface the system has: the harness
 // SKILL.md `description`, the first thing any runtime reads to decide whether to
 // activate. The sentence ended "Agentic by default; a `fast` BM25 mode gives
 // zero-token deterministic routing" — a pitch for the worse mode, on the most
-// tempting axis an agent has. The project contract then spent a paragraph
-// forbidding it, which is weaker than silence: a prohibition teaches the
-// shortcut exists and then asks for restraint.
+// tempting axis an agent has.
 //
-// Measured at 0.224 top-1 against real first-touch briefs, it loses the right
-// destination in two thirds of them. It stays in the engine because a user may
-// ask for it by name; it leaves every surface an agent reads.
-//
-// Concealment alone would be worse than the advertising it replaced, so it is
-// paired: a machine that INHERITED `fast` (a config file, an env var set months
-// ago) says so out loud on every dispatch, because the agent driving that run
-// has never been told the mode exists and could not otherwise name what it is
-// seeing. Silent when chosen for a run; loud when inherited.
+// Measured at 0.224 top-1 against real first-touch briefs, and on 48 labeled
+// requests (2026-10-13) AMBIGUOUS for 42 with the right business for 4 of 42,
+// the mode was retired as a decider: `--mode=fast` and `nrv config set
+// routing.mode fast` are refused, and a stored value reads as the profile
+// default with one warning (routing-fast-retired.e2e.test.ts, settings.test.ts).
+// BM25 stays as the retriever behind `nrv find` and the clone search.
 import { describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -74,19 +70,20 @@ describe("the decider's CLI is not in the user-facing help", () => {
   });
 });
 
-describe("inherited is not the same as chosen", () => {
-  test("the origin of the mode is distinguishable", async () => {
-    const m = await import("../../_shared/lib/routing-mode.ts");
-    expect(m.routingModeOrigin("fast")).toBe("flag");
-    const prev = process.env.NIRVANA_ROUTING_MODE;
-    process.env.NIRVANA_ROUTING_MODE = "fast";
-    try { expect(m.routingModeOrigin()).toBe("env"); }
-    finally { if (prev === undefined) delete process.env.NIRVANA_ROUTING_MODE; else process.env.NIRVANA_ROUTING_MODE = prev; }
+describe("nothing can choose it any more", () => {
+  test("the schema has no fast mode and no BM25 fallback, only their retirement", async () => {
+    const { SETTINGS } = await import("../../_shared/lib/settings-schema.ts");
+    expect(SETTINGS["routing.mode"].options).toEqual(["agentic", "cards"]);
+    expect(Object.keys(SETTINGS["routing.mode"].retired ?? {})).toEqual(["fast"]);
+    expect(SETTINGS["routing.on_router_failure"].options).toEqual(["agent-x-only", "fail"]);
+    expect(SETTINGS["routing.on_router_failure"].retired?.cascade?.to).toBe("agent-x-only");
   });
 
-  test("the dispatcher warns on an inherited mode and stays quiet on a chosen one", () => {
+  test("the dispatcher has no BM25 pick left to call", () => {
     const src = read("skills/harness/scripts/dispatch.ts");
-    expect(src).toContain(`routingModeOrigin(arg("--mode")) !== "flag"`);
-    expect(src).toContain("nrv config unset routing.mode");
+    expect(src).not.toContain("fastBm25Business");
+    expect(src).not.toContain("fastRoute");
+    expect(src).toContain("--mode=fast was retired");
+    expect(read("skills/harness/lib/dispatch-cascade.ts")).not.toContain("fastRoute");
   });
 });

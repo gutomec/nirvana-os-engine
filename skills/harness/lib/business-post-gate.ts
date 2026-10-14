@@ -36,7 +36,6 @@ export interface BusinessPostGateInput {
   wantPdf: boolean;
   skipHtml: boolean;
   offlineSnapshot: boolean;
-  routingMode: string;
   wantZip: boolean;
   emit(event: string, payload: Record<string, unknown>): void;
   log(message: string): void;
@@ -184,8 +183,6 @@ function runHtml(input: BusinessPostGateInput, deps: BusinessPostGateDependencie
       input.warn(`⚠ build-report-html failed (rc=${html.status})`);
       failed("html", `build-report-html exited ${html.status}`);
     }
-  } else if (input.routingMode === "fast") {
-    input.emit("report_skipped_fast", { trace_id: input.projectId, project_id: input.projectId, business_slug: input.businessSlug });
   }
 }
 

@@ -255,7 +255,7 @@ export const CONFIG_SCHEMA: ConfigGroup[] = [
         key: "NIRVANA_RULE_MIN_SCORE",
         type: "string",
         label: "Rule match threshold",
-        description: "Match sensitivity of the USE_* rules in fast mode (BM25). Default 0.15",
+        description: "Match sensitivity of the USE_* rules (a keyword match over the request). Default 0.15",
         placeholder: "0.15",
         recommendedScope: "global",
       },

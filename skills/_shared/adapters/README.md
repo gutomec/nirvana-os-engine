@@ -63,7 +63,7 @@ USE_HERMES="Quando precisar interagir com o usuário via mensageria"
 USE_PI="Quando precisar de modelos locais (Ollama/llama.cpp) ou de um provider fora dos CLIs oficiais"
 ```
 
-`nrv dispatch --exec` picks the runtime preferred by the rule that matches the brief (zero-token BM25 in `fast` mode; in `agentic` mode the rules go verbatim into the router's and the maestro's prompt, and the maestro also respects them when delegating sub-tasks). An explicit flag (`--exec=<rt>`/`--runtime`) always wins; with no match, it stays on the runtime the user is already using. Quota resilience stays in `LLM_CASCADE`. Details: `project-skeleton/.env.example`.
+`nrv dispatch --exec` picks the runtime preferred by the rule that matches the brief (a zero-token BM25 match of the brief against the rules; the rules also go verbatim into the agentic router's and the maestro's prompt, and the maestro respects them when delegating sub-tasks). An explicit flag (`--exec=<rt>`/`--runtime`) always wins; with no match, it stays on the runtime the user is already using. Quota resilience stays in `LLM_CASCADE`. Details: `project-skeleton/.env.example`.
 
 ## For adapter implementers
 

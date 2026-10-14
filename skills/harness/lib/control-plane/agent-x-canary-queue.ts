@@ -7,6 +7,7 @@ import type { AgenticRouteDecision } from "../agentic-router.ts";
 import { LEGACY_CAPABILITY_ID, resolveSquadCapability } from "../capability-resolver.ts";
 import { resolveDispatchPlan, type DispatchPlan } from "../dispatch-cascade.ts";
 import type { RouterFailurePolicy } from "../harness-config.ts";
+import type { RoutingMode } from "../../../_shared/lib/routing-mode.ts";
 import { runAgentXGauntlet, type AgentXCandidateResult, type AgentXGauntletEvaluator } from "../gauntlet/agent-x-cutover.ts";
 import {
   TERMINAL_RUN_STATES, appendEvent, createRun, getRun, listEvents, listRuns, transitionRun,
@@ -73,7 +74,7 @@ export interface MessageRouteInput {
 /** The agentic router as the queue sees it: `agenticRoute` composed by the server
  * (`createAgenticMessageRouter`), a fake in tests. Nothing else ranks a Message. */
 export interface MessageRouter { route(input: MessageRouteInput): Promise<AgenticRouteDecision> }
-export interface MessageRoutingSettings { mode: "agentic" | "fast"; onRouterFailure: RouterFailurePolicy }
+export interface MessageRoutingSettings { mode: RoutingMode; onRouterFailure: RouterFailurePolicy }
 export type MessageRouteAudit = (event: string, payload: Record<string, unknown>) => void;
 /** Which capability of a squad the Message runs; default lib/capability-resolver.ts. */
 export type MessageCapabilityResolver = (input: { slug: string; brief: string; explicit: string | null; audit: MessageRouteAudit }) => string;
@@ -148,7 +149,7 @@ async function routeWithin(router: MessageRouter, input: MessageRouteInput, time
 /** The target of a Message, by the same cascade the maestro applies: an explicit prefix wins;
  * otherwise the router decides (business, then exactly one squad) through `resolveDispatchPlan`,
  * the mapping the dispatch uses; agent-x is the bottom (several squads, router failure, timeout,
- * `routing.mode=fast`, no router). A `no_match` is refused instead: the maestro runs agent-x with
+ * no router). A `no_match` is refused instead: the maestro runs agent-x with
  * the gap named, the chat answers with the router's rationale, and no Gauntlet opens for a
  * question. Every resolution is one `auto_route_selected` with the Message's trace; a router that
  * throws or times out is one `agentic_route_failed` as well; a cancelled resolution audits nothing. */
@@ -181,7 +182,6 @@ export async function resolveMessageTarget(content: string, deps: MessageRouting
     return record({ target: squadTarget(explicit.slug, spec.capabilityId), route: { source: "explicit", rationale: `the Message names squad ${explicit.slug}` } });
   }
   if (explicit.kind !== "agent-x") return record({ target: explicit, route: { source: "explicit", rationale: `the Message names ${explicit.kind} ${explicit.slug}` } });
-  if (deps.settings.mode === "fast") return record(fallback("routing.mode=fast: the Glance composes only the agentic router, so the Message stays on agent-x"));
   if (!deps.router) return record(fallback("no router configured on this server; the Message stays on agent-x"));
 
   const timeoutMs = deps.timeoutMs ?? MESSAGE_ROUTE_TIMEOUT_MS;

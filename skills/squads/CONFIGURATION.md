@@ -94,7 +94,7 @@ Runtimes accepted in `runtime_requirements`: `claude-code`, `codex`, `antigravit
 
 | Setting or limit | Default | Effect |
 |---|---|---|
-| `routing.mode` | `agentic` | `agentic`, `cards` or `fast` (BM25) matcher |
+| `routing.mode` | `agentic` | `agentic` or `cards` decides the target; BM25 only builds shortlists (`fast` was retired) |
 | `routing.dense` | `off` | `fallback` consults dense retrieval only when BM25 finds nothing (`nrv embeddings enable`) |
 | `gauntlet.requirements_source` | `brief` | `capability` makes the judge charge `acceptance[]` (§29.3) |
 | `gauntlet.evaluator` | automatic | Pin the evaluator, `squad:<slug>[:<cap>]` (§30.3) |

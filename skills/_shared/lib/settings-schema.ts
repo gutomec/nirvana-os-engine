@@ -49,6 +49,14 @@ export interface SettingSpec<T extends SettingValue = SettingValue> {
   fromEnv?: (raw: string, variable: string) => SettingValue | null;
   /** The value as the variable spells it, for pinning into children; null = leave the variable unset. */
   toEnv?: (value: T) => string | null;
+  /**
+   * Values a past release accepted and this one does not. Read from a file or a
+   * variable, such a value never breaks the machine that stored it: it reads as
+   * `to` (null = as if the key were not set there) with one warning naming
+   * where it came from. Written (`nrv config set`, the Glance), it is refused
+   * with `why`.
+   */
+  retired?: Record<string, { to: T | null; why: string }>;
 }
 
 const TRUE_WORDS = new Set(["1", "true", "on", "yes"]);
@@ -81,7 +89,15 @@ export function validateSettingValue(spec: SettingSpec, value: unknown): Validat
   const parsed = spec.type.safeParse(value);
   if (parsed.success) return { ok: true, value: parsed.data as SettingValue };
   const shown = typeof value === "string" ? JSON.stringify(value) : String(value);
+  const retired = retiredValue(spec, value);
+  if (retired) return { ok: false, message: `${spec.key}: ${shown} was retired (${retired.why}); expected ${spec.expects}` };
   return { ok: false, message: `${spec.key}: invalid value ${shown}; expected ${spec.expects}` };
+}
+
+/** The retirement entry `value` matches, if any (case- and space-insensitive). */
+export function retiredValue(spec: SettingSpec, value: unknown): { to: SettingValue | null; why: string } | null {
+  if (!spec.retired || typeof value !== "string") return null;
+  return spec.retired[value.trim().toLowerCase()] ?? null;
 }
 
 const nonNegativeInt = z.number().int().min(0);
@@ -131,6 +147,7 @@ function numberSetting(key: string, description: string, opts: Common & {
 
 function enumSetting<const O extends readonly [string, ...string[]]>(key: string, description: string, options: O, opts: Common & {
   default: O[number]; toEnv?: (value: O[number]) => string | null;
+  retired?: Record<string, { to: O[number] | null; why: string }>;
 }): SettingSpec<O[number]> {
   return {
     key, kind: "enum", type: z.enum(options), default: opts.default, options,
@@ -138,6 +155,7 @@ function enumSetting<const O extends readonly [string, ...string[]]>(key: string
     env: opts.env ?? null, ...(opts.envAliases ? { envAliases: opts.envAliases } : {}), secret: false,
     ...(opts.fromEnv ? { fromEnv: opts.fromEnv } : {}),
     toEnv: opts.toEnv ?? ((value) => value),
+    ...(opts.retired ? { retired: opts.retired } : {}),
   };
 }
 
@@ -283,10 +301,14 @@ export const SETTINGS = {
     { default: false, env: "NIRVANA_ALLOW_STALE_CATALOG" }),
 
   "routing.mode": enumSetting("routing.mode",
-    "How the router picks the target: agentic = an agent reads the registries; cards = one tool-less call over the compiled cards; fast = deterministic BM25.",
-    ["agentic", "cards", "fast"], { default: "agentic", env: "NIRVANA_ROUTING_MODE" }),
+    "How the router picks the target: agentic = an agent reads the registries; cards = one tool-less call over the compiled cards. The keyword match (BM25) only builds shortlists (nrv find, the clone search) and never decides who executes.",
+    ["agentic", "cards"], {
+      default: "agentic", env: "NIRVANA_ROUTING_MODE",
+      // Measured on 48 labeled requests (2026-10-13): AMBIGUOUS on 42, the right business on 4 of 42.
+      retired: { fast: { to: null, why: "the keyword match never decides who executes; it only builds shortlists" } },
+    }),
   "routing.dense": enumSetting("routing.dense",
-    "Neural arm of the fast router: off; fallback = consulted only on NO_MATCH, suggests, never dispatches.",
+    "Neural arm of the keyword router (the BM25 shortlist): off; fallback = consulted only on NO_MATCH, suggests, never dispatches.",
     ["off", "fallback"], {
       default: "off", env: "NIRVANA_ROUTER_DENSE",
       fromEnv: (raw) => {
@@ -298,8 +320,11 @@ export const SETTINGS = {
       toEnv: (value) => (value === "fallback" ? "1" : "0"),
     }),
   "routing.on_router_failure": enumSetting("routing.on_router_failure",
-    "When the agentic router fails in transport (after 1 retry): agent-x-only = goes straight to agent-x, BM25 never fires without an explicit --fast (default); cascade = tries BM25 before agent-x; fail = ends without dispatching anything.",
-    ["cascade", "agent-x-only", "fail"], { default: "agent-x-only" }),
+    "When the router fails in transport (after 1 retry): agent-x-only = goes straight to agent-x (default); fail = ends without dispatching anything. The keyword match is never a fallback.",
+    ["agent-x-only", "fail"], {
+      default: "agent-x-only",
+      retired: { cascade: { to: "agent-x-only", why: "the keyword match is never a fallback for the router; a failure goes to agent-x" } },
+    }),
   "routing.timeout_ms": numberSetting("routing.timeout_ms",
     "Ceiling for one agentic router call, in milliseconds. A timeout is not retried: the dispatch goes straight to routing.on_router_failure.",
     { default: 300_000, type: z.number().int().min(1), expects: "integer > 0 (ms)", env: "NIRVANA_ROUTING_TIMEOUT_MS" }),

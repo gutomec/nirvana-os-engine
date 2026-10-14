@@ -61,8 +61,8 @@ function read(key: string, label: string, probe: () => Omit<Subsystem, "key" | "
 /**
  * ROUTER — the registries it matches against.
  *
- * Both modes need them: `fast` runs BM25 over the registry indexes and `agentic`
- * hands them to an agent. Registries with no entries is not a degraded router,
+ * Every router needs them: the cards and agentic routers read them, and the BM25
+ * shortlist (`nrv find`) matches over their indexes. Registries with no entries is not a degraded router,
  * it is a router that can only answer NO_MATCH, so it reads as down.
  * router.js itself is not touched or loaded here.
  */

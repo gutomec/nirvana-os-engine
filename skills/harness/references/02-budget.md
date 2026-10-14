@@ -132,7 +132,7 @@ Plus the audit event:
 # per-run hard cap on a dispatch
 nrv dispatch <business> "<brief>" --exec --max-budget=5.00
 
-# routing pre-flight only (fast router)
+# keyword-router diagnostic with budget pre-flight (never dispatches)
 nrv route "manage marketing for client X"
 
 # self-test covers budget.check

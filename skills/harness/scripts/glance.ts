@@ -101,7 +101,7 @@ const executionEnabled = allowActions && execution.value;
 const executionRunner = executionEnabled ? createDispatchExecutionRunner() : undefined;
 // A Message without `use business <slug>:` / `use squad <slug>:` goes through the agentic
 // router before its Run is prepared (business, then squad, then agent-x), as a brief does
-// in the maestro. Same runtime rule as the runner; `routing.mode=fast` keeps agent-x.
+// in the maestro. Same runtime rule as the runner.
 const messageRouter = executionEnabled ? createAgenticMessageRouter() : undefined;
 if (executionEnabled) {
   const probe = detectExecutionRuntime();

@@ -7,7 +7,7 @@
 // (lib/dispatch-cascade.ts) is in code: Business → Squad → agent-x — a
 // NO_MATCH dispatches the generalist instead of exiting, a squad-only route
 // actually DISPATCHES the squad (lib/squad-exec.ts), and the router-failure
-// ladder (retry → BM25 → agent-x) keeps the brief from stalling.
+// ladder (retry → agent-x, never BM25) keeps the brief from stalling.
 //
 // Usage:
 //   nrv dispatch <business_slug> "<brief>" --exec
@@ -48,7 +48,7 @@ import { runHeadless, runtimeAvailable, AUTONOMOUS_DIRECTIVE, LEDGER_DEFAULT_TIM
 import { listRuntimes, retiredRuntimeMessage } from "../../_shared/lib/host-agent-driver.ts";
 import { amplify } from "../lib/amplifier.ts";
 import { proxyEnrichBrief } from "../lib/brief-proxy.ts";
-import { resolveRoutingMode, routingModeOrigin } from "../../_shared/lib/routing-mode.ts";
+import { resolveRoutingMode } from "../../_shared/lib/routing-mode.ts";
 import { cardedSquads, creditSoloRun, namedSquadsIn, prepareBusinessSolo, runBusinessSolo } from "../lib/business-solo.ts";
 import { runSoloReviewStage, SERIOUS_EXTRA_ROUNDS, type ReviewPolicy } from "../lib/solo-review.ts";
 import { resolveEntityDir } from "../../_shared/lib/entity-resource-map.ts";
@@ -392,19 +392,6 @@ function c(color: string, text: string): string {
   return noColor ? text : `${(ANSI as any)[color]}${text}${ANSI.reset}`;
 }
 
-// Inherited, not chosen: say so. The keyword router is not advertised to agents
-// any more — not in the help, not in the protocol, not in a worker's prompt. That
-// makes silence dangerous in one direction: a machine carrying `routing.mode:
-// fast` in a config file would route by score forever while the agent driving
-// it has never heard the mode exists and cannot name what it is seeing. So the
-// mode is silent when it is chosen for a run, and loud when it is inherited.
-if (routingMode === "fast" && routingModeOrigin(arg("--mode")) !== "flag") {
-  const from = routingModeOrigin(arg("--mode"));
-  console.error(c("yellow", `  ⚠ routing.mode is 'fast' on this machine${from === "env" ? " (from NIRVANA_ROUTING_MODE)" : " (from a config file)"}.`));
-  console.error(c("yellow", "    Targets are being picked by keyword match instead of by reading the entities, and this run did not ask for that."));
-  console.error(c("yellow", `    Clear it with: nrv config unset routing.mode${from === "env" ? "  — and unset NIRVANA_ROUTING_MODE in your shell" : ""}`));
-}
-
 // ── exec-mode flags ──────────────────────────────────────────────────────
 /** One alias table, shared with USE_* and NIRVANA_HOST_RUNTIME. This used to be
  *  a private ladder that knew five of the nine runtimes, so `--exec=kimi` and
@@ -428,13 +415,12 @@ const scaffoldOnly = process.argv.includes("--scaffold-only");
 const wantHelp = process.argv.slice(2).some(a => a === "--help" || a === "-h");
 const wantZip = process.argv.includes("--zip");
 const wantPdf = process.argv.includes("--pdf");
-// HTML report is the DEFAULT (skipped only in fast mode or with --no-html). --html
-// stays as a no-op alias for compat. --offline-snapshot inlines the CDN assets.
+// --offline-snapshot inlines the CDN assets.
 // The HTML report is produced ON REQUEST, never by default. It used to run on
 // every delivery, and on a customer VPS it shipped 81 KB that held none of the
 // delivered work and all of the run's instrumentation. A deliverable nobody
 // asked for is a deliverable nobody checks.
-const wantHtml = process.argv.includes("--html") && routingMode !== "fast";
+const wantHtml = process.argv.includes("--html");
 const skipHtml = !wantHtml;
 const autoBriefEq = process.argv.find(a => a.startsWith("--auto-brief="));
 const autoBriefMode = autoBriefEq ? autoBriefEq.split("=")[1] : (process.argv.includes("--auto-brief") ? "inferred" : null);
@@ -620,9 +606,12 @@ for (const [i, a] of cliArgs.entries()) {
   }
 }
 if (wantExec && scaffoldOnly) refuse("--exec and --scaffold-only are mutually exclusive: run it, or only prepare it");
-if (cliArgs.some(a => a === "--mode" || a.startsWith("--mode=")) && !["agentic", "cards", "fast"].includes((arg("--mode") ?? "").trim().toLowerCase())) {
-  // The keyword mode is accepted but not offered (fast-is-not-advertised.test.ts).
-  refuse(`--mode expects agentic or cards (got '${arg("--mode") ?? ""}')`);
+if (cliArgs.some(a => a === "--mode" || a.startsWith("--mode="))) {
+  const mode = (arg("--mode") ?? "").trim().toLowerCase();
+  // The keyword router no longer decides who executes (measured 2026-10-13: AMBIGUOUS
+  // on 42 of 48 labeled requests); BM25 only builds shortlists (`nrv find`).
+  if (mode === "fast") refuse("--mode=fast was retired: the keyword match never decides who executes. Use --mode=cards or --mode=agentic, or `nrv find` to see the keyword shortlist");
+  if (!["agentic", "cards"].includes(mode)) refuse(`--mode expects agentic or cards (got '${arg("--mode") ?? ""}')`);
 }
 for (const [flag, value, valid, expects] of [
   ["--max-budget", maxBudget, (v: string) => v.trim() !== "" && Number.isFinite(Number(v)) && Number(v) >= 0, "an amount in USD, 0 or more"],
@@ -743,7 +732,7 @@ if (runtimeDecision.unavailable) {
 }
 // Whatever the source, the runtime that will run the work (or the --auto
 // router) has to be here. Checked once, before anything exists.
-if ((wantExec || (autoMode && routingMode !== "fast")) && !runtimeAvailable(runtimeDecision.runtime)) {
+if ((wantExec || autoMode) && !runtimeAvailable(runtimeDecision.runtime)) {
   const installed = installedRuntimes();
   refuse(`runtime '${runtimeDecision.runtime}' (${runtimeDecision.source === "default" ? (detectedHost ? "this session" : envDefault ? "execution.default_runtime" : "the default") : runtimeDecision.source}) is not installed on this machine. `
     + `Installed: ${installed.length ? `${installed.join(", ")}. Install it, or pass --runtime with one of those` : "none. Install a supported runtime"} (\`nrv doctor\` shows which runtimes work).`);
@@ -984,26 +973,6 @@ if (runtimeDecision.source === "brief") {
 // DELEGATING sub-tasks ("" when there are no rules = no-op).
 const rulesDirective = formatRulesForDirective(runtimeRules);
 
-// Fast BM25 business pick — used by --mode=fast AND as the router-failure
-// fallback rung of the cascade ladder.
-async function fastBm25Business(briefText: string): Promise<{ slug: string | null; signal: string }> {
-  let picked: string | null = null;
-  let signal = "";
-  try {
-    const router = requireCjs("../lib/router.js");
-    const r = await router.route(briefText, { prefer: "business" });
-    const s3 = (r && r.stage3) || {};
-    signal = String(s3.signal || "");
-    const m = (s3.target && s3.target.meta) || {};
-    if (m.type === "business_route") picked = m.slug || null;
-    else if (m.type === "business") picked = m.slug || m.business || null;
-    else if (typeof m.business === "string") picked = m.business;
-  } catch (e: any) {
-    console.error(c("yellow", `  fast route error: ${e?.message || e}`));
-  }
-  return { slug: picked, signal };
-}
-
 // --auto: agentic routing → dispatch cascade (Business → Squad → agent-x).
 // The router decision maps to a plan in lib/dispatch-cascade.ts; squad-only
 // and agent-x routes are DEFERRED until after brief enrichment below (their
@@ -1016,22 +985,6 @@ let autoOptionalSquads: string[] = [];
 // squad, agent-x) offers them when the request names none of its own; before,
 // the routers computed them and nothing downstream read them.
 let autoSuggestedClones: string[] = [];
-/**
- * Corpus language mix, for the fast-mode notice. Best-effort and cached by the
- * process: a warning must never cost the dispatch it is warning about.
- */
-let _mixCache: { enPct: number; ptPct: number; minorityPct: number } | null | undefined;
-function corpusLanguageMix(): { enPct: number; ptPct: number; minorityPct: number } | null {
-  if (_mixCache !== undefined) return _mixCache;
-  try {
-    const { corpusMix } = require("../../_shared/lib/corpus-language.ts");
-    const registries = require("../lib/registry-loader.js").loadAll();
-    const m = corpusMix(registries);
-    _mixCache = m ? { enPct: m.enPct, ptPct: m.ptPct, minorityPct: m.minorityPct } : null;
-  } catch { _mixCache = null; }
-  return _mixCache;
-}
-
 let pendingCascade:
   | { kind: "squad-only"; squads: string[]; plan: DispatchPlan }
   | { kind: "agent-x"; reason: string; plan: DispatchPlan }
@@ -1055,35 +1008,6 @@ if (briefTarget) {
     console.log(c("lime", "▶") + c("bold", ` Target named in the brief — squad ${step.slug}`) + c("dim", " (no router)"));
     pendingCascade = { kind: "squad-only", squads: [step.slug!], plan };
   }
-} else if (autoMode && routingMode === "fast") {
-  // fast mode: BM25 business pick, zero-token. Honest fallback when BM25 can't
-  // confidently choose a business (most businesses lack auto_routes yet).
-  console.log(c("lime", "▶") + c("bold", " Auto-route — fast (BM25, zero-token)"));
-  // Say what the cheap path costs, when it costs it.
-  //
-  // BM25 matches tokens, so a brief and an entity written in different languages
-  // share none and never meet. The agentic default does not have this problem —
-  // it reads and reasons — but fast is lexical by definition, and on a corpus
-  // written in more than one language the user's language quietly decides the
-  // answer. Measured on 20 held-out paraphrase pairs: 25% of them reach the same
-  // destination in Portuguese and in English.
-  //
-  // Printed only when the corpus is actually mixed, so a single-language library
-  // never sees a warning that does not apply to it.
-  const mix = corpusLanguageMix();
-  if (mix && mix.minorityPct >= 15) {
-    console.log(c("yellow", "  ⚠") + c("dim", ` fast is lexical: this library is ${mix.enPct}% English / ${mix.ptPct}% Portuguese,`));
-    console.log(c("dim", `     so a brief written in one of them can miss entities declared in the other.`));
-    console.log(c("dim", `     --mode=agentic reads instead of matching, and does not care which language you use.`));
-  }
-  const fast = await fastBm25Business(brief);
-  if (!fast.slug) {
-    console.error(c("red", `✗ --auto (fast): BM25 did not confidently pick a business (signal ${fast.signal || "n/a"}; most businesses still have no auto_routes). Name the business, or use --mode=agentic.`));
-    process.exit(1);
-  }
-  slug = fast.slug;
-  console.log(c("lime", "  →") + c("bold", ` ${slug}`) + c("dim", ` (BM25 · signal ${fast.signal})`));
-  emit("auto_route_selected", { project_id: projectId || null, business_slug: slug, method: "fast" });
 } else if (autoMode) {
   // agentic (default): an LLM with Read+Bash+Grep inspects the brief AND the
   // registries and returns the structured routing contract. The user's
@@ -1159,11 +1083,10 @@ if (briefTarget) {
     console.log(c("dim", `  router suggested ${decision.runtime}; staying on ${runtimeDecision.runtime} (${why})`));
   }
 
-  // Dispatch cascade: decision → plan (retry → BM25 → agent-x on transport
-  // failure; ambiguous → TTY choice or autopick; no_match → agent-x).
+  // Dispatch cascade: decision → plan (retry → agent-x on transport failure,
+  // never BM25; ambiguous → TTY choice or autopick; no_match → agent-x).
   const plan = await planRouteWithFallback(decision, {
     routeOnce,
-    fastRoute: async () => (await fastBm25Business(brief)).slug,
     onRouterFailure: harnessConfig.routing.on_router_failure,
     strictRoute,
     isTTY: !!process.stdin.isTTY && !!process.stdout.isTTY && !noColor,
@@ -2357,7 +2280,7 @@ if (wantExec) {
               projectDir: projDir, projectRoot, outputsRoot: oroot, skillsRoot: SKILLS,
               sessionFile, sessionData, rulesDirective, maxBudgetUsd: budget.candidateBudgetUsd,
               timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined, yolo, wantPdf, skipHtml,
-              offlineSnapshot: process.argv.includes("--offline-snapshot"), routingMode, wantZip, emit,
+              offlineSnapshot: process.argv.includes("--offline-snapshot"), wantZip, emit,
               log: message => console.log(c("lime", message)), warn: message => console.error(c("yellow", message)) });
             finalDelivery = runDelivery({ ...deliveryArgs({ pid, slugOrNull: slug, targetKind: "business", rt, oroot,
               projDir, projectRoot, sessionId, withManifest: true, afterGate, produces: businessProduces,
@@ -2512,7 +2435,7 @@ if (wantExec) {
       sessionFile, sessionData, rulesDirective, maxBudgetUsd: effectiveBudgetUsd(),
       timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
       yolo, wantPdf, skipHtml, offlineSnapshot: process.argv.includes("--offline-snapshot"),
-      routingMode, wantZip, emit,
+      wantZip, emit,
       ...(ledgerRunId ? { ledger: { runId: ledgerRunId, watchDir: oroot } } : {}),
       log: message => console.log(c("lime", message)),
       warn: message => console.error(c("yellow", message)),
