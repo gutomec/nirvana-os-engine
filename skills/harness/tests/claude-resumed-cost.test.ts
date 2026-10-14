@@ -5,8 +5,8 @@
 // resumes (nrv revise, delivery-pipeline revision rounds, solo review
 // corrections: all through runHeadless; maestro chat turns: startMaestroTurn)
 // records the difference from the session's last total instead.
-// Hermetic: fake `claude` CLIs that report cumulative totals; the ledger is the
-// per-test one skills/test-preload.ts points at. No LLM, no network.
+// Hermetic: fake `claude` CLIs that report cumulative totals; the ledger is this
+// file's own (see below). No LLM, no network.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -17,6 +17,23 @@ import { openLedger, recordSessionCostTotal, sessionCostTotal } from "../lib/run
 import { startMaestroTurn } from "../lib/control-plane/maestro-turn.ts";
 import { writeFakeCli } from "./helpers/fake-cli.ts";
 import { spawnBudgetMs } from "./helpers/test-budgets.ts";
+
+// This file's own ledger, not the one skills/test-preload.ts points at. bun runs
+// every test file in one process, and several files (business-liveness,
+// driver-ledger-heartbeat, serve-*, supervisor-sweep) set NIRVANA_RUN_LEDGER_DB
+// at load time, open it, delete their temp dir in afterAll and never restore the
+// variable. openLedger() caches its handle by path, so a file running after one
+// of them got the cached handle of a deleted SQLite file: "disk I/O error" on
+// the first write. A fresh path here has no cached handle, whatever ran before.
+const LEDGER_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-resumed-cost-ledger-"));
+const LEDGER_ENV_BEFORE = process.env.NIRVANA_RUN_LEDGER_DB;
+beforeAll(() => { process.env.NIRVANA_RUN_LEDGER_DB = path.join(LEDGER_DIR, "run-ledger.sqlite"); });
+afterAll(() => {
+  try { openLedger().close(); } catch { /* never opened */ }
+  if (LEDGER_ENV_BEFORE === undefined) delete process.env.NIRVANA_RUN_LEDGER_DB;
+  else process.env.NIRVANA_RUN_LEDGER_DB = LEDGER_ENV_BEFORE;
+  try { fs.rmSync(LEDGER_DIR, { recursive: true, force: true }); } catch { /* best-effort */ }
+});
 
 function memoryStore(seed: Record<string, number> = {}): SessionCostStore & { data: Map<string, number> } {
   const data = new Map(Object.entries(seed));
