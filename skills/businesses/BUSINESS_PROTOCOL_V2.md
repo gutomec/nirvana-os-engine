@@ -781,6 +781,7 @@ Debt is reserved for pipeline facts (`seat_thin`, `self_retrieval_miss`) and for
 | `surface_stale` | mechanical | no | `.nirvana-surface.json` differs from the extraction |
 | `operation_mode_unsupported` | none | no | `operation_mode` other than `zero_human`, not honored (§12) |
 | `legacy_partial` | none | no | The `legacy` block is present and incomplete |
+| `manifest_clone_unresolved` | none | no | A clone `business.yaml` names in `dna.required` or `dna.optional` is not in the library |
 
 ### 16.3 Command
 
