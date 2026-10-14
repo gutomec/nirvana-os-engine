@@ -2551,6 +2551,7 @@ module.exports = {
   buildAliasMap,
   loadKeywordAliases,
   resolveDestination,
+  detectTargetMention,
   exposeAlternatives,
   STAGE2_TOPK,
   EXPOSED_ALTERNATIVES_MAX,

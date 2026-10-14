@@ -7,8 +7,9 @@
 // brief against it. Drives the "if not requested, search for a useful clone"
 // step of the resolution order.
 
+import * as fs from "node:fs";
 import * as path from "node:path";
-import { loadCloneRegistry } from "./clone-resolver.ts";
+import { cloneRegistryPath, loadCloneRegistry } from "./clone-resolver.ts";
 
 // Reuse the canonical BM25 engine the router uses (same tokenizer + scoring).
 const bm25 = require(path.join(import.meta.dir, "..", "..", "harness", "lib", "bm25.js"));
@@ -146,6 +147,46 @@ function toHit(h: any, briefTokens: string[]): CloneHit {
   };
 }
 
+/** The corpus of one registry file, parsed once per content: a dispatch asks
+ *  for clones several times (the seat voices, the search, each part), and
+ *  parsing 657 clones and indexing them took ~100 ms a time. Keyed by the
+ *  file's path and a hash of its bytes, so a rewritten registry is never served
+ *  stale, whatever the file system's mtime resolution. */
+type LoadedCorpus = { hash: string; docs: Array<ReturnType<typeof cloneDoc>>; indexes: Map<string, unknown> };
+const corpora = new Map<string, LoadedCorpus>();
+/** Past this many `only` subsets per registry the oldest index is dropped. */
+const MAX_INDEXES_PER_REGISTRY = 64;
+
+function loadedCorpus(cwd?: string): LoadedCorpus | null {
+  const file = cloneRegistryPath({ cwd });
+  let raw: string;
+  try { raw = fs.readFileSync(file, "utf8"); } catch { return null; }
+  const hash = String(Bun.hash(raw));
+  const hit = corpora.get(file);
+  if (hit && hit.hash === hash) return hit;
+  let reg: Record<string, any> = {};
+  try { reg = JSON.parse(raw).mind_clones || {}; } catch { /* unreadable: an empty corpus */ }
+  const entry: LoadedCorpus = { hash, docs: Object.values(reg).map(cloneDoc), indexes: new Map() };
+  corpora.set(file, entry);
+  return entry;
+}
+
+/** The BM25 index over the whole corpus, or over `only` (a business's seat voices). Null when empty. */
+function cloneIndex(cwd: string | undefined, only?: string[]): unknown | null {
+  const corpus = loadedCorpus(cwd);
+  if (!corpus) return null;
+  const key = only ? [...new Set(only)].sort().join("\n") : "*";
+  let idx = corpus.indexes.get(key);
+  if (idx === undefined) {
+    const keep = only ? new Set(only) : null;
+    const docs = corpus.docs.filter((d) => !keep || keep.has(d.slug));
+    idx = docs.length ? bm25.buildIndex(docs) : null;
+    if (corpus.indexes.size >= MAX_INDEXES_PER_REGISTRY) corpus.indexes.delete(corpus.indexes.keys().next().value!);
+    corpus.indexes.set(key, idx);
+  }
+  return idx as unknown | null;
+}
+
 /** Rank clones by usefulness for a brief. Returns up to `limit` hits, each
  *  annotated with the router-mirroring coverage gate (`coverage` +
  *  `below_gate`) — injection consumers (the squad runner)
@@ -157,13 +198,9 @@ export function findCloneForTask(
   brief: string,
   opts: { limit?: number; minNormalized?: number; cwd?: string; gateQuery?: string; only?: string[] } = {},
 ): CloneHit[] {
-  const reg = loadCloneRegistry({ cwd: opts.cwd });
-  // `only`: rank these clones and no others (a business's seat voices).
-  const only = opts.only ? new Set(opts.only) : null;
-  const docs = Object.values(reg).filter((c: any) => !only || only.has(c.slug)).map(cloneDoc);
-  if (!docs.length || !brief) return [];
-
-  const idx = bm25.buildIndex(docs);
+  if (!brief) return [];
+  const idx = cloneIndex(opts.cwd, opts.only);
+  if (!idx) return [];
   const hits = bm25.query(idx, brief, { topK: opts.limit || 8 });
   const minNorm = opts.minNormalized != null ? opts.minNormalized : 0;
   // `gateQuery`: the text coverage is measured against when it is narrower than

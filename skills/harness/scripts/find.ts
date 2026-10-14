@@ -19,83 +19,13 @@ import * as path from "node:path";
 import { createRequire } from "node:module";
 import { EXIT } from "../../_shared/lib/bun-helpers.ts";
 import { preflightReindex } from "../lib/preflight-index.ts";
-import { businessCard, squadCard } from "../lib/routing-cards.ts";
-import { buildPeople, scanNames } from "../lib/clone-names.ts";
-import { loadCloneRegistry } from "../../_shared/lib/clone-resolver.ts";
+import { rankShortlist, shortlist, SHORTLIST_SIZE, type Shortlist } from "../lib/shortlist.ts";
+
+export { rankShortlist, shortlist, SHORTLIST_SIZE, type Shortlist };
 
 const require_ = createRequire(import.meta.url);
 const router = require_(path.join(import.meta.dir, "..", "lib", "router.js"));
 const loader = require_(path.join(import.meta.dir, "..", "lib", "registry-loader.js"));
-
-/** How many of each kind the shortlist prints: past eight the recall stopped moving. */
-export const SHORTLIST_SIZE = 8;
-
-export interface Shortlist {
-  named: { kind: "business" | "squad"; slug: string } | null;
-  businesses: Array<{ slug: string; card: string; coverage: string }>;
-  squads: Array<{ slug: string; capability: string | null; card: string; coverage: string }>;
-  clones: { named: string[]; ambiguous: Array<{ name: string; candidates: string[] }>; missing: string[] };
-}
-
-/**
- * Stage-2 matches, best first, split into businesses and squads, one line per
- * destination. Pure: the registries give the cards, the matches the order.
- */
-export function rankShortlist(matches: any[], registries: any, size = SHORTLIST_SIZE): Pick<Shortlist, "businesses" | "squads"> {
-  const bizReg = registries.businesses?.businesses ?? {};
-  const sqReg = registries.squads?.squads ?? {};
-  const caps = registries.squads?.capabilities ?? {};
-  const cov = (m: any) => (m?.coverage && typeof m.coverage.matched === "number" ? `${m.coverage.matched}/${m.coverage.total}` : "");
-  const businesses: Shortlist["businesses"] = [];
-  const squads: Shortlist["squads"] = [];
-  for (const m of matches) {
-    const t = m?.meta?.type;
-    if (t === "business" || t === "business_route") {
-      // A business route belongs to its business: the seat it names is not dispatchable alone.
-      const slug = m.meta.slug;
-      if (!slug || businesses.some((b) => b.slug === slug) || businesses.length >= size || !bizReg[slug]) continue;
-      businesses.push({ slug, card: businessCard(slug, bizReg[slug]), coverage: cov(m) });
-    } else {
-      const slug = router.resolveDestination(m);
-      if (!slug || squads.some((s) => s.slug === slug) || squads.length >= size || !sqReg[slug]) continue;
-      const capability = t === "squad_capability" ? (m.meta.capability_id ?? null) : null;
-      squads.push({ slug, capability, card: squadCard(slug, sqReg[slug], caps), coverage: cov(m) });
-    }
-    if (businesses.length >= size && squads.length >= size) break;
-  }
-  return { businesses, squads };
-}
-
-/** Businesses and squads ranked apart, each line its routing card. */
-/** The BM25 index of a registries object, built once: rebuilding it cost ~0.8 s per call. */
-const preparedIndexes = new WeakMap<object, unknown>();
-function preparedFor(registries: any): unknown {
-  let p = preparedIndexes.get(registries);
-  if (!p) { p = router.prepareMatchIndex(registries); preparedIndexes.set(registries, p); }
-  return p;
-}
-
-export async function shortlist(brief: string, registries: any = loader.loadAll(), size = SHORTLIST_SIZE): Promise<Shortlist> {
-  const prepared = preparedFor(registries);
-  const intent = await router.stage1IntentClassify(brief, {});
-  const matches = await router.stage2MatchHybrid(intent, registries, { brief, preparedMatchIndex: prepared, topK: 400 });
-  const { businesses, squads } = rankShortlist(matches, registries, size);
-  let named: Shortlist["named"] = null;
-  try {
-    const decision = await router.route(brief, { registries, amplify: false });
-    const target = decision?.stage3?.route_tier === "explicit_mention" ? decision.stage3.target : null;
-    if (target?.meta?.type === "business") named = { kind: "business", slug: target.meta.slug };
-    else if (target?.meta?.squad) named = { kind: "squad", slug: target.meta.squad };
-  } catch { named = null; }
-  let clones: Shortlist["clones"] = { named: [], ambiguous: [], missing: [] };
-  try {
-    const reg = loadCloneRegistry({}) as Record<string, any>;
-    const people = buildPeople(Object.entries(reg).map(([slug, c]) => ({ slug, name: String(c?.display_name || slug) })));
-    const scan = scanNames(brief, people);
-    clones = { named: scan.matches.map((m) => m.slug), ambiguous: scan.ambiguous, missing: scan.unknown };
-  } catch { /* a library that cannot be read names no clone */ }
-  return { named, businesses, squads, clones };
-}
 
 export function renderShortlist(brief: string, s: Shortlist): string {
   const out: string[] = [`request: ${brief}`, ""];

@@ -167,9 +167,11 @@ export function scanNames(text: string, people: Person[]): NameScan {
   // Words already accounted for by a full name ("Cole" in "Cole Knaflic") are
   // not read again as another person's surname.
   let rest = folded;
-  const afterCue = (word: string) => new RegExp(`(?:^| )${CUE}${FILLER}\\s+${escapeRe(word)}(?= )`).test(rest)
+  // Both tests need the word as a token of the folded text: checking that first
+  // skips building two regexes for each of the ~1,200 indexed names (~260 ms a scan).
+  const afterCue = (word: string) => folded.includes(` ${word} `) && (new RegExp(`(?:^| )${CUE}${FILLER}\\s+${escapeRe(word)}(?= )`).test(rest)
     // "Hormozi's value equation": a possessive is a cue of its own.
-    || new RegExp(`(^|[^\\p{L}])${escapeRe(word)}['’]s\\b`, "iu").test(plain);
+    || new RegExp(`(^|[^\\p{L}])${escapeRe(word)}['’]s\\b`, "iu").test(plain));
   const followedByCapital = (word: string) => {
     for (const m of plain.matchAll(new RegExp(`(^|[^\\p{L}])${escapeRe(word)}\\s+(\\p{L})`, "giu"))) {
       if (m[2] === m[2].toUpperCase() && m[2] !== m[2].toLowerCase()) return true;
