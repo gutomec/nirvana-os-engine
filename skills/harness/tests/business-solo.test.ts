@@ -191,6 +191,19 @@ describe("the prompt", () => {
     expect(fs.readFileSync(prep.squadCards["email-squad"], "utf8")).toContain("Environment problem: bun install failed: offline");
   });
 
+  test("the worker's prompt follows briefing.altitude; outcome adds nothing", () => {
+    const saved = process.env.NIRVANA_BRIEF_ALTITUDE;
+    try {
+      // The variable outranks the machine's own config files, so the case is hermetic.
+      process.env.NIRVANA_BRIEF_ALTITUDE = "outcome";
+      expect(prepareBusinessSolo(baseArgs()).prompt).not.toContain("The brief is");
+      process.env.NIRVANA_BRIEF_ALTITUDE = "prescriptive";
+      expect(prepareBusinessSolo(baseArgs()).prompt).toContain("The brief is prescriptive");
+    } finally {
+      if (saved === undefined) delete process.env.NIRVANA_BRIEF_ALTITUDE; else process.env.NIRVANA_BRIEF_ALTITUDE = saved;
+    }
+  });
+
   test("a business with many authorized squads gets cards for none of them, and their names in the prompt", () => {
     const many = Array.from({ length: 17 }, (_, i) => `sq-${i}`);
     const biz = path.join(TMP, "businesses", "many-squads");

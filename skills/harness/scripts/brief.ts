@@ -3,13 +3,15 @@
 // business (lib/work-brief.ts). The engine writes none of its content; it
 // prints the skeleton, checks the sections and appends a mid-run decision.
 //
-//   nrv brief template                     print the skeleton
+//   nrv brief template                     print the skeleton at the active briefing.altitude
+//                                          (the altitude itself goes to stderr)
 //   nrv brief check <file> [--json]        exit 0 complete · 1 sections missing or empty
 //   nrv brief decide <file> "<decision>"   append a decision the user made while the work runs
 
 import * as fs from "node:fs";
 import { appendDecision, briefProblems, briefTemplate, doneWhenCriteria, parseWorkBrief, type Criterion } from "../lib/work-brief.ts";
 import { resolveSetting } from "../../_shared/lib/settings.ts";
+import { altitudeSummary, resolveBriefAltitude } from "../lib/brief-altitude.ts";
 
 /** Evidence only a visual self-check produces: screenshots, a visual review, a
  *  GUI walked through. Matched in English and Portuguese, the two languages
@@ -46,9 +48,14 @@ function readOrDie(f: string | undefined): string {
 }
 
 switch (sub) {
-  case "template":
-    process.stdout.write(briefTemplate());
+  case "template": {
+    // stdout is the skeleton (it is redirected into the brief file); the
+    // altitude goes to stderr, so the orchestrator reads it on the terminal.
+    const { altitude, source } = resolveBriefAltitude();
+    console.error(`briefing.altitude = ${altitude} (${source}). Write at this altitude: ${altitudeSummary(altitude)}`);
+    process.stdout.write(briefTemplate(altitude));
     break;
+  }
   case "check": {
     const text = readOrDie(file);
     const criteria = doneWhenCriteria(text);

@@ -35,6 +35,7 @@ import { paths } from "../../_shared/lib/bun-helpers.ts";
 import { scopeBoundary, scopeGuard } from "../../_shared/lib/scope-guard.ts";
 import { renderResourceMap } from "../../_shared/lib/entity-resource-map.ts";
 import { resolveSetting } from "../../_shared/lib/settings.ts";
+import { altitudeMethodSentence, briefAltitude, type BriefAltitude } from "./brief-altitude.ts";
 import { preflightWarnings, squadPreflight } from "../../_shared/lib/squad-preflight.ts";
 import { squadEnvLines, squadRunEnv } from "../../_shared/lib/squad-env.ts";
 
@@ -427,6 +428,9 @@ export function buildSquadPrompt(args: {
   /** The squad's environment lines (squad-env.ts squadEnvLines): its Python,
    *  and any install failure. Empty or absent leaves the prompt unchanged. */
   envLines?: string[];
+  /** briefing.altitude: the sub-task's sentence on method. Absent or outcome
+   *  keeps the historical sentence. */
+  altitude?: BriefAltitude;
 }): string {
   const { squadSlug, squadDir, brief, outDir, cloneInjection: cloneInj } = args;
   const readIfExists = (p: string) => fs.existsSync(p) ? fs.readFileSync(p, "utf8") : "";
@@ -498,7 +502,7 @@ ${cloneInj.block || "(no clone for this task: operate with the squad's default s
 ${brief}
 
 ## YOUR SUB-TASK
-Run YOUR specialty applied to the brief above. Write your deliverables under \`${outDir}\`, in the format your specialty calls for. When the brief's work lives in another folder (a project to review or fix, a new project to create), do that work there and list every path you created or changed. If the deliverable includes images, they are really generated images, never a placeholder or a generic SVG. Method and tools are yours. Deliverables follow the language of the request. Do not invoke the harness skill, and do not run \`nrv run\`/\`nrv dispatch\` for this same brief (anti-loop).
+Run YOUR specialty applied to the brief above. Write your deliverables under \`${outDir}\`, in the format your specialty calls for. When the brief's work lives in another folder (a project to review or fix, a new project to create), do that work there and list every path you created or changed. If the deliverable includes images, they are really generated images, never a placeholder or a generic SVG. ${altitudeMethodSentence(args.altitude ?? "outcome")} Deliverables follow the language of the request. Do not invoke the harness skill, and do not run \`nrv run\`/\`nrv dispatch\` for this same brief (anti-loop).
 ${args.envLines?.length ? `\n${args.envLines.join("\n")}\n` : ""}
 If the brief mentions you by name (e.g. "use the ${squadSlug} squad"), prioritize doing EXACTLY what the user asked in that paragraph. The user decides.
 
@@ -570,6 +574,7 @@ export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
     squadSlug: args.squadSlug, squadDir, brief: args.brief, outDir,
     cloneInjection: cloneInj, capabilityId: args.capabilityId,
     traceId: args.projectId, envLines: squadEnvLines(args.squadSlug, args.envProblems),
+    altitude: briefAltitude({ cwd: args.projectRoot }),
   });
 
   appendAudit({
