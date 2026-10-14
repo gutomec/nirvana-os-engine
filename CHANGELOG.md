@@ -9,6 +9,9 @@ one-line installers and pack setups consume.
 ## Unreleased
 
 - Docs: INSTALL.md and the six READMEs cover the install on macOS, Windows, WSL and Linux, the beta tag `v0.15.0-beta.7`, pack setup, squad activation, per-project brief settings, going back to stable and common errors; Windows commands use single quotes only.
+- Licenses: a Genesis Circle key covers every pack wherever it sits in the license store. Readers (`nrv update <pack>`, `nrv license --pack`, `nrv doctor`) look for the pack's own file, then `~/.nirvana-license/packs/genesis-circle/`, then the legacy single file. A pack's `setup.ts` and `nrv license install` no longer overwrite a Genesis Circle license in the legacy file with another pack's, and setup gives that Genesis license its own copy; Genesis itself still writes both. Before, installing Genesis before the per-pack copies existed and then another pack (web-design) made the doctor and `nrv update` refuse every other pack. When no license is usable, the doctor's message now adds "If you own Genesis Circle, run its setup again". `setup.ts` ships inside every pack zip, so the base packs need a rebuild to carry it.
+- `nrv init`: an on-demand note now ends at its own last line, so lines the user wrote after it (0.14's note included) survive a re-init in either mode.
+- `briefing.altitude` now shapes the brief and the worker prompts, not only the delivery check. `nrv brief template` prints the active altitude on stderr and adds `## Suggested structure` (guided) or `## Method` with one criterion per item and every artifact (prescriptive); the business worker's prompt, the squad worker's prompt and the `--auto-brief=proxy` enrichment prompt say how to read a brief at that altitude; the harness `SKILL.md` tells the orchestrator to write at it. At `outcome`, the default, every output is the one it was.
 
 ## 0.15.0-beta.7 — 2026-10-14
 
