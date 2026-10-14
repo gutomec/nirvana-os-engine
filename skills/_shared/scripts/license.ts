@@ -21,7 +21,7 @@ import { createPublicKey, createHash, verify as edVerify } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync, readdirSync, statSync, realpathSync } from "node:fs";
 import { homedir, hostname, platform, arch } from "node:os";
 import { join, dirname, resolve } from "node:path";
-import { findProvenance as findStoredProvenance, isPackSlug, packLicenseDir } from "../lib/license-store.ts";
+import { findProvenance as findStoredProvenance, GENESIS_EDITION, isPackSlug, packLicenseDir, provenanceEdition } from "../lib/license-store.ts";
 
 // Nirvana's PUBLIC key (Ed25519 pair; the PRIVATE one lives only on the production VPS).
 // Safe to embed: it only serves to VERIFY signatures, never to sign.
@@ -286,15 +286,18 @@ async function install(explicit?: string): Promise<number> {
     } catch { return false; }
   };
   const ownStore = packDir ? join(packDir, "PROVENANCE.json") : null;
-  const same = sameAs(STORE_PROV) && (!ownStore || sameAs(ownStore));
+  // A Genesis Circle key in the legacy file unlocks every pack, and older
+  // engines read only that file: another pack's license never replaces it.
+  const keepLegacy = Boolean(packDir) && provenanceEdition(STORE_PROV) === GENESIS_EDITION && provenanceEdition(src) !== GENESIS_EDITION;
+  const same = (keepLegacy || sameAs(STORE_PROV)) && (!ownStore || sameAs(ownStore));
   if (same) {
-    console.log(`${DIM}Already installed at ${STORE_PROV}.${RST}`);
+    console.log(`${DIM}Already installed at ${keepLegacy && ownStore ? ownStore : STORE_PROV}.${RST}`);
     return 0;
   }
 
   try {
     const notice = join(dirname(src), "LICENSE.txt");
-    for (const dir of [packDir, LICENSE_DIR]) {
+    for (const dir of [packDir, keepLegacy ? null : LICENSE_DIR]) {
       if (!dir) continue;
       const dest = join(dir, "PROVENANCE.json");
       mkdirSync(dir, { recursive: true });
@@ -307,7 +310,8 @@ async function install(explicit?: string): Promise<number> {
     return 1;
   }
 
-  console.log(`${GRN}✓${RST} license installed: ${src} → ${STORE_PROV}`);
+  console.log(`${GRN}✓${RST} license installed: ${src} → ${keepLegacy && ownStore ? ownStore : STORE_PROV}`);
+  if (keepLegacy) console.log(`${DIM}The Genesis Circle license at ${STORE_PROV} was kept: it covers every pack.${RST}`);
   // Report what it is, without gatekeeping: an unsigned copy is still theirs.
   printStatus(verifyProvenance());
   console.log(`${DIM}Now "nrv update <pack>" can find the license.${RST}`);
