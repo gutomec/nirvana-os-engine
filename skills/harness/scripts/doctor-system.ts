@@ -1026,7 +1026,7 @@ if (installedPacks.length === 0) {
   // then the Genesis Circle copy (its key unlocks every pack), then the single
   // legacy file (an install from before the per-pack copies).
   const genesisCopy = genesisProvenancePath(HOME);
-  const genesisHint = ` If you own Genesis Circle, run its setup again (bun setup.ts in its folder).`;
+  const genesisHint = ` If you own Genesis Circle, run its setup again from the pack folder: bash setup.sh (macOS, Linux, WSL) or powershell -ExecutionPolicy Bypass -File setup.ps1 (Windows).`;
   for (const slug of names) {
     const own = packProvenancePath(slug, HOME);
     const file = own && fs.existsSync(own) ? own : fs.existsSync(genesisCopy) ? genesisCopy : licStore;
