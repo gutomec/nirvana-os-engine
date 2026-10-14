@@ -123,7 +123,9 @@ export function estimateCostUsd(runtime: Runtime, model: string | null, r: RunHe
     return r.costUsd;
   }
   // For the other runtimes (and claude-code when costUsd is null), estimate via tokens.
-  const price = priceFor(model);
+  // The model the runner itself passed (agy: its `--model`) when the caller
+  // had none, e.g. a cascade entry without a model and a pinned system model.
+  const price = priceFor(model ?? r.model ?? null);
   if (!price) return null;
   const [inUsd, outUsd, cachedUsd] = price;
   // The CLI's own usage object wins over scraping the text: it carries the

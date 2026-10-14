@@ -44,6 +44,26 @@ describe("antigravity-cli runner", () => {
     expect(r.usage).toEqual({ inputTokens: 1_000_000, cachedInputTokens: 400_000, cacheWriteInputTokens: 0, outputTokens: 300_000, reasoningOutputTokens: 100_000 });
   }, spawnBudgetMs(1));
 
+  test("a run given --model is priced by the driver itself, and says it is an estimate", () => {
+    const r = runHeadless({ runtime: "antigravity-cli", prompt: "do it", cwd: TMP, timeoutMs: 20_000, model: "gemini-3-pro" });
+    expect(r.ok, r.error ?? r.stderr).toBe(true);
+    expect(r.model).toBe("gemini-3-pro");
+    expect(r.costUsd).toBeCloseTo(1.25 + 3.0, 6);
+    expect(r.costEstimated).toBe(true);
+    // agy itself still reported no USD.
+    expect(r.costUnavailable).toBe(true);
+    // The cascade's estimator, given no model of its own, reads the run's.
+    expect(estimateCostUsd("antigravity-cli", null, r)).toBeCloseTo(1.25 + 3.0, 6);
+  }, spawnBudgetMs(1));
+
+  test("a model the price table does not know leaves the cost unknown, never $0", () => {
+    const r = runHeadless({ runtime: "antigravity-cli", prompt: "do it", cwd: TMP, timeoutMs: 20_000, model: "some-unpriced-model" });
+    expect(r.ok, r.error ?? r.stderr).toBe(true);
+    expect(r.costUsd).toBeNull();
+    expect(r.costEstimated).toBeUndefined();
+    expect(r.costUnavailable).toBe(true);
+  }, spawnBudgetMs(1));
+
   test("the estimator prices it once the model is known", () => {
     const r = runHeadless({ runtime: "antigravity-cli", prompt: "do it", cwd: TMP, timeoutMs: 20_000 });
     // gemini-3-pro: $1.25 in / $10 out per million, no cached rate in the table.

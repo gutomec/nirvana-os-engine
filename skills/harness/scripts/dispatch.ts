@@ -925,6 +925,13 @@ function effectiveBudgetUsd(): number | undefined {
 function chargeRunBudget(costUsd: number | null | undefined): void {
   const ceiling = ownerCeilingUsd();
   if (ceiling === undefined) return;
+  // A runtime that reports no cost (agy without a priced model, codex, qwen)
+  // is charged as $0, the engine's fail-open rule for unknown cost
+  // (cost-estimator.ts, run-budget.ts). Said every time, so the owner never
+  // reads the ceiling as covering a child it could not measure.
+  if (typeof costUsd !== "number" || !Number.isFinite(costUsd)) {
+    console.error(c("yellow", "⚠") + ` this step's cost is unknown (its runtime reports none); the $${ceiling} run ceiling does not count it.`);
+  }
   const key = runBudgetKey();
   runBudget.charge(PROJECT_ROOT, key, runBudget.open(PROJECT_ROOT, key, ceiling), costUsd);
 }

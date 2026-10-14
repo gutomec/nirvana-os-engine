@@ -63,6 +63,7 @@ import { childDepth, currentDepth, currentRole, DEFAULT_MAX_DEPTH, DEPTH_ENV, ma
 import { runOrcaWorker } from "./orca-worker.ts";
 import { confineToWorkspace, FENCE_FILE_PREFIX, RUN_WORKSPACE_ENV } from "./run-workspace.ts";
 import { claudeRunCost } from "./claude-session-cost.ts";
+import { estimateCostUsd } from "../../harness/lib/cost-estimator.ts";
 
 /** `execution.child_env`. The variable NIRVANA_CHILD_ENV wins over any file
  *  (settings precedence), which is how a child that was itself filtered — it
@@ -122,6 +123,11 @@ export const MAX_ARGV_PROMPT_BYTES = process.platform === "win32" ? 6_000 : 100_
  * project or global config, keeps every headless child on its CLI's own
  * approval path; anything else, unset included, is the autonomous default. */
 export const HEADLESS_SKIP_PERMISSIONS_ENV = "NIRVANA_HEADLESS_SKIP_PERMISSIONS";
+
+/** Stamped on the environment of an answer-only child (`noTools`): a call that
+ *  returns a decision and runs no tool, such as the routers. Read by Nirvana's
+ *  agy hook (gemini-session-start.ts), which then injects nothing. */
+export const ANSWER_ONLY_ENV = "NIRVANA_ANSWER_ONLY";
 
 /** True unless the setting (env > project > global config) disables headless autonomy. */
 export function headlessSkipPermissions(): boolean {
@@ -1190,7 +1196,7 @@ export interface RunHeadlessOpts {
   /** Tool allowlist. Default: file + web tools, no Bash. */
   allowedTools?: string[];
   /** An answer-only call: the child gets no tools at all where the CLI can
-   *  say so (claude `--tools ""`, codex's read-only sandbox). A decision step that only returns JSON has nothing to do with a
+   *  say so (claude `--tools ""`, codex's read-only sandbox, agy's plan mode without the bypass). A decision step that only returns JSON has nothing to do with a
    *  tool, and a model holding tools reports its work instead of answering.
    *  Runtimes without such a switch run as before; the caller contains them
    *  with an empty working directory. */
@@ -1373,6 +1379,13 @@ export interface RunHeadlessResult {
    * (spend-tracker / cost-estimator) may still ESTIMATE from token counts;
    * this flag only states the CLI did not say. */
   costUnavailable?: boolean;
+  /** True when `costUsd` is NOT the CLI's figure but the engine's estimate from
+   *  the reported token counts and the model's price (agy reports tokens only).
+   *  `costUnavailable` stays true beside it: the CLI itself said nothing. */
+  costEstimated?: boolean;
+  /** The model the run used, when the runner knows it (the `--model` it passed,
+   *  or a name in the CLI's output). Lets a later estimate price the tokens. */
+  model?: string;
   /** Token usage as the CLI itself reported it (codex `turn.completed.usage`).
    * `cachedInputTokens` is the cached SUBSET of `inputTokens`, as OpenAI counts
    * it; the cost estimator prices the two parts differently. */
@@ -2023,8 +2036,9 @@ function runAntigravity(opts: RunHeadlessOpts): RunHeadlessResult {
   // Output formats: "json" (single object) or "stream-json" (NDJSON events).
   // We use single-object json for parity with runClaudeCode.
   // Resume = --continue (most recent conversation); we can't set our own id
-  // upfront. Autonomy = --dangerously-skip-permissions (without it agy hangs
-  // waiting for approval).
+  // upfront. Autonomy = --dangerously-skip-permissions (without it headless agy
+  // auto-denies every tool that needs a permission; answer-only calls rely on
+  // exactly that, below).
   //
   // --output-format json: under non-TTY, `agy -p` in TEXT mode can drop the
   // final response from stdout (documented terminal-render bug); JSON does not
@@ -2046,7 +2060,16 @@ function runAntigravity(opts: RunHeadlessOpts): RunHeadlessResult {
   if (opts.sessionId) args.push(...(resumeById ? ["--conversation", opts.sessionId!] : ["--continue"]));
   const agyModel = opts.model ?? resolveSystemModel("antigravity-cli");
   if (agyModel) args.push("--model", agyModel);
-  if (opts.yolo !== false) args.push("--dangerously-skip-permissions");
+  // An answer-only call (the routers) runs in agy's plan mode and never with
+  // the bypass, whatever execution.headless_skip_permissions says. Live on agy
+  // 1.3.3 (2026-10-13): `--mode plan` without --dangerously-skip-permissions
+  // answers a JSON-only prompt normally (exit 0, `response` holds it), and a
+  // tool that needs a permission (write_file, command) is auto-denied: exit 0,
+  // empty `response`, `denied_actions` naming it, nothing written. Never
+  // together with `--disable-slash-commands`: agy warns that plan mode "has no
+  // effect while slash command expansion is disabled".
+  if (opts.noTools) args.push("--mode", "plan");
+  else if (opts.yolo !== false) args.push("--dangerously-skip-permissions");
   for (const d of opts.addDirs ?? []) args.push("--add-dir", d);
 
   const spawnOpts = {
@@ -2072,6 +2095,7 @@ function runAntigravity(opts: RunHeadlessOpts): RunHeadlessResult {
   let envelopeError: string | null = null;
   let costUsd: number | null = null;
   let usage: RunHeadlessResult["usage"];
+  let reportedModel: string | null = null;
   try {
     const j = JSON.parse(rawStdout);
     sessionId = j.session_id || j.sessionId || j.conversation_id || sid;
@@ -2100,7 +2124,15 @@ function runAntigravity(opts: RunHeadlessOpts): RunHeadlessResult {
     // Failure contract: is_error / error in the envelope = failed run.
     if (j.is_error === true) envelopeError = envelopeErrorMessage(j.error) || "agy returned is_error";
     else if (j.error != null) envelopeError = envelopeErrorMessage(j.error);
+    // A tool headless agy cannot ask about was auto-denied and the model gave
+    // no answer: exit 0, `status: SUCCESS`, `response: ""` and `denied_actions`
+    // (agy 1.3.3). That is a failed run, not an empty success, and it is not
+    // re-run: the same prompt asks for the same tool.
+    else if (result.trim() === "" && Array.isArray(j.denied_actions) && j.denied_actions.length) {
+      envelopeError = agyDeniedActionsError(j.denied_actions);
+    }
     if (typeof j.total_cost_usd === "number" && Number.isFinite(j.total_cost_usd)) costUsd = j.total_cost_usd;
+    if (typeof j.model === "string" && j.model) reportedModel = j.model;
   } catch { /* plain text — keep the whole stdout */ }
 
   // A resume by id that agy did not honour. agy 1.3.3 answers an unknown
@@ -2110,15 +2142,40 @@ function runAntigravity(opts: RunHeadlessOpts): RunHeadlessResult {
   const lost = resumeById ? agyResumeLost(opts.sessionId!, rawStdout, stderr) : null;
   if (lost) sessionId = lost.newId;
 
+  // No USD in agy's envelope (1.3.3: token counts only, and no model name). The
+  // tokens are priced when the model is known, from the envelope or from the
+  // `--model` this run passed, with the estimator's price table; otherwise the
+  // cost stays null, which every reader shows as unknown, never as $0.
+  const model = reportedModel ?? agyModel ?? null;
+  let costEstimated = false;
+  if (costUsd === null && usage && usage.inputTokens + usage.outputTokens > 0 && model) {
+    costUsd = estimateCostUsd("antigravity-cli", model, { costUsd: null, usage } as RunHeadlessResult);
+    costEstimated = costUsd !== null;
+  }
+
   const ok = exitCode === 0 && envelopeError === null;
   return {
     ok, runtime: "antigravity-cli", sessionId, result,
-    costUsd, ...(costUsd === null ? { costUnavailable: true } : {}),
+    costUsd, ...(costEstimated || costUsd === null ? { costUnavailable: true } : {}),
+    ...(costEstimated ? { costEstimated: true } : {}),
+    ...(model ? { model } : {}),
     ...(usage ? { usage } : {}),
     ...(lost ? { resumeLost: true, warnings: [lost.warning] } : {}),
     exitCode, stderr, durationMs,
     error: ok ? undefined : (envelopeError || salientError(stderr, "agy failed")),
   };
+}
+
+/** The error of an agy run that produced no answer because headless agy
+ *  auto-denied the tools it asked for. Names each denied action. */
+export function agyDeniedActionsError(denied: unknown[]): string {
+  const names = denied.map((d: any) => {
+    const action = typeof d?.action === "string" ? d.action : typeof d === "string" ? d : "";
+    const label = typeof d?.display_name === "string" && d.display_name && d.display_name !== action ? ` (${d.display_name})` : "";
+    return action ? `${action}${label}` : "";
+  }).filter(Boolean);
+  return `agy produced no answer: headless agy auto-denied the tool permission(s) it cannot prompt for`
+    + ` (${names.length ? names.join(", ") : "unnamed action"}); not re-run`;
 }
 
 /**
@@ -2701,7 +2758,11 @@ function dispatchToRunner(opts: RunHeadlessOpts): RunHeadlessResult {
   const previousExtraEnv = spawnExtraEnv;
   spawnAsRuntime = opts.runtime;
   spawnAsRole = opts.dispatchRole ?? null;
-  spawnExtraEnv = opts.env && Object.keys(opts.env).length ? opts.env : null;
+  // An answer-only child (the routers) is marked, so the hooks a runtime runs
+  // around it (Nirvana's own agy PreInvocation hook) can step aside; the depth
+  // variable already marks every dispatched child.
+  const extraEnv = { ...(opts.env ?? {}), ...(opts.noTools ? { [ANSWER_ONLY_ENV]: "1" } : {}) };
+  spawnExtraEnv = Object.keys(extraEnv).length ? extraEnv : null;
   try {
     return dispatchToRunnerInner(opts);
   } finally {

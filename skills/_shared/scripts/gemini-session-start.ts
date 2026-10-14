@@ -13,6 +13,13 @@
  * not cleaned from ~/.gemini/settings.json yet) it does nothing and exits 0.
  *
  * Failure mode: never block. Exit 0 silently on any error.
+ *
+ * It steps aside, before reading anything, in a child the engine started: a
+ * dispatched worker (`NIRVANA_DISPATCH_DEPTH` set, which the driver stamps on
+ * every child) has its own brief and must not be told to orchestrate, and an
+ * answer-only call such as a router (`NIRVANA_ANSWER_ONLY`) only returns a
+ * decision. The hook runs before EVERY model call, so there it would cost a
+ * process start per call and send a context that only contradicts the brief.
  */
 
 import * as fs from "node:fs";
@@ -84,7 +91,13 @@ async function agyMain() {
   process.exit(0);
 }
 
+/** True in a process the engine started: a dispatched child or an answer-only
+ *  call. Names written out here, not imported, so the check costs no module load. */
+export function engineChild(env: NodeJS.ProcessEnv = process.env): boolean {
+  return !!(env.NIRVANA_DISPATCH_DEPTH ?? "").trim() || !!(env.NIRVANA_ANSWER_ONLY ?? "").trim();
+}
+
 if (import.meta.main) {
-  if (process.argv.includes("--agy")) agyMain().catch(() => process.exit(0));
+  if (process.argv.includes("--agy") && !engineChild()) agyMain().catch(() => process.exit(0));
   else process.exit(0);
 }

@@ -252,7 +252,7 @@ export function runTimeline(events, showInfra = false) {
 // amount reserved by `gauntlet.round_started`. Legacy fields are unchanged.
 export function summarizeRunEvents(events) {
   const evs = Array.isArray(events) ? events : [];
-  let business = null, squad = null, mindClone = null, runtime = null, model = null, gate = null, artifacts = 0, lastAgent = null, agents = 0, cost = 0;
+  let business = null, squad = null, mindClone = null, runtime = null, model = null, gate = null, artifacts = 0, lastAgent = null, agents = 0, cost = 0, costUnknown = false;
   let state = null, decision = null, stopReason = null, target = null, route = null, reservedCost = 0;
   const nodeCosts = new Map();
   const legacy = (ev) => {
@@ -265,6 +265,8 @@ export function summarizeRunEvents(events) {
     if (ev.event === 'artifact_published' || ev.event === 'report_html_generated' || ev.event === 'report_pdf_generated') artifacts++;
     if (ev.event === 'agent_executed') { agents++; lastAgent = ev.employee || lastAgent; }
     if (ev.cost_usd != null) cost += Number(ev.cost_usd) || 0;
+    // A step whose runtime reports no cost (agy, codex): unknown, not free.
+    else if (Object.prototype.hasOwnProperty.call(ev, 'cost_usd')) costUnknown = true;
   };
   for (const ev of evs) {
     const type = typeof ev?.type === 'string' ? ev.type : '';
@@ -286,5 +288,5 @@ export function summarizeRunEvents(events) {
     if (type.startsWith('multi_target.') && p.node?.nodeId) nodeCosts.set(p.node.nodeId, Number(p.node.reportedCostUsd) || 0);
   }
   cost += nodeCosts.size ? [...nodeCosts.values()].reduce((sum, value) => sum + value, 0) : reservedCost;
-  return { business, squad, mindClone, runtime, model, gate, artifacts, lastAgent, agents, cost, count: evs.length, state, decision, stopReason, target, route };
+  return { business, squad, mindClone, runtime, model, gate, artifacts, lastAgent, agents, cost, costUnknown, count: evs.length, state, decision, stopReason, target, route };
 }

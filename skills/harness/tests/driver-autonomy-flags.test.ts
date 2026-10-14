@@ -499,7 +499,16 @@ describe("an answer-only call runs without tools where the CLI can say so", () =
     expect(args).not.toContain("--approve-for-me");
   });
 
-  test("antigravity-cli has no such switch and runs as before", () => {
-    expect(argvNoTools("antigravity-cli", "agy")).toContain("--dangerously-skip-permissions");
+  test("antigravity-cli: plan mode, never the bypass, whatever the switch says", () => {
+    for (const value of [undefined, "1", "0"]) {
+      const args = withSwitch(value, () => argvNoTools("antigravity-cli", "agy"));
+      expect(hasPair(args, ["--mode", "plan"])).toBeTrue();
+      expect(args).not.toContain("--dangerously-skip-permissions");
+      // agy: "--mode plan has no effect while slash command expansion is disabled".
+      expect(args).not.toContain("--disable-slash-commands");
+    }
+    const worker = argvNoTools("antigravity-cli", "agy", false);
+    expect(worker).not.toContain("--mode");
+    expect(worker).toContain("--dangerously-skip-permissions");
   });
 });

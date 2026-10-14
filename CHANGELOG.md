@@ -48,6 +48,10 @@ With `TYPESAFE_API_KEY` in the environment, the project's `.env` or `~/.env`, `n
 
 Without the key nothing is sent and nothing changes. With it, the request text goes to TypeSafe; `routing.jev: off` (`NIRVANA_ROUTING_JEV=off`) keeps it on the machine. `nrv doctor` says `jev: on (key found)`, `jev: off (no key)` or `jev: off (routing.jev)`. The Jev is an external classifier, not a model choice: the router and the workers keep the runtime's default model. The test suite runs with it off and with a closed local endpoint.
 
+### Antigravity: answer-only calls in plan mode, cost unknown instead of $0, and a hook that steps aside
+
+The routers' calls on agy (`noTools`) run with `--mode plan` and without `--dangerously-skip-permissions`, whatever `execution.headless_skip_permissions` says, and never with `--disable-slash-commands`. When headless agy auto-denies a tool and answers nothing (exit 0, empty `response`, `denied_actions`), the run fails with the denied actions named and is not run again. agy has no system-prompt flag, so the fixed part of the prompt stays first in the message, ahead of anything variable. agy reports tokens and no USD: the driver prices them when the model is known (the `--model` it passed) and marks the result `costEstimated`; otherwise the cost stays null, Glance shows "cost unknown", `nrv watch` prints `usd=unknown`, and a dispatch under a run ceiling warns that the step's cost is not counted (unknown cost stays fail-open, as for codex). The `nirvana-os` agy hook exits at once with no output in a dispatched child (`NIRVANA_DISPATCH_DEPTH`) and in an answer-only call (`NIRVANA_ANSWER_ONLY`, now stamped on every `noTools` child): about 8 ms instead of 13 ms per model call with stdin closed, and instead of 530 ms when stdin is held open.
+
 ## 0.15.0-beta.6 — 2026-10-13
 
 ### Runtime fixes from the 2026-10-11 runtime audit

@@ -35,6 +35,15 @@ describe("an unidentified host is declared, never assumed", () => {
   });
 });
 
+/** This process's environment without the engine-child markers: the tests may
+ *  themselves run inside a dispatched agent. */
+function operatorEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  delete env.NIRVANA_DISPATCH_DEPTH;
+  delete env.NIRVANA_ANSWER_ONLY;
+  return env;
+}
+
 describe("the session hook speaks the contract", () => {
   const hook = readFileSync(join(REPO, "skills", "_shared", "scripts", "gemini-session-start.ts"), "utf8");
 
@@ -49,9 +58,24 @@ describe("the session hook speaks the contract", () => {
     const stale = spawnSync(process.execPath, [script], { input: JSON.stringify({ session_id: "s", cwd: REPO }), encoding: "utf8" });
     expect(stale.status).toBe(0);
     expect(stale.stdout).toBe("");
-    const agy = spawnSync(process.execPath, [script, "--agy"], { input: JSON.stringify({ workspacePaths: [REPO] }), encoding: "utf8" });
+    const agy = spawnSync(process.execPath, [script, "--agy"], { input: JSON.stringify({ workspacePaths: [REPO] }), encoding: "utf8", env: operatorEnv() });
     expect(agy.status).toBe(0);
     expect(JSON.parse(agy.stdout).injectSteps[0].ephemeralMessage).toContain("Nirvana-OS");
+  });
+
+  test("in a child the engine started (dispatched or answer-only) it writes nothing and exits 0", async () => {
+    const { spawnSync } = await import("node:child_process");
+    const script = join(REPO, "skills", "_shared", "scripts", "gemini-session-start.ts");
+    for (const marker of [{ NIRVANA_DISPATCH_DEPTH: "1" }, { NIRVANA_ANSWER_ONLY: "1" }]) {
+      const r = spawnSync(process.execPath, [script, "--agy"], { input: JSON.stringify({ workspacePaths: [REPO] }), encoding: "utf8", env: { ...operatorEnv(), ...marker } });
+      expect(r.status).toBe(0);
+      expect(r.stdout).toBe("");
+    }
+    const { engineChild } = await import("../../_shared/scripts/gemini-session-start.ts");
+    expect(engineChild({})).toBe(false);
+    expect(engineChild({ NIRVANA_DISPATCH_DEPTH: "" })).toBe(false);
+    expect(engineChild({ NIRVANA_DISPATCH_DEPTH: "2" })).toBe(true);
+    expect(engineChild({ NIRVANA_ANSWER_ONLY: "1" })).toBe(true);
   });
 
   test("on-demand, the default, keeps Nirvana out of the way; always makes it the orchestrator", async () => {

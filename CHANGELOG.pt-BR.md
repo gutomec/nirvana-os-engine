@@ -48,6 +48,10 @@ Com `TYPESAFE_API_KEY` no ambiente, no `.env` do projeto ou no `~/.env`, o `nrv 
 
 Sem a chave nada é enviado e nada muda. Com ela, o texto do pedido vai para a TypeSafe; `routing.jev: off` (`NIRVANA_ROUTING_JEV=off`) o mantém na máquina. O `nrv doctor` mostra `jev: on (key found)`, `jev: off (no key)` ou `jev: off (routing.jev)`. O Jev é um classificador externo, não uma escolha de modelo: o roteador e os workers continuam no modelo padrão do runtime. A suíte de testes roda com ele desligado e com um endpoint local fechado.
 
+### Antigravity: chamadas só de resposta em modo plano, custo desconhecido em vez de $0 e um hook que sai do caminho
+
+As chamadas dos roteadores no agy (`noTools`) rodam com `--mode plan` e sem `--dangerously-skip-permissions`, qualquer que seja o `execution.headless_skip_permissions`, e nunca com `--disable-slash-commands`. Quando o agy sem terminal nega sozinho uma ferramenta e não responde nada (saída 0, `response` vazio, `denied_actions`), a execução falha com as ações negadas nomeadas e não é repetida. O agy não tem flag de prompt de sistema, então a parte fixa do prompt fica primeiro na mensagem, antes de qualquer parte variável. O agy informa tokens e nenhum valor em dólar: o driver os precifica quando o modelo é conhecido (o `--model` que ele passou) e marca o resultado com `costEstimated`; senão o custo fica nulo, o Glance mostra "cost unknown", o `nrv watch` imprime `usd=unknown` e um dispatch com teto de execução avisa que o custo daquela etapa não entra na conta (custo desconhecido continua sem bloquear, como no codex). O hook `nirvana-os` do agy sai na hora, sem saída, num filho despachado (`NIRVANA_DISPATCH_DEPTH`) e numa chamada só de resposta (`NIRVANA_ANSWER_ONLY`, agora carimbado em todo filho `noTools`): cerca de 8 ms em vez de 13 ms por chamada de modelo com o stdin fechado, e em vez de 530 ms quando o stdin fica aberto.
+
 ## 0.15.0-beta.6 — 2026-10-13
 
 ### Correções de runtime da auditoria de 2026-10-11

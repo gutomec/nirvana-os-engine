@@ -2123,7 +2123,7 @@
                     <span class="run-head-sq text-caption" x-show="runSummary.route" :title="runSummary.route?.rationale || ''" x-text="'· ' + routeLabel(runSummary.route)"></span>
                     <span class="badge badge-sm badge-subtle" :class="'badge-' + runStateVariant(runSummary.state)" x-show="runSummary.state" x-text="runSummary.state"></span>
                     <span class="run-head-sq text-caption" x-show="runSummary.decision" x-text="'· gauntlet: ' + runSummary.decision + (runSummary.stopReason ? ' (' + runSummary.stopReason + ')' : '')"></span>
-                    <span class="run-head-cost" x-show="runSummary.cost > 0" x-text="'$' + runSummary.cost.toFixed(2)"></span>
+                    <span class="run-head-cost" x-show="runSummary.cost > 0 || runSummary.costUnknown" x-text="runSummary.cost > 0 ? '$' + runSummary.cost.toFixed(2) + (runSummary.costUnknown ? ' + unknown' : '') : 'cost unknown'"></span>
                   </div>
                 </template>
                 <!-- Trajectory Card (trajectory-card.js) — the SAME organism as the

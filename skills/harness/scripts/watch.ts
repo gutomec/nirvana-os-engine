@@ -134,7 +134,7 @@ function fmtEvent(ev: any): string {
   } else if (ev.event === "cost_emission") {
     const inT = ev.usage?.input_tokens ?? "?";
     const outT = ev.usage?.output_tokens ?? "?";
-    body = dim(`tokens in=${inT} out=${outT} usd=${(ev.total_cost_usd ?? 0).toFixed(4)}`);
+    body = dim(`tokens in=${inT} out=${outT} usd=${typeof ev.total_cost_usd === "number" ? ev.total_cost_usd.toFixed(4) : "unknown"}`);
   } else if (ev.event === "context_budget_warning" || ev.event === "budget_violation") {
     body = `${ev.percent ?? "?"}% of ${ev.budget ?? "?"}`;
   }

@@ -192,8 +192,15 @@ describe("Glance run event labels", () => {
     ];
     expect(summarizeRunEvents(legacy)).toEqual({
       business: "acme", squad: null, mindClone: "seth", runtime: "codex", model: null, gate: "passed", artifacts: 1,
-      lastAgent: "writer", agents: 1, cost: 0.4, count: 6, state: null, decision: null, stopReason: null, target: null, route: null,
+      lastAgent: "writer", agents: 1, cost: 0.4, costUnknown: false, count: 6, state: null, decision: null, stopReason: null, target: null, route: null,
     });
-    expect(summarizeRunEvents(undefined)).toMatchObject({ cost: 0, count: 0 });
+    expect(summarizeRunEvents(undefined)).toMatchObject({ cost: 0, costUnknown: false, count: 0 });
+  });
+
+  test("a step whose runtime reported no cost marks the total unknown instead of reading as free", () => {
+    const agy = [{ event: "dispatch_business", business_slug: "acme", runtime: "antigravity-cli", cost_usd: null }];
+    expect(summarizeRunEvents(agy)).toMatchObject({ cost: 0, costUnknown: true });
+    const mixed = [...agy, { event: "agent_executed", employee: "writer", cost_usd: 0.4 }];
+    expect(summarizeRunEvents(mixed)).toMatchObject({ cost: 0.4, costUnknown: true });
   });
 });
