@@ -442,6 +442,16 @@ async function main() {
     const ON_DEMAND_MARKER = "<!-- nirvana-os:on-demand-contract:v3 -->";
     const INVOCATION_MARKERS = ["<!-- nirvana-os:invocation-contract:v1 -->", "<!-- nirvana-os:invocation-contract:v2 -->", "<!-- nirvana-os:invocation-contract:v3 -->", INVOCATION_CONTRACT_MARKER];
     const ON_DEMAND_MARKERS = ["<!-- nirvana-os:on-demand-contract:v1 -->", "<!-- nirvana-os:on-demand-contract:v2 -->", ON_DEMAND_MARKER];
+    // An on-demand note is the last block init appends, so it ends at its own
+    // last line: lines the user wrote after it (0.14's note included) are not
+    // part of it. The invocation contracts are followed by the writing contract.
+    const blockEnd = (marker: string): string | undefined =>
+      marker === ON_DEMAND_MARKERS[0] ? "`nrv glance`." : ON_DEMAND_MARKERS.includes(marker) ? "never invoke Nirvana again." : undefined;
+    /** The first older block found is replaced, as with one call over the list,
+     *  each with its own end. */
+    const refreshFirst = (dst: string, label: string, olderMarkers: string[], currentMarker: string, templatePath: string) => {
+      for (const m of olderMarkers) if (refreshManagedBlock(dst, label, [m], currentMarker, templatePath, blockEnd(m))) return;
+    };
 
     // How Nirvana behaves in THIS project:
     //
@@ -463,14 +473,14 @@ async function main() {
       // and the writing contract stay.
       for (const name of ["AGENTS.md", "CLAUDE.md", "GEMINI.md"]) {
         const dst = path.join(target, name);
-        refreshManagedBlock(dst, "on-demand contract", [...INVOCATION_MARKERS, ...ON_DEMAND_MARKERS.slice(0, -1)], ON_DEMAND_MARKER, onDemandSnippet);
+        refreshFirst(dst, "on-demand contract", [...INVOCATION_MARKERS, ...ON_DEMAND_MARKERS.slice(0, -1)], ON_DEMAND_MARKER, onDemandSnippet);
         appendWithMarker(onDemandSnippet, dst, ON_DEMAND_MARKER, "on-demand contract");
       }
     } else if (fs.existsSync(agentsTemplate)) {
       for (const name of ["AGENTS.md", "CLAUDE.md", "GEMINI.md"]) {
         const dst = path.join(target, name);
         // An on-demand note becomes the full contract when the project opts in.
-        refreshManagedBlock(dst, "invocation contract", ON_DEMAND_MARKERS, INVOCATION_CONTRACT_MARKER, agentsTemplate);
+        refreshFirst(dst, "invocation contract", ON_DEMAND_MARKERS, INVOCATION_CONTRACT_MARKER, agentsTemplate);
         // Phase 0: a contract written by an earlier engine is brought to the
         // current text, in place.
         refreshInvocationContract(dst);
