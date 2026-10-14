@@ -13,6 +13,9 @@
  *   nrv find "<request>"            the shortlist
  *   nrv find "<request>" --json     the router's full decision (unchanged), plus `shortlist`
  *   nrv find "<request>" --amplify  let the router amplify a short brief first (one model call)
+ *   nrv find "<request>" --jev      TypeSafe's Jev suggestion above the list (one TypeSafe call;
+ *                                   only with a TYPESAFE_API_KEY and routing.jev on). Off by
+ *                                   default: its effect on the orchestrator was never measured.
  */
 
 import * as path from "node:path";
@@ -20,6 +23,7 @@ import { createRequire } from "node:module";
 import { EXIT } from "../../_shared/lib/bun-helpers.ts";
 import { preflightReindex } from "../lib/preflight-index.ts";
 import { rankShortlist, shortlist, SHORTLIST_SIZE, type Shortlist } from "../lib/shortlist.ts";
+import type { JevRouteResult } from "../lib/jev-router.ts";
 
 export { rankShortlist, shortlist, SHORTLIST_SIZE, type Shortlist };
 
@@ -48,9 +52,28 @@ export function renderShortlist(brief: string, s: Shortlist): string {
   return out.join("\n");
 }
 
+/** The Jev's suggestion, as the lines printed above the shortlist. */
+export function renderJev(r: JevRouteResult): string {
+  const d = r.decision;
+  const targets = d.parts?.length ? d.parts.map((p) => `${p.kind} ${p.slug}`).join(" + ")
+    : d.kind === "no_match" ? "nothing in the library (the generalist)"
+    : d.primary_business ? `business ${d.primary_business}` : `squad ${d.mandatory_squads[0]}`;
+  const trust = r.confidence >= r.gate
+    ? `confidence ${r.confidence.toFixed(2)}: at or above ${r.gate}, where every measured suggestion was right`
+    : `confidence ${r.confidence.toFixed(2)}: below ${r.gate}, a guess; decide from the cards`;
+  return [
+    `Jev (a classifier, not a decision) suggests: ${targets}${d.parts?.length ? ` (${d.parts.length} parts)` : ""}`,
+    `  ${trust}`,
+    ...(d.suggested_mind_clones.length ? [`  voice: ${d.suggested_mind_clones.join(", ")}`] : []),
+    "",
+  ].join("\n");
+}
+
 export interface FindArgs {
   brief: string;
   json: boolean;
+  /** Ask the Jev too (needs the key and routing.jev on). */
+  jev: boolean;
   /** Options for the router's decision under --json, as `lib/router.js find` read them. */
   route: { amplify: boolean; forceAmplify: boolean; prefer?: string; preferAmplifier?: string; disableStageMinus1: boolean };
 }
@@ -70,6 +93,7 @@ export function parseFindArgs(raw: string[]): FindArgs {
   return {
     brief: words.join(" ").trim(),
     json: raw.includes("--json"),
+    jev: raw.includes("--jev"),
     route: {
       amplify: raw.includes("--amplify") && !raw.includes("--no-amplify"),
       forceAmplify: raw.includes("--force-amplify"),
@@ -97,13 +121,25 @@ if (import.meta.main) {
   preflightReindex();
   const registries = loader.loadAll();
   const list = await shortlist(brief, registries);
+  let jev: JevRouteResult | null = null;
+  let jevNote = "";
+  if (args.jev) {
+    // Loaded only when asked: the plain command stays one BM25 pass.
+    const { jevDoctorLine, jevEnabled } = await import("../../_shared/lib/typesafe-client.ts");
+    if (jevEnabled()) {
+      const { jevRoute } = await import("../lib/jev-router.ts");
+      try { jev = await jevRoute({ brief, registries }); } catch { jev = null; }
+      if (!jev || (!jev.call.ok && !jev.named)) { jevNote = "jev: no answer (the call failed); the shortlist stands alone\n\n"; jev = null; }
+    } else jevNote = `${jevDoctorLine()}\n\n`;
+  }
   if (wantJson) {
     // The router's decision as before, for whoever parses it, with the shortlist beside it.
     // No amplification unless asked: an orchestrator already understood the request.
     const decision = await router.route(brief, { registries, ...args.route });
-    process.stdout.write(JSON.stringify({ ...decision, shortlist: list }, null, 2) + "\n");
+    const jevJson = jev ? { jev: { decision: jev.decision, confidence: jev.confidence, gate: jev.gate, escalate: jev.escalate, latency_ms: jev.call.latency_ms } } : {};
+    process.stdout.write(JSON.stringify({ ...decision, shortlist: list, ...jevJson }, null, 2) + "\n");
   } else {
-    process.stdout.write(renderShortlist(brief, list) + "\n");
+    process.stdout.write((jev ? renderJev(jev) : jevNote) + renderShortlist(brief, list) + "\n");
   }
   process.exit(EXIT.OK);
 }

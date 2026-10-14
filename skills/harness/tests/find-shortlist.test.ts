@@ -5,7 +5,7 @@
 // and squads ranked apart, five each, for 95%. These tests lock the shape that
 // produced the second number. The rates themselves need a library; CI has none.
 import { describe, expect, test } from "bun:test";
-import { parseFindArgs, rankShortlist, renderShortlist, SHORTLIST_SIZE } from "../scripts/find.ts";
+import { parseFindArgs, rankShortlist, renderJev, renderShortlist, SHORTLIST_SIZE } from "../scripts/find.ts";
 
 const cap = (squad: string, capability_id: string) => ({ id: `squad_capability:${squad}:${capability_id}`, meta: { type: "squad_capability", squad, capability_id }, coverage: { matched: 3, total: 4 } });
 const biz = (slug: string) => ({ id: `business:${slug}`, meta: { type: "business", slug }, coverage: { matched: 2, total: 4 } });
@@ -74,5 +74,26 @@ describe("the command line", () => {
     expect(parseFindArgs(["a request"]).route.amplify).toBe(false);
     expect(parseFindArgs(["a request", "--amplify"]).route.amplify).toBe(true);
     expect(parseFindArgs(["--prefer-amplifier", "maestro", "a", "request"])).toMatchObject({ brief: "a request", route: { preferAmplifier: "maestro" } });
+  });
+});
+
+describe("--jev", () => {
+  test("off by default, read as a flag and never searched for", () => {
+    expect(parseFindArgs(["a", "request"]).jev).toBe(false);
+    const a = parseFindArgs(["a", "request", "--jev"]);
+    expect(a.jev).toBe(true);
+    expect(a.brief).toBe("a request");
+  });
+
+  test("the suggestion prints above the list with its confidence against the gate", () => {
+    const base = { escalate: false, gate: 0.8, shape: "one_business", named: null, called: true, recall_ms: 1, call: { ok: true, latency_ms: 600, input_tokens: 1, cost_usd: 0, attempts: 1 } };
+    const decision = { ok: true, kind: "decision", primary_business: "launch-house", mandatory_squads: [], optional_squads: [], suggested_mind_clones: ["vitalik-buterin"], parts: [], candidates: [], rationale: "", runtime: null, warnings: [], cost_usd: 0, duration_ms: 1 };
+    const sure = renderJev({ ...base, confidence: 0.91, decision } as any);
+    expect(sure).toContain("Jev (a classifier, not a decision) suggests: business launch-house");
+    expect(sure).toContain("confidence 0.91: at or above 0.8");
+    expect(sure).toContain("voice: vitalik-buterin");
+    const parts = renderJev({ ...base, confidence: 0.6, decision: { ...decision, parts: [{ kind: "business", slug: "a", part: "x", after: [] }, { kind: "squad", slug: "b", part: "y", after: [] }] } } as any);
+    expect(parts).toContain("business a + squad b (2 parts)");
+    expect(parts).toContain("below 0.8, a guess");
   });
 });

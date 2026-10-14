@@ -58,6 +58,8 @@ import { nestedOutputsBase, runFolderOf } from "../../_shared/lib/run-workspace.
 import { briefExcerpt } from "../../_shared/lib/brief-excerpt.ts";
 import { agenticRoute, type AgenticRouteDecision } from "../lib/agentic-router.ts";
 import { cardsRoute, withDoneWhen } from "../lib/cards-router.ts";
+import { GATE as JEV_GATE, jevRoute, type JevRouteResult } from "../lib/jev-router.ts";
+import { jevEnabled } from "../../_shared/lib/typesafe-client.ts";
 import { runWithCascade } from "../lib/cascade-runner.ts";
 import { resolveCascadeRoot, loadCascade, nextAfter } from "../lib/cascade.ts";
 import { classify } from "../lib/quota-detector.ts";
@@ -1062,7 +1064,44 @@ if (briefTarget) {
     }
     return d;
   };
-  const decision = await routeOnce();
+  // TypeSafe's Jev first, and only with a key (routing.jev, lib/jev-router.ts):
+  // at or above its gate it decides, in the same contract; below it, or on any
+  // error, the LLM router decides exactly as before. The audit carries the
+  // numbers, never the request text or the key.
+  let routeMethod: string = routingMode;
+  let jevDecision: AgenticRouteDecision | null = null;
+  if (jevEnabled({ cwd: process.cwd() })) {
+    let j: JevRouteResult | null = null;
+    try { j = await jevRoute({ brief: brief ?? "", cwd: process.cwd() }); } catch { j = null; }
+    const pid = { project_id: projectId || null };
+    if (!j || (!j.call.ok && !j.named)) {
+      const err = j?.call.error ?? "";
+      const status = /^HTTP (\d+)/.exec(err)?.[1];
+      emit("x_jev_route_failed", {
+        ...pid, error: !j ? "exception" : status ? `http_${status}` : /timed out/.test(err) ? "timeout" : /not JSON|no answers/.test(err) ? "invalid_response" : "network",
+        latency_ms: j?.call.latency_ms ?? null, attempts: j?.call.attempts ?? null,
+      });
+      console.log(c("dim", `  jev: no answer (${j ? "the call failed" : "error"}); the ${routingMode} router decides`));
+    } else {
+      const d = j.decision;
+      const numbers = {
+        ...pid, confidence: Number(j.confidence.toFixed(4)), gate: JEV_GATE, shape: j.shape, kind: d.kind,
+        primary_business: d.primary_business, squads: d.mandatory_squads, parts: (d.parts ?? []).map((p) => `${p.kind}:${p.slug}`),
+        clones: d.suggested_mind_clones, named_target: j.named ? `${j.named.kind}:${j.named.slug}` : null,
+        latency_ms: j.call.latency_ms, recall_ms: j.recall_ms, input_tokens: j.call.input_tokens, cost_usd: j.call.cost_usd,
+      };
+      if (j.escalate) {
+        emit("x_jev_route_escalated", numbers);
+        console.log(c("dim", `  jev: confidence ${j.confidence.toFixed(2)} below ${JEV_GATE}; the ${routingMode} router decides`));
+      } else {
+        emit("x_jev_route_decided", numbers);
+        jevDecision = d;
+        routeMethod = "jev";
+        console.log(c("dim", `  jev decided: confidence ${j.confidence.toFixed(2)} (gate ${JEV_GATE}) · ${j.call.latency_ms}ms`));
+      }
+    }
+  }
+  const decision = jevDecision ?? await routeOnce();
   // The agentic router READ the user's USE_* rules; if it suggested a runtime
   // and there is no explicit flag NOR a direct mention in the brief (which is
   // stronger than the LLM's suggestion), the semantic suggestion overrides the
@@ -1158,16 +1197,16 @@ if (briefTarget) {
     if (autoMandatorySquads.length) console.log(c("dim", `  mandatory squads: ${autoMandatorySquads.join(", ")}`));
     if (plan.optionalSquads.length) console.log(c("dim", `  optional squads: ${plan.optionalSquads.join(", ")}`));
     if (plan.rationale) console.log(c("dim", `  rationale: ${plan.rationale}`));
-    emit("auto_route_selected", { project_id: projectId || null, business_slug: slug, method: routingMode, source: plan.source, mandatory_squads: autoMandatorySquads, optional_squads: plan.optionalSquads });
+    emit("auto_route_selected", { project_id: projectId || null, business_slug: slug, method: routeMethod, source: plan.source, mandatory_squads: autoMandatorySquads, optional_squads: plan.optionalSquads });
   } else if (step.kind === "squad") {
     const squads = plan.steps.filter(s => s.kind === "squad").map(s => s.slug!) as string[];
     console.log(c("lime", "  →") + c("bold", ` squad-only route: ${squads.join(", ")}`) + c("dim", ` (${plan.source})`));
     if (plan.rationale) console.log(c("dim", `  rationale: ${plan.rationale}`));
-    emit("auto_route_selected", { project_id: projectId || null, business_slug: null, method: routingMode, source: plan.source, squad_only: true, mandatory_squads: squads, optional_squads: plan.optionalSquads });
+    emit("auto_route_selected", { project_id: projectId || null, business_slug: null, method: routeMethod, source: plan.source, squad_only: true, mandatory_squads: squads, optional_squads: plan.optionalSquads });
     pendingCascade = { kind: "squad-only", squads, plan };
   } else {
     console.log(c("yellow", "  →") + c("bold", " agent-x route (generalist)") + c("dim", ` (${plan.source}: ${step.reason})`));
-    emit("auto_route_selected", { project_id: projectId || null, business_slug: null, method: routingMode, source: plan.source, agent_x: true, reason: step.reason });
+    emit("auto_route_selected", { project_id: projectId || null, business_slug: null, method: routeMethod, source: plan.source, agent_x: true, reason: step.reason });
     pendingCascade = { kind: "agent-x", reason: step.reason, plan };
   }
 } else if (explicitTarget?.kind === "judge-x") {
