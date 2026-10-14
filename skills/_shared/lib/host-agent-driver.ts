@@ -230,7 +230,7 @@ function removeTmpFiles(files: string[] | undefined): void {
 /** Every prefix writePromptFile is ever called with (default "nrv-prompt",
  * plus claudeDirectiveArgs' "nrv-directive"). One place, so the reaper below
  * can never drift from what this module actually creates. */
-const TMP_FILE_PREFIXES = ["nrv-prompt-", "nrv-directive-", FENCE_FILE_PREFIX];
+const TMP_FILE_PREFIXES = ["nrv-prompt-", "nrv-directive-", "nrv-lean-settings-", FENCE_FILE_PREFIX];
 
 /**
  * Process-wide safety net for the one gap a `finally`/`settle()` cannot close:
@@ -1671,6 +1671,27 @@ function runClaudeCode(opts: RunHeadlessOpts): RunHeadlessResult {
   // `claude --help` (audited 2026-09-29): `--tools <tools...>` — 'Use "" to
   // disable all tools'.
   if (opts.noTools) args.push("--tools", "");
+  // An answer-only call also starts lean: it uses no MCP server, no skill and
+  // no hook, and each of them costs startup time and leaks the user's session
+  // rules into the answer (the cards router once wrote the user's prose rules
+  // into its done-criteria). `claude --help` (audited 2026-10-13 on 2.1.296):
+  // `--strict-mcp-config` "Only use MCP servers from --mcp-config" (none given,
+  // so none load) and `--disable-slash-commands` "Disable all skills". Hooks go
+  // through `--settings`: `disableAllHooks` turns hooks off
+  // (code.claude.com/docs/en/settings-reference), and a key passed there
+  // "overrides the same key in your project and user settings files, and a key
+  // you leave out keeps its value from those files" (docs/en/settings), so the
+  // user's model and the rest of their settings stay. `--setting-sources ""`
+  // is never the tool here: it drops the user's configured model too.
+  const settingsTmp: string[] = [];
+  if (opts.noTools) {
+    args.push("--strict-mcp-config", "--disable-slash-commands");
+    if (!opts.claudeSettings) {
+      const lean = claudeLeanSettingsArg(resolveExecutable("claude").shell);
+      args.push("--settings", lean.value);
+      settingsTmp.push(...lean.tmpFiles);
+    }
+  }
   if (explicitTools) {
     if (opts.allowedTools!.length > 0) args.push("--allowedTools", opts.allowedTools!.join(" "));
     // length === 0 → caller asked for "no tools": skip the flag and let
@@ -1736,6 +1757,7 @@ function runClaudeCode(opts: RunHeadlessOpts): RunHeadlessResult {
   } finally {
     spawnDenySubagents = previousDenySubagents;
     removeTmpFiles(directive.tmpFiles);
+    removeTmpFiles(settingsTmp);
   }
 
   const durationMs = Date.now() - started;
@@ -2794,6 +2816,19 @@ export function runtimeAvailable(runtime: Runtime): boolean {
  * resolveExecutable now spawns the pair a readable shim names, so the shell branch is the
  * exception rather than the rule. This stays as the defense for whatever falls into it.
  */
+/** The settings an answer-only claude call starts with: hooks off, nothing
+ * else touched. Inline JSON on a direct spawn; under a shell (Windows `.cmd`
+ * shims) the quotes would not survive cmd.exe, so the JSON goes in a temp file
+ * the caller removes, as the directive does. */
+export const CLAUDE_LEAN_SETTINGS = JSON.stringify({ disableAllHooks: true });
+
+export function claudeLeanSettingsArg(shell: boolean): { value: string; tmpFiles: string[] } {
+  if (!shell) return { value: CLAUDE_LEAN_SETTINGS, tmpFiles: [] };
+  const f = path.join(os.tmpdir(), `nrv-lean-settings-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
+  fs.writeFileSync(f, CLAUDE_LEAN_SETTINGS, "utf8");
+  return { value: f, tmpFiles: [f] };
+}
+
 export function claudeDirectiveArgs(directive: string, shell: boolean): { args: string[]; tmpFiles?: string[] } {
   if (!directive) return { args: [] };
   if (!shell) return { args: ["--append-system-prompt", directive] };

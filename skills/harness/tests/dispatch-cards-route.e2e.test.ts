@@ -34,6 +34,9 @@ const argv = Bun.argv.slice(2);
 const capture = process.env.FAKE_CAPTURE_DIR;
 if (argv.includes("--tools")) {
   fs.writeFileSync(path.join(capture, "router-argv.json"), JSON.stringify(argv));
+  const si = argv.indexOf("--settings");
+  const sv = si >= 0 ? argv[si + 1] : "";
+  fs.writeFileSync(path.join(capture, "router-settings.json"), sv.startsWith("{") ? sv : (sv ? fs.readFileSync(sv, "utf8") : "null"));
   const answer = { target: "solo", voices: [], squads: [], done: ${JSON.stringify(DONE)}, reason: "Nothing installed produces this." };
   console.log(JSON.stringify({ type: "result", subtype: "success", is_error: false, result: JSON.stringify(answer), session_id: "route", total_cost_usd: 0.001 }));
   process.exit(0);
@@ -88,6 +91,13 @@ describe.skipIf(IS_WINDOWS)("dispatch --auto --mode=cards", () => {
     const log = `${r.stdout}\n${r.stderr}`;
 
     expect(fs.existsSync(path.join(capture, "router-argv.json")), log).toBe(true);
+    // The router child starts lean: no MCP server, no skill, no hook, and the user's model kept.
+    const routerArgv: string[] = JSON.parse(fs.readFileSync(path.join(capture, "router-argv.json"), "utf8"));
+    expect(routerArgv).toContain("--strict-mcp-config");
+    expect(routerArgv).not.toContain("--mcp-config");
+    expect(routerArgv).toContain("--disable-slash-commands");
+    expect(routerArgv).not.toContain("--setting-sources");
+    expect(JSON.parse(fs.readFileSync(path.join(capture, "router-settings.json"), "utf8"))).toEqual({ disableAllHooks: true });
     expect(log).toContain("Auto-route — cards");
     expect(log).toContain("done when: 3 state(s) added to the brief");
     const prompts = fs.readFileSync(path.join(capture, "worker-prompts.txt"), "utf8");

@@ -15,7 +15,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
-  HEADLESS_SKIP_PERMISSIONS_ENV, __testables, claudeDirectiveArgs, headlessClaudeEnv, headlessSkipPermissions, resolveExecutable,
+  CLAUDE_LEAN_SETTINGS, HEADLESS_SKIP_PERMISSIONS_ENV, __testables, claudeDirectiveArgs, claudeLeanSettingsArg, headlessClaudeEnv, headlessSkipPermissions, resolveExecutable,
   runHeadless, type Runtime,
 } from "../../_shared/lib/host-agent-driver.ts";
 import { childDepth } from "../../_shared/lib/dispatch-depth.ts";
@@ -456,6 +456,40 @@ describe("an answer-only call runs without tools where the CLI can say so", () =
   test("claude-code: --tools \"\"", () => {
     expect(hasPair(argvNoTools("claude-code", "claude"), ["--tools", ""])).toBeTrue();
     expect(argvNoTools("claude-code", "claude", false)).not.toContain("--tools");
+  });
+
+  test("claude-code: the answer-only child starts lean (no MCP, no skills, hooks off) and keeps the user's model", () => {
+    const args = argvNoTools("claude-code", "claude");
+    expect(args).toContain("--strict-mcp-config");
+    expect(args).not.toContain("--mcp-config");
+    expect(args).toContain("--disable-slash-commands");
+    // Never the switch that also drops the user's configured model.
+    expect(args).not.toContain("--setting-sources");
+    expect(args).not.toContain("--bare");
+    expect(args).not.toContain("--model");
+    const i = args.indexOf("--settings");
+    expect(i).toBeGreaterThan(-1);
+    const value = args[i + 1];
+    // Inline JSON on a direct spawn; a temp file (already removed) under a shell shim.
+    if (value.startsWith("{")) expect(JSON.parse(value)).toEqual({ disableAllHooks: true });
+    else {
+      expect(path.basename(value)).toStartWith("nrv-lean-settings-");
+      expect(fs.existsSync(value)).toBe(false);
+    }
+    const worker = argvNoTools("claude-code", "claude", false);
+    for (const flag of ["--strict-mcp-config", "--disable-slash-commands", "--settings"]) expect(worker).not.toContain(flag);
+  });
+
+  test("claude-code: the lean settings travel as a file under a shell, and the prefix is reaped", () => {
+    expect(claudeLeanSettingsArg(false)).toEqual({ value: CLAUDE_LEAN_SETTINGS, tmpFiles: [] });
+    const viaShell = claudeLeanSettingsArg(true);
+    try {
+      expect(viaShell.tmpFiles).toEqual([viaShell.value]);
+      expect(JSON.parse(fs.readFileSync(viaShell.value, "utf8"))).toEqual({ disableAllHooks: true });
+      expect(__testables.TMP_FILE_PREFIXES).toContain("nrv-lean-settings-");
+    } finally {
+      fs.rmSync(viaShell.value, { force: true });
+    }
   });
 
   test("codex: the read-only sandbox, in place of both autonomy paths", () => {
