@@ -32,6 +32,22 @@ The `fast` routing mode is retired. On the 48 labeled requests it answered AMBIG
 
 `routing.on_router_failure` takes `agent-x-only` (default) or `fail`. The `cascade` value, which asked BM25 for a business before falling to agent-x, reads as `agent-x-only` with the same kind of warning, and setting it is refused. A router transport failure now always goes to agent-x or, with `fail`, to nothing. A Glance Message no longer has a `fast` branch either, and `nrv route --help` says it is a diagnostic that never dispatches.
 
+### A leaner router call and a faster `nrv find`
+
+The cards and agentic routers start their `claude` child lean: `--strict-mcp-config` with no `--mcp-config` (no MCP server loads), `--disable-slash-commands` (no skill) and `--settings '{"disableAllHooks":true}'` (no hook). A key passed with `--settings` overrides only itself, so the user's configured model and the rest of their settings stay; `--setting-sources` is never used, because it drops the model too. The time saved per call is not measured yet.
+
+`nrv find` runs one BM25 pass. The ranking moved to `harness/lib/shortlist.ts`, the named target comes from the router's own `detectTargetMention` instead of a second run of the whole router, name recognition skips the regexes of names the request does not contain, and the clone search builds its index once per registry. On five requests against the installed library the command went from 0.55-1.0 s to 0.35-0.41 s, with the same output.
+
+### Clone names the manifest can declare
+
+`MANIFEST.yaml` takes two optional fields under `manifest:`. `aliases` lists other names the person goes by ("Gary Vee", "Chivo"), recognized like a nickname in parentheses. `canonical: true` marks the slug a request naming the person resolves to, and `canonical: <slug>` files a role variant under that slug's person. `nrv validate` warns, never fails, on what keeps a name from reaching its clone: `person_canonical_missing` (several slugs, one person, none canonical), `display_name_is_slug`, `display_name_role_only`, and for a business `manifest_clone_unresolved` (a clone in `dna.required` or `dna.optional` that the library does not have). On the installed library: 90 warnings for 43 people, 18 slugs as names, 1 role as a name, 3 businesses.
+
+### TypeSafe's Jev, opt-in by key
+
+With `TYPESAFE_API_KEY` in the environment, the project's `.env` or `~/.env`, `nrv dispatch --auto` asks TypeSafe's Jev classifier first (`harness/lib/jev-router.ts`). Code finds the target and the clones the request names; the `nrv find` shortlist gives the candidates; one call asks which business, which squad, what shape (one business, one squad, several, nothing), who owns each clause and, when nobody is named, which voice; code composes the decision in the routers' contract, with a rationale built from the probabilities. At or above 0.8 it is the decision, parts included; below it, or on any error or a 3 s timeout, the cards or agentic router decides as before. Audit: `x_jev_route_decided`, `x_jev_route_escalated`, `x_jev_route_failed`, with confidence, latency, tokens and cost, never the request text or the key. The voice selection of a business or squad run asks the same voice question before the lexical search, with the seats' assigned voices among the candidates. `nrv find --jev` prints the suggestion above the shortlist.
+
+Without the key nothing is sent and nothing changes. With it, the request text goes to TypeSafe; `routing.jev: off` (`NIRVANA_ROUTING_JEV=off`) keeps it on the machine. `nrv doctor` says `jev: on (key found)`, `jev: off (no key)` or `jev: off (routing.jev)`. The Jev is an external classifier, not a model choice: the router and the workers keep the runtime's default model. The test suite runs with it off and with a closed local endpoint.
+
 ## 0.15.0-beta.6 — 2026-10-13
 
 ### Runtime fixes from the 2026-10-11 runtime audit

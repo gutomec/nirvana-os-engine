@@ -32,6 +32,22 @@ O modo de roteamento `fast` foi aposentado. Nos 48 pedidos rotulados ele respond
 
 `routing.on_router_failure` aceita `agent-x-only` (padrão) ou `fail`. O valor `cascade`, que pedia uma empresa ao BM25 antes de cair no agent-x, vale como `agent-x-only` com o mesmo tipo de aviso, e gravá-lo é recusado. Uma falha de transporte do roteador agora vai sempre para o agent-x ou, com `fail`, para nada. Uma Message do Glance também perdeu o ramo `fast`, e o `nrv route --help` diz que ele é um diagnóstico que nunca despacha.
 
+### Uma chamada de roteador mais enxuta e um `nrv find` mais rápido
+
+Os roteadores `cards` e `agentic` sobem o `claude` filho enxuto: `--strict-mcp-config` sem `--mcp-config` (nenhum servidor MCP carrega), `--disable-slash-commands` (nenhuma skill) e `--settings '{"disableAllHooks":true}'` (nenhum hook). Uma chave passada em `--settings` sobrepõe só a si mesma, então o modelo configurado pelo usuário e o resto das configurações continuam; o `--setting-sources` nunca é usado, porque também descarta o modelo. O tempo ganho por chamada ainda não foi medido.
+
+O `nrv find` roda o BM25 uma vez só. A ordenação foi para `harness/lib/shortlist.ts`, o alvo nomeado vem do `detectTargetMention` do próprio roteador em vez de uma segunda execução do roteador inteiro, o reconhecimento de nomes pula as expressões regulares de nomes que o pedido não contém, e a busca de clones monta o índice uma vez por registro. Em cinco pedidos contra a biblioteca instalada, o comando passou de 0,55 a 1,0 s para 0,35 a 0,41 s, com a mesma saída.
+
+### Nomes de clone declarados no manifesto
+
+O `MANIFEST.yaml` aceita dois campos opcionais em `manifest:`. `aliases` lista outros nomes da pessoa ("Gary Vee", "Chivo"), reconhecidos como um apelido entre parênteses. `canonical: true` marca o slug para onde vai um pedido que nomeia a pessoa, e `canonical: <slug>` coloca uma variante de cargo sob a pessoa daquele slug. O `nrv validate` avisa, sem reprovar, sobre o que impede um nome de chegar ao clone: `person_canonical_missing` (vários slugs, uma pessoa, nenhum canônico), `display_name_is_slug`, `display_name_role_only` e, numa empresa, `manifest_clone_unresolved` (um clone em `dna.required` ou `dna.optional` que a biblioteca não tem). Na biblioteca instalada: 90 avisos para 43 pessoas, 18 slugs como nome, 1 cargo como nome, 3 empresas.
+
+### O Jev da TypeSafe, opcional e só com chave
+
+Com `TYPESAFE_API_KEY` no ambiente, no `.env` do projeto ou no `~/.env`, o `nrv dispatch --auto` consulta primeiro o classificador Jev da TypeSafe (`harness/lib/jev-router.ts`). O código acha o alvo e os clones que o pedido nomeia; a lista curta do `nrv find` dá os candidatos; uma chamada pergunta qual empresa, qual squad, qual estrutura (uma empresa, um squad, várias, nada), quem é dono de cada oração e, quando ninguém é nomeado, qual voz; o código compõe a decisão no contrato dos roteadores, com uma justificativa montada a partir das probabilidades. Com 0,8 ou mais ela é a decisão, partes incluídas; abaixo disso, ou com qualquer erro ou timeout de 3 s, o roteador `cards` ou `agentic` decide como antes. Auditoria: `x_jev_route_decided`, `x_jev_route_escalated`, `x_jev_route_failed`, com confiança, latência, tokens e custo, nunca o texto do pedido nem a chave. A escolha de voz de uma execução de empresa ou squad faz a mesma pergunta de voz antes da busca léxica, com as vozes atribuídas aos cargos entre os candidatos. O `nrv find --jev` mostra a sugestão acima da lista curta.
+
+Sem a chave nada é enviado e nada muda. Com ela, o texto do pedido vai para a TypeSafe; `routing.jev: off` (`NIRVANA_ROUTING_JEV=off`) o mantém na máquina. O `nrv doctor` mostra `jev: on (key found)`, `jev: off (no key)` ou `jev: off (routing.jev)`. O Jev é um classificador externo, não uma escolha de modelo: o roteador e os workers continuam no modelo padrão do runtime. A suíte de testes roda com ele desligado e com um endpoint local fechado.
+
 ## 0.15.0-beta.6 — 2026-10-13
 
 ### Correções de runtime da auditoria de 2026-10-11

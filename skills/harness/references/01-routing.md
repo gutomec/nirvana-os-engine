@@ -81,9 +81,50 @@ business seats, the squad and agent-x all receive them through `selectVoices`
 (`lib/clone-voices.ts`), after the voices the request names and before the
 lexical search. Agent-x never gets a searched voice.
 
+## The Jev step (optional, only with a TypeSafe key)
+
+With `TYPESAFE_API_KEY` configured (the environment, the project's `.env` or
+`~/.env`) and `routing.jev` not `off`, `nrv dispatch --auto` asks TypeSafe's
+Jev classifier before the LLM router (`lib/jev-router.ts`, client in
+`_shared/lib/typesafe-client.ts`). Without the key nothing changes and nothing
+is sent. With it, **the request text goes to TypeSafe**.
+
+1. Code: a target the request names by slug (`detectTargetMention`) and the
+   clones it names (`scanNames`). A named target is a command; the Jev is never
+   asked about it.
+2. Local: the `nrv find` shortlist (`lib/shortlist.ts`, businesses and squads
+   apart) and voice candidates (8 from the library search, plus the voices of
+   the seats of the named or best-ranked business).
+3. One Jev call with Choice questions: `business`, `squad`, `shape`
+   (one business / one squad / several / nothing), one business and one squad
+   question per clause of the request (`clauses()`, split by code), and
+   `voice` when the request names nobody.
+4. Code composes the decision in the routers' contract, with `parts` for a
+   `several` shape (each clause's owner at `PART` 0.5 or more, at most
+   `MAX_PARTS` 3), a rationale built from the probabilities, and a confidence.
+
+At or above `GATE` (0.8) the decision goes to `planRouteWithFallback` as if the
+LLM router had made it, parts included (audit `x_jev_route_decided`). Below it
+(`x_jev_route_escalated`) or on any error, timeout (3 s) or invalid answer
+(`x_jev_route_failed`), the cards or agentic router decides as before. The
+events carry confidence, latency, tokens and cost, never the request text or
+the key. The voice selection of a business or squad run uses the same voice
+question as `rerank` in `selectVoices`, between the router's suggestion and
+the lexical search (a voice at `VOICE` 0.5 or more; `none` offers nothing; an
+error leaves the search to decide).
+
+Measured on 48 labeled requests (2026-10-13, `bench/jev/`): 42/48 exact with
+the Jev alone, 0 wrong decisions at or above 0.8, 16/48 decided at the gate;
+with the cards router behind it, 47/48. `nrv find --jev` prints the Jev's
+suggestion above the shortlist; it is off by default because its effect on
+the orchestrator was never measured.
+
 ## `nrv find`: the orchestrator's shortlist
 
-`scripts/find.ts` prints what the orchestrator decides between, zero tokens:
+`scripts/find.ts` prints what the orchestrator decides between, zero tokens,
+in one BM25 pass (the ranking lives in `lib/shortlist.ts`; the named target
+comes from `detectTargetMention`, not from a second run of the router; about
+0.4 s on a 74-business library):
 
 - businesses and squads in **separate** lists, best first, 8 of each
   (`SHORTLIST_SIZE`). A `business_route` match counts as its business, never
