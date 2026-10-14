@@ -96,6 +96,7 @@ function runRevise(files: Record<string, string | Buffer>, opts: { env?: Record<
   const oroot = path.join(projDir, "deliverables");
   fs.mkdirSync(oroot, { recursive: true });
   for (const [name, body] of Object.entries(files)) fs.writeFileSync(path.join(oroot, name), body as any);
+  if (opts.brief) fs.writeFileSync(path.join(projectRoot, "brief.md"), opts.brief);
   fs.writeFileSync(path.join(projDir, "session.json"), JSON.stringify({
     project_id: pid, business_slug: slug, employee: "ceo", runtime: "claude-code",
     session_id: "sess-original", project_dir: projDir, project_root: projectRoot,
@@ -281,6 +282,16 @@ describe("nrv revise — the outcome goes through the delivery pipeline", () => 
     expect(events(c)).toContain("x_delivery_quota_wait");
     for (const e of ["judge_invoked", "gate_passed", "gate_failed", "revision_auto", "x_runtime_errored_with_artifacts", "delivered"]) expect(events(c)).not.toContain(e);
     expect(c.stdout).toContain("Waiting on quota");
+  }, spawnBudgetMs(2));
+
+  test("a revision keeps the folder the brief places the work in, and never asks to move it under the outputs root", () => {
+    const site = path.join(TMP, `site-${Date.now()}`);
+    fs.mkdirSync(site, { recursive: true });
+    const c = runRevise({ "guia.md": PASSING_MD }, { brief: `# Brief\n\nCorrija o site em ${site}, no lugar.\n` });
+    expect(c.status).toBe(0);
+    expect(c.prompt).toContain(`O brief coloca trabalho em: ${site}.`);
+    expect(c.prompt).toContain("nunca copiado para dentro de");
+    expect(c.prompt).not.toContain("Reescreva/atualize os entregáveis como arquivos sob");
   }, spawnBudgetMs(2));
 
   test("a FAILED revision with nothing on disk keeps the historical exit 1", () => {

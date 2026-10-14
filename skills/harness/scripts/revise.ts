@@ -34,6 +34,7 @@ import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
 import { scopeGuard } from "../../_shared/lib/scope-guard.ts";
 import { stamp } from "../../_shared/lib/audit-provenance.ts";
 import { squadRunEnv } from "../../_shared/lib/squad-env.ts";
+import { briefWorkDirs } from "../../_shared/lib/brief-work-dirs.ts";
 
 const ANSI = { reset: "\x1b[0m", bold: "\x1b[1m", dim: "\x1b[2m", green: "\x1b[32m", red: "\x1b[31m", yellow: "\x1b[33m", cyan: "\x1b[36m", lime: "\x1b[38;5;154m" };
 const noColor = process.argv.includes("--no-color") || !process.stdout.isTTY;
@@ -142,12 +143,16 @@ if (!runtimeAvailable(rt)) {
   process.exit(1);
 }
 
+// The folders the brief places the work in: a revision works there too, and is
+// never told to move that work under the outputs root (2026-10-14, a resumed
+// worker copied the whole project it was fixing into its deliverables).
+const workDirs = briefWorkDirs(readIfExists(path.join(projectRoot, "brief.md")), oroot);
 const revisePrompt = [
   "INSTRUÇÃO DE REVISÃO (mesma sessão — você tem o contexto completo do que produziu):",
   "",
   change,
   "",
-  `Reescreva/atualize os entregáveis como arquivos sob: ${oroot}`,
+  `Reescreva/atualize os entregáveis nos lugares que o brief indica. Os entregáveis escritos sob ${oroot} continuam lá; o trabalho que o brief coloca em outra pasta (um projeto a revisar ou corrigir, um projeto novo a criar) é feito lá, no lugar, e nunca copiado para dentro de ${oroot}.${workDirs.length ? ` O brief coloca trabalho em: ${workDirs.join(", ")}.` : ""}`,
   scopeGuard("pt-BR"),
   'Não imprima resumo: entregue os arquivos atualizados. Atualize a seção "## Premissas assumidas" se algo mudou.',
 ].join("\n");
@@ -158,7 +163,7 @@ const res = runHeadless({
   runtime: rt,
   prompt: revisePrompt,
   cwd: projectRoot,
-  addDirs: [projDir, oroot],
+  addDirs: [projDir, oroot, ...workDirs],
   // The folder the session was started in (absent on runs from before runs
   // had one): claude resumes a session only from its own folder.
   workspace: session.workspace || undefined,

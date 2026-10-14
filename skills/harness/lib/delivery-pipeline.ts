@@ -49,6 +49,7 @@ import type { DispatchRole } from "../../_shared/lib/dispatch-depth.ts";
 import { scopeGuard } from "../../_shared/lib/scope-guard.ts";
 import { isRunStatePath } from "../../_shared/lib/run-state.ts";
 import { inBuildOutput, isDependencyDirName, isDependencyNoise } from "../../_shared/lib/deliverable-noise.ts";
+import { briefWorkDirs } from "../../_shared/lib/brief-work-dirs.ts";
 import { runFolderOf } from "../../_shared/lib/run-workspace.ts";
 import { detectKind } from "../../_shared/lib/surface.ts";
 import { GATEABLE_EXTS } from "../scripts/quality-gate.ts";
@@ -622,6 +623,9 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
     emit("x_gate_unjudged_quota", { trace_id: args.pid, project_id: args.pid, business_slug: args.slug, files: gatedFiles.length, revisions: revUsed, reset_at: q.resetAt || null, hint: q.hint });
     return finishQuota({ step: "judge", resetAt: named ? q.resetAt : new Date(Date.now() + 30 * 60_000).toISOString(), named, hint: q.hint }, `judge: ${q.hint}`);
   };
+  // The folders the brief places the work in, outside the outputs root: every
+  // correction is told to work there and is granted them.
+  const workDirs = briefWorkDirs(args.brief, args.outputsRoot);
 
   let gate = runGateOnce(gatedFiles, gateOpts);
   if (gate.judgeQuota) return judgeQuotaWait(gate);
@@ -637,12 +641,13 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
       ...fixLines,
       "",
       `Os entregáveis ficam em ${path.resolve(args.outputsRoot)}.`,
+      `O trabalho que o brief coloca em outra pasta (um projeto a revisar ou corrigir, um projeto novo a criar) é feito lá, no lugar: nunca o copie para dentro de ${path.resolve(args.outputsRoot)}.${workDirs.length ? ` O brief coloca trabalho em: ${workDirs.join(", ")}.` : ""}`,
       "Regra de hífen (a mais comum): use '-' só para palavras compostas; nunca para emendar orações nem como travessão — troque por vírgula, dois-pontos ou ponto.",
       scopeGuard("pt-BR"),
       "Não imprima resumo: entregue os arquivos corrigidos.",
     ].join("\n");
     const revise = (resume: string | undefined, prompt: string) => runHeadlessImpl({
-      runtime: args.runtime, prompt, cwd: args.projectRoot, addDirs: [args.projectDir, args.outputsRoot],
+      runtime: args.runtime, prompt, cwd: args.projectRoot, addDirs: [args.projectDir, args.outputsRoot, ...workDirs],
       sessionId: resume,
       appendSystemPrompt: AUTONOMOUS_DIRECTIVE + (args.rulesDirective ?? ""),
       maxBudgetUsd: args.maxBudgetUsd, timeoutMs: args.timeoutMs, yolo: args.yolo,

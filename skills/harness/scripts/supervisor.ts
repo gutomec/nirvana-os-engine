@@ -417,10 +417,15 @@ function maybePing(h: LedgerHandle, row: RunRow, now: number, deps: SweepDeps): 
 
 // ── default recovery implementations ──────────────────────────────────────
 
-const CONTINUE_PROMPT = [
+/** What the supervisor asks of a resumed run. It names no folder of its own:
+ *  "writing the final files under the outputs root" sent a resumed worker to
+ *  copy a whole project it was fixing into its deliverables (2026-10-14).
+ *  revise.ts adds where the deliverables go and the folders the brief names. */
+export const CONTINUE_PROMPT = [
   "The previous autonomous run was interrupted before completion (detected by the dispatch-ledger supervisor).",
-  "Resume from where it stopped and FINISH every deliverable required by the original brief,",
-  "writing the final files under the outputs root of this project. Do not print a summary; deliver files.",
+  "Resume from where it stopped and FINISH every deliverable required by the original brief, in the places the brief names:",
+  "work the brief places in another folder (a project to review or fix, a new project to create) is finished there, in place, never copied under the outputs root.",
+  "Do not print a summary; deliver files.",
 ].join(" ");
 
 /** cwd from which revise.ts's findSessionFile can locate the project. */
