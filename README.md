@@ -153,7 +153,7 @@ irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
 Remove-Item Env:NIRVANA_ENGINE_URL
 ```
 
-Replace `<version>` with the release, for example `0.15.0-beta.6`. The tag has a leading `v`; without it the download returns 404. The release list is on [GitHub](https://github.com/gutomec/nirvana-os-engine/releases). In PowerShell the variable lives for the whole window, which is why the last line removes it: while it is set, `nrv update` reinstalls the pinned tarball.
+Replace `<version>` with the release, for example `0.15.0-beta.7`. The tag has a leading `v`; without it the download returns 404. The release list is on [GitHub](https://github.com/gutomec/nirvana-os-engine/releases). In PowerShell the variable lives for the whole window, which is why the last line removes it: while it is set, `nrv update` reinstalls the pinned tarball.
 
 Once on a beta, `nrv update` and every pack setup keep you on the beta channel. To go back to stable, run the plain one-liner from the top of this page: it installs the latest stable over the beta, and your content and settings stay.
 
@@ -220,4 +220,4 @@ Author: **Luiz Gustavo Vieira Rodrigues (gutomec / Prospecteezy)**. No co-author
 
 License: the Nirvana-OS Sustainable Use License (SUL) v1.0. The source is published and openly readable, and the engine is free to use. It is source-available, not an OSI-approved open-source license, and certain commercial uses require a separate commercial license. Read [LICENSE](./LICENSE) before relying on any summary, including this one.
 
-Status: beta (0.x, currently 0.15.0-beta.6). The engine works today and installs in minutes. Expect the surface to keep moving until 1.0.
+Status: beta (0.x, currently 0.15.0-beta.7). The engine works today and installs in minutes. Expect the surface to keep moving until 1.0.

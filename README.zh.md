@@ -152,7 +152,7 @@ irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
 Remove-Item Env:NIRVANA_ENGINE_URL
 ```
 
-把 `<version>` 换成具体版本，例如 `0.15.0-beta.6`。tag 以 `v` 开头；没有它，下载会返回 404。版本列表在 [GitHub](https://github.com/gutomec/nirvana-os-engine/releases) 上。在 PowerShell 中，这个变量在整个窗口里都有效，所以最后一行会删除它：只要它还在，`nrv update` 就会重新安装被固定的 tarball。
+把 `<version>` 换成具体版本，例如 `0.15.0-beta.7`。tag 以 `v` 开头；没有它，下载会返回 404。版本列表在 [GitHub](https://github.com/gutomec/nirvana-os-engine/releases) 上。在 PowerShell 中，这个变量在整个窗口里都有效，所以最后一行会删除它：只要它还在，`nrv update` 就会重新安装被固定的 tarball。
 
 一旦用上 beta，`nrv update` 和每个 pack 的 setup 都会让你留在 beta 通道。要回到稳定版，运行本页顶部那行普通命令：它会在 beta 之上安装最新稳定版，你的内容和设置都会保留。
 
@@ -219,4 +219,4 @@ Remove-Item Env:NIRVANA_ENGINE_URL
 
 许可：Nirvana-OS Sustainable Use License (SUL) v1.0。源码公开发布、可公开阅读，引擎可免费使用。它是 source-available，而非 OSI 批准的开源许可，某些商业用途需要单独的商业许可。在依赖任何摘要（包括这一段）之前，请先阅读 [LICENSE](./LICENSE)。
 
-状态：beta（0.x，当前为 0.15.0-beta.6）。引擎今天就能用，几分钟内即可安装。在 1.0 之前，预计接口表面会持续变动。
+状态：beta（0.x，当前为 0.15.0-beta.7）。引擎今天就能用，几分钟内即可安装。在 1.0 之前，预计接口表面会持续变动。
