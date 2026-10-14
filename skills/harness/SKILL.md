@@ -204,6 +204,7 @@ you mistook for a result: the run is finished and nobody knows.
 | 2 | withheld: a serious failure (a leaked secret, a broken file, a blocking criterion without evidence, an invented fact) survived the corrections |
 | 3 | indeterminate: nothing was judged (or `--scaffold-only`) |
 | 4 | invalid input or refused: nothing ran |
+| 75 | waiting on quota: the runtime's quota is spent, nothing more ran, and `_STATUS.json` names the reset (`quota_reset_at`); the supervisor resumes it after that time, so do not re-dispatch before it |
 
 An honest failure is the system working: a worker that reports it was blocked
 (a missing credential, a hard dependency) did its job by telling you. Surface

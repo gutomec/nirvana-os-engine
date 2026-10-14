@@ -17,10 +17,14 @@
 //   0 = PASS (all selected rubrics passed)
 //   1 = FAIL (at least one rubric failed)
 //   2 = artifact not found or no rubrics applicable
+//   3 = NOT JUDGED: the judge's runtime is out of quota. The verdict says so
+//       (`judge_unavailable: {reason: "quota", reset_at, hint}`) and carries
+//       no heuristic stand-in: a gate that could not judge decides nothing.
 
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
+import { quotaStop } from "../lib/quota-detector.ts";
 
 export type RubricResult = {
   name: string;
@@ -35,6 +39,15 @@ export type RubricResult = {
 
 const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR || (fs.existsSync(path.join(os.homedir(), ".nirvana", "skills")) ? path.join(os.homedir(), ".nirvana", "skills") : path.join(os.homedir(), ".claude", "skills"));
 const RUBRICS_DIR = path.join(SKILLS_ROOT, "harness", "rubrics");
+
+/** The judge could not run because its runtime's quota is spent. */
+export type JudgeUnavailable = { reason: "quota"; reset_at: string; hint: string };
+
+/** The quota stop in a failed judge call's error text, or null. */
+export function judgeQuotaOf(errorText: string | null | undefined): JudgeUnavailable | null {
+  const q = quotaStop(errorText ?? "");
+  return q ? { reason: "quota", reset_at: q.resetAt, hint: q.hint } : null;
+}
 
 /** One verdict schema across heuristic and judge modes (routing-360 Phase 4).
  * Extra mode-specific fields may ride along, but every verdict carries these. */
@@ -344,8 +357,19 @@ async function runWithRevisions(artifact: string, content: string, args: string[
       { rubric, artifact: content, brief: ctx.brief, trace_id: process.env.NIRVANA_TRACE_ID || undefined,
         business_slug: process.env.NIRVANA_BUSINESS_SLUG || undefined },
     );
-    if (result.schema_valid) verdicts.push({ rubric, result });
-    else console.error(`[gate] judge gave no usable ${rubric.name} verdict (${(result.schema_errors ?? []).join(", ") || result.judge_runtime}).`);
+    if (result.schema_valid) { verdicts.push({ rubric, result }); continue; }
+    console.error(`[gate] judge gave no usable ${rubric.name} verdict (${(result.schema_errors ?? []).join(", ") || result.judge_runtime}).`);
+    // A spent quota is not "no verdict": the judge could not run, and every
+    // other rubric would meet the same limit. Say so, and decide nothing.
+    const unavailable = result.judge_runtime === "error" ? judgeQuotaOf((result.schema_errors ?? []).join("\n")) : null;
+    if (unavailable) {
+      console.error(`[gate] the judge's runtime is out of quota (${unavailable.hint}): ${path.basename(artifact)} is NOT judged.`);
+      console.log(JSON.stringify({
+        status: "INDETERMINATE", mode: "unjudged", score: 0, results: [], artifact,
+        timestamp: new Date().toISOString(), judge_unavailable: unavailable,
+      }, null, 2));
+      return 3;
+    }
   }
   // No verdict came back (no runtime, a failed call, an answer that is not the
   // schema). That says nothing about the artifact, so it is not a fail: the
@@ -367,6 +391,9 @@ export type GateBatchOutput = {
   mode: "batch";
   verdicts: Record<string, GateVerdict>;
   unjudged: string[];
+  /** Set when the judge's runtime is out of quota: no file of the batch was
+   *  judged, and none was handed to the heuristics in its place. */
+  judge_unavailable?: JudgeUnavailable;
 };
 
 /**
@@ -403,6 +430,12 @@ async function runBatch(artifacts: string[], args: string[]): Promise<GateBatchO
     trace_id: process.env.NIRVANA_TRACE_ID || undefined, business_slug: process.env.NIRVANA_BUSINESS_SLUG || undefined,
   });
   if (!res.ok) console.error(`[gate] the batched judge gave no verdict (${res.reason}: ${res.error}).`);
+  const unavailable = !res.ok && res.reason === "call_failed" ? judgeQuotaOf(res.error) : null;
+  if (unavailable) {
+    console.error(`[gate] the judge's runtime is out of quota (${unavailable.hint}): this batch is NOT judged.`);
+    out.judge_unavailable = unavailable;
+    return out;
+  }
   for (const it of items) {
     if (!res.ok) {
       if (res.reason === "unparseable") out.unjudged.push(it.file);
