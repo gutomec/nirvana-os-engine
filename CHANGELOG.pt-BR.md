@@ -6,6 +6,18 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que os instaladores de uma linha e os setups de pack consomem.
 
+## 0.14.12 — 2026-10-14
+
+### A licença Genesis Circle sobrevive aos pacotes instalados depois dela
+
+Uma chave Genesis Circle libera todos os pacotes, mas o engine só a encontrava onde o pacote atualizado deixou a própria licença ou no arquivo único legado `~/.nirvana-license/PROVENANCE.json`. O setup de cada pacote gravava esse arquivo legado, então quem instalou o Genesis antes de existirem as cópias por pacote e depois outro pacote (web-design) perdia o Genesis inteiro: o `nrv doctor` avisava e o `nrv update` recusava todos os outros pacotes.
+
+Os leitores (`nrv update <pack>`, `nrv license --pack`, `nrv doctor`) agora procuram o arquivo do próprio pacote, depois `~/.nirvana-license/packs/genesis-circle/`, depois o arquivo legado. O `setup.ts` de um pacote e o `nrv license install` não substituem mais uma licença Genesis Circle no arquivo legado pela de outro pacote, e o setup dá a essa licença Genesis a sua própria cópia; o Genesis continua gravando as duas, então engines antigos que leem só o arquivo legado continuam com ela. Quando nenhuma licença serve, a mensagem do doctor acrescenta "If you own Genesis Circle, run its setup again". A verificação da assinatura não mudou. O `setup.ts` vai dentro do zip de cada pacote, então os pacotes base precisam ser reconstruídos para levá-lo.
+
+### `nrv init` depois do beta 0.15 deixa um contrato só
+
+Na volta do beta 0.15, o `nrv init` não reconhecia os blocos que o beta grava (a nota on-demand v3, o contrato de invocação v4 e o contrato de invocação v3 do beta.1 ao beta.5, que tem o mesmo marcador desta linha) e acrescentava o próprio contrato ao lado deles: o contrato completo junto da nota on-demand do beta, ou duas notas on-demand. Cada um desses blocos agora é substituído no lugar pelo bloco desta linha para o modo escolhido, ou removido quando o bloco desta linha já está lá (um arquivo que a 0.14.11 duplicou). As linhas do próprio usuário, acima e abaixo, ficam.
+
 ## 0.14.11 — 2026-10-10
 
 ### Cada squad instala no próprio ambiente, preparado quando ela roda

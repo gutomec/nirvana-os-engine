@@ -6,6 +6,18 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that the
 one-line installers and pack setups consume.
 
+## 0.14.12 — 2026-10-14
+
+### A Genesis Circle license survives the packs installed after it
+
+A Genesis Circle key unlocks every pack, but the engine only found it where the pack being updated left its own license or in the single legacy file `~/.nirvana-license/PROVENANCE.json`. Every pack's setup wrote that legacy file, so a buyer who installed Genesis before the per-pack copies existed and then another pack (web-design) lost Genesis entirely: `nrv doctor` warned and `nrv update` refused every other pack.
+
+Readers (`nrv update <pack>`, `nrv license --pack`, `nrv doctor`) now look for the pack's own file, then `~/.nirvana-license/packs/genesis-circle/`, then the legacy file. A pack's `setup.ts` and `nrv license install` no longer replace a Genesis Circle license in the legacy file with another pack's, and setup gives that Genesis license its own copy; Genesis itself still writes both, so older engines that read only the legacy file keep it. When no license is usable, the doctor's message adds "If you own Genesis Circle, run its setup again". Signature verification is unchanged. `setup.ts` ships inside every pack zip, so the base packs need a rebuild to carry it.
+
+### `nrv init` after the 0.15 beta leaves one contract
+
+Going back from the 0.15 beta, `nrv init` did not recognise the blocks the beta writes (the on-demand note v3, the invocation contract v4, and the beta.1 to beta.5 invocation contract v3, which shares this line's marker) and appended its own contract beside them: the full contract next to the beta's on-demand note, or two on-demand notes. Each of those blocks is now replaced in place by this line's block for the chosen mode, or removed when this line's block is already there (a file 0.14.11 doubled). The user's own lines above and below stay.
+
 ## 0.14.11 — 2026-10-10
 
 ### Each squad installs into its own environment, prepared when it runs
