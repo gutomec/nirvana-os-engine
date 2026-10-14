@@ -33,6 +33,7 @@ import { writeSquadCards } from "../../_shared/lib/work-cards.ts";
 import { squadRunEnv } from "../../_shared/lib/squad-env.ts";
 import { findCloneForTask, type CloneHit } from "../../_shared/lib/clone-search.ts";
 import { parseWorkBrief } from "./work-brief.ts";
+import { altitudeWorkerLine, briefAltitude, type BriefAltitude } from "./brief-altitude.ts";
 import { missingVoiceNotice, selectVoices, unsettledVoiceNotice, voiceQuery, type VoiceRerank, type VoiceSelection } from "./clone-voices.ts";
 import { jevVoiceRerank } from "./jev-voice.ts";
 import { jevEnabled } from "../../_shared/lib/typesafe-client.ts";
@@ -361,6 +362,8 @@ export interface SoloExtras {
   seatVoicesListed?: Set<string>;
   /** Squads the seats may use that have no card. */
   authorizedSquads?: string[];
+  /** briefing.altitude; absent or outcome adds nothing. */
+  altitude?: BriefAltitude;
 }
 
 /** The prompt of the one agent that is the business: a map, never pasted content. */
@@ -380,6 +383,8 @@ export function buildSoloPrompt(
   lines.push("## Your brief", "");
   lines.push(`\`${args.briefFile}\`. Read it first, and again at the start of every phase: the orchestrator appends decisions the user makes while you work.`);
   if (extras.inputs?.length) lines.push(`Inputs it names, resolved: ${extras.inputs.map((p) => `\`${p}\``).join(", ")}.`);
+  const altitudeLine = altitudeWorkerLine(extras.altitude ?? "outcome");
+  if (altitudeLine) lines.push(altitudeLine);
   lines.push("");
 
   lines.push("## The business", "");
@@ -564,6 +569,7 @@ export function prepareBusinessSolo(args: BusinessSoloArgs): PreparedSolo {
   const inputs = briefInputPaths(briefText, args.projectRoot);
   const prompt = buildSoloPrompt({ ...args, briefFile }, seats, memory.dirs, squadCards, voices, {
     memoryNewer: memory.newer, inputs, missingVoices, authorizedSquads: authorized, unsettledVoices, seatVoicesListed,
+    altitude: briefAltitude({ cwd: args.projectRoot }),
   }) + "\n\n" + scopeGuard();
   fs.writeFileSync(path.join(args.projectDir, "solo-prompt.md"), prompt);
   // What the worker may touch: the run, the business, its voices, the squads

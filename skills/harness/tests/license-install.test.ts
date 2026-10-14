@@ -137,6 +137,31 @@ describe("one license per pack", () => {
     expect(run(h, ["status"]).stdout).toContain("TEST-KEY-1234");
     expect(run(h, ["status", "--pack", "education"]).stdout).toContain("TEST-KEY-1234");
   }, 30_000);
+
+  test("--pack falls back to the Genesis Circle copy before the legacy file", () => {
+    const h = home("pack-genesis");
+    const genesis = path.join(h, ".nirvana-license", "packs", "genesis-circle");
+    fs.mkdirSync(genesis, { recursive: true });
+    fs.writeFileSync(path.join(genesis, "PROVENANCE.json"), PROVENANCE);
+    fs.writeFileSync(store(h), JSON.stringify({ license_key: "KEY-WEB", edition: "web-design" }));
+    expect(run(h, ["status", "--pack", "education"]).stdout).toContain("TEST-KEY-1234");
+    expect(run(h, ["status", "--pack", "web-design"]).stdout).toContain("TEST-KEY-1234");
+  }, 30_000);
+
+  test("installing another pack's license keeps a Genesis Circle legacy file", () => {
+    const h = home("keep-genesis");
+    fs.mkdirSync(path.dirname(store(h)), { recursive: true });
+    fs.writeFileSync(store(h), PROVENANCE);
+    const web = path.join(h, "web-pack");
+    fs.mkdirSync(web, { recursive: true });
+    const webProv = JSON.stringify({ license_key: "KEY-WEB", edition: "web-design" });
+    fs.writeFileSync(path.join(web, "PROVENANCE.json"), webProv);
+    const r = run(h, ["install", web]);
+    expect(r.status).toBe(0);
+    expect(fs.readFileSync(store(h), "utf8")).toBe(PROVENANCE);
+    expect(fs.readFileSync(path.join(h, ".nirvana-license", "packs", "web-design", "PROVENANCE.json"), "utf8")).toBe(webProv);
+    expect(r.stdout).toContain("Genesis Circle license");
+  }, 30_000);
 });
 
 describe("the failure message points at the cheap fix", () => {

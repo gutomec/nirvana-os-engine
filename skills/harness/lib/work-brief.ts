@@ -9,6 +9,7 @@
 // sections exist, and appends a decision the user makes mid-run.
 
 import * as fs from "node:fs";
+import { altitudePlaceholders, altitudeTemplateSections, type BriefAltitude } from "./brief-altitude.ts";
 
 export const BRIEF_SECTIONS = ["Request (verbatim)", "Decisions", "Your part", "Inputs", "Done when", "Output"] as const;
 export type BriefSection = (typeof BRIEF_SECTIONS)[number];
@@ -82,9 +83,13 @@ export function doneWhenCriteria(text: string): Criterion[] {
   });
 }
 
-/** The skeleton the orchestrator fills. Content follows the user's language; the headings stay as they are. */
-export function briefTemplate(): string {
-  return [
+/** The skeleton the orchestrator fills. Content follows the user's language; the headings stay as they are.
+ *  `briefing.altitude` adds a section above "Done when" (guided: the suggested
+ *  structure; prescriptive: the method) and, at prescriptive, asks for one
+ *  criterion per item and every artifact; outcome is the six sections alone. */
+export function briefTemplate(altitude: BriefAltitude = "outcome"): string {
+  const swap = altitudePlaceholders(altitude);
+  const lines = [
     "## Request (verbatim)",
     "<the user's own words, pasted, unedited>",
     "",
@@ -97,13 +102,15 @@ export function briefTemplate(): string {
     "## Inputs",
     "- <paths: attachments, another business's _SUMMARY.md; \"None.\" when there is none>",
     "",
+    ...altitudeTemplateSections(altitude),
     "## Done when",
     "- <an observable criterion; end it with (blocking) when the delivery fails without it>",
     "",
     "## Output",
     "<what the deliverable is made of: files and formats; the engine sets the folder>",
     "",
-  ].join("\n");
+  ];
+  return lines.map((l) => swap[l] ?? l).join("\n");
 }
 
 /**

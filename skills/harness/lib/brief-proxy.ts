@@ -17,6 +17,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { runHeadless, runtimeAvailable, type Runtime } from "./host-agent-driver.ts";
 import { resolveRunRuntime } from "./runtime-rules.ts";
+import { altitudeEnrichmentLine, briefAltitude, type BriefAltitude } from "./brief-altitude.ts";
 
 const BUSINESSES_ROOT = path.join(os.homedir(), "businesses");
 
@@ -27,6 +28,32 @@ function businessContext(slug: string): string {
   // Keep it short: name, description, domains lines only.
   const keep = text.split("\n").filter(l => /^(name|description|domains|industry|sector|owner):/.test(l.trim()) || /^\s+-\s/.test(l)).slice(0, 20);
   return keep.join("\n") || `(business '${slug}')`;
+}
+
+/** The enrichment prompt. `briefing.altitude` adds one instruction on the
+ *  shape of the enriched brief; at outcome the prompt is the historical one. */
+export function proxyPrompt(brief: string, slug: string, ctx: string, altitude: BriefAltitude = "outcome"): string {
+  const shape = altitudeEnrichmentLine(altitude);
+  return [
+    `You are an experienced intake analyst for the business "${slug}". Business context:`,
+    "",
+    ctx,
+    "",
+    "You received the briefing below from a client who is NOT available to answer questions:",
+    "",
+    "<<<BRIEFING>>>",
+    brief,
+    "<<<END>>>",
+    "",
+    "Your task (decide on behalf of the absent client):",
+    "1. List mentally the clarifying questions a professional intake would ask for this briefing in this business.",
+    "2. Answer EACH one yourself, with conservative, market-standard assumptions (you decide in place of the absent human).",
+    "3. Produce ONE enriched briefing, in the language of the original briefing, that incorporates the original request plus your answers, ending with a section '## Assumptions decided by the proxy' listing what you assumed.",
+    "",
+    ...(shape ? [shape, ""] : []),
+    "Hyphen rule: use '-' only for compound words; never to join clauses or as a dash.",
+    "Output: ONLY the text of the enriched briefing, with no meta commentary and no code fences.",
+  ].join("\n");
 }
 
 export interface ProxyResult {
@@ -43,26 +70,7 @@ export function proxyEnrichBrief(brief: string, slug: string, runtime: Runtime, 
   if (!runtimeAvailable(runtime)) {
     return { ok: false, enriched: brief, raw: "", error: `runtime '${runtime}' unavailable` };
   }
-  const ctx = businessContext(slug);
-  const prompt = [
-    `You are an experienced intake analyst for the business "${slug}". Business context:`,
-    "",
-    ctx,
-    "",
-    "You received the briefing below from a client who is NOT available to answer questions:",
-    "",
-    "<<<BRIEFING>>>",
-    brief,
-    "<<<END>>>",
-    "",
-    "Your task (decide on behalf of the absent client):",
-    "1. List mentally the clarifying questions a professional intake would ask for this briefing in this business.",
-    "2. Answer EACH one yourself, with conservative, market-standard assumptions (you decide in place of the absent human).",
-    "3. Produce ONE enriched briefing, in the language of the original briefing, that incorporates the original request plus your answers, ending with a section '## Assumptions decided by the proxy' listing what you assumed.",
-    "",
-    "Hyphen rule: use '-' only for compound words; never to join clauses or as a dash.",
-    "Output: ONLY the text of the enriched briefing, with no meta commentary and no code fences.",
-  ].join("\n");
+  const prompt = proxyPrompt(brief, slug, businessContext(slug), briefAltitude());
 
   const res = runHeadless({
     runtime,

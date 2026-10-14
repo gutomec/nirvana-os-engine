@@ -125,8 +125,14 @@ user's language:
 - **Output**: what the deliverable is made of (files, formats). The engine
   gives each run its folder; do not name one.
 
-What and why, never how: no method, no steps, no seats, no file list the user
-did not ask for. A brief does not describe or change settings; never change a
+**Altitude.** `nrv brief template` prints the active `briefing.altitude` and
+shapes the skeleton for it; write at that altitude. `outcome` (the default) is
+the six sections. `guided` adds `## Suggested structure` (sections, order,
+outline), which the worker may adapt. `prescriptive` adds `## Method` and asks
+for one "Done when" criterion per item and every artifact in **Output**.
+
+Beyond what the altitude adds, what and why, never how: no method, no steps, no
+seats, no file list the user did not ask for. A brief does not describe or change settings; never change a
 setting the user did not ask for, and when they ask, change it with
 `nrv config set` before you dispatch. Check the brief with
 `nrv brief check .nirvana/briefs/<business>.md`.
