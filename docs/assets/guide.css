@@ -1,0 +1,67 @@
+/* Nirvana-OS guide pages (install.html, beta.html): the guide components.
+   The base (tokens, fonts, header, container, footer, command blocks,
+   tables, theme) is site.css, loaded first; everything here is built on its
+   tokens so the guides read as siblings of the home. */
+
+/* Text */
+main.wrap{padding-bottom:24px}
+.hero .lede{margin-bottom:0}
+.blk > h2{font-size:clamp(1.5rem,3vw,1.95rem); font-weight:600; margin:0 0 16px}
+h3{font-size:1.15rem; font-weight:600; margin:30px 0 8px}
+h4{font-family:var(--display); font-size:1rem; font-weight:600; margin:22px 0 6px}
+p,li{max-width:68ch}
+ol,ul{padding-left:1.3em}
+li{margin:4px 0}
+/* Prose links stay underlined: color is not the only cue in running text. */
+main p a,main li a,main dd a{text-decoration:underline; text-underline-offset:2px}
+main p a:hover,main li a:hover,main dd a:hover{border-bottom-color:transparent; text-decoration-thickness:2px}
+kbd{font-family:var(--mono); font-size:.85em; border:1px solid var(--border); border-bottom-width:2px;
+    border-radius:5px; padding:0 5px; background:var(--surface)}
+.muted{color:var(--muted)}
+
+/* Channel cards */
+.channels{display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:12px; margin:30px 0 0}
+.channel{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:17px}
+.channel p{margin:4px 0 0; color:var(--muted); font-size:14.5px}
+.channel .name{margin:0; font-weight:600; color:var(--text)}
+.channel.beta{border-left:3px solid var(--accent)}
+
+/* Table of contents */
+.toc{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:17px 20px; margin:14px 0 0}
+.toc h2{font-family:var(--mono); font-size:12px; font-weight:400; letter-spacing:.13em; text-transform:uppercase; color:var(--faint); margin:0 0 8px}
+.toc ol{margin:0; columns:2 220px; column-gap:28px; font-size:15px}
+.toc li{margin:2px 0; break-inside:avoid}
+
+/* Notes and the phrases you say to the agent (the quote card is site.css) */
+.note{background:var(--surface); border:1px solid var(--border); border-left:3px solid var(--accent);
+      border-radius:10px; padding:13px 17px; margin:16px 0; max-width:72ch}
+.note p{margin:0}
+.note p + p{margin-top:8px}
+p.say{margin:8px 0; max-width:72ch}
+span.say{background:none; border:0; padding:0; font:inherit; font-style:italic}
+
+/* Tables */
+.table{overflow-x:auto; margin:12px 0 16px}
+
+/* Operating system tabs, styled like the home's runtime switcher.
+   Progressive: without JS every panel shows, each under its own heading. */
+.tablist{display:none; flex-wrap:wrap; gap:8px; margin:16px 0 8px}
+.js .tablist{display:flex}
+.tab{display:inline-flex; align-items:center; background:var(--surface); border:1px solid var(--border);
+     border-radius:999px; padding:8px 15px; cursor:pointer; font-family:var(--mono); font-size:13px; color:var(--muted)}
+.tab:hover{color:var(--text); border-color:var(--faint)}
+.tab[aria-selected="true"]{color:var(--text); border-color:var(--accent);
+     background:color-mix(in srgb,var(--accent) 9%,var(--surface))}
+.panel{border-top:1px dashed var(--border); padding-top:4px}
+.js .panel{border-top:0}
+.js .panel[hidden]{display:none}
+.js .panel > .panel-title{position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap}
+
+/* Troubleshooting */
+dl.faq dt{font-weight:600; margin-top:18px}
+dl.faq dd{margin:4px 0 0; max-width:72ch}
+
+@media (max-width:560px){
+  .code pre{padding-right:15px; padding-bottom:42px}
+  .toc ol{columns:1}
+}

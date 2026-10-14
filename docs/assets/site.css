@@ -1,0 +1,165 @@
+/* Nirvana-OS site: the base every page shares (index.html, install.html,
+   beta.html). Tokens, fonts, reset, header, container, footer, typography,
+   buttons, command blocks, tables, the quote card and the theme. Page-only styles stay
+   in the page (the home) or in guide.css (the guide components).
+
+   1. Fonts       2. Tokens and theme   3. Reset and base
+   4. Header      5. Hero and sections  6. Buttons and command blocks
+   7. Tables      8. Quote card   9. Footer
+   10. Small screens and reduced motion */
+
+/* ─── 1. Fonts ───────────────────────────────────────────────────── */
+@font-face{font-family:'Geist'; font-style:normal; font-weight:100 900; font-display:swap;
+  src:url(fonts/geist.woff2) format('woff2')}
+@font-face{font-family:'Geist Mono'; font-style:normal; font-weight:100 900; font-display:swap;
+  src:url(fonts/geist-mono.woff2) format('woff2')}
+
+/* ─── 2. Tokens and theme ────────────────────────────────────────── */
+:root{
+  --accent:#EB3514; --accent-ink:#c62d10;
+  --bg:#faf9f6; --surface:#ffffff; --border:#e6e3da;
+  --text:#17161a; --muted:#57544c; --faint:#6f6c63;
+  --green:#157a42;
+  --sans:"Geist",ui-sans-serif,system-ui,-apple-system,sans-serif;
+  --display:"Geist","Space Grotesk",ui-sans-serif,system-ui,sans-serif;
+  --mono:"Geist Mono",ui-monospace,"SF Mono","Menlo",monospace;
+  --maxw:960px; --radius:14px; --gutter:22px;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0b0b0c; --surface:#121213; --border:#242427;
+    --text:#f4f3ef; --muted:#b3b0a8; --faint:#84817a;
+    --accent-ink:#f2582f; --green:#2fcf7a;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0b0b0c; --surface:#121213; --border:#242427;
+  --text:#f4f3ef; --muted:#b3b0a8; --faint:#84817a;
+  --accent-ink:#f2582f; --green:#2fcf7a;
+  color-scheme:dark;
+}
+:root[data-theme="light"]{
+  --bg:#faf9f6; --surface:#ffffff; --border:#e6e3da;
+  --text:#17161a; --muted:#57544c; --faint:#6f6c63;
+  --accent-ink:#c62d10; --green:#157a42;
+  color-scheme:light;
+}
+
+/* ─── 3. Reset and base ──────────────────────────────────────────── */
+*{box-sizing:border-box; min-width:0}
+html{scroll-behavior:smooth; -webkit-text-size-adjust:100%}
+/* clip, not hidden: overflow-x:hidden makes the page a scroll container and
+   turns off the sticky header; clip cuts the sideways overflow without that. */
+html,body{max-width:100%; overflow-x:clip}
+html{scroll-padding-top:64px}
+body{
+  margin:0; background:var(--bg); color:var(--text);
+  font-family:var(--sans); font-size:16.5px; line-height:1.62;
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+}
+.wrap{max-width:var(--maxw); margin:0 auto; padding:0 var(--gutter)}
+a{color:var(--accent-ink); text-decoration:none; border-bottom:1px solid transparent}
+a:hover{border-bottom-color:currentColor}
+code{font-family:var(--mono); font-size:.9em; background:color-mix(in srgb,var(--text) 7%,transparent);
+     padding:.12em .38em; border-radius:5px; overflow-wrap:anywhere}
+h1,h2,h3{font-family:var(--display); letter-spacing:-.022em; line-height:1.16; margin:0}
+strong{font-weight:600}
+:focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:4px}
+.skip{position:absolute; left:16px; top:-48px; z-index:100; background:var(--text); color:var(--bg);
+      padding:8px 12px; border-radius:8px; border:0}
+.skip:focus{top:8px}
+
+/* ─── 4. Header ──────────────────────────────────────────────────── */
+.top{position:sticky; top:0; z-index:40; background:color-mix(in srgb,var(--bg) 88%,transparent);
+     -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px); border-bottom:1px solid var(--border)}
+.top .wrap{display:flex; align-items:center; gap:16px; height:56px}
+.logo{display:flex; align-items:center; gap:9px; font-family:var(--display); font-weight:600;
+      letter-spacing:-.02em; color:var(--text); border:0; flex:none}
+.logo .dot{width:11px; height:11px; border-radius:50%; background:var(--accent); flex:none}
+.top nav{margin-left:auto; display:flex; gap:20px; align-items:center; font-size:14px}
+.top nav a{color:var(--muted); border:0; white-space:nowrap}
+.top nav a:hover{color:var(--text)}
+.top nav a[aria-current="page"]{color:var(--text); text-decoration:underline;
+  text-decoration-color:var(--accent); text-decoration-thickness:2px; text-underline-offset:6px}
+.tt{background:none; border:1px solid var(--border); color:var(--muted); cursor:pointer; flex:none;
+    font-family:var(--mono); font-size:12px; padding:5px 10px; border-radius:8px}
+.tt:hover{color:var(--text); border-color:var(--faint)}
+
+/* ─── 5. Hero and sections ───────────────────────────────────────── */
+.hero{padding:74px 0 20px}
+.eyebrow{font-family:var(--mono); font-size:12px; letter-spacing:.14em; text-transform:uppercase;
+         color:var(--accent-ink); margin:0 0 18px}
+.hero h1{font-size:clamp(2.4rem,6vw,3.9rem); font-weight:600; margin-bottom:20px}
+.hero h1 em{font-style:normal; color:var(--accent)}
+.lede{font-size:clamp(1.06rem,2.2vw,1.24rem); color:var(--muted); max-width:64ch; margin:0 0 30px}
+.sub{font-size:14px; color:var(--faint)}
+section.blk{padding:62px 0; border-top:1px solid var(--border)}
+.kicker{font-family:var(--mono); font-size:12px; letter-spacing:.13em; text-transform:uppercase;
+        color:var(--faint); margin-bottom:14px}
+h2.big{font-size:clamp(1.7rem,3.6vw,2.35rem); font-weight:600; margin-bottom:16px}
+.blk p.intro{color:var(--muted); max-width:66ch; margin:0 0 30px}
+
+/* ─── 6. Buttons and command blocks ──────────────────────────────── */
+/* The home's one-line command (.cmd) and the guide's block (.code pre) are
+   one component: same font, radius, border, background and copy button. */
+.cta{display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin-bottom:14px}
+.cmd,.code pre{background:var(--surface); border:1px solid var(--border); border-radius:11px;
+     font-family:var(--mono); font-size:14.5px; color:var(--text)}
+.cmd{display:inline-flex; align-items:center; gap:11px; padding:11px 15px; max-width:100%}
+.cmd .p{color:var(--accent-ink)}
+.cmd > span:not(.p){overflow-wrap:anywhere; min-width:0}
+.cmd button,.code .copy{background:var(--surface); border:0; color:var(--faint); cursor:pointer;
+     font-family:var(--mono); font-size:12px; padding:4px 6px; border-radius:6px; flex:none}
+.cmd button:hover,.code .copy:hover{color:var(--text)}
+.code .copy.done{color:var(--green)}
+/* Long commands scroll inside their own box, never the page. */
+.code{position:relative; margin:10px 0 16px; max-width:100%}
+.code .label{display:block; font-family:var(--mono); font-size:12px; letter-spacing:.06em;
+     text-transform:uppercase; color:var(--faint); margin:0 0 6px}
+.code pre{margin:0; padding:12px 84px 12px 15px; line-height:1.55; overflow-x:auto;
+     white-space:pre; -webkit-overflow-scrolling:touch}
+.code pre code{background:none; padding:0; font-size:inherit; overflow-wrap:normal; border-radius:0}
+/* The copy button masks the right edge, so a scrolled command never shows
+   through or beside it. */
+.code .copy{position:absolute; right:1px; bottom:10px; padding:4px 10px 4px 8px;
+     box-shadow:-10px 0 8px -2px var(--surface)}
+.ghost{border:1px solid var(--border); border-radius:11px; padding:11px 16px; font-size:14.5px; color:var(--muted)}
+.ghost:hover{color:var(--text); border-color:var(--faint)}
+
+/* ─── 7. Tables ──────────────────────────────────────────────────── */
+.tbl,.table table{width:100%; border-collapse:collapse; font-size:14.5px; margin-top:6px}
+.tbl th,.tbl td,.table th,.table td{text-align:left; padding:11px 12px; border-bottom:1px solid var(--border); vertical-align:top}
+.tbl th,.table th{font-family:var(--mono); font-size:11.5px; text-transform:uppercase; letter-spacing:.1em;
+     color:var(--faint); font-weight:400}
+.tbl td code{white-space:nowrap}
+.tbl td:last-child{color:var(--muted)}
+
+/* ─── 8. Quote card ──────────────────────────────────────────────── */
+.say{background:var(--surface); border:1px solid var(--border); border-left:3px solid var(--accent);
+     border-radius:10px; padding:15px 17px; font-family:var(--mono); font-size:13.6px; line-height:1.62}
+.say b{color:var(--accent-ink); font-weight:400}
+
+/* ─── 9. Footer ──────────────────────────────────────────────────── */
+footer{border-top:1px solid var(--border); padding:36px 0 60px; color:var(--faint); font-size:14px}
+footer .links{display:flex; gap:8px 18px; flex-wrap:wrap; margin-bottom:14px}
+
+/* ─── 10. Small screens and reduced motion ───────────────────────── */
+/* Under 720px the home's section links hide; Instalação and Beta stay, so
+   every page reaches the other two on a phone. */
+@media (max-width:720px){
+  .top nav{gap:14px}
+  .top nav a.sec{display:none}
+}
+@media (max-width:560px){
+  :root{--gutter:16px}
+  .top .wrap{gap:12px}
+  .cmd,.code pre{font-size:13px}
+  .say{font-size:12.8px}
+  .tbl td code{white-space:normal}
+}
+@media (prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  *,*::before,*::after{transition:none!important; animation:none!important}
+}
