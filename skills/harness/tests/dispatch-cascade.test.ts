@@ -19,6 +19,7 @@ import {
   runAgentX,
 } from "../lib/dispatch-cascade.ts";
 import { SCOPE_GUARD_EN } from "../../_shared/lib/scope-guard.ts";
+import { CAPTURE_PRELUDE, IS_WINDOWS, readCapturedArgs, writeFakeCli } from "./helpers/fake-cli.ts";
 
 function mkDecision(partial: Partial<AgenticRouteDecision>): AgenticRouteDecision {
   return {
@@ -384,4 +385,53 @@ describe("runAgentX — the cascade bottom (injected runWithCascade seam)", () =
       expect(seen[0].prompt).toContain("autonomous generalist");
     } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
   });
+});
+
+describe("runAgentX on codex — the voice folders reach the CLI", () => {
+  // The real cascade and driver, a fake `codex` on PATH that records its argv:
+  // a voice the generalist is told to open must be a directory codex may read,
+  // or the prompt points at files the sandbox hides.
+  test.skipIf(IS_WINDOWS)("each voice folder is an --add-dir of the codex run", () => {
+    const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "nrv-agentx-codex-")));
+    const bin = path.join(tmp, "bin");
+    const capture = path.join(tmp, "capture");
+    fs.mkdirSync(capture, { recursive: true });
+    writeFakeCli(bin, "codex", CAPTURE_PRELUDE + `
+await stdinLen();
+const oi = argv.indexOf("-o");
+if (oi >= 0) fs.writeFileSync(argv[oi + 1], "done");
+console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 1, output_tokens: 1 } }));
+`);
+    const saved = { PATH: process.env.PATH, FAKE_CAPTURE_DIR: process.env.FAKE_CAPTURE_DIR };
+    process.env.PATH = `${bin}${path.delimiter}${saved.PATH ?? ""}`;
+    process.env.FAKE_CAPTURE_DIR = capture;
+    try {
+      const voiceDir = path.join(tmp, "clones", "yoshua-bengio");
+      fs.mkdirSync(voiceDir, { recursive: true });
+      const projDir = path.join(tmp, "proj");
+      const oroot = path.join(tmp, "out");
+      fs.mkdirSync(projDir, { recursive: true });
+      const briefPath = path.join(tmp, "brief-enriched.md");
+      const brief = "Escreva um ensaio sobre IA.";
+      fs.writeFileSync(briefPath, brief);
+      const r = runAgentX({
+        brief, briefPath, runtime: "codex", projectId: "proj-ax-codex",
+        projectDir: projDir, projectRoot: tmp, outputsRoot: oroot,
+        reason: "router no_match", audit: auditSpy().fn, timeoutMs: 30_000,
+        suggestedClones: ["yoshua-bengio"],
+        cloneLibrary: { names: [{ slug: "yoshua-bengio", name: "Yoshua Bengio" }], dirOf: (s) => (s === "yoshua-bengio" ? voiceDir : null) },
+      });
+      expect(r.ok, r.error ?? r.stderr).toBe(true);
+      expect(r.finalRuntime).toBe("codex");
+      const args = readCapturedArgs(capture, "codex");
+      const grants = args.flatMap((a, i) => (a === "--add-dir" ? [args[i + 1]] : []));
+      expect(grants).toContain(voiceDir);
+      expect(grants).toContain(projDir);
+      expect(args).not.toContain("--model");
+    } finally {
+      if (saved.PATH === undefined) delete process.env.PATH; else process.env.PATH = saved.PATH;
+      if (saved.FAKE_CAPTURE_DIR === undefined) delete process.env.FAKE_CAPTURE_DIR; else process.env.FAKE_CAPTURE_DIR = saved.FAKE_CAPTURE_DIR;
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  }, 60_000);
 });

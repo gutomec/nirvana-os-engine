@@ -17,13 +17,72 @@ Three routers exist, and the mode decides which one speaks:
   business and squad, what it produces first; written beside the digest) and
   the top mind-clones of the lexical clone search (`lib/cards-router.ts`). It
   answers `business:<slug>`, `squad:<slug>` or `solo` plus the brief's done
-  states, mapped onto the same contract the cascade consumes.
+  states, mapped onto the same contract the cascade consumes. See
+  [The cards call](#the-cards-call) for the prompt layout and the parts.
 - **fast** — `lib/router.js`, documented below. Deterministic, zero LLM tokens
   by default. Used by `nrv route` / `nrv find`, `--mode=fast`, and as the
   BM25 fallback rung when the agentic router fails at the transport level.
 
 The router does NOT execute anything. It returns a decision JSON; invocation
 belongs to the dispatch layer.
+
+## The cards call
+
+The prompt has two halves (`buildCardsStatic`, `buildCardsRequest`):
+
+- **System prompt:** the instructions, the rules, the answer shape and the
+  cards. They are the same for every request, so the runtime reads them back
+  from its prompt cache from the second call on.
+- **Message:** the clone candidates, the request and, on the one retry, the
+  correction.
+
+The call runs from a fixed empty folder (`routerCwd()`), because the cwd is
+part of the prompt and a new temp folder per call broke the cached prefix.
+Measured on 48 labeled requests (2026-10-13): $19.70 before, $6.65 after, with
+the runtime's default model. A runtime with no system-prompt flag (codex,
+qwen, agy, kimi, grok, opencode) gets both halves folded into one prompt by
+the driver (`withPreamble`), static half first.
+
+The answer may split the request into **parts**:
+
+```json
+{"target": "business:<slug>", "parts": [{"target": "business:<slug>", "part": "<what it delivers>", "after": ["business:<slug>"]}], "voices": [], "squads": [], "done": [], "reason": ""}
+```
+
+One part per deliverable that belongs to a different business or squad, with
+`after` naming the targets whose output it needs. `target` stays the part the
+others build on. An answer without `parts` reads as one part. With two parts
+or more, `nrv dispatch --auto` writes a multi-target plan
+(`lib/auto-parts-plan.ts`: one node per target, `depends_on` edges, one
+six-section brief per node) to `.nirvana/plans/<project>.json` and runs
+`scripts/multi-target.ts run` on it, passing `--runtime` when the dispatch had
+one (audit: `x_route_parts`). Under `--scaffold-only` it writes the plan,
+prints the command and exits 3. With the multi-target engine switched off it
+warns and runs the primary part only.
+
+The voices the router chooses (`suggested_mind_clones`) reach the worker: the
+business seats, the squad and agent-x all receive them through `selectVoices`
+(`lib/clone-voices.ts`), after the voices the request names and before the
+lexical search. Agent-x never gets a searched voice.
+
+## `nrv find`: the orchestrator's shortlist
+
+`scripts/find.ts` prints what the orchestrator decides between, zero tokens:
+
+- businesses and squads in **separate** lists, best first, 8 of each
+  (`SHORTLIST_SIZE`). A `business_route` match counts as its business, never
+  as the seat it routes to;
+- each line is the entity's routing card (what it produces, what it is, what
+  it refuses), and a squad line names the capability that matched;
+- the target named in the request, when there is one, and the clones the
+  request names, the ambiguous names and the names missing from the library
+  (`lib/clone-names.ts`).
+
+`--json` prints the router's full decision, unchanged, plus a `shortlist`
+object (`named`, `businesses`, `squads`, `clones`). Parse that, never the
+human text, which is for reading. Measured on 48 labeled requests
+(2026-10-13): the right business is in the first five for 95% of the parts,
+against 78% with the old mixed list of five.
 
 ## Pipeline order (what `route()` actually runs)
 
@@ -269,7 +328,8 @@ the squad manifest and dispatch its best capability agentically".
 
 ```bash
 nrv route "<brief>"                     # full pipeline, human summary
-nrv find  "<brief>"                     # same engine, discovery view
+nrv find  "<brief>"                     # the shortlist: businesses and squads apart, with cards
+nrv find  "<brief>" --json              # the router decision plus `shortlist`
 bun skills/harness/lib/router.js route --json "<brief>"
 
 # flags: --json · --prefer business|squad|auto · --no-amplify ·

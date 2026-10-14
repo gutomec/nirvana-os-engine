@@ -21,7 +21,11 @@
  *
  * Also emits `.routing-cards.md` (same directory): one short line per business
  * and squad, what it produces first, for the `cards` routing mode
- * (lib/routing-cards.ts).
+ * (lib/routing-cards.ts). The cards router sends that file in the SYSTEM prompt
+ * (buildCardsStatic in lib/cards-router.ts), the same bytes for every request,
+ * so the runtime reads it back from its prompt cache. Every rebuild changes the
+ * bytes (the `generated_at` header, the sorted lines) and costs one cache write
+ * on the next call, so the file is rebuilt only when it is stale.
  *
  * Also emits `.keyword-aliases.json` (same directory): cross-language alias
  * groups mined from business + capability `keywords` arrays, following the

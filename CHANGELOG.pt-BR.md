@@ -6,6 +6,24 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que os instaladores de uma linha e os setups de pack consomem.
 
+## Não lançado
+
+### Precisão da seleção: empresas, squads e clones
+
+Medido em 48 pedidos rotulados (13/10/2026), o caminho do orquestrador passou de 42 para 47 seleções exatas e o roteador `cards` de 38 para 47, com o modelo padrão do runtime nos dois.
+
+O `nrv find` imprime uma lista curta de onde o orquestrador pode decidir. Empresas e squads saem em listas separadas, oito de cada, e uma rota de empresa conta como a empresa, não como o cargo para onde aponta. Cada linha é o cartão de roteamento (o que produz, o que é, o que recusa), e a saída mostra o alvo que o pedido nomeia e os clones que ele nomeia, os nomes ambíguos e os ausentes. A empresa certa agora está entre as cinco primeiras em 95% das partes, contra 78% antes. O `--json` mantém a decisão do roteador sem mudança e acrescenta o objeto `shortlist`; o texto para humanos mudou de formato, então scripts devem ler o `--json`.
+
+O `SKILL.md` do harness ganhou as regras que as medições pediram: um squad nomeado pelo usuário é o alvo (`--squad`), uma circunstância do pedido não vira parte nem traz uma segunda empresa, os finalistas são lidos antes da decisão, um squad entra nas Decisions só depois de ter o cartão lido, e um clone descrito em vez de nomeado é resolvido com `nrv find-clone`.
+
+O roteador `cards` pode dividir o pedido em partes (`parts: [{target, part, after}]`). Com duas partes ou mais, o `nrv dispatch --auto` grava um plano multi-target com um nó por alvo e o roda pelo `nrv multi-target`, repassando o `--runtime`; com `--scaffold-only`, grava o plano, imprime o comando e sai com 3. Antes, todas as partes iam para uma empresa e 0 de 6 pedidos com várias empresas chegavam a todas; agora 6 de 6 chegam. O evento de auditoria é `x_route_parts`.
+
+O cache de prompt do `cards` passou a funcionar. As instruções e os cartões vão como prompt de sistema, o pedido como mensagem, e a chamada roda numa pasta vazia fixa. 48 chamadas custavam US$ 19,70 e passaram a custar US$ 6,65. Runtimes sem flag de sistema recebem as duas metades num prompt só, como antes.
+
+A re-pergunta do roteador `agentic` roda sem ferramentas na mesma pasta vazia, lê as vozes pelo nome de campo que o parser espera e soma custo e duração ao total.
+
+As vozes escolhidas pelo roteador agora chegam ao worker. Cargos de empresa, squads e o agent-x as recebem depois das vozes que o pedido nomeia e antes da busca léxica, e o agent-x nunca recebe uma voz da busca. Nomes são reconhecidos por sobrenome, primeiro nome ou apelido depois de uma pista de voz ("estilo Hormozi", "como o Naval"), com ou sem acento, uma vaga por pessoa; um sobrenome compartilhado sai como ambíguo e um nome desconhecido como ausente (46 de 46 formas reconhecidas, 0 falsos pedidos em 16 textos genéricos). A busca de clones lê a parte da própria run e o contexto da empresa ou do squad, e um cargo lista no máximo seis das vozes atribuídas.
+
 ## 0.15.0-beta.6 — 2026-10-13
 
 ### Correções de runtime da auditoria de 2026-10-11

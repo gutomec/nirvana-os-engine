@@ -119,7 +119,7 @@ Full contract: `~/.nirvana/skills/_shared/SCOPE_CONTRACT.md`. Bootstrap a scoped
 
 | Script | Purpose |
 |---|---|
-| `find.ts "<brief>"` | BM25 discovery; top-3 matches + decision + invocation plan |
+| `find.ts "<brief>"` | The orchestrator's shortlist: businesses and squads ranked apart (8 each) with their routing cards, plus the target and clones the request names; `--json` adds the router decision |
 | `route.ts "<brief>"` | Full fast-mode pipeline JSON (all stages) + budget pre-flight |
 | `index.ts` | Rebuild registries after adding/editing businesses or squads |
 | `validate.ts` | Self-test (config, registries, BM25, audit) |

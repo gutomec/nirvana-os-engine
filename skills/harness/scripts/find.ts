@@ -118,15 +118,47 @@ export function renderShortlist(brief: string, s: Shortlist): string {
   return out.join("\n");
 }
 
+export interface FindArgs {
+  brief: string;
+  json: boolean;
+  /** Options for the router's decision under --json, as `lib/router.js find` read them. */
+  route: { amplify: boolean; forceAmplify: boolean; prefer?: string; preferAmplifier?: string; disableStageMinus1: boolean };
+}
+
+/**
+ * The flags `nrv find` accepted when it forwarded to `lib/router.js find`
+ * (`--no-amplify`, `--prefer <x>`, `--force-amplify`, `--prefer-amplifier <x>`,
+ * `--no-stage-minus-1`) are still read, never left in the request text, where
+ * they became search words. No amplification unless asked.
+ */
+export function parseFindArgs(raw: string[]): FindArgs {
+  const valued = new Set(["--prefer", "--prefer-amplifier"]);
+  const value = (name: string) => { const i = raw.indexOf(name); return i >= 0 ? raw[i + 1] : undefined; };
+  const words = raw.filter((a, i) => !a.startsWith("--") && !(i > 0 && valued.has(raw[i - 1])));
+  const prefer = value("--prefer");
+  const preferAmplifier = value("--prefer-amplifier");
+  return {
+    brief: words.join(" ").trim(),
+    json: raw.includes("--json"),
+    route: {
+      amplify: raw.includes("--amplify") && !raw.includes("--no-amplify"),
+      forceAmplify: raw.includes("--force-amplify"),
+      ...(prefer && ["business", "squad", "auto"].includes(prefer) ? { prefer } : {}),
+      ...(preferAmplifier && ["builtin", "maestro"].includes(preferAmplifier) ? { preferAmplifier } : {}),
+      disableStageMinus1: raw.includes("--no-stage-minus-1"),
+    },
+  };
+}
+
 if (import.meta.main) {
   const raw = process.argv.slice(2);
   if (raw.length === 0) {
     console.error("usage: find <brief> [--json] [--amplify]");
     process.exit(EXIT.INVALID_ARGS);
   }
-  const wantJson = raw.includes("--json");
-  const amplify = raw.includes("--amplify");
-  const brief = raw.filter((a) => a !== "--json" && a !== "--amplify").join(" ").trim();
+  const args = parseFindArgs(raw);
+  const wantJson = args.json;
+  const brief = args.brief;
   if (!brief) {
     console.error("find: brief is empty");
     process.exit(EXIT.INVALID_ARGS);
@@ -138,7 +170,7 @@ if (import.meta.main) {
   if (wantJson) {
     // The router's decision as before, for whoever parses it, with the shortlist beside it.
     // No amplification unless asked: an orchestrator already understood the request.
-    const decision = await router.route(brief, { registries, amplify });
+    const decision = await router.route(brief, { registries, ...args.route });
     process.stdout.write(JSON.stringify({ ...decision, shortlist: list }, null, 2) + "\n");
   } else {
     process.stdout.write(renderShortlist(brief, list) + "\n");

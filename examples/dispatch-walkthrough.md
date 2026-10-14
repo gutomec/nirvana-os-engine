@@ -21,16 +21,22 @@ The user picks nothing else — no squad, no model, no flags. That is the point.
 Skill("nirvana", "Analyze the competitive landscape for AI note-taking apps and write me a one-page brief with the three biggest gaps.")
 ```
 
-**2. Route (zero-token preview available).** The harness consults the three
-registries. You can see the same decision the maestro makes:
+**2. Route (zero-token shortlist).** The harness consults the three
+registries. `nrv find` prints the shortlist the maestro reads before it decides:
 
 ```
 $ nrv find "competitive landscape analysis, one-page brief"
-signal:   HIGH
-target:   squad_capability · research-intelligence:market.competitive_analysis.execute
+businesses (best first):
+  1. business:<slug> | produces: ... | what it is | not: ...
+  ...
+squads (best first, with the capability that matched):
+  1. squad:research-intelligence | produces: ... | capability: market.competitive_analysis.execute
+  ...
 ```
 
-A research/market squad matches by content. No model is chosen — the run
+A research/market squad matches by content; the maestro reads the finalists'
+cards and picks. Scripts read `nrv find --json`, whose `shortlist` object
+carries the same lists. No model is chosen — the run
 inherits whatever model the user's runtime is set to.
 
 **3. Prep (this is what writes the audit trail).** Before spawning, run the

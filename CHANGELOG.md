@@ -6,6 +6,24 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that the
 one-line installers and pack setups consume.
 
+## Unreleased
+
+### Selection precision: businesses, squads and clones
+
+Measured on 48 labeled requests (2026-10-13), the orchestrator path went from 42 to 47 exact selections and the `cards` router from 38 to 47, with the runtime's default model in both.
+
+`nrv find` prints a shortlist the orchestrator can decide from. Businesses and squads are ranked apart, eight of each, and a business route counts as its business instead of the seat it routes to. Each line is the routing card (what it produces, what it is, what it refuses), and the output names the target the request names and the clones it names, the ambiguous names and the missing ones. The right business is now in the first five for 95% of the parts, against 78% before. `--json` keeps the router's decision unchanged and adds a `shortlist` object; the human text changed format, so read `--json` from scripts.
+
+The harness `SKILL.md` gained the rules the measurements asked for: a squad the user names is the target (`--squad`), a circumstance of the request is not a part and brings no second business, the finalists are read before deciding, a squad goes in the Decisions only after its card is read, and a clone described rather than named is resolved with `nrv find-clone`.
+
+The `cards` router can split a request into parts (`parts: [{target, part, after}]`). With two parts or more, `nrv dispatch --auto` writes a multi-target plan with one node per target and runs it through `nrv multi-target`, passing `--runtime` on; `--scaffold-only` writes the plan, prints the command and exits 3. Before, every part went to one business and 0 of 6 multi-business requests reached all of them; now 6 of 6 do. The audit event is `x_route_parts`.
+
+The `cards` prompt cache now works. The instructions and the cards travel as the system prompt, the request as the message, and the call runs from a fixed empty folder. 48 calls cost $19.70 before and $6.65 after. Runtimes with no system-prompt flag get both halves in one prompt, as before.
+
+The `agentic` router's re-ask runs without tools from the same empty folder, reads the voices under the field name the parser expects, and adds its cost and duration to the total.
+
+The voices the router picks now reach the worker. Business seats, squads and agent-x receive them after the voices the request names and before the lexical search, and agent-x never gets a searched voice. Names are recognized by surname, first name or nickname after a voice cue ("estilo Hormozi", "como o Naval"), with or without accents, one seat per person; a shared surname is reported as ambiguous and an unknown name as missing (46 of 46 forms recognized, 0 false requests in 16 generic texts). The clone search reads the run's own part and the business or squad context, and a seat lists at most six of its assigned voices.
+
 ## 0.15.0-beta.6 — 2026-10-13
 
 ### Runtime fixes from the 2026-10-11 runtime audit

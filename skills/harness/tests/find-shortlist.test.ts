@@ -5,7 +5,7 @@
 // and squads ranked apart, five each, for 95%. These tests lock the shape that
 // produced the second number. The rates themselves need a library; CI has none.
 import { describe, expect, test } from "bun:test";
-import { rankShortlist, renderShortlist, SHORTLIST_SIZE } from "../scripts/find.ts";
+import { parseFindArgs, rankShortlist, renderShortlist, SHORTLIST_SIZE } from "../scripts/find.ts";
 
 const cap = (squad: string, capability_id: string) => ({ id: `squad_capability:${squad}:${capability_id}`, meta: { type: "squad_capability", squad, capability_id }, coverage: { matched: 3, total: 4 } });
 const biz = (slug: string) => ({ id: `business:${slug}`, meta: { type: "business", slug }, coverage: { matched: 2, total: 4 } });
@@ -60,5 +60,19 @@ describe("the shortlist", () => {
     expect(text).toContain("- alex-hormozi");
     expect(text).toContain('"sobral" is more than one clone: pedro-sobral, ruy-sobral (ask which)');
     expect(text).toContain('"Simon Sinek" is not in the library');
+  });
+});
+
+describe("the command line", () => {
+  test("the router flags the old `nrv find` forwarded are read, never searched for", () => {
+    const a = parseFindArgs(["--no-amplify", "--prefer", "squad", "launch", "my", "game", "--no-stage-minus-1", "--json"]);
+    expect(a.brief).toBe("launch my game");
+    expect(a.json).toBe(true);
+    expect(a.route).toEqual({ amplify: false, forceAmplify: false, prefer: "squad", disableStageMinus1: true });
+  });
+  test("no amplification unless asked", () => {
+    expect(parseFindArgs(["a request"]).route.amplify).toBe(false);
+    expect(parseFindArgs(["a request", "--amplify"]).route.amplify).toBe(true);
+    expect(parseFindArgs(["--prefer-amplifier", "maestro", "a", "request"])).toMatchObject({ brief: "a request", route: { preferAmplifier: "maestro" } });
   });
 });
