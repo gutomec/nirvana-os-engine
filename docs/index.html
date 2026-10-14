@@ -60,7 +60,10 @@ html:not([data-theme="light"]) body.dark{}
 
 *{box-sizing:border-box; min-width:0}
 html{scroll-behavior:smooth}
-html,body{max-width:100%; overflow-x:hidden}
+/* clip, not hidden: overflow-x:hidden makes the page a scroll container and
+   turns off the sticky header; clip cuts the sideways overflow without that. */
+html,body{max-width:100%; overflow-x:clip}
+html{scroll-padding-top:64px}
 body{
   margin:0; background:var(--bg); color:var(--text);
   font-family:var(--sans); font-size:16.5px; line-height:1.62;
