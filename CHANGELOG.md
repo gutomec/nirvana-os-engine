@@ -6,6 +6,10 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that the
 one-line installers and pack setups consume.
 
+## Unreleased
+
+- Docs: INSTALL.md and the six READMEs cover the install on macOS, Windows, WSL and Linux, the beta tag `v0.15.0-beta.7`, pack setup, squad activation, per-project brief settings, going back to stable and common errors; Windows commands use single quotes only.
+
 ## 0.15.0-beta.7 — 2026-10-14
 
 ### Selection precision: businesses, squads and clones

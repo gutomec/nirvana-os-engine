@@ -11,7 +11,7 @@
 [![CI](https://github.com/gutomec/nirvana-os-engine/actions/workflows/smoke.yml/badge.svg)](https://github.com/gutomec/nirvana-os-engine/actions/workflows/smoke.yml)
 [![license](https://img.shields.io/badge/license-SUL-lightgrey)](./LICENSE)
 
-**macOS / Linux**
+**macOS、Linux 和 WSL**
 
 ```bash
 curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | bash
@@ -23,7 +23,7 @@ curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | bash
 irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
 ```
 
-[文档](https://gutomec.github.io/nirvana-os-engine/) · [Packs](https://squads.sh/pt/packs) · [图解安装](https://gutomec.github.io/nirvana-os-engine/install.html) · [Changelog](./CHANGELOG.md)
+[文档](https://gutomec.github.io/nirvana-os-engine/) · [Packs](https://squads.sh/pt/packs) · [图解安装](https://gutomec.github.io/nirvana-os-engine/install.html) · [Beta 版](https://gutomec.github.io/nirvana-os-engine/beta.html) · [Changelog](./CHANGELOG.md)
 
 **用你的语言阅读：** [English](./README.md) · [Português](./README.pt-BR.md) · [Español](./README.es.md) · [中文](./README.zh.md) · [हिन्दी](./README.hi.md) · [العربية](./README.ar.md)
 
@@ -51,7 +51,14 @@ Nirvana-OS 是一个 Bun 原生、与运行时无关的多 agent 系统。它运
 
 ## 安装
 
-运行本页顶部的一行命令。它需要 `curl`（或 `wget`）和 `tar`，macOS、Linux 和 Windows 10+ 都已自带。不需要 Node。如果缺少 [Bun](https://bun.sh)，安装器会在不使用 sudo 的情况下把它装进你的用户目录（`~/.bun`），然后继续。
+本 README 描述的是 0.15 beta，`v0.15.0-beta.7`。本页顶部的一行命令安装的是最新的**稳定版**（0.14.11）；要安装这个 beta，请使用 [Beta 版](#beta-版)一节中的命令。不需要 Node。如果缺少 [Bun](https://bun.sh)，两个安装器都会在不使用 sudo、也不需要管理员权限的情况下把它装进你的用户目录（`~/.bun`），然后继续。
+
+运行之前：
+
+- **macOS：** 无需准备。
+- **Windows（PowerShell）：** 无需准备，也不需要管理员权限。
+- **Linux（Ubuntu）：** `sudo apt update && sudo apt install -y curl unzip`。
+- **Windows + WSL（Ubuntu）：** 在以管理员身份打开的 PowerShell 中运行 `wsl --install`，重启，打开 Ubuntu 应用并创建你的 Linux 用户。然后像在 Linux 上一样安装 `curl` 和 `unzip`，并在 Ubuntu 里运行 `bash` 命令。你的 AI agent（Claude Code、Codex、Antigravity）也必须安装在 Ubuntu 里，你的项目应放在 `~`，不要放在 `/mnt/c` 下，那里很慢。
 
 它在你的机器上改动的内容：
 
@@ -61,11 +68,11 @@ Nirvana-OS 是一个 Bun 原生、与运行时无关的多 agent 系统。它运
 - Claude Code、Antigravity 和 Codex 中的审计 hook；
 - 空的内容文件夹 `~/squads`、`~/businesses` 和 `~/businesses/_library/dna`。
 
-再次运行是安全的。之后打开一个新终端，让 `nrv` 出现在你的 PATH 上，然后对你的 agent 说：*“检查 Nirvana-OS 是否安装正确。”* 它会运行 `nrv doctor`。退出码 1 表示只有警告；退出码 2 会列出失败的项目。
+再次运行是安全的。**关闭终端并打开一个新终端**，让 `nrv` 出现在你的 PATH 上，然后用 `nrv --version` 检查；这个 beta 会显示 `0.15.0-beta.7`。接着对你的 agent 说：*“检查 Nirvana-OS 是否安装正确。”* 它会运行 `nrv doctor`。退出码 1 表示只有警告；退出码 2 会列出失败的项目。
 
-这行命令不会提问。要在安装时选择性能档位，把它传进去：`curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | bash -s -- --profile=balanced`。你也可以之后让你的 agent 来设置（见[设置](#设置)）。
+通过 `curl | bash` 运行时，安装器不会提问。要在安装时选择性能档位，把它传进去：把末尾的 `bash` 换成 `bash -s -- --profile=balanced`。你也可以之后让你的 agent 来设置（见[设置](#设置)）。
 
-其他途径（通过 skills.sh 安装 `nirvana` skill、从克隆的仓库安装）见 [INSTALL.md](./INSTALL.md)。
+各个系统的分步指南在[文档网站](https://gutomec.github.io/nirvana-os-engine/install.html)（葡萄牙语）上，另有一个 [beta 页面](https://gutomec.github.io/nirvana-os-engine/beta.html)；[INSTALL.md](./INSTALL.md) 中也有，其他安装途径也在那里（通过 skills.sh 安装 `nirvana` skill、从克隆安装）。
 
 ## 开始一个项目
 
@@ -77,7 +84,9 @@ Nirvana-OS 是一个 Bun 原生、与运行时无关的多 agent 系统。它运
 - 你点名或指向你的某家公司、某个 squad 或某个 mind-clone（“我的发布公司”、“文案 squad”、“用 Hormozi 的口吻”），包括 pack 的名字；
 - 你要求整个工作或其中一部分在另一个运行时上运行（“用 Codex 来审查”）。
 
-如果你想让 Nirvana 编排一个项目中的每一项交付物，就说 *“在这个项目里用 Nirvana 编排一切”*。agent 会运行 `nrv init . --orchestrators=always`。打开一个新会话，让这项改动生效。
+如果你想让 Nirvana 编排一个项目中的每一项交付物，就说 *“在这个项目里用 Nirvana 编排一切”*。agent 会运行 `nrv init . --orchestrators=always`。打开一个新会话，让这项改动生效。稳定版 0.14.11 正好相反：完整契约是它的默认值，只有当你自己在一个已经有这些文件之一的文件夹中运行 `nrv init .` 时，它才会询问。
+
+从那以后，你用平实的语言和你的 agent 对话，由它使用 Nirvana-OS。你日常不需要输入命令。
 
 ## 可以对你的 agent 说什么
 
@@ -118,43 +127,51 @@ agent 负责编排，从不亲自撰写交付物。它挑选的每一家公司�
 
 ## Packs
 
-Pack 是在 [squads.sh](https://squads.sh/pt/packs) 上出售的、经过策划的公司、squad 和 mind-clone。旗舰产品是 [Genesis Circle](https://squads.sh/pt/nirvana-os)。
+Pack 是在 [squads.sh](https://squads.sh/pt/packs) 上出售的精选公司、squad 和 mind-clone。旗舰是 [Genesis Circle](https://squads.sh/pt/nirvana-os)。
 
-1. 在 squads.sh 购买 pack，并从你的控制面板下载它的 zip。
-2. 把整个压缩包解压到一个文件夹，在那里打开终端并运行 setup：
-   - macOS / Linux：`bash setup.sh`
+1. 在 squads.sh 购买 pack，并从你的控制台下载它的 zip。
+2. 解压整个压缩包，并在包含 `setup.sh` 的文件夹中打开终端：
+   - macOS：双击 zip，在“终端”中输入 `cd `（带空格），把文件夹拖到窗口上，按回车；
+   - Windows：右键点击 zip，选择**全部解压缩**，打开文件夹，在空白处右键并选择**在终端中打开**；
+   - Linux 和 WSL：`cd ~/Downloads && unzip <文件>.zip -d <文件夹> && cd <文件夹>`。在 WSL 上，先把 zip 从 `/mnt/c/Users/<用户>/Downloads` 复制到 `~/Downloads`。
+3. 运行 setup：
+   - macOS、Linux 和 WSL：`bash setup.sh`
    - Windows：`powershell -ExecutionPolicy Bypass -File setup.ps1`
 
-   Setup 会在需要时安装 Bun，安装或更新引擎，把内容复制到 `~/squads`、`~/businesses` 和 `~/businesses/_library/dna`，重建索引，并把 pack 的许可存放在 `~/.nirvana-license/packs/<pack>/`。
-3. 和你的 agent 对话：*“用 Nirvana 列出 Genesis Circle pack 给了我什么”*，然后点名一家公司、一个 squad 或这个 pack 来布置工作。
+   setup 会在需要时安装 Bun，安装或更新引擎，把内容复制到 `~/squads`、`~/businesses` 和 `~/businesses/_library/dna`，重建索引，并把 pack 的许可存放到 `~/.nirvana-license/packs/<pack>/`。它从不会把引擎换成更旧的版本，所以 beta 仍然是 beta。
+4. 和你的 agent 对话：*“用 Nirvana 列出 Genesis Circle pack 给了我什么”*，然后点名一家公司、一个 squad 或这个 pack 来请求工作。
 
-Squad 的依赖会在该 squad 第一次运行时按需安装。要提前把它们全部准备好，就让你的 agent 安装每个 squad 的依赖（`nrv activate --all`）。
+**激活 squad。** squad 的依赖会在它第一次运行时按需安装，装在它自己的环境 `~/.nirvana/envs/<squad>` 中。要一次性提前准备好所有依赖，就对你的 agent 说：*“激活我所有的 Nirvana squad。”* 它会运行 `nrv activate --all`，涵盖 Node 和 Python 包、系统程序、API 密钥和环境变量、MCP 服务器以及模型。agent 会拿到失败清单，每一项都附有修复它的确切命令；在执行任何用到 `brew`、`sudo` 或 `winget` 的操作之前，以及需要任何 API 密钥时，它都会先征得你的许可。在大型 pack 上第一次运行需要几分钟。
 
-**更新 pack。** 让你的 agent 更新它，或者运行 `nrv update <pack>`。在更新替换它们之前，你编辑过的组件会备份到 `~/.nirvana/backups/packs/<pack>/`。如果更新因许可错误而失败，就从 squads.sh 重新下载这个 pack，再运行一次它的 setup；这也会刷新许可。
+**更新 pack。** 让你的 agent 更新它，或者运行 `nrv update <pack-slug>`，例如 `nrv update genesis-circle`。在更新替换它们之前，你编辑过的组件会备份到 `~/.nirvana/backups/packs/<pack>/`。如果更新因许可错误而失败，就从 squads.sh 重新下载这个 pack，再运行一次它的 setup；这也会刷新许可。
 
 ## 更新引擎
 
-让你的 agent 更新 Nirvana-OS，或者运行 `nrv update`。它会先备份 `~/.nirvana/skills`，并保留你的设置和内容。`nrv update --check` 会说出它将要安装的版本，而不做任何改动。
+让你的 agent 更新 Nirvana-OS，或者运行 `nrv update`。它会先备份 `~/.nirvana/skills`，并保留你的设置和内容。`nrv update --check` 会说出它将安装哪个版本，但不做任何改动。
 
-更新从不会把引擎移到更旧的版本。稳定版引擎只会升到更新的稳定版。beta 会升到最新的更高版本，无论是 beta 还是稳定版，所以 0.15 的 beta 会在 0.15.0 发布时变成 0.15.0。引擎更新之后，`nrv update` 还会检查每一个带许可的已安装 pack，并在有更新版本时告诉你。
+更新永远不会把引擎降到更旧的版本。稳定版引擎只会升到更新的稳定版。beta 版会升到最新的更高版本，无论是 beta 还是稳定版，所以 0.15 的 beta 会在 0.15.0 发布时变成 0.15.0。引擎更新后，`nrv update` 还会检查每一个带许可的已安装 pack，并在有新版本时告诉你。
 
 ## Beta 版
 
-Beta 版是 GitHub 上的 prerelease。这行命令安装的是最新稳定版，所以要安装 beta，就得固定它的 tarball：
+Beta 版是 GitHub 上的预发布版本，而本 README 就是 beta 版的：`v0.15.0-beta.7`。顶部的一行命令安装的是最新稳定版，所以 beta 需要固定它的 tarball 来安装。标签以 `v` 开头；少了它，下载会返回 404。要安装更新的 beta，把这个标签换成[发布列表](https://github.com/gutomec/nirvana-os-engine/releases)中的标签。
+
+macOS、Linux 和 WSL：
 
 ```bash
-curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v<version>/nirvana-os-engine.tar.gz bash
+curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.7/nirvana-os-engine.tar.gz bash
 ```
+
+Windows（PowerShell），写成一行：
 
 ```powershell
-$env:NIRVANA_ENGINE_URL = "https://github.com/gutomec/nirvana-os-engine/releases/download/v<version>/nirvana-os-engine.tar.gz"
-irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
-Remove-Item Env:NIRVANA_ENGINE_URL
+$env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.7/nirvana-os-engine.tar.gz'; irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
 ```
 
-把 `<version>` 换成具体版本，例如 `0.15.0-beta.7`。tag 以 `v` 开头；没有它，下载会返回 404。版本列表在 [GitHub](https://github.com/gutomec/nirvana-os-engine/releases) 上。在 PowerShell 中，这个变量在整个窗口里都有效，所以最后一行会删除它：只要它还在，`nrv update` 就会重新安装被固定的 tarball。
+之后，如果窗口还开着，运行 `Remove-Item Env:NIRVANA_ENGINE_URL`：只要这个变量还在，`nrv update` 就会重新安装固定的 tarball。Windows 命令使用单引号，是因为粘贴时丢失的双引号会让 PowerShell 停在 `>>` 提示符上等待。
 
-一旦用上 beta，`nrv update` 和每个 pack 的 setup 都会让你留在 beta 通道。要回到稳定版，运行本页顶部那行普通命令：它会在 beta 之上安装最新稳定版，你的内容和设置都会保留。
+进入 beta 之后，`nrv update` 和每一次 pack setup 都会让你留在 beta 通道：先是更新的 beta，0.15.0 发布后就是 0.15.0。在 0.14.11 上设置的项目会保留完整契约，直到你在 beta 上运行 `nrv init .`，它会就地把契约换成按需说明（`--orchestrators=always` 则保留完整契约）；你写在 Nirvana 区块之上的内容会保留。
+
+**回到稳定版。** 在 Windows 上，先打开一个新的 PowerShell 并运行 `Remove-Item Env:NIRVANA_ENGINE_URL`；提示它不存在的错误可以忽略。运行本页顶部的普通一行命令。它会在 beta 之上安装最新稳定版，并保留你的内容、pack 和设置。确认 `nrv --version` 不再显示 `beta`，然后在每个用 beta 用过的项目中删掉 beta 写入 `AGENTS.md`、`CLAUDE.md` 和 `GEMINI.md` 的区块，再重新运行 `nrv init .`（[详情](./INSTALL.md#back-to-stable-from-a-beta)）。
 
 ## 设置
 
@@ -168,7 +185,9 @@ Remove-Item Env:NIRVANA_ENGINE_URL
 | `balanced` | high | 400k tokens | 规则要求时 | 关闭 |
 | `economy` | medium | 200k tokens | 仅在请求时 | 关闭 |
 
-档位从不挑选模型；那由你的运行时自己的配置决定。你显式更改的设置优先于档位。`nrv config list` 会显示每一项设置、它的值以及它的来源。完整参考见 [docs/configuration.md](./docs/configuration.md)。
+档位从不挑选模型；那由你的运行时自己的配置决定。你显式更改的设置优先于档位。`nrv config list` 会显示每一项设置、它的值以及它的来源。完整参考见 [docs/configuration.md](./docs/configuration.md)。档位只从 0.15 起才有。
+
+**按项目设置。** `nrv config set briefing.altitude <outcome|guided|prescriptive> --project` 决定一份 brief 承载多少内容：默认的 `outcome` 说明结果、约束和完成标准；`guided` 再加上作者建议的结构；`prescriptive` 再加上逐项标准、产物清单和方法。`nrv config get briefing.altitude` 显示当前生效的值。自由文本形式的规则写在项目的 `CLAUDE.md`、`AGENTS.md` 或 `GEMINI.md` 中，放在 `nrv init` 会重写的 Nirvana 区块之上；你的 agent 会读取它们，并把它们带进它写的 brief。直接提出即可：*“在这个项目里使用 guided brief”*、*“在这个项目的 CLAUDE.md 里加上：所有交付物都用巴西葡萄牙语”*。
 
 ## 为什么“工作已完成”在这里有分量
 
@@ -211,7 +230,15 @@ Remove-Item Env:NIRVANA_ENGINE_URL
 
 **如果我的库里没有合适的呢？** 请求照样会运行，交给通才 `agent-x`。你也可以让你的 agent 创建缺少的公司或 squad。
 
-**Windows？** 原生支持，通过 Bun。无需 WSL。
+**Windows？** 原生支持，通过 Bun，无需 WSL。如果你更喜欢 WSL，就把所有东西都装在 Ubuntu 里，包括你的 agent。
+
+## 故障排查
+
+- **PowerShell 显示 `>>` 并一直等待。** 粘贴时有一个引号没有闭合。按 Ctrl+C 或打开一个新窗口，然后重新粘贴那一整行。
+- **关闭“终端”后 macOS 显示 “Saving session… [Processo concluído]”。** 这是“终端”在关闭 shell，不是错误。
+- **安装返回 404。** 标签缺少开头的 `v`，或者该版本不存在。
+- **pack 更新因许可错误而失败。** 从 squads.sh 重新下载 pack，并运行它的 setup。
+- **其他问题。** `nrv doctor` 检查整个安装，`nrv install --check` 检查 hook 和 PATH。更多内容见 [INSTALL.md](./INSTALL.md#troubleshooting)。
 
 ## 许可、作者与状态
 

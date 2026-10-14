@@ -11,7 +11,7 @@
 [![CI](https://github.com/gutomec/nirvana-os-engine/actions/workflows/smoke.yml/badge.svg)](https://github.com/gutomec/nirvana-os-engine/actions/workflows/smoke.yml)
 [![license](https://img.shields.io/badge/license-SUL-lightgrey)](./LICENSE)
 
-**macOS / Linux**
+**macOS, Linux y WSL**
 
 ```bash
 curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | bash
@@ -23,7 +23,7 @@ curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | bash
 irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
 ```
 
-[Documentación](https://gutomec.github.io/nirvana-os-engine/) · [Packs](https://squads.sh/pt/packs) · [Instalación ilustrada](https://gutomec.github.io/nirvana-os-engine/install.html) · [Changelog](./CHANGELOG.md)
+[Documentación](https://gutomec.github.io/nirvana-os-engine/) · [Packs](https://squads.sh/pt/packs) · [Instalación ilustrada](https://gutomec.github.io/nirvana-os-engine/install.html) · [Beta](https://gutomec.github.io/nirvana-os-engine/beta.html) · [Changelog](./CHANGELOG.md)
 
 **Léelo en tu idioma:** [English](./README.md) · [Português](./README.pt-BR.md) · [Español](./README.es.md) · [中文](./README.zh.md) · [हिन्दी](./README.hi.md) · [العربية](./README.ar.md)
 
@@ -51,7 +51,14 @@ El motor viene sin contenido. Creas empresas, squads y clones pidiéndoselo a tu
 
 ## Instalación
 
-Ejecuta el comando de una línea del principio de esta página. Necesita `curl` (o `wget`) y `tar`, que macOS, Linux y Windows 10+ ya traen. No hace falta Node. Si falta [Bun](https://bun.sh), el instalador lo pone en tu carpeta de usuario (`~/.bun`) sin sudo y sigue adelante.
+Este README describe la beta de 0.15, `v0.15.0-beta.7`. El comando de una línea del principio de esta página instala la última release **estable** (0.14.11); para instalar esta beta, usa los comandos de [Betas](#betas). No hace falta Node. Si falta [Bun](https://bun.sh), cualquiera de los dos instaladores lo pone en tu carpeta de usuario (`~/.bun`) sin sudo ni permisos de administrador y sigue adelante.
+
+Antes de ejecutarlo:
+
+- **macOS:** nada que preparar.
+- **Windows (PowerShell):** nada que preparar, y sin permisos de administrador.
+- **Linux (Ubuntu):** `sudo apt update && sudo apt install -y curl unzip`.
+- **Windows con WSL (Ubuntu):** ejecuta `wsl --install` en un PowerShell abierto como administrador, reinicia, abre la app Ubuntu y crea tu usuario de Linux. Después instala `curl` y `unzip` como en Linux y ejecuta el comando `bash` dentro de Ubuntu. Tu agente de IA (Claude Code, Codex, Antigravity) también tiene que instalarse dentro de Ubuntu, y tus proyectos van en `~`, no en `/mnt/c`, que es lento.
 
 Lo que cambia en tu máquina:
 
@@ -61,11 +68,11 @@ Lo que cambia en tu máquina:
 - hooks de auditoría en Claude Code, Antigravity y Codex;
 - las carpetas de contenido vacías `~/squads`, `~/businesses` y `~/businesses/_library/dna`.
 
-Volver a ejecutarlo es seguro. Después abre una terminal nueva para que `nrv` esté en tu PATH, y pídele a tu agente: *"Comprueba que Nirvana-OS está bien instalado."* Ejecuta `nrv doctor`. La salida 1 significa solo avisos; la salida 2 lista lo que falló.
+Volver a ejecutarlo es seguro. **Cierra la terminal y abre una nueva** para que `nrv` esté en tu PATH, y compruébalo con `nrv --version`; esta beta muestra `0.15.0-beta.7`. Después pídele a tu agente: *"Comprueba que Nirvana-OS está bien instalado."* Ejecuta `nrv doctor`. La salida 1 significa solo avisos; la salida 2 lista lo que falló.
 
-El comando de una línea no hace preguntas. Para elegir un perfil de rendimiento al instalar, pásalo así: `curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | bash -s -- --profile=balanced`. También puedes fijarlo más tarde pidiéndoselo a tu agente (ver [Configuración](#configuración)).
+Con `curl | bash` el instalador no hace preguntas. Para elegir un perfil de rendimiento al instalar, pásalo así: cambia el `bash` final por `bash -s -- --profile=balanced`. También puedes fijarlo más tarde pidiéndoselo a tu agente (ver [Configuración](#configuración)).
 
-Las otras vías (la skill `nirvana` a través de skills.sh, la instalación desde un clon) están en [INSTALL.md](./INSTALL.md).
+La guía paso a paso de cada sistema está en el [sitio de documentación](https://gutomec.github.io/nirvana-os-engine/install.html) (en portugués), con una [página para la beta](https://gutomec.github.io/nirvana-os-engine/beta.html), y en [INSTALL.md](./INSTALL.md), junto con las otras vías (la skill `nirvana` a través de skills.sh, instalar desde un clon).
 
 ## Empieza un proyecto
 
@@ -77,7 +84,9 @@ Esa nota mantiene a tu agente trabajando como siempre. Usa Nirvana solo cuando t
 - nombras o señalas una de tus empresas, squads o mind-clones ("mi empresa de lanzamientos", "el squad de copy", "con la voz de Hormozi"), incluido el nombre de un pack;
 - pides que el trabajo, o parte de él, corra en otro runtime ("usa Codex para revisarlo").
 
-Si quieres que Nirvana orqueste cada entregable de un proyecto, di *"orquesta todo en este proyecto con Nirvana"*. El agente ejecuta `nrv init . --orchestrators=always`. Abre una sesión nueva para que el cambio surta efecto.
+Si quieres que Nirvana orqueste cada entregable de un proyecto, di *"orquesta todo en este proyecto con Nirvana"*. El agente ejecuta `nrv init . --orchestrators=always`. Abre una sesión nueva para que el cambio surta efecto. La estable 0.14.11 funciona al revés: el contrato completo es su valor predeterminado, y solo pregunta cuando tú mismo ejecutas `nrv init .` en una carpeta que ya tiene uno de esos archivos.
+
+A partir de ahí hablas con tu agente en lenguaje natural y él usa Nirvana-OS. No escribes comandos en el día a día.
 
 ## Qué pedirle a tu agente
 
@@ -122,40 +131,48 @@ El agente orquesta y nunca escribe el entregable por sí mismo. Cada empresa que
 Los packs son empresas, squads y mind-clones curados que se venden en [squads.sh](https://squads.sh/pt/packs). El buque insignia es [Genesis Circle](https://squads.sh/pt/nirvana-os).
 
 1. Compra el pack en squads.sh y descarga su zip desde tu panel.
-2. Descomprime el archivo entero en una carpeta, abre una terminal ahí y ejecuta el setup:
-   - macOS / Linux: `bash setup.sh`
+2. Descomprime el archivo completo y abre una terminal en la carpeta que contiene `setup.sh`:
+   - macOS: haz doble clic en el zip, escribe `cd ` en Terminal, arrastra la carpeta a la ventana y pulsa Enter;
+   - Windows: haz clic derecho en el zip, elige **Extraer todo**, abre la carpeta, haz clic derecho en un espacio vacío y elige **Abrir en Terminal**;
+   - Linux y WSL: `cd ~/Downloads && unzip <archivo>.zip -d <carpeta> && cd <carpeta>`. En WSL, copia antes el zip de `/mnt/c/Users/<usuario>/Downloads` a `~/Downloads`.
+3. Ejecuta el setup:
+   - macOS, Linux y WSL: `bash setup.sh`
    - Windows: `powershell -ExecutionPolicy Bypass -File setup.ps1`
 
-   El setup instala Bun si hace falta, instala o actualiza el motor, copia el contenido en `~/squads`, `~/businesses` y `~/businesses/_library/dna`, reconstruye los índices y guarda la licencia del pack en `~/.nirvana-license/packs/<pack>/`.
-3. Habla con tu agente: *"Usa Nirvana para listar lo que me dio el pack Genesis Circle"*, y luego pide trabajo nombrando una empresa, un squad o el pack.
+   El setup instala Bun si hace falta, instala o actualiza el motor, copia el contenido en `~/squads`, `~/businesses` y `~/businesses/_library/dna`, reconstruye los índices y guarda la licencia del pack en `~/.nirvana-license/packs/<pack>/`. Nunca reemplaza el motor por una release más antigua, así que una beta sigue siendo beta.
+4. Habla con tu agente: *"Usa Nirvana para listar lo que me dio el pack Genesis Circle"*, y luego pide trabajo nombrando una empresa, un squad o el pack.
 
-Las dependencias de un squad se instalan bajo demanda la primera vez que el squad se ejecuta. Para prepararlas todas de antemano, pídele a tu agente que instale las dependencias de cada squad (`nrv activate --all`).
+**Activar los squads.** Las dependencias de un squad se instalan bajo demanda la primera vez que se ejecuta, en su propio entorno en `~/.nirvana/envs/<squad>`. Para prepararlas todas de antemano, pídele a tu agente: *"Activa todos mis squads de Nirvana."* Ejecuta `nrv activate --all`, que cubre paquetes de Node y Python, programas del sistema, claves de API y variables de entorno, servidores MCP y modelos. El agente recibe la lista de fallos con el comando exacto que corrige cada uno, y te pide permiso antes de cualquier cosa que use `brew`, `sudo` o `winget`, y para cualquier clave de API. La primera ejecución en un pack grande tarda varios minutos.
 
-**Actualizar un pack.** Pídele a tu agente que lo actualice, o ejecuta `nrv update <pack>`. Los componentes que editaste se respaldan en `~/.nirvana/backups/packs/<pack>/` antes de que la actualización los reemplace. Si la actualización falla con un error de licencia, descarga el pack otra vez desde squads.sh y vuelve a ejecutar su setup; eso también renueva la licencia.
+**Actualizar un pack.** Pídele a tu agente que lo actualice, o ejecuta `nrv update <slug-del-pack>`, por ejemplo `nrv update genesis-circle`. Los componentes que editaste se respaldan en `~/.nirvana/backups/packs/<pack>/` antes de que la actualización los reemplace. Si la actualización falla con un error de licencia, descarga el pack otra vez desde squads.sh y vuelve a ejecutar su setup; eso también renueva la licencia.
 
 ## Actualizar el motor
 
-Pídele a tu agente que actualice Nirvana-OS, o ejecuta `nrv update`. Primero respalda `~/.nirvana/skills` y conserva tu configuración y tu contenido. `nrv update --check` nombra la versión que instalaría sin cambiar nada.
+Pídele a tu agente que actualice Nirvana-OS, o ejecuta `nrv update`. Primero hace una copia de `~/.nirvana/skills` y conserva tu configuración y tu contenido. `nrv update --check` dice qué release instalaría sin cambiar nada.
 
-Una actualización nunca lleva el motor a una versión más antigua. Un motor estable pasa solo a un estable más nuevo. Una beta pasa a la versión mayor más reciente, beta o estable, así que una beta 0.15 se convierte en 0.15.0 cuando esta salga. Tras actualizar el motor, `nrv update` también revisa cada pack instalado que tenga licencia y avisa cuando alguno tiene una versión más nueva.
+Una actualización nunca lleva el motor a una release más antigua. Un motor estable solo pasa a una estable más nueva. Una beta pasa a la release mayor más nueva, beta o estable, así que una beta de 0.15 se convierte en 0.15.0 cuando esta salga. Después de actualizar el motor, `nrv update` también revisa cada pack instalado que tiene licencia y avisa cuando hay una versión nueva.
 
 ## Betas
 
-Las betas son prereleases de GitHub. El comando de una línea instala el último estable, así que una beta se instala fijando su tarball:
+Las betas son prereleases en GitHub, y este README es el de la beta: `v0.15.0-beta.7`. El comando del principio instala la última estable, así que la beta se instala fijando su tarball. La etiqueta empieza con `v`; sin ella la descarga devuelve 404. Para una beta más nueva, cambia esa etiqueta por una de la [lista de releases](https://github.com/gutomec/nirvana-os-engine/releases).
+
+macOS, Linux y WSL:
 
 ```bash
-curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v<version>/nirvana-os-engine.tar.gz bash
+curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.7/nirvana-os-engine.tar.gz bash
 ```
+
+Windows (PowerShell), en una sola línea:
 
 ```powershell
-$env:NIRVANA_ENGINE_URL = "https://github.com/gutomec/nirvana-os-engine/releases/download/v<version>/nirvana-os-engine.tar.gz"
-irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
-Remove-Item Env:NIRVANA_ENGINE_URL
+$env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.7/nirvana-os-engine.tar.gz'; irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
 ```
 
-Reemplaza `<version>` por la versión, por ejemplo `0.15.0-beta.7`. El tag empieza con `v`; sin ella la descarga devuelve 404. La lista de versiones está en [GitHub](https://github.com/gutomec/nirvana-os-engine/releases). En PowerShell la variable vive durante toda la ventana, y por eso la última línea la elimina: mientras está definida, `nrv update` reinstala el tarball fijado.
+Después, si la ventana sigue abierta, ejecuta `Remove-Item Env:NIRVANA_ENGINE_URL`: mientras la variable exista, `nrv update` reinstala el tarball fijado. Los comandos de Windows usan comillas simples porque una comilla doble perdida al pegar deja a PowerShell esperando en `>>`.
 
-Una vez en una beta, `nrv update` y el setup de cada pack te mantienen en el canal beta. Para volver al estable, ejecuta el comando de una línea normal del principio de esta página: instala el último estable encima de la beta, y tu contenido y tu configuración se quedan.
+Una vez en la beta, `nrv update` y cada setup de pack te mantienen en el canal beta: betas más nuevas y, cuando salga, la 0.15.0. Un proyecto preparado en 0.14.11 conserva su contrato completo hasta que ejecutas `nrv init .` en la beta, que lo cambia, en su sitio, por la nota bajo demanda (`--orchestrators=always` conserva el contrato completo); las líneas que escribiste encima del bloque de Nirvana se quedan.
+
+**Volver a la estable.** En Windows, abre un PowerShell nuevo y ejecuta `Remove-Item Env:NIRVANA_ENGINE_URL`; un error que diga que no existe no es problema. Ejecuta el comando simple del principio de esta página. Instala la última estable sobre la beta y conserva tu contenido, los packs y la configuración. Comprueba que `nrv --version` ya no muestra `beta` y vuelve a ejecutar `nrv init .` en cada proyecto que usaste con la beta, después de quitar el bloque que la beta escribió en `AGENTS.md`, `CLAUDE.md` y `GEMINI.md` ([detalles](./INSTALL.md#back-to-stable-from-a-beta)).
 
 ## Configuración
 
@@ -169,7 +186,9 @@ Un perfil mueve varios ajustes a la vez:
 | `balanced` | high | 400k tokens | cuando una regla lo pide | desactivadas |
 | `economy` | medium | 200k tokens | solo a pedido | desactivadas |
 
-Un perfil nunca elige el modelo; eso lo hace la configuración propia de tu runtime. Un ajuste que cambias de forma explícita prevalece sobre el perfil. `nrv config list` muestra cada ajuste, su valor y de dónde viene. La referencia completa está en [docs/configuration.md](./docs/configuration.md).
+Un perfil nunca elige el modelo; eso lo hace la configuración propia de tu runtime. Un ajuste que cambias de forma explícita prevalece sobre el perfil. `nrv config list` muestra cada ajuste, su valor y de dónde viene. La referencia completa está en [docs/configuration.md](./docs/configuration.md). Los perfiles existen solo a partir de 0.15.
+
+**Por proyecto.** `nrv config set briefing.altitude <outcome|guided|prescriptive> --project` define cuánto lleva un brief: `outcome`, el predeterminado, dice el resultado, los límites y la definición de terminado; `guided` añade la estructura que sugiere el autor; `prescriptive` añade criterios por ítem, la lista de artefactos y el método. `nrv config get briefing.altitude` muestra el valor vigente. Las reglas en texto libre van en el `CLAUDE.md`, `AGENTS.md` o `GEMINI.md` del proyecto, encima del bloque de Nirvana que `nrv init` reescribe; tu agente las lee y las lleva a los briefs que escribe. Basta con pedirlo: *"en este proyecto, usa briefs guiados"*, *"añade al CLAUDE.md de este proyecto: todo entregable en portugués de Brasil"*.
 
 ## Por qué "el trabajo está hecho" significa algo aquí
 
@@ -212,7 +231,15 @@ Para agentes y usuarios avanzados. `nrv help` lo lista todo; `nrv <command> --he
 
 **¿Y si nada de mi biblioteca encaja?** El pedido se ejecuta igual, en `agent-x`, el generalista. También puedes pedirle a tu agente que cree la empresa o el squad que falta.
 
-**¿Windows?** Nativo, a través de Bun. Sin WSL.
+**¿Windows?** Nativo, a través de Bun, sin necesidad de WSL. Si prefieres WSL, instala todo dentro de Ubuntu, tu agente incluido.
+
+## Solución de problemas
+
+- **PowerShell muestra `>>` y se queda esperando.** Quedó una comilla abierta al pegar. Pulsa Ctrl+C o abre una ventana nueva y vuelve a pegar la línea única.
+- **macOS muestra "Saving session… [Processo concluído]" después de cerrar Terminal.** Es Terminal cerrando el shell, no un error.
+- **La instalación devuelve 404.** A la etiqueta le falta la `v` inicial, o esa release no existe.
+- **La actualización de un pack falla con un error de licencia.** Descarga el pack otra vez desde squads.sh y ejecuta su setup.
+- **Cualquier otra cosa.** `nrv doctor` revisa toda la instalación y `nrv install --check` revisa los hooks y el PATH. Más en [INSTALL.md](./INSTALL.md#troubleshooting).
 
 ## Licencia, autoría y estado
 

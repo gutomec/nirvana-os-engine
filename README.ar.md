@@ -11,7 +11,7 @@
 [![CI](https://github.com/gutomec/nirvana-os-engine/actions/workflows/smoke.yml/badge.svg)](https://github.com/gutomec/nirvana-os-engine/actions/workflows/smoke.yml)
 [![license](https://img.shields.io/badge/license-SUL-lightgrey)](./LICENSE)
 
-**macOS / Linux**
+**macOS وLinux وWSL**
 
 ```bash
 curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | bash
@@ -23,7 +23,7 @@ curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | bash
 irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
 ```
 
-[التوثيق](https://gutomec.github.io/nirvana-os-engine/) · [Packs](https://squads.sh/pt/packs) · [التثبيت المصوّر](https://gutomec.github.io/nirvana-os-engine/install.html) · [Changelog](./CHANGELOG.md)
+[التوثيق](https://gutomec.github.io/nirvana-os-engine/) · [Packs](https://squads.sh/pt/packs) · [التثبيت المصوّر](https://gutomec.github.io/nirvana-os-engine/install.html) · [إصدار بيتا](https://gutomec.github.io/nirvana-os-engine/beta.html) · [Changelog](./CHANGELOG.md)
 
 **اقرأ هذا بلغتك:** [English](./README.md) · [Português](./README.pt-BR.md) · [Español](./README.es.md) · [中文](./README.zh.md) · [हिन्दी](./README.hi.md) · [العربية](./README.ar.md)
 
@@ -51,7 +51,14 @@ Nirvana-OS نظام متعدد الوكلاء، أصيل في Bun ومستقل �
 
 ## التثبيت
 
-شغّل الأمر ذا السطر الواحد في أعلى هذه الصفحة. يحتاج إلى `curl` (أو `wget`) و`tar`، وهما موجودان أصلاً في macOS وLinux وWindows 10+. لا حاجة إلى Node. إذا لم يكن [Bun](https://bun.sh) موجوداً، يضعه المثبّت في مجلد المستخدم (`~/.bun`) دون sudo ويتابع عمله.
+يصف هذا الملف README الإصدار التجريبي من 0.15، أي `v0.15.0-beta.7`. الأمر ذو السطر الواحد في أعلى هذه الصفحة يثبّت أحدث إصدار **مستقر** (0.14.11)؛ ولتثبيت هذا الإصدار التجريبي استخدم الأوامر في [إصدارات بيتا](#إصدارات-بيتا). لا حاجة إلى Node. إذا لم يكن [Bun](https://bun.sh) موجوداً، يضعه أيٌّ من المثبّتَين في مجلد المستخدم (`~/.bun`) دون sudo ودون صلاحيات المسؤول ويتابع عمله.
+
+قبل التشغيل:
+
+- **macOS:** لا شيء للتحضير.
+- **Windows (PowerShell):** لا شيء للتحضير، ودون صلاحيات المسؤول.
+- **Linux (Ubuntu):** `sudo apt update && sudo apt install -y curl unzip`.
+- **Windows مع WSL (Ubuntu):** شغّل `wsl --install` في PowerShell مفتوح بصلاحيات المسؤول، وأعد التشغيل، وافتح تطبيق Ubuntu وأنشئ مستخدم Linux الخاص بك. ثم ثبّت `curl` و`unzip` كما في Linux وشغّل أمر `bash` داخل Ubuntu. يجب أن يُثبَّت وكيل الذكاء الاصطناعي لديك (Claude Code أو Codex أو Antigravity) داخل Ubuntu أيضاً، ومكان مشاريعك هو `~` لا `/mnt/c`، فهو بطيء.
 
 ما يغيّره على جهازك:
 
@@ -61,11 +68,11 @@ Nirvana-OS نظام متعدد الوكلاء، أصيل في Bun ومستقل �
 - خطافات تدقيق في Claude Code وAntigravity وCodex؛
 - مجلدات المحتوى الفارغة `~/squads` و`~/businesses` و`~/businesses/_library/dna`.
 
-إعادة تشغيله آمنة. افتح طرفية جديدة بعد ذلك ليصبح `nrv` على PATH لديك، ثم اطلب من وكيلك: *"تحقق من أن Nirvana-OS مثبّت بشكل صحيح."* فيشغّل `nrv doctor`. رمز الخروج 1 يعني تحذيرات فقط؛ والرمز 2 يسرد ما فشل.
+إعادة تشغيله آمنة. **أغلق الطرفية وافتح واحدة جديدة** ليصبح `nrv` على PATH لديك، وتحقّق بالأمر `nrv --version`؛ يُظهر هذا الإصدار التجريبي `0.15.0-beta.7`. ثم اطلب من وكيلك: *"تحقق من أن Nirvana-OS مثبّت بشكل صحيح."* فيشغّل `nrv doctor`. رمز الخروج 1 يعني تحذيرات فقط؛ والرمز 2 يسرد ما فشل.
 
-الأمر ذو السطر الواحد لا يطرح أسئلة. لاختيار ملف أداء عند التثبيت، مرّره إليه: `curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | bash -s -- --profile=balanced`. يمكنك أيضاً ضبطه لاحقاً بطلب ذلك من وكيلك (انظر [الإعدادات](#الإعدادات)).
+عبر `curl | bash` لا يطرح المثبّت أسئلة. لاختيار ملف أداء عند التثبيت، مرّره إليه: استبدل `bash` في آخر الأمر بـ `bash -s -- --profile=balanced`. يمكنك أيضاً ضبطه لاحقاً بطلب ذلك من وكيلك (انظر [الإعدادات](#الإعدادات)).
 
-الطرق الأخرى (الـ skill المسماة `nirvana` عبر skills.sh، والتثبيت من نسخة مستنسخة) موجودة في [INSTALL.md](./INSTALL.md).
+الدليل خطوة بخطوة لكل نظام موجود في [موقع التوثيق](https://gutomec.github.io/nirvana-os-engine/install.html) (بالبرتغالية)، مع [صفحة للإصدار التجريبي](https://gutomec.github.io/nirvana-os-engine/beta.html)، وفي [INSTALL.md](./INSTALL.md) مع الطرق الأخرى (الـ skill المسماة `nirvana` عبر skills.sh، والتثبيت من نسخة مستنسخة).
 
 ## ابدأ مشروعاً
 
@@ -77,7 +84,9 @@ Nirvana-OS نظام متعدد الوكلاء، أصيل في Bun ومستقل �
 - تسمّي إحدى شركاتك أو squads أو mind-clones لديك أو تشير إليها ("شركة الإطلاق الخاصة بي"، "squad الكتابة الإعلانية"، "بصوت Hormozi")، بما في ذلك اسم حزمة؛
 - تطلب أن يجري العمل، أو جزء منه، على بيئة تشغيل أخرى ("استخدم Codex لمراجعته").
 
-إذا أردت أن ينسّق Nirvana كل المخرجات في مشروع ما، فقل *"نسّق كل شيء في هذا المشروع عبر Nirvana"*. يشغّل الوكيل `nrv init . --orchestrators=always`. افتح جلسة جديدة ليسري التغيير.
+إذا أردت أن ينسّق Nirvana كل المخرجات في مشروع ما، فقل *"نسّق كل شيء في هذا المشروع عبر Nirvana"*. يشغّل الوكيل `nrv init . --orchestrators=always`. افتح جلسة جديدة ليسري التغيير. الإصدار المستقر 0.14.11 يعمل بالعكس: العقد الكامل هو افتراضيّه، ولا يسأل إلا حين تشغّل `nrv init .` بنفسك في مجلد يحتوي أصلاً على أحد هذه الملفات.
+
+بعد ذلك تتحدث إلى وكيلك بلغة طبيعية وهو يستخدم Nirvana-OS. لا تكتب أوامر في عملك اليومي.
 
 ## ماذا تطلب من وكيلك
 
@@ -119,43 +128,51 @@ Nirvana-OS نظام متعدد الوكلاء، أصيل في Bun ومستقل �
 
 ## الحزم
 
-الحزم شركات وsquads وmind-clones منتقاة تُباع على [squads.sh](https://squads.sh/pt/packs). الحزمة الرائدة هي [Genesis Circle](https://squads.sh/pt/nirvana-os).
+الحزم شركات وsquads وmind-clones منتقاة تُباع على [squads.sh](https://squads.sh/pt/packs). الحزمة الرئيسية هي [Genesis Circle](https://squads.sh/pt/nirvana-os).
 
 1. اشترِ الحزمة على squads.sh ونزّل ملف zip الخاص بها من لوحة التحكم.
-2. فك ضغط الأرشيف كاملاً في مجلد، وافتح طرفية هناك وشغّل الإعداد:
-   - macOS / Linux: `bash setup.sh`
+2. فكّ ضغط الأرشيف كاملاً وافتح طرفية في المجلد الذي يحتوي على `setup.sh`:
+   - macOS: انقر نقراً مزدوجاً على ملف zip، واكتب `cd ` (مع المسافة) في Terminal، واسحب المجلد إلى النافذة واضغط Enter؛
+   - Windows: انقر بزر الفأرة الأيمن على ملف zip، واختر **Extract All**، وافتح المجلد، وانقر بزر الفأرة الأيمن على مساحة فارغة واختر **Open in Terminal**؛
+   - Linux وWSL: `cd ~/Downloads && unzip <file>.zip -d <folder> && cd <folder>`. على WSL، انسخ ملف zip أولاً من `/mnt/c/Users/<user>/Downloads` إلى `~/Downloads`.
+3. شغّل الإعداد:
+   - macOS وLinux وWSL: `bash setup.sh`
    - Windows: `powershell -ExecutionPolicy Bypass -File setup.ps1`
 
-   يثبّت الإعداد Bun عند الحاجة، ويثبّت المحرك أو يحدّثه، وينسخ المحتوى إلى `~/squads` و`~/businesses` و`~/businesses/_library/dna`، ويعيد بناء الفهارس، ويحفظ ترخيص الحزمة في `~/.nirvana-license/packs/<pack>/`.
-3. تحدّث إلى وكيلك: *"استخدم Nirvana لسرد ما منحتني إياه حزمة Genesis Circle"*، ثم اطلب العمل بتسمية شركة أو squad أو الحزمة.
+   يثبّت الإعداد Bun عند الحاجة، ويثبّت المحرك أو يحدّثه، وينسخ المحتوى إلى `~/squads` و`~/businesses` و`~/businesses/_library/dna`، ويعيد بناء الفهارس، ويحفظ ترخيص الحزمة في `~/.nirvana-license/packs/<pack>/`. ولا يستبدل المحرك أبداً بإصدار أقدم، فيبقى الإصدار التجريبي تجريبياً.
+4. تحدّث إلى وكيلك: *"استخدم Nirvana لتسرد ما قدّمته لي حزمة Genesis Circle"*، ثم اطلب العمل بتسمية شركة أو squad أو الحزمة.
 
-تُثبَّت تبعيات الـ squad عند الطلب في أول مرة يعمل فيها. لتجهيزها كلها مسبقاً، اطلب من وكيلك تثبيت تبعيات كل squad (`nrv activate --all`).
+**تفعيل الـ squads.** تُثبَّت اعتماديات الـ squad عند الطلب في أول مرة يعمل فيها، في بيئته الخاصة ضمن `~/.nirvana/envs/<squad>`. لتجهيزها كلها مسبقاً، اطلب من وكيلك: *"فعّل كل squads الخاصة بي في Nirvana."* فيشغّل `nrv activate --all`، الذي يغطي حزم Node وPython، وبرامج النظام، ومفاتيح API ومتغيرات البيئة، وخوادم MCP، والنماذج. يتلقى الوكيل قائمة الإخفاقات مع الأمر الدقيق الذي يصلح كل واحد منها، ويطلب إذنك قبل أي شيء يستخدم `brew` أو `sudo` أو `winget`، ولأي مفتاح API. أول تشغيل على حزمة كبيرة يستغرق عدة دقائق.
 
-**تحديث حزمة.** اطلب من وكيلك تحديثها، أو شغّل `nrv update <pack>`. المكوّنات التي عدّلتها تُنسخ احتياطياً في `~/.nirvana/backups/packs/<pack>/` قبل أن يستبدلها التحديث. إذا فشل التحديث بخطأ في الترخيص، فنزّل الحزمة مجدداً من squads.sh وشغّل إعدادها مرة أخرى؛ فهذا يجدّد الترخيص أيضاً.
+**تحديث حزمة.** اطلب من وكيلك تحديثها، أو شغّل `nrv update <pack-slug>`، مثلاً `nrv update genesis-circle`. المكوّنات التي عدّلتها تُنسخ احتياطياً في `~/.nirvana/backups/packs/<pack>/` قبل أن يستبدلها التحديث. إذا فشل التحديث بخطأ في الترخيص، فنزّل الحزمة مجدداً من squads.sh وشغّل إعدادها مرة أخرى؛ فهذا يجدّد الترخيص أيضاً.
 
 ## تحديث المحرك
 
-اطلب من وكيلك تحديث Nirvana-OS، أو شغّل `nrv update`. ينسخ `~/.nirvana/skills` احتياطياً أولاً ويحتفظ بإعداداتك ومحتواك. يذكر `nrv update --check` الإصدار الذي سيثبّته دون تغيير أي شيء.
+اطلب من وكيلك تحديث Nirvana-OS، أو شغّل `nrv update`. ينسخ `~/.nirvana/skills` احتياطياً أولاً ويحتفظ بإعداداتك ومحتواك. يذكر `nrv update --check` الإصدار الذي سيثبّته دون أن يغيّر شيئاً.
 
-لا ينقل التحديث المحرك أبداً إلى إصدار أقدم. المحرك المستقر لا ينتقل إلا إلى إصدار مستقر أحدث. أما بيتا فتنتقل إلى أحدث إصدار أعلى منها، بيتا كان أو مستقراً، لذا تصبح بيتا 0.15 هي 0.15.0 عند صدوره. بعد تحديث المحرك، يفحص `nrv update` أيضاً كل حزمة مثبّتة لها ترخيص ويخبرك حين يتوفر لإحداها إصدار أحدث.
+لا يعيد التحديث المحرك أبداً إلى إصدار أقدم. المحرك المستقر ينتقل فقط إلى إصدار مستقر أحدث. والإصدار التجريبي ينتقل إلى أحدث إصدار أكبر، تجريبياً كان أو مستقراً، فيصبح الإصدار التجريبي من 0.15 هو 0.15.0 عند صدوره. بعد تحديث المحرك، يفحص `nrv update` أيضاً كل حزمة مثبّتة لها ترخيص ويخبرك حين يتوفر لها إصدار أحدث.
 
 ## إصدارات بيتا
 
-إصدارات بيتا هي prereleases على GitHub. الأمر ذو السطر الواحد يثبّت أحدث إصدار مستقر، لذا تُثبَّت بيتا بتحديد أرشيف tarball الخاص بها صراحةً:
+إصدارات بيتا هي prereleases على GitHub، وهذا الملف README هو الخاص بإصدار بيتا: `v0.15.0-beta.7`. الأمر ذو السطر الواحد في الأعلى يثبّت أحدث إصدار مستقر، لذا يُثبَّت إصدار بيتا بتثبيت ملف tarball الخاص به. يبدأ الوسم بالحرف `v`؛ ومن دونه يعيد التنزيل 404. لإصدار بيتا أحدث، استبدل هذا الوسم بوسم من [قائمة الإصدارات](https://github.com/gutomec/nirvana-os-engine/releases).
+
+macOS وLinux وWSL:
 
 ```bash
-curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v<version>/nirvana-os-engine.tar.gz bash
+curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.7/nirvana-os-engine.tar.gz bash
 ```
+
+Windows (PowerShell)، في سطر واحد:
 
 ```powershell
-$env:NIRVANA_ENGINE_URL = "https://github.com/gutomec/nirvana-os-engine/releases/download/v<version>/nirvana-os-engine.tar.gz"
-irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
-Remove-Item Env:NIRVANA_ENGINE_URL
+$env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.7/nirvana-os-engine.tar.gz'; irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
 ```
 
-استبدل `<version>` بالإصدار، مثلاً `0.15.0-beta.7`. يبدأ الوسم بحرف `v`؛ ومن دونه يعيد التنزيل 404. قائمة الإصدارات موجودة على [GitHub](https://github.com/gutomec/nirvana-os-engine/releases). في PowerShell يبقى المتغير قائماً طوال عمر النافذة، ولهذا يحذفه السطر الأخير: ما دام مضبوطاً، يعيد `nrv update` تثبيت الأرشيف المحدد نفسه.
+بعد ذلك، إن بقيت النافذة مفتوحة، شغّل `Remove-Item Env:NIRVANA_ENGINE_URL`: ما دام المتغير موجوداً، يعيد `nrv update` تثبيت ملف tarball المثبَّت. تستخدم أوامر Windows علامات اقتباس مفردة لأن علامة اقتباس مزدوجة تضيع أثناء اللصق تترك PowerShell منتظراً عند `>>`.
 
-بمجرد الانتقال إلى بيتا، يُبقيك `nrv update` وكل إعداد حزمة على قناة بيتا. للعودة إلى الإصدار المستقر، شغّل الأمر العادي ذا السطر الواحد من أعلى هذه الصفحة: فهو يثبّت أحدث إصدار مستقر فوق بيتا، ويبقى محتواك وإعداداتك كما هي.
+بمجرد أن تكون على إصدار بيتا، يبقيك `nrv update` وكل إعداد حزمة على قناة بيتا: إصدارات بيتا أحدث، ثم 0.15.0 عند صدوره. المشروع المُعَدّ على 0.14.11 يحتفظ بعقده الكامل إلى أن تشغّل `nrv init .` على إصدار بيتا، فيستبدله في مكانه بملاحظة الوضع عند الطلب (و`--orchestrators=always` يُبقي العقد الكامل)؛ وتبقى الأسطر التي كتبتها فوق كتلة Nirvana.
+
+**العودة إلى الإصدار المستقر.** على Windows، افتح PowerShell جديداً أولاً وشغّل `Remove-Item Env:NIRVANA_ENGINE_URL`؛ ولا بأس بخطأ يقول إنه غير موجود. شغّل الأمر البسيط من أعلى هذه الصفحة. يثبّت أحدث إصدار مستقر فوق إصدار بيتا ويحتفظ بمحتواك وحزمك وإعداداتك. تحقّق من أن `nrv --version` لم يعد يُظهر `beta`، ثم أعد تشغيل `nrv init .` في كل مشروع استخدمته مع إصدار بيتا، بعد إزالة الكتلة التي كتبها إصدار بيتا في `AGENTS.md` و`CLAUDE.md` و`GEMINI.md` ([التفاصيل](./INSTALL.md#back-to-stable-from-a-beta)).
 
 ## الإعدادات
 
@@ -169,7 +186,9 @@ Remove-Item Env:NIRVANA_ENGINE_URL
 | `balanced` | high | 400k رمز | حين تطلبها قاعدة | معطّلة |
 | `economy` | medium | 200k رمز | عند الطلب فقط | معطّلة |
 
-لا يختار ملف الأداء النموذج أبداً؛ فالنموذج تحدده إعدادات بيئة التشغيل لديك. الإعداد الذي تغيّره صراحةً يتقدّم على ملف الأداء. يعرض `nrv config list` كل إعداد وقيمته ومصدره. المرجع الكامل في [docs/configuration.md](./docs/configuration.md).
+لا يختار ملف الأداء النموذج أبداً؛ فالنموذج تحدده إعدادات بيئة التشغيل لديك. الإعداد الذي تغيّره صراحةً يتقدّم على ملف الأداء. يعرض `nrv config list` كل إعداد وقيمته ومصدره. المرجع الكامل في [docs/configuration.md](./docs/configuration.md). ملفات الأداء موجودة بدءاً من 0.15 فقط.
+
+**لكل مشروع.** يحدّد `nrv config set briefing.altitude <outcome|guided|prescriptive> --project` مقدار ما يحمله الموجز (brief): القيمة الافتراضية `outcome` تذكر النتيجة والقيود وتعريف الإنجاز؛ و`guided` تضيف البنية التي يقترحها المؤلف؛ و`prescriptive` تضيف معايير لكل بند وقائمة المخرجات والطريقة. يعرض `nrv config get briefing.altitude` القيمة السارية. القواعد المكتوبة بنص حر توضع في `CLAUDE.md` أو `AGENTS.md` أو `GEMINI.md` الخاص بالمشروع، فوق كتلة Nirvana التي يعيد `nrv init` كتابتها؛ يقرؤها وكيلك وينقلها إلى الموجزات التي يكتبها. يكفي أن تطلب: *"في هذا المشروع، استخدم موجزات guided"*، *"أضف إلى CLAUDE.md في هذا المشروع: كل مُخرَج بالبرتغالية البرازيلية"*.
 
 ## لماذا لعبارة "العمل منجز" معنى هنا
 
@@ -212,7 +231,15 @@ Remove-Item Env:NIRVANA_ENGINE_URL
 
 **ماذا لو لم يناسب أي شيء في مكتبتي؟** يعمل الطلب رغم ذلك، على `agent-x`، الوكيل العام. ويمكنك أيضاً أن تطلب من وكيلك إنشاء الشركة أو الـ squad الناقصة.
 
-**Windows؟** أصلي، عبر Bun. بلا WSL.
+**Windows؟** أصلي، عبر Bun، دون حاجة إلى WSL. إذا كنت تفضّل WSL، فثبّت كل شيء داخل Ubuntu، بما في ذلك وكيلك.
+
+## حل المشكلات
+
+- **يُظهر PowerShell العلامة `>>` وينتظر.** بقيت علامة اقتباس مفتوحة أثناء اللصق. اضغط Ctrl+C أو افتح نافذة جديدة، ثم الصق السطر الواحد مجدداً.
+- **يُظهر macOS العبارة "Saving session… [Processo concluído]" بعد إغلاق Terminal.** هذا Terminal يغلق الصدفة، وليس خطأ.
+- **يعيد التثبيت 404.** ينقص الوسمَ الحرفُ `v` في أوله، أو أن ذلك الإصدار غير موجود.
+- **يفشل تحديث حزمة بخطأ في الترخيص.** نزّل الحزمة مجدداً من squads.sh وشغّل إعدادها.
+- **أي شيء آخر.** يفحص `nrv doctor` التثبيت كله ويفحص `nrv install --check` الخطافات وPATH. المزيد في [INSTALL.md](./INSTALL.md#troubleshooting).
 
 ## الترخيص والتأليف والحالة
 
