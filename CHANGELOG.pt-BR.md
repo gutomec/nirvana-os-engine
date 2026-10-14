@@ -6,7 +6,7 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que os instaladores de uma linha e os setups de pack consomem.
 
-## Não lançado
+## 0.15.0-beta.8 — 2026-10-14
 
 - Cota: uma mensagem de limite de uso agora é classificada como cota, seja qual for o apóstrofo. O Codex escreve "You’ve hit your usage limit" com apóstrofo tipográfico, e todos os padrões esperavam o reto, então a mensagem real virava um erro genérico: sem cooldown, sem troca de runtime, e nada adiante sabia que era cota. As aspas são normalizadas antes de qualquer padrão. O horário de liberação que a mensagem traz também é lido ("try again at 1:21 AM", "try again at Oct 14th, 2026 1:21 AM", o "resets 3am (America/Sao_Paulo)" e o "resets May 26, 8pm" do Claude, um epoch ou um horário ISO); um horário sem data é a próxima ocorrência no fuso local. O cooldown dura até essa liberação em vez do padrão da janela.
 - Entrega: um worker que para por cota esgotada fica em pausa, não é julgado. Nenhum gate, nenhuma correção e nenhum juiz roda no runtime parado; a linha do ledger fica `failed` com `meta.stop_reason: "quota"` e `meta.quota_reset_at`, o `_STATUS.json` diz `quota_wait` com o horário, o evento é `x_delivery_quota_wait`, e `nrv dispatch` e `nrv revise` saem com 75. Uma correção cujo runtime falhou (cota, credencial, transporte) deixa de ser rodada: não gasta o limite de revisões, nunca conta como "sem progresso", e uma cota ali pausa a entrega do mesmo jeito. Um juiz que encontra a cota esgotada faz o gate dizer que não conseguiu julgar (`x_gate_unjudged_quota`, `quality-gate.ts` sai com 3) em vez de cair nas heurísticas que aprovam ou reprovam.

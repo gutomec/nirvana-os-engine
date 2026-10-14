@@ -51,7 +51,7 @@ Nirvana-OS एक Bun-नेटिव, रनटाइम-अज्ञेय म
 
 ## इंस्टॉल
 
-यह README 0.15 beta, `v0.15.0-beta.7`, के बारे में है। इस पेज के ऊपर दी गई एक-लाइन कमांड नवीनतम **स्टेबल** release (0.14.11) इंस्टॉल करती है; यह beta इंस्टॉल करने के लिए [Betas](#betas) वाली कमांड इस्तेमाल करें। Node की ज़रूरत नहीं है। अगर [Bun](https://bun.sh) नहीं है, तो दोनों में से कोई भी इंस्टॉलर उसे बिना sudo और बिना एडमिन अधिकारों के आपके यूज़र फ़ोल्डर (`~/.bun`) में रख देता है और आगे बढ़ता है।
+यह README 0.15 beta, `v0.15.0-beta.8`, के बारे में है। इस पेज के ऊपर दी गई एक-लाइन कमांड नवीनतम **स्टेबल** release (0.14.11) इंस्टॉल करती है; यह beta इंस्टॉल करने के लिए [Betas](#betas) वाली कमांड इस्तेमाल करें। Node की ज़रूरत नहीं है। अगर [Bun](https://bun.sh) नहीं है, तो दोनों में से कोई भी इंस्टॉलर उसे बिना sudo और बिना एडमिन अधिकारों के आपके यूज़र फ़ोल्डर (`~/.bun`) में रख देता है और आगे बढ़ता है।
 
 चलाने से पहले:
 
@@ -68,7 +68,7 @@ Nirvana-OS एक Bun-नेटिव, रनटाइम-अज्ञेय म
 - Claude Code, Antigravity और Codex में ऑडिट hooks;
 - खाली कंटेंट फ़ोल्डर `~/squads`, `~/businesses` और `~/businesses/_library/dna`।
 
-इसे दोबारा चलाना सुरक्षित है। **टर्मिनल बंद करें और नया खोलें** ताकि `nrv` आपके PATH पर हो, और `nrv --version` से जाँचें; यह beta `0.15.0-beta.7` दिखाता है। फिर अपने एजेंट से कहें: *"जाँचो कि Nirvana-OS सही तरह से इंस्टॉल हुआ है।"* वह `nrv doctor` चलाता है। Exit 1 का मतलब सिर्फ़ चेतावनियाँ है; exit 2 बताता है कि क्या फ़ेल हुआ।
+इसे दोबारा चलाना सुरक्षित है। **टर्मिनल बंद करें और नया खोलें** ताकि `nrv` आपके PATH पर हो, और `nrv --version` से जाँचें; यह beta `0.15.0-beta.8` दिखाता है। फिर अपने एजेंट से कहें: *"जाँचो कि Nirvana-OS सही तरह से इंस्टॉल हुआ है।"* वह `nrv doctor` चलाता है। Exit 1 का मतलब सिर्फ़ चेतावनियाँ है; exit 2 बताता है कि क्या फ़ेल हुआ।
 
 `curl | bash` के ज़रिए इंस्टॉलर कोई सवाल नहीं पूछता। इंस्टॉल के समय परफ़ॉर्मेंस प्रोफ़ाइल चुनने के लिए उसे आगे पास करें: आख़िरी `bash` की जगह `bash -s -- --profile=balanced` लिखें। आप इसे बाद में अपने एजेंट से कहकर भी सेट कर सकते हैं ([सेटिंग्स](#सेटिंग्स) देखें)।
 
@@ -154,18 +154,18 @@ Packs क्यूरेट की गई कंपनियाँ, squads औ�
 
 ## Betas
 
-Betas GitHub पर prereleases हैं, और यह README beta का है: `v0.15.0-beta.7`। ऊपर की एक-लाइन कमांड नवीनतम स्टेबल इंस्टॉल करती है, इसलिए beta उसका tarball पिन करके इंस्टॉल होता है। टैग की शुरुआत `v` से होती है; उसके बिना डाउनलोड 404 देता है। किसी नए beta के लिए, इस टैग को [release सूची](https://github.com/gutomec/nirvana-os-engine/releases) के टैग से बदलें।
+Betas GitHub पर prereleases हैं, और यह README beta का है: `v0.15.0-beta.8`। ऊपर की एक-लाइन कमांड नवीनतम स्टेबल इंस्टॉल करती है, इसलिए beta उसका tarball पिन करके इंस्टॉल होता है। टैग की शुरुआत `v` से होती है; उसके बिना डाउनलोड 404 देता है। किसी नए beta के लिए, इस टैग को [release सूची](https://github.com/gutomec/nirvana-os-engine/releases) के टैग से बदलें।
 
 macOS, Linux और WSL:
 
 ```bash
-curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.7/nirvana-os-engine.tar.gz bash
+curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.8/nirvana-os-engine.tar.gz bash
 ```
 
 Windows (PowerShell), एक ही लाइन में:
 
 ```powershell
-$env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.7/nirvana-os-engine.tar.gz'; irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
+$env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.8/nirvana-os-engine.tar.gz'; irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
 ```
 
 इसके बाद, अगर विंडो अब भी खुली है, तो `Remove-Item Env:NIRVANA_ENGINE_URL` चलाएँ: जब तक यह variable मौजूद है, `nrv update` पिन किया गया tarball दोबारा इंस्टॉल करता है। Windows कमांड single quotes इस्तेमाल करती हैं, क्योंकि पेस्ट में खोया हुआ double quote PowerShell को `>>` पर इंतज़ार करता छोड़ देता है।
@@ -247,4 +247,4 @@ Beta पर आने के बाद, `nrv update` और हर pack setup �
 
 लाइसेंस: Nirvana-OS Sustainable Use License (SUL) v1.0। स्रोत प्रकाशित और खुले तौर पर पठनीय है, और इंजन उपयोग के लिए मुफ़्त है। यह source-available है, OSI-अनुमोदित ओपन-सोर्स लाइसेंस नहीं, और कुछ व्यावसायिक उपयोगों के लिए अलग व्यावसायिक लाइसेंस चाहिए। किसी भी सारांश पर, इस पर भी, भरोसा करने से पहले [LICENSE](./LICENSE) पढ़ें।
 
-स्थिति: beta (0.x, अभी 0.15.0-beta.7)। इंजन आज काम करता है और मिनटों में इंस्टॉल होता है। 1.0 तक सतह के बदलते रहने की उम्मीद रखें।
+स्थिति: beta (0.x, अभी 0.15.0-beta.8)। इंजन आज काम करता है और मिनटों में इंस्टॉल होता है। 1.0 तक सतह के बदलते रहने की उम्मीद रखें।

@@ -6,7 +6,7 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that the
 one-line installers and pack setups consume.
 
-## Unreleased
+## 0.15.0-beta.8 — 2026-10-14
 
 - Quota: a usage-limit message now classifies as a quota whatever apostrophe it prints. Codex writes "You’ve hit your usage limit" with a typographic apostrophe, and every pattern expected a straight one, so the real message read as a generic error: no cooldown, no handoff, nothing downstream knew it was a quota. Quotes are normalised before any pattern runs. The reset the message names is read too ("try again at 1:21 AM", "try again at Oct 14th, 2026 1:21 AM", Claude's "resets 3am (America/Sao_Paulo)", "resets May 26, 8pm", an epoch or an ISO time); a time with no date is its next occurrence in local time. The cooldown lasts until that reset instead of a window default.
 - Delivery: a worker that stops on a spent quota is paused, not judged. No gate, no correction, no judge run on the dead runtime; the ledger row is `failed` with `meta.stop_reason: "quota"` and `meta.quota_reset_at`, `_STATUS.json` says `quota_wait` with the reset, the event is `x_delivery_quota_wait`, and `nrv dispatch` and `nrv revise` exit 75. A correction whose runtime failed (quota, credential, transport) is no longer a round: it does not spend the revision limit, never counts as "no progress", and a quota there pauses the delivery the same way. A judge that meets a spent quota makes the gate say it could not judge (`x_gate_unjudged_quota`, `quality-gate.ts` exit 3) instead of falling back to heuristics that pass or fail.

@@ -2,13 +2,13 @@
 
 The engine is free and installs on macOS, Windows (PowerShell), Windows with WSL (Ubuntu) and Linux. Once it is installed you do not drive it by hand: you talk to your AI agent (Claude Code, Codex, Antigravity, Pi…) and the agent runs Nirvana-OS. The commands on this page are for the install itself, and for anyone who wants them.
 
-This file belongs to the **0.15 beta**, `v0.15.0-beta.7`. The illustrated guide, in Portuguese, with a tab per system, is at [gutomec.github.io/nirvana-os-engine/install.html](https://gutomec.github.io/nirvana-os-engine/install.html), and the beta has [its own page](https://gutomec.github.io/nirvana-os-engine/beta.html).
+This file belongs to the **0.15 beta**, `v0.15.0-beta.8`. The illustrated guide, in Portuguese, with a tab per system, is at [gutomec.github.io/nirvana-os-engine/install.html](https://gutomec.github.io/nirvana-os-engine/install.html), and the beta has [its own page](https://gutomec.github.io/nirvana-os-engine/beta.html).
 
 There are two release channels:
 
 | Channel | Version | Who it is for |
 |---|---|---|
-| Beta | `v0.15.0-beta.7` | this guide; see [Install the beta](#install-the-beta) |
+| Beta | `v0.15.0-beta.8` | this guide; see [Install the beta](#install-the-beta) |
 | Stable | 0.14.11 | everyone else; the plain one-liner installs it |
 
 ## Before you start
@@ -26,18 +26,18 @@ You also need at least one agent CLI: [Claude Code](https://claude.com/claude-co
 
 ## Install the beta
 
-Betas are GitHub prereleases, so the plain one-liner never installs one. The beta is installed by pointing `NIRVANA_ENGINE_URL` at its tarball. The current beta is **`v0.15.0-beta.7`**. The tag has a leading `v`; without it GitHub answers 404. To install a newer beta later, replace `v0.15.0-beta.7` in the commands below with its tag from the [release list](https://github.com/gutomec/nirvana-os-engine/releases).
+Betas are GitHub prereleases, so the plain one-liner never installs one. The beta is installed by pointing `NIRVANA_ENGINE_URL` at its tarball. The current beta is **`v0.15.0-beta.8`**. The tag has a leading `v`; without it GitHub answers 404. To install a newer beta later, replace `v0.15.0-beta.8` in the commands below with its tag from the [release list](https://github.com/gutomec/nirvana-os-engine/releases).
 
 macOS, Linux and WSL:
 
 ```bash
-curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.7/nirvana-os-engine.tar.gz bash
+curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.8/nirvana-os-engine.tar.gz bash
 ```
 
 Windows, in PowerShell. Paste it as one line:
 
 ```powershell
-$env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.7/nirvana-os-engine.tar.gz'; irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
+$env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.8/nirvana-os-engine.tar.gz'; irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
 ```
 
 Then, if the window is still open:
@@ -314,7 +314,7 @@ The repair rewrites the value with the kind it had (a `REG_EXPAND_SZ` stays unex
 
 **macOS prints "Saving session… [Processo concluído]" after you close Terminal** (in English, "[Process completed]"). That is Terminal closing the shell. It is not an error.
 
-**The download returns 404.** A pinned `NIRVANA_ENGINE_URL` is missing the `v` before the version (`v0.15.0-beta.7`, not `0.15.0-beta.7`), or names a release that does not exist. Check the [release list](https://github.com/gutomec/nirvana-os-engine/releases).
+**The download returns 404.** A pinned `NIRVANA_ENGINE_URL` is missing the `v` before the version (`v0.15.0-beta.8`, not `0.15.0-beta.8`), or names a release that does not exist. Check the [release list](https://github.com/gutomec/nirvana-os-engine/releases).
 
 **`nrv: command not found`.** `~/.local/bin` is not on the PATH of this terminal. Close it and open a new one; if `nrv` is still missing, add `export PATH="$HOME/.local/bin:$PATH"` to your shell profile.
 
