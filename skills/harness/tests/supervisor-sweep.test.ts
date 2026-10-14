@@ -859,13 +859,40 @@ describe("supervisor — lazy sweep guards and speed", () => {
     // for real. Simulated here by rewinding last_sweep_at past the floor
     // instead of waiting 5 real minutes.
     process.env.NIRVANA_RUN_LEDGER_DB = path.join(TMP, "maybe-sweep-return.sqlite");
-    const h = openLedger();
-    openRun(h, { initialLeaseSec: -60 }); // countNonTerminal() > 0
-    expect(maybeSweep()).toBe(true); // trigger 1: dispatch start
-    expect(maybeSweep()).toBe(false); // immediately after: still throttled
-    setSupervisorMeta(h, "last_sweep_at", String(Date.now() - 10 * 60_000)); // simulate elapsed dispatch time
-    expect(maybeSweep()).toBe(true); // trigger 2: dispatch return, window reopened
+    // The lazy sweep runs only for a dispatch made inside a project.
+    const project = fs.mkdtempSync(path.join(TMP, "proj-"));
+    fs.mkdirSync(path.join(project, ".nirvana"), { recursive: true });
+    fs.writeFileSync(path.join(project, ".nirvana", "project.yaml"), "name: p\n");
+    process.env.NIRVANA_PROJECT_ROOT = project;
+    try {
+      const h = openLedger();
+      openRun(h, { initialLeaseSec: -60, projectRoot: project }); // countNonTerminal() > 0
+      expect(maybeSweep()).toBe(true); // trigger 1: dispatch start
+      expect(maybeSweep()).toBe(false); // immediately after: still throttled
+      setSupervisorMeta(h, "last_sweep_at", String(Date.now() - 10 * 60_000)); // simulate elapsed dispatch time
+      expect(maybeSweep()).toBe(true); // trigger 2: dispatch return, window reopened
+    } finally { delete process.env.NIRVANA_PROJECT_ROOT; }
   }, spawnBudgetMs(2));
+
+  test("a dispatch from a folder outside any project sweeps nothing, whatever is pending elsewhere", () => {
+    // 2026-10-14: a test dispatch from a bare folder started a machine-wide
+    // sweep that resumed a client's run in another project on a spent quota.
+    process.env.NIRVANA_RUN_LEDGER_DB = path.join(TMP, "maybe-sweep-outside.sqlite");
+    const elsewhere = fs.mkdtempSync(path.join(TMP, "other-"));
+    fs.mkdirSync(path.join(elsewhere, ".nirvana"), { recursive: true });
+    fs.writeFileSync(path.join(elsewhere, ".nirvana", "project.yaml"), "name: other\n");
+    const h = openLedger();
+    openRun(h, { initialLeaseSec: -60, projectRoot: elsewhere });
+    openRun(h, { initialLeaseSec: -60, projectRoot: null });
+    setSupervisorMeta(h, "last_sweep_at", "0");
+    const cwd = process.cwd();
+    const bare = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-bare-"));
+    delete process.env.NIRVANA_PROJECT_ROOT;
+    try {
+      process.chdir(bare);
+      expect(maybeSweep()).toBe(false);
+    } finally { process.chdir(cwd); fs.rmSync(bare, { recursive: true, force: true }); }
+  });
 });
 
 describe("sweep — cross-process lock", () => {

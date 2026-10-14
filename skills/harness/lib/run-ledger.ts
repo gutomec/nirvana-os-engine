@@ -46,7 +46,8 @@ import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { spawnSync } from "node:child_process";
 import { ensureDir } from "../../_shared/lib/ensure-dir.ts";
-import { CPU_ACTIVITY_MIN_MS, descendants, processTable, processTreeCpuMs } from "./process-cpu.ts";
+import { quotaStop } from "./quota-detector.ts";
+import { CPU_ACTIVITY_MIN_MS, descendants, processCommands, processTable, processTreeCpuMs, type ProcCommand } from "./process-cpu.ts";
 
 // ── states ──────────────────────────────────────────────────────────────
 
@@ -374,11 +375,17 @@ function auditLib(): AuditLib {
   if (!_audit) _audit = createRequire(import.meta.url)("./audit.js");
   return _audit!;
 }
-function emitLedgerAudit(event: string, payload: Record<string, unknown>, row?: Pick<RunRow, "trace_id" | "project_id"> | null): void {
+/** A row's events go to ITS project's audit (`cwd` anchors where audit.js
+ *  writes), whichever directory the process that moved the row started in. A
+ *  sweep started outside any project used to file every `x_ledger_*` event of
+ *  every project it touched in `~/.harness-logs`, where the project's own
+ *  coordinator never looked (2026-10-14). */
+function emitLedgerAudit(event: string, payload: Record<string, unknown>, row?: (Pick<RunRow, "trace_id" | "project_id"> & { project_root?: string | null }) | null): void {
   try {
     auditLib().emit(event, payload, {
       trace_id: row?.trace_id ?? undefined,
       project_id: row?.project_id ?? undefined,
+      ...(row?.project_root ? { cwd: row.project_root } : {}),
     });
   } catch (e) {
     console.error(`[run-ledger] audit emit failed for '${event}': ${(e as Error)?.message ?? e}`);
@@ -577,6 +584,55 @@ export function killProcessTree(pid: number, signal: NodeJS.Signals = "SIGTERM")
 }
 
 /** One file the sweep found newer than the mark it was given. */
+/**
+ * When a run stopped on a spent quota may run again: the reset the delivery
+ * recorded (meta.quota_reset_at), else the one its last error names, read
+ * relative to when the row last changed (a "try again at 1:21 AM" means the
+ * next 1:21 after the error, not after this sweep). Null when the row did not
+ * stop on a quota, or its reset has passed.
+ */
+export function quotaWaitOf(row: RunRow, now: number = Date.now()): { resetAt: string; named: boolean; hint: string } | null {
+  if (isTerminal(row.state)) return null;
+  const recorded = row.meta?.stop_reason === "quota" && typeof row.meta?.quota_reset_at === "string" ? row.meta.quota_reset_at as string : null;
+  if (recorded) {
+    const at = Date.parse(recorded);
+    if (Number.isFinite(at) && at > now) return { resetAt: recorded, named: row.meta?.quota_reset_named === true, hint: "the delivery stopped on a spent quota" };
+    if (Number.isFinite(at)) return null;
+  }
+  const since = Date.parse(row.updated_at ?? "") || now;
+  const q = quotaStop(row.last_error, (row.runtime as never) || null, since);
+  if (!q) return null;
+  return Date.parse(q.resetAt) > now ? { resetAt: q.resetAt, named: q.named, hint: q.hint } : null;
+}
+
+/**
+ * The live processes that work on this run although the row's pids no longer
+ * say so: a `revise.ts` started for its trace (by `nrv revise`, or by a sweep
+ * resuming it), and the sweep itself while it is recovering this row
+ * (meta.recovering, meta.recovered_by_pid with its start time). On 2026-10-14
+ * the row still named a dispatcher dead for five hours, `nrv run-track stop`
+ * printed "stopped (no live process)", and the sweep and its revise kept
+ * judging. Never this process or its parent. `table` is a test seam.
+ */
+export function runProcesses(row: RunRow, table: ProcCommand[] | null = processCommands()): number[] {
+  const out = new Set<number>();
+  const trace = row.trace_id || row.project_id;
+  if (trace && table) {
+    const token = new RegExp(`(?:^|[\\s"'])${trace.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=$|[\\s"'])`);
+    for (const p of table) {
+      if (p.pid === process.pid || p.pid === process.ppid) continue;
+      if (/\brevise\.ts\b/.test(p.command) && token.test(p.command)) out.add(p.pid);
+    }
+  }
+  const sweeper = Number(row.meta?.recovered_by_pid) || 0;
+  if (row.meta?.recovering === true && sweeper > 0 && sweeper !== process.pid && sweeper !== process.ppid && pidAlive(sweeper)) {
+    const recorded = typeof row.meta?.recovered_by_started_at === "string" ? row.meta.recovered_by_started_at as string : null;
+    const current = recorded ? processStartedAt(sweeper) : null;
+    if (!recorded || current === null || current === recorded) out.add(sweeper);
+  }
+  return [...out];
+}
+
 export interface TouchedFile { path: string; mtimeMs: number; sizeBytes: number }
 
 export interface DirScan {

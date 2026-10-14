@@ -28,9 +28,11 @@
 // The session IS the supervisor — no OS service is ever registered, on any
 // platform. Three triggers, all inside a session that is already running:
 //
-//   1. dispatch start    maybeSweep() piggybacks on every nrv dispatch: a
-//                         run abandoned by a session that died is recovered
-//                         by the next dispatch on the same project — exactly
+//   1. dispatch start    maybeSweep() piggybacks on every nrv dispatch made
+//                         inside a project (never one from a folder outside
+//                         any project): a run abandoned by a session that
+//                         died is recovered by the next dispatch on the same
+//                         project — exactly
 //                         when someone starts caring about it again. Lookups
 //                         (nrv find, nrv route) never trigger it: a recovery
 //                         spawns runtime workers and spends quota, and a
@@ -65,7 +67,8 @@
 //   - it never touches itself or its parent (process.pid / process.ppid);
 //   - `sweep` ALWAYS exits 0 — a supervisor crash must never fail a caller.
 //
-// Subcommands: sweep [--quiet] [--all-projects] ·
+// Subcommands: sweep [--quiet] [--all-projects] (stoppable: Ctrl+C or SIGTERM
+//              ends the sweep and every process it started) ·
 //              status [--all-projects] [--follow [--interval=5]] ·
 //              watch [--interval=120] [--all-projects]
 //
@@ -81,10 +84,16 @@
 //   no flag, project found    only the project this process stands in — the
 //                             lazy sweep piggybacking on a user's nrv command.
 //   no flag, no project       the whole machine, with a note on stderr saying
-//                             why: `sweep`/`watch` started from a directory
-//                             with no project marker (HOME, `/`, a bare temp
-//                             dir) still has to recover SOMETHING rather than
-//                             silently scoping itself to nothing.
+//                             why: `sweep`/`watch` started BY HAND from a
+//                             directory with no project marker (HOME, `/`, a
+//                             bare temp dir) still has to recover SOMETHING
+//                             rather than silently scoping itself to nothing.
+//                             The lazy sweep never gets here: maybeSweep()
+//                             outside a project sweeps nothing.
+//
+// QUOTA. A row whose last stop was a spent quota (meta.quota_reset_at, or a
+// usage-limit message in last_error) is left alone until its reset, with one
+// x_ledger_quota_wait event per reset and no retry spent (quotaWaitOf).
 //
 // Env: NRV_SUPERVISOR=0 disables maybeSweep; NRV_IN_SWEEP=1 is the recursion
 // guard (set for every child the sweep spawns).
@@ -137,8 +146,10 @@ import {
   type RunState,
   resolveLedgerDbPath,
   killProcessTree,
+  quotaWaitOf,
 } from "../lib/run-ledger.ts";
 import { acquireLockSync } from "../../_shared/lib/file-lock.ts";
+import { quotaStop } from "../lib/quota-detector.ts";
 import type { DeliveryArgs, DeliveryResult, GateOutcome } from "../lib/delivery-pipeline.ts";
 import { resolveSetting } from "../../_shared/lib/settings.ts";
 
@@ -176,10 +187,18 @@ function lazyDelivery(): typeof import("../lib/delivery-pipeline.ts") {
 function lazyConfig(): typeof import("../lib/harness-config.ts") {
   return requireCjs("../lib/harness-config.ts");
 }
+
+/** A row's events land in the swept project's own audit (row.project_root),
+ *  not in the audit of whatever directory the sweep started in: the project's
+ *  coordinator reads its own trail, and a machine-wide sweep wrote there
+ *  nothing it did to that project (2026-10-14). */
 function emitAudit(event: string, payload: Record<string, unknown>, row?: RunRow | null): void {
   try {
     const audit = requireCjs("../lib/audit.js");
-    audit.emit(event, payload, { trace_id: row?.trace_id ?? undefined, project_id: row?.project_id ?? undefined });
+    audit.emit(event, payload, {
+      trace_id: row?.trace_id ?? undefined, project_id: row?.project_id ?? undefined,
+      ...(row?.project_root ? { cwd: row.project_root } : {}),
+    });
   } catch (e) {
     console.error(`[supervisor] audit emit failed for '${event}': ${(e as Error)?.message ?? e}`);
   }
@@ -245,6 +264,8 @@ export interface SweepSummary {
   recovered: number;
   escalated: number;
   salvaged: number;
+  /** Rows left alone because they wait for a quota reset. */
+  quotaWaiting: number;
   errors: number;
 }
 
@@ -451,6 +472,9 @@ export function resumeOutcome(status: number | null): RecoveryResult {
     case 0: return { ok: true, finalState: "delivered", detail: "resumed via revise session (delivered)" };
     case 2: return { ok: false, finalState: "withheld", detail: "resumed but delivery WITHHELD (revise exit 2: gate FAIL)" };
     case 3: return { ok: false, finalState: "withheld", detail: "resumed but INDETERMINATE (revise exit 3: no gateable artifact; nothing judged)" };
+    // The revision met a spent quota again and recorded the reset on the row:
+    // the next sweep waits for it instead of resuming.
+    case 75: return { ok: false, finalState: "failed", detail: "resumed, but it stopped on a spent quota again (revise exit 75); it waits for the reset" };
     default: return { ok: false, finalState: "failed", detail: `revise exit ${status ?? "?"}` };
   }
 }
@@ -561,7 +585,13 @@ export function redispatchRun(h: LedgerHandle, row: RunRow, overrides: Redispatc
     taskHint: `supervisor auto-redispatch · ${row.target_slug ?? "?"}`,
     ledger: { runId: row.run_id, watchDir: outputsRoot },
   });
-  if (!res.ok) return { ok: false, finalState: "failed", detail: `redispatch failed: ${res.error || res.stderr || "unknown"}` };
+  if (!res.ok) {
+    const error = res.error || res.stderr || "unknown";
+    // A spent quota: the row records its reset, and the next sweep waits for it.
+    const q = quotaStop(error, (row.runtime as never) || null);
+    if (q) patchMeta(h, row.run_id, { stop_reason: "quota", quota_reset_at: q.resetAt, quota_reset_named: q.named, quota_step: "worker" });
+    return { ok: false, finalState: "failed", detail: `redispatch failed: ${error}` };
+  }
 
   const delivery = lazyDelivery();
   const args: DeliveryArgs = {
@@ -791,7 +821,7 @@ export function resolveSweepScope(flagged: boolean, quiet = false): { allProject
 }
 
 export function sweep(deps: SweepDeps = {}): SweepSummary {
-  const summary: SweepSummary = { scanned: 0, skipped: 0, graced: 0, resumed: 0, redispatched: 0, recovered: 0, escalated: 0, salvaged: 0, errors: 0 };
+  const summary: SweepSummary = { scanned: 0, skipped: 0, graced: 0, resumed: 0, redispatched: 0, recovered: 0, escalated: 0, salvaged: 0, quotaWaiting: 0, errors: 0 };
   // deps.handle => a test drives its own ledger; skip the global lock so
   // in-process tests never contend with a real sweeper on this machine.
   if (deps.handle) return sweepLocked(deps, summary);
@@ -917,6 +947,22 @@ function sweepOne(h: LedgerHandle, row: RunRow, now: number, deps: SweepDeps, su
   }
   const alive = rawAlive && !recycled;
 
+  // A run stopped by a spent quota waits for the reset. Resumed before it, it
+  // meets the same limit, burns a retry and is withheld for findings it could
+  // never have fixed: on 2026-10-14 a sweep resumed one 16 minutes before the
+  // reset its own error named. No retry is spent while it waits.
+  if (!alive) {
+    const wait = quotaWaitOf(row, now);
+    if (wait) {
+      if (row.meta?.quota_wait_noted !== wait.resetAt) {
+        patchMeta(h, row.run_id, { quota_wait_noted: wait.resetAt });
+        emitAudit("x_ledger_quota_wait", { run_id: row.run_id, reset_at: wait.resetAt, reset_named: wait.named, hint: wait.hint, retries: row.retries, max_retries: row.max_retries }, row);
+      }
+      summary.quotaWaiting++;
+      return;
+    }
+  }
+
   if (alive) {
     // One more activity check before any signal — a healthy long-thinking run
     // must never be killed for a merely-expired lease.
@@ -936,7 +982,7 @@ function sweepOne(h: LedgerHandle, row: RunRow, now: number, deps: SweepDeps, su
     toRunning(h, row.run_id, "supervisor redispatch attempt");
     emitAudit("x_ledger_redispatched", { run_id: row.run_id, attempt: fresh.retries + 1, prev_pid: pid }, row);
     summary.redispatched++;
-    const res = (deps.redispatchImpl ?? ((r: RunRow) => redispatchRun(h, r)))(getRun(h, row.run_id)!);
+    const res = recovering(h, row.run_id, () => (deps.redispatchImpl ?? ((r: RunRow) => redispatchRun(h, r)))(getRun(h, row.run_id)!));
     finalize(h, row.run_id, res, summary);
     return;
   }
@@ -947,8 +993,17 @@ function sweepOne(h: LedgerHandle, row: RunRow, now: number, deps: SweepDeps, su
   toRunning(h, row.run_id, "supervisor auto-resume attempt");
   emitAudit("x_ledger_auto_resumed", { run_id: row.run_id, attempt: row.retries + 1, session_id: row.session_id }, row);
   summary.resumed++;
-  const res = (deps.resumeImpl ?? ((r: RunRow) => defaultResume(h, r)))(getRun(h, row.run_id)!);
+  const res = recovering(h, row.run_id, () => (deps.resumeImpl ?? ((r: RunRow) => defaultResume(h, r)))(getRun(h, row.run_id)!));
   finalize(h, row.run_id, res, summary);
+}
+
+/** Run a recovery with the row saying which process is recovering it, so
+ *  `nrv run-track stop` can reach this sweep and what it spawned
+ *  (run-ledger.ts runProcesses) while the pids on the row are stale. */
+function recovering<T>(h: LedgerHandle, runId: string, fn: () => T): T {
+  try { patchMeta(h, runId, { recovering: true, recovered_by_pid: process.pid, recovered_by_started_at: processStartedAt(process.pid) }); } catch { /* bookkeeping only */ }
+  try { return fn(); }
+  finally { try { if (getRun(h, runId)) patchMeta(h, runId, { recovering: false }); } catch { /* bookkeeping only */ } }
 }
 
 function finalize(h: LedgerHandle, runId: string, res: RecoveryResult, summary: SweepSummary): void {
@@ -1023,19 +1078,25 @@ function escalate(h: LedgerHandle, row: RunRow, deps: SweepDeps, summary: SweepS
  *  When runs are pending and the last sweep is >5 min old, spawns a DETACHED
  *  background `supervisor sweep --quiet` (recovery may run LLMs — it must
  *  never block the user's command). Guards: NRV_SUPERVISOR=0 opt-out,
- *  NRV_IN_SWEEP=1 recursion guard. Returns true when a sweep was spawned. */
+ *  NRV_IN_SWEEP=1 recursion guard. Returns true when a sweep was spawned.
+ *
+ *  Only the dispatch's own project is swept. A dispatch from a folder outside
+ *  any project sweeps NOTHING: on 2026-10-14 an unrelated test dispatch from a
+ *  bare folder started a machine-wide sweep that resumed a client's run in
+ *  another project, on that client's spent quota. The machine-wide sweep is
+ *  for whoever asks for it (`nrv supervisor sweep --all-projects`, `watch`). */
 export function maybeSweep(): boolean {
   try {
     if (process.env.NRV_SUPERVISOR === "0" || process.env.NRV_IN_SWEEP === "1") return false;
+    if (!resolveProjectRoot()) return false;
     const h = openLedger();
     const last = getSupervisorMeta(h, "last_sweep_at");
     if (last && Date.now() - Number(last) < SWEEP_MIN_INTERVAL_MS) return false;
     setSupervisorMeta(h, "last_sweep_at", String(Date.now()));
     // Count what the child will actually sweep. Counting a different scope than
     // the one it sweeps is how a pending run gets skipped forever.
-    const scope = resolveSweepScope(false, true);
-    if (countNonTerminal(h, { allProjects: scope.allProjects }) === 0) return false;
-    const child = spawn(process.execPath, [SUPERVISOR_PATH, "sweep", "--quiet", ...(scope.allProjects ? ["--all-projects"] : [])], {
+    if (countNonTerminal(h, { allProjects: false }) === 0) return false;
+    const child = spawn(process.execPath, [SUPERVISOR_PATH, "sweep", "--quiet", "--inner"], {
       windowsHide: true,
       detached: true,
       stdio: "ignore",
@@ -1179,6 +1240,44 @@ function cliStatus(allProjects: boolean): number {
   return 0;
 }
 
+/**
+ * `nrv supervisor sweep` in the foreground, stoppable. The sweep itself is
+ * synchronous (a resume is a `spawnSync` of revise.ts that can run for most of
+ * an hour), and a blocked event loop runs no signal handler: SIGTERM ended the
+ * sweep and left its revise and the judge under it running (2026-10-14, the
+ * coordinator had to walk the process tree by hand). So the sweep runs in a
+ * child (`sweep --inner`), and this process only waits: Ctrl+C, SIGTERM or
+ * SIGHUP end the child's whole tree (killProcessTree), then this process,
+ * always with exit 0 like any sweep. The lazy sweep spawns `--inner` directly.
+ */
+function sweepStoppable(args: string[]): void {
+  const child = spawn(process.execPath, [SUPERVISOR_PATH, "sweep", "--inner", ...args.filter(a => a !== "--inner")], {
+    windowsHide: true,
+    stdio: "inherit",
+    env: { ...process.env, NRV_IN_SWEEP: "1" },
+  });
+  let stopping = false;
+  const stop = (signal: string) => {
+    if (stopping) return;
+    stopping = true;
+    console.error(`\n[supervisor] ${signal}: ending the sweep and everything it started`);
+    const ended = child.pid ? killProcessTree(child.pid) : [];
+    const deadline = Date.now() + 5_000;
+    const check = setInterval(() => {
+      const alive = ended.filter(pidAlive);
+      if (alive.length && Date.now() < deadline) return;
+      for (const pid of alive) killProcessTree(pid, "SIGKILL");
+      clearInterval(check);
+      process.exit(0);
+    }, 100);
+  };
+  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
+    try { process.on(signal, () => stop(signal)); } catch { /* SIGHUP is not catchable everywhere */ }
+  }
+  child.on("exit", () => { if (!stopping) process.exit(0); });
+  child.on("error", (e) => { console.error(`[supervisor] sweep could not start: ${e.message}`); process.exit(0); });
+}
+
 function argValue(name: string, fallback?: string): string | undefined {
   const eq = process.argv.find(a => a.startsWith(`${name}=`));
   if (eq) return eq.split("=").slice(1).join("=");
@@ -1193,12 +1292,13 @@ if (import.meta.main) {
   const allProjects = process.argv.includes("--all-projects");
   switch (sub) {
     case "sweep": {
+      if (!process.argv.includes("--inner")) { sweepStoppable(process.argv.slice(3)); break; }
       // Anything spawned below must not recursively trigger maybeSweep.
       process.env.NRV_IN_SWEEP = "1";
       try {
         const s = sweep({ quiet, allProjects: resolveSweepScope(allProjects, quiet).allProjects });
         if (!quiet) {
-          console.log(`sweep: scanned=${s.scanned} skipped=${s.skipped} graced=${s.graced} resumed=${s.resumed} redispatched=${s.redispatched} recovered=${s.recovered} escalated=${s.escalated} salvaged=${s.salvaged} errors=${s.errors}`);
+          console.log(`sweep: scanned=${s.scanned} skipped=${s.skipped} graced=${s.graced} resumed=${s.resumed} redispatched=${s.redispatched} recovered=${s.recovered} escalated=${s.escalated} salvaged=${s.salvaged} quota_waiting=${s.quotaWaiting} errors=${s.errors}`);
         }
       } catch (e) {
         console.error(`[supervisor] sweep crashed: ${(e as Error)?.message ?? e}`);

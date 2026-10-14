@@ -126,3 +126,34 @@ export function processTreeCpuMs(root: number, exclude?: number, timeoutMs?: num
   const rows = processTable(timeoutMs);
   return rows ? treeCpuMs(rows, root, exclude) : null;
 }
+
+export interface ProcCommand { pid: number; ppid: number; command: string }
+
+/** Every process with its parent and full command line, or null when the table
+ *  cannot be read: "cannot tell", never "none". `nrv run-track stop` reads it
+ *  to find a run's processes when the pids on its ledger row are stale. */
+export function processCommands(timeoutMs = 4000): ProcCommand[] | null {
+  try {
+    if (process.platform === "win32") {
+      const r = spawnSync("powershell", [
+        "-NoProfile", "-NonInteractive", "-Command",
+        'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId) $($_.CommandLine)" }',
+      ], { windowsHide: true, encoding: "utf8", timeout: timeoutMs });
+      if (r.status !== 0) return null;
+      return parseCommandLines(r.stdout || "", /\r?\n/);
+    }
+    const r = spawnSync("ps", ["-A", "-ww", "-o", "pid=,ppid=,command="], { encoding: "utf8", timeout: timeoutMs });
+    if (r.status !== 0) return null;
+    return parseCommandLines(r.stdout || "", "\n");
+  } catch { return null; }
+}
+
+/** `<pid> <ppid> <command…>` lines as rows. Exported for a test. */
+export function parseCommandLines(text: string, sep: string | RegExp): ProcCommand[] {
+  const rows: ProcCommand[] = [];
+  for (const line of text.split(sep)) {
+    const m = /^\s*(\d+)\s+(\d+)\s?(.*)$/.exec(line);
+    if (m) rows.push({ pid: Number(m[1]), ppid: Number(m[2]), command: m[3] ?? "" });
+  }
+  return rows;
+}
