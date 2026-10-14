@@ -37,7 +37,7 @@ import { detectOrca, orcaHooksStatus, orcaHostActive, orcaStatus, resolveOrcaExe
 import { codexConfigPath, codexHookTrustEntries, codexHooksPath } from "../../_shared/lib/codex-hooks.ts";
 import { expandEnv, findTempNrvEntries, readUserPath, tempRoots } from "../../_shared/lib/windows-user-path.ts";
 import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
-import { legacyProvenancePath, packProvenancePath } from "../../_shared/lib/license-store.ts";
+import { GENESIS_EDITION, genesisProvenancePath, legacyProvenancePath, packProvenancePath } from "../../_shared/lib/license-store.ts";
 import { resolveProjectRoot, undeclaredProjectState } from "../../_shared/lib/project-root.js";
 import {
   describeSettingSource, discoverProjectRoot, engineConfigPath, globalConfigPath, projectConfigPath, resolveAllSettings, resolveSetting,
@@ -1054,24 +1054,26 @@ if (installedPacks.length === 0) {
   add("paid: pack", "PASS", `${names.join(", ")}`);
 
   // Each pack is updated with its own license (~/.nirvana-license/packs/<slug>/),
-  // or the single legacy file when it has none (an install from before the
-  // per-pack copies, or a Genesis Circle key that unlocks every pack).
+  // then the Genesis Circle copy (its key unlocks every pack), then the single
+  // legacy file (an install from before the per-pack copies).
+  const genesisCopy = genesisProvenancePath(HOME);
+  const genesisHint = ` If you own Genesis Circle, run its setup again (bun setup.ts in its folder).`;
   for (const slug of names) {
     const own = packProvenancePath(slug, HOME);
-    const file = own && fs.existsSync(own) ? own : licStore;
+    const file = own && fs.existsSync(own) ? own : fs.existsSync(genesisCopy) ? genesisCopy : licStore;
     const label = names.length > 1 ? `paid: license ${slug}` : "paid: license";
     if (!fs.existsSync(file)) {
       add(label, "FAIL",
         `pack installed but no license at ${licStore.replace(HOME, "~")} — ` +
-        `"nrv update ${slug}" cannot work. Fix: nrv license install`);
+        `"nrv update ${slug}" cannot work. Fix: nrv license install.${genesisHint}`);
       continue;
     }
     try {
       const prov = JSON.parse(fs.readFileSync(file, "utf8"));
       if (!prov.license_key) {
         add(label, "FAIL", "PROVENANCE.json has no license_key — that copy has no provenance");
-      } else if (file === licStore && prov.edition && prov.edition !== slug && prov.edition !== "genesis-circle") {
-        add(label, "WARN", `the only license here is for '${prov.edition}', so "nrv update ${slug}" will be refused. Fix: nrv license install <the ${slug} pack folder>`);
+      } else if (file === licStore && prov.edition && prov.edition !== slug && prov.edition !== GENESIS_EDITION) {
+        add(label, "WARN", `the only license here is for '${prov.edition}', so "nrv update ${slug}" will be refused. Fix: nrv license install <the ${slug} pack folder>.${genesisHint}`);
       } else if (!prov.signature) {
         add(label, "WARN", `${prov.license_key} — unsigned (offline use is fine; support cannot verify it)`);
       } else {
