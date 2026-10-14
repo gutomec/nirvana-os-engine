@@ -71,6 +71,7 @@ import type { DispatchRole } from "../../_shared/lib/dispatch-depth.ts";
 import { scopeGuard } from "../../_shared/lib/scope-guard.ts";
 import { isRunStatePath } from "../../_shared/lib/run-state.ts";
 import { isRunStateFile } from "../../_shared/lib/run-plumbing.ts";
+import { inBuildOutput, isDependencyDirName, isDependencyNoise } from "../../_shared/lib/deliverable-noise.ts";
 import { soloDirective } from "./business-solo.ts";
 import { claimProblems, criteriaFromBrief, SERIOUS_EXTRA_ROUNDS, type ClaimProblem } from "./solo-review.ts";
 import { runFolderOf } from "../../_shared/lib/run-workspace.ts";
@@ -110,6 +111,20 @@ export function listFiles(dir: string): string[] {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, e.name);
     if (e.isDirectory()) out.push(...listFiles(full));
+    else if (e.isFile()) out.push(full);
+  }
+  return out;
+}
+
+/** listFiles() without descending into dependency trees (deliverable-noise.ts
+ *  DEPENDENCY_DIRS): a `node_modules` holds tens of thousands of files and
+ *  none of them is the run's work. */
+export function listWorkFiles(dir: string): string[] {
+  const out: string[] = [];
+  if (!fs.existsSync(dir)) return out;
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) { if (!isDependencyDirName(e.name)) out.push(...listWorkFiles(full)); }
     else if (e.isFile()) out.push(full);
   }
   return out;
@@ -181,25 +196,42 @@ function insideCapturedEntity(root: string, rel: string, memo: Map<string, boole
  *
  * Run state is dropped outright — it is never a deliverable, and if dropping
  * it empties the surface the outcome is INDETERMINATE, which is the honest
- * answer. A captured entity is dropped only while the run has work of its own
- * left to judge: when the entity IS the deliverable (a run asked to build a
- * squad) it stays, so this filter can narrow noise and never silence signal. */
+ * answer. So is dependency noise (deliverable-noise.ts): installed packages,
+ * caches, lockfiles and licence texts the brief did not ask for. Build output
+ * (`dist/`, `build/`, `out/`) is dropped while a source tree is left to judge
+ * and kept when it IS the delivery. A captured entity is dropped only while
+ * the run has work of its own left to judge: when the entity IS the
+ * deliverable (a run asked to build a squad) it stays, so these filters can
+ * narrow noise and never silence signal. */
 export function gateableFiles(dir: string, named: Set<string>): string[] {
-  const all = listFiles(dir).filter(f =>
+  const all = listWorkFiles(dir).filter(f =>
     GATEABLE_EXTS.has(path.extname(f).toLowerCase()) && isDeliverable(f, named));
-  const own = all.filter(f => !isRunStateUnderOutputs(path.relative(dir, f)));
+  const own = all.filter(f => {
+    const rel = path.relative(dir, f);
+    return !isRunStateUnderOutputs(rel) && !isDependencyNoise(rel, named);
+  });
+  const sources = own.filter(f => !inBuildOutput(path.relative(dir, f)));
+  const pool = sources.length > 0 ? sources : own;
   const memo = new Map<string, boolean>();
-  const authored = own.filter(f => !insideCapturedEntity(dir, path.relative(dir, f), memo));
-  return authored.length > 0 ? authored : own;
+  const authored = pool.filter(f => !insideCapturedEntity(dir, path.relative(dir, f), memo));
+  return authored.length > 0 ? authored : pool;
 }
 
 /** Non-stub artifacts under `outputsRoot` that are work, not run state — the
  * SAME discovery runDelivery uses for its `produced` list. The runtime-error
  * salvage path asks this (never a second scanner) whether a not-ok run left
- * anything worth judging: a worker that died leaving only `_work/` did not. */
+ * anything worth judging: a worker that died leaving only `_work/` did not,
+ * and neither did one that left only an installed `node_modules`. */
 export function candidateArtifacts(outputsRoot: string, brief: string): string[] {
-  const named = briefNamedFiles(brief);
-  return listFiles(outputsRoot).filter(f => isDeliverable(f, named) && !isRunStateFile(path.relative(outputsRoot, f)));
+  return producedFiles(outputsRoot, briefNamedFiles(brief));
+}
+
+/** The work under an outputs root: non-stub, not run state, not dependency noise. */
+function producedFiles(outputsRoot: string, named: Set<string>): string[] {
+  return listWorkFiles(outputsRoot).filter(f => {
+    const rel = path.relative(outputsRoot, f);
+    return isDeliverable(f, named) && !isRunStateFile(rel) && !isDependencyNoise(rel, named);
+  });
 }
 
 // ── gate runner ───────────────────────────────────────────────────────────
@@ -867,8 +899,8 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
 
   // The work, never the run's own bookkeeping: a worker that wrote only its
   // summary, its claims or its scratch folder delivered nothing.
-  const nonStub = listFiles(args.outputsRoot).filter(f => isDeliverable(f, namedInBrief));
-  produced = nonStub.filter(f => !isRunStateFile(path.relative(args.outputsRoot, f)));
+  const nonStub = listWorkFiles(args.outputsRoot).filter(f => isDeliverable(f, namedInBrief));
+  produced = producedFiles(args.outputsRoot, namedInBrief);
   if (produced.length === 0 && !manifestVerified) {
     const onlyState = nonStub.length > 0;
     warn(onlyState
