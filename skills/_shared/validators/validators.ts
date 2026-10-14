@@ -999,6 +999,10 @@ export const MindCloneManifestSchema = z.object({
     compiled_by: z.string().optional(),
     compilation_method: z.string().optional(),
     source: z.string().optional(),
+    // Name recognition (harness/lib/clone-names.ts): other names the person goes
+    // by, and the slug a person with several role slugs resolves to.
+    aliases: z.array(z.string().min(2).max(80)).optional(),
+    canonical: z.union([z.boolean(), z.string().regex(KEBAB_CASE)]).optional(),
   }).loose(),
   routing: MindCloneRoutingSchema.optional(),
   artifacts: z.union([

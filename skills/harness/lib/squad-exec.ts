@@ -27,6 +27,7 @@ import { resolveClonePersona, loadCloneRegistry } from "../../_shared/lib/clone-
 import { layersForPhase } from "../../_shared/lib/dna-layer-policy.ts";
 import { findCloneForTask } from "../../_shared/lib/clone-search.ts";
 import { selectVoices, unsettledVoiceNotice } from "./clone-voices.ts";
+import { cloneNamesOf } from "./clone-names.ts";
 import { summaryFileOf } from "./business-solo.ts";
 import { paths } from "../../_shared/lib/bun-helpers.ts";
 import { scopeBoundary, scopeGuard } from "../../_shared/lib/scope-guard.ts";
@@ -101,7 +102,7 @@ function appendAudit(payload: Record<string, any>, projectRoot?: string): void {
 export function squadCloneInjection(brief: string, cwd?: string, opts: { suggested?: string[]; extraQuery?: string } = {}): { block: string; decision: string; missingClones: string[]; mode?: "reference" | "full" | "fragments"; personaDirs?: string[] } {
   let names: Array<{ slug: string; name: string }> = [];
   try {
-    names = Object.entries(loadCloneRegistry({ cwd }) as Record<string, any>).map(([slug, c]) => ({ slug, name: String(c?.display_name || slug) }));
+    names = cloneNamesOf(loadCloneRegistry({ cwd }) as Record<string, any>);
   } catch { names = []; }
   const selection = selectVoices({
     brief, names,

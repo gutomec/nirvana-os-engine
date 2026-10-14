@@ -37,6 +37,7 @@ import { scopeBoundary, scopeGuard } from "../../_shared/lib/scope-guard.ts";
 import { briefExcerpt } from "../../_shared/lib/brief-excerpt.ts";
 import { loadCloneRegistry, resolveClonePersona } from "../../_shared/lib/clone-resolver.ts";
 import { missingVoiceNotice, selectVoices, unsettledVoiceNotice } from "./clone-voices.ts";
+import { cloneNamesOf } from "./clone-names.ts";
 
 export type DispatchStepKind = "business" | "squad" | "agent-x";
 
@@ -352,7 +353,7 @@ export function agentXVoices(args: Pick<RunAgentXArgs, "brief" | "suggestedClone
     try {
       const reg = loadCloneRegistry({ cwd: args.projectDir }) as Record<string, any>;
       lib = {
-        names: Object.entries(reg).map(([slug, c]) => ({ slug, name: String(c?.display_name || slug) })),
+        names: cloneNamesOf(reg),
         dirOf: (slug) => resolveClonePersona(slug, { depth: "reference", cwd: args.projectDir })?.source ?? null,
       };
     } catch { return { lines: [], dirs: [], slugs: [] }; }

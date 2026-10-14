@@ -200,6 +200,45 @@ describe("warnings", () => {
   });
 });
 
+describe("names: how a request reaches the clone", () => {
+  const entry = (slug: string, display_name: string, extra: Record<string, unknown> = {}) => ({ slug, display_name, tags: [], match: { one_liner: null, domains: [] }, ...extra });
+  const names = async (dir: string, cloneRegistry: Record<string, unknown>) =>
+    (await verifyEntity("mind-clone", dir, { ...quiet, cloneRegistry })).findings.filter((f) => f.id.startsWith("person_") || f.id.startsWith("display_name_"));
+
+  test("person_canonical_missing: several slugs, one person, no canonical — a warning that names them", async () => {
+    const dir = cloneFixture(root(), "jane-doe");
+    const reg = { "jane-doe": entry("jane-doe", "Jane Doe"), "jane-doe-copy": entry("jane-doe-copy", "Jane Doe") };
+    const [f] = await names(dir, reg);
+    expect(f).toMatchObject({ id: "person_canonical_missing", severity: "warning" });
+    expect(f.message).toContain("jane-doe, jane-doe-copy");
+    // Marked in the registry, or in this clone's own manifest: silent.
+    expect(await names(dir, { ...reg, "jane-doe-copy": entry("jane-doe-copy", "Jane Doe", { canonical: "jane-doe" }) })).toEqual([]);
+    setManifest(dir, manifest(dir).replace('  version: 1.0.0', '  version: 1.0.0\n  canonical: true'));
+    expect(await names(dir, reg)).toEqual([]);
+    // One slug for the person: nothing to choose.
+    expect(await names(cloneFixture(root(), "jane-doe"), { "jane-doe": entry("jane-doe", "Jane Doe") })).toEqual([]);
+  });
+
+  test("display_name_is_slug and display_name_role_only; an archetype may be a role", async () => {
+    const dir = cloneFixture(root(), "jane-doe");
+    setManifest(dir, manifest(dir).replace('display_name: "Jane Doe"', "display_name: jane-doe"));
+    expect((await names(dir, {})).map((f) => f.id)).toEqual(["display_name_is_slug"]);
+    setManifest(dir, manifest(dir).replace("display_name: jane-doe", 'display_name: "Copywriter Brand"'));
+    expect((await names(dir, {})).map((f) => f.id)).toEqual(["display_name_role_only"]);
+    setManifest(dir, manifest(dir).replace(/^validation_verdict:.*$/m, "validation_verdict: ARCHETYPE_PERSONA"));
+    expect(manifest(dir)).toContain("ARCHETYPE_PERSONA");
+    expect(await names(dir, {})).toEqual([]);
+  });
+
+  test("aliases and canonical pass the manifest schema; a canonical that is not a slug does not", async () => {
+    const dir = cloneFixture(root(), "jane-doe");
+    setManifest(dir, manifest(dir).replace("  version: 1.0.0", '  version: 1.0.0\n  aliases: ["JD", "Janie"]\n  canonical: jane-doe'));
+    expect(await ids(dir)).not.toContain("manifest_schema");
+    setManifest(dir, manifest(dir).replace("canonical: jane-doe", 'canonical: "Not A Slug"'));
+    expect(await ids(dir)).toContain("manifest_schema");
+  });
+});
+
 describe("fixers", () => {
   const fix = (dir: string) => verifyEntity("mind-clone", dir, { ...quiet, fix: "mechanical", backupRoot: path.join(dir, "..", "..", "backups") });
 

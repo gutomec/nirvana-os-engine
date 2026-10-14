@@ -26,14 +26,40 @@
 //
 // One person, one voice: 43 people carry two or three slugs (a role variant
 // each). They are grouped by person, and a person resolves to one slug.
+//
+// The manifest can say both outright (`manifest.aliases`, `manifest.canonical`
+// in MANIFEST.yaml, carried into the registry by index-clones):
+//   - `aliases: ["Gary Vee"]` is recognised like a nickname in parentheses;
+//   - `canonical: true` makes this slug the one its person resolves to;
+//   - `canonical: <slug>` files this slug under the person of <slug>, and makes
+//     <slug> that person's canonical one.
+// Without them the person and the canonical slug are inferred, as before.
 
-export interface CloneName { slug: string; name: string }
+export interface CloneName {
+  slug: string;
+  name: string;
+  /** Other names the person goes by (manifest.aliases). */
+  aliases?: string[];
+  /** true: this slug is the person's canonical one; a slug: that one is (manifest.canonical). */
+  canonical?: boolean | string | null;
+}
+
+/** The names of a clone registry (`mind_clones` of the registry file), aliases and canonical included. */
+export function cloneNamesOf(registry: Record<string, any>): CloneName[] {
+  return Object.entries(registry ?? {}).map(([slug, c]) => {
+    const aliases = Array.isArray(c?.aliases) ? c.aliases.filter((a: unknown): a is string => typeof a === "string" && a.trim().length > 0).map((a: string) => a.trim()) : [];
+    const canonical = c?.canonical === true || (typeof c?.canonical === "string" && c.canonical.trim()) ? (c.canonical === true ? true : String(c.canonical).trim()) : null;
+    return { slug, name: String(c?.display_name || slug), ...(aliases.length ? { aliases } : {}), ...(canonical !== null ? { canonical } : {}) };
+  });
+}
 
 export interface Person {
   key: string;
   slugs: string[];
   /** The slug a person resolves to when the request names the person, not a slug. */
   canonical: string;
+  /** True when a manifest says which slug is canonical (manifest.canonical); false when it was inferred. */
+  canonicalDeclared: boolean;
   /** Folded full names: at least two words each. */
   fullNames: string[];
   /** Nicknames as written in the display name's parentheses. */
@@ -100,18 +126,29 @@ function personLike(folded: string): boolean {
 
 /** One entry per person, each slug filed under the person it belongs to. */
 export function buildPeople(names: CloneName[]): Person[] {
-  const byKey = new Map<string, { slugs: string[]; full: Set<string>; nicks: Set<string> }>();
-  for (const { slug, name } of names) {
-    const { base, nicknames } = splitDisplay(name || slug);
-    const fromDisplay = fold(base);
+  const byKey = new Map<string, { slugs: string[]; full: Set<string>; nicks: Set<string>; declared: string[] }>();
+  const keyOfSlug = new Map<string, string>();
+  const keyFor = (slug: string, name: string) => {
+    const fromDisplay = fold(splitDisplay(name || slug).base);
     const fromSlug = slugName(slug);
     // The display name when it is a person's name; the slug's spelling when the
     // display name is a role ("Copywriter Brand") or the slug itself.
-    const key = personLike(fromDisplay) ? fromDisplay : personLike(fromSlug) ? fromSlug : fold(slug.replace(/-/g, " "));
-    const entry = byKey.get(key) ?? { slugs: [], full: new Set<string>(), nicks: new Set<string>() };
+    return personLike(fromDisplay) ? fromDisplay : personLike(fromSlug) ? fromSlug : fold(slug.replace(/-/g, " "));
+  };
+  for (const { slug, name } of names) keyOfSlug.set(slug, keyFor(slug, name));
+  for (const { slug, name, aliases, canonical } of names) {
+    const { base, nicknames } = splitDisplay(name || slug);
+    const fromDisplay = fold(base);
+    const fromSlug = slugName(slug);
+    // `canonical: <slug>` files this slug under that slug's person.
+    const pointsTo = typeof canonical === "string" && canonical !== slug && keyOfSlug.has(canonical) ? canonical : null;
+    const key = pointsTo ? keyOfSlug.get(pointsTo)! : keyOfSlug.get(slug)!;
+    const entry = byKey.get(key) ?? { slugs: [], full: new Set<string>(), nicks: new Set<string>(), declared: [] };
     entry.slugs.push(slug);
     for (const n of [key, fromDisplay, fromSlug]) if (personLike(n)) entry.full.add(n);
-    for (const n of nicknames) entry.nicks.add(n);
+    for (const n of [...nicknames, ...(aliases ?? [])]) entry.nicks.add(n);
+    if (canonical === true) entry.declared.push(slug);
+    if (pointsTo) entry.declared.push(pointsTo);
     byKey.set(key, entry);
   }
   // Two keys can be one person spelled two ways ("cole nussbaumer knaflic" and
@@ -121,8 +158,10 @@ export function buildPeople(names: CloneName[]): Person[] {
     const words = key.split(" ").filter((t) => !NAME_PARTICLES.has(t) && t.length > 1);
     const slugs = [...e.slugs].sort((a, b) => a.split("-").length - b.split("-").length || a.length - b.length || a.localeCompare(b));
     const exact = slugs.find((s) => s === key.replace(/ /g, "-"));
+    // A canonical the manifests declare wins over the inferred one.
+    const declared = slugs.find((s) => e.declared.includes(s));
     people.push({
-      key, slugs, canonical: exact ?? slugs[0],
+      key, slugs, canonical: declared ?? exact ?? slugs[0], canonicalDeclared: !!declared,
       fullNames: [...e.full],
       nicknames: [...e.nicks],
       first: words.length >= 2 ? words[0] : null,
@@ -130,6 +169,20 @@ export function buildPeople(names: CloneName[]): Person[] {
     });
   }
   return people;
+}
+
+/**
+ * What is wrong with a display name as a person's name, for `nrv validate`:
+ * "slug" when it is the slug itself ("alex-hormozi"), "role" when every word
+ * is a role ("Copywriter Brand"). Either way a request naming the person can
+ * only reach the clone through the slug's spelling.
+ */
+export function displayNameIssue(slug: string, display: string): "slug" | "role" | null {
+  const d = (display ?? "").trim();
+  if (!d || d.toLowerCase() === slug.toLowerCase()) return "slug";
+  const toks = fold(splitDisplay(d).base).split(" ").filter((t) => t && !NAME_PARTICLES.has(t));
+  if (toks.length && toks.every((t) => ROLE_WORDS.has(t))) return "role";
+  return null;
 }
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

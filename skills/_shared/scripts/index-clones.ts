@@ -114,6 +114,10 @@ function addClone(slug: string, dir: string, m: any, packCategory: string | null
     pack_category: packCategory,
     manifest_category: man.category || null,
     tags: Array.isArray(man.tags) ? man.tags : [],
+    // Who the person is, for name recognition (harness/lib/clone-names.ts): other
+    // names they go by, and whether this slug is the one the person resolves to.
+    aliases: Array.isArray(man.aliases) ? man.aliases.filter((a: unknown) => typeof a === "string" && a.trim()).map((a: string) => a.trim()) : [],
+    canonical: man.canonical === true || (typeof man.canonical === "string" && man.canonical.trim()) ? (man.canonical === true ? true : man.canonical.trim()) : null,
     validation_verdict: m.validation_verdict || man.validation_verdict || null,
     scores: m.scores || null,
     dir,

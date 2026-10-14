@@ -14,7 +14,7 @@
 import * as path from "node:path";
 import { createRequire } from "node:module";
 import { businessCard, squadCard } from "./routing-cards.ts";
-import { buildPeople, scanNames, type Person } from "./clone-names.ts";
+import { buildPeople, cloneNamesOf, scanNames, type Person } from "./clone-names.ts";
 import { loadCloneRegistry } from "../../_shared/lib/clone-resolver.ts";
 
 const require_ = createRequire(import.meta.url);
@@ -83,7 +83,7 @@ const peopleByRegistry = new WeakMap<object, Person[]>();
 export function peopleFor(cloneRegistry: Record<string, any>): Person[] {
   let p = peopleByRegistry.get(cloneRegistry);
   if (!p) {
-    p = buildPeople(Object.entries(cloneRegistry).map(([slug, c]) => ({ slug, name: String(c?.display_name || slug) })));
+    p = buildPeople(cloneNamesOf(cloneRegistry));
     peopleByRegistry.set(cloneRegistry, p);
   }
   return p;

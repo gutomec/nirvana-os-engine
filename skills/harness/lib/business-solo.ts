@@ -34,6 +34,7 @@ import { squadRunEnv } from "../../_shared/lib/squad-env.ts";
 import { findCloneForTask, type CloneHit } from "../../_shared/lib/clone-search.ts";
 import { parseWorkBrief } from "./work-brief.ts";
 import { missingVoiceNotice, selectVoices, unsettledVoiceNotice, voiceQuery, type VoiceSelection } from "./clone-voices.ts";
+import { cloneNamesOf } from "./clone-names.ts";
 
 export interface SeatVoice { slug: string; name?: string; dir: string | null; files: string[]; pinned?: boolean }
 
@@ -522,8 +523,7 @@ export function prepareBusinessSolo(args: BusinessSoloArgs): PreparedSolo {
   const cloneLookup = args.cloneLookup ?? defaultCloneLookup(args.projectDir);
   const squadDirOf = args.squadDirOf ?? ((q: string) => resolveEntityDir("squads", q, args.projectDir));
   let displayNames = new Map<string, string>();
-  const names = args.cloneNames ?? (() => Object.entries(loadCloneRegistry({ cwd: args.projectDir }) as Record<string, any>)
-    .map(([slug, c]) => ({ slug, name: String(c?.display_name ?? slug) })));
+  const names = args.cloneNames ?? (() => cloneNamesOf(loadCloneRegistry({ cwd: args.projectDir }) as Record<string, any>));
   try { displayNames = new Map(names().map((c) => [c.slug, c.name])); } catch { /* names are a courtesy */ }
   const seats = readSeats(args.bizDir, cloneLookup, (slug) => displayNames.get(slug));
   const memory = args.memoryDirs ? { dirs: args.memoryDirs, newer: null } : businessMemory(args.slug, args.bizDir, args.projectRoot);

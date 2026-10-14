@@ -25,6 +25,7 @@ import { parseDnaSchema, type LayerKey } from "../../dna-schema-parser.ts";
 import { validateMindCloneFile } from "../../mindclone-validator.ts";
 import { MIND_CLONE_VALIDATION_VERDICTS, MindCloneManifestSchema } from "../../../validators/validators.ts";
 import { editYaml, fixResult, listEntities, resolveEntityDir, surfaceFindings, surfaceRegenFixer } from "../common.ts";
+import { buildPeople, cloneNamesOf, displayNameIssue, personOf, type Person } from "../../../../harness/lib/clone-names.ts";
 import type { CheckContext, Criterion, Finding, Fixer, KindModule } from "../types.ts";
 
 export const CANONICAL_ARTIFACTS = ["agent/AGENT.md", "agent/SOUL.md", "agent/DNA-CONFIG.yaml", "dna/dna-schema.md"] as const;
@@ -80,6 +81,12 @@ export const criteria: Criterion[] = [
   { id: "surface_stale", severity: "warning", autofix: "mechanical", baselineable: false, title: ".nirvana-surface.json matches the files on disk", fixer: "surface_regen" },
   { id: "self_retrieval_miss", severity: "warning", autofix: "agentic", baselineable: true, title: "routing.one_liner retrieves the clone first (self-retrieval gate)" },
   { id: "registry_absent", severity: "info", autofix: "none", baselineable: false, title: "self-retrieval skipped: clone not in the registry" },
+  // Name recognition (harness/lib/clone-names.ts). Library curation, never a
+  // failure: a request names a person, and these are what keeps the name from
+  // reaching the clone or splits one person across several voices.
+  { id: "person_canonical_missing", severity: "warning", autofix: "none", baselineable: false, title: "a person with several slugs marks one manifest.canonical" },
+  { id: "display_name_is_slug", severity: "warning", autofix: "none", baselineable: false, title: "manifest.display_name is a name, not the slug" },
+  { id: "display_name_role_only", severity: "warning", autofix: "none", baselineable: false, title: "manifest.display_name names the person, not only a role" },
 ];
 
 const BY_ID = new Map(criteria.map((c) => [c.id, c]));
@@ -301,9 +308,40 @@ export async function check(ctx: CheckContext): Promise<Finding[]> {
     }
   }
 
+  if (doc) out.push(...await nameFindings(ctx, doc));
+
   out.push(...surfaceFindings(dir, "mind-clone", (id, m, e) => mk(id, m, e)));
 
   if (ctx.retrieval && doc?.routing?.one_liner) out.push(...await selfRetrieval(ctx));
+  return out;
+}
+
+// One grouping by person per registry object, for the same reason.
+const PEOPLE_CACHE = new WeakMap<object, Person[]>();
+
+/** How a request reaches this clone by name: the display name, and one canonical slug per person. */
+async function nameFindings(ctx: CheckContext, doc: any): Promise<Finding[]> {
+  const out: Finding[] = [];
+  const man = (doc.manifest ?? {}) as Record<string, unknown>;
+  const display = typeof man.display_name === "string" ? man.display_name : "";
+  const archetype = (doc.validation_verdict ?? man.validation_verdict) === "ARCHETYPE_PERSONA";
+  const issue = displayNameIssue(ctx.slug, display);
+  if (issue === "slug") out.push(mk("display_name_is_slug", `display_name "${display}" is the slug — a request naming the person reaches the clone only by its spelling`, "manifest.display_name"));
+  // An archetype is a role by design ("Brand Strategist"); a person is not.
+  else if (issue === "role" && !archetype) out.push(mk("display_name_role_only", `display_name "${display}" names only a role — write the person's name, and the role after a dash`, "manifest.display_name"));
+
+  let registry = ctx.cloneRegistry as Record<string, any> | undefined;
+  if (!registry) {
+    try { registry = (await import("../../clone-resolver.ts")).loadCloneRegistry() as Record<string, any>; } catch { registry = {}; }
+  }
+  let people = PEOPLE_CACHE.get(registry);
+  if (!people) { people = buildPeople(cloneNamesOf(registry)); PEOPLE_CACHE.set(registry, people); }
+  // The manifest on disk is fresher than the registry for its own canonical mark.
+  const own = man.canonical === true || (typeof man.canonical === "string" && man.canonical.trim() !== "");
+  const person = personOf(people, ctx.slug);
+  if (person && person.slugs.length > 1 && !person.canonicalDeclared && !own) {
+    out.push(mk("person_canonical_missing", `${person.slugs.length} slugs are one person (${person.slugs.join(", ")}) and none is marked canonical — a request naming the person resolves to ${person.canonical} by guess`, "manifest.canonical"));
+  }
   return out;
 }
 

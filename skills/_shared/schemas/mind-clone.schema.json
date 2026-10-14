@@ -61,6 +61,22 @@
         "source": {
           "type": "string",
           "description": "Distribution source label (e.g., 'nirvana-os-starter-pack')"
+        },
+        "aliases": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 80
+          },
+          "description": "Other names the person goes by ('Gary Vee', 'Chivo'). Recognised in a request like a nickname in the display name's parentheses."
+        },
+        "canonical": {
+          "oneOf": [
+            { "type": "boolean" },
+            { "type": "string", "pattern": "^[a-z][a-z0-9-]{1,63}$" }
+          ],
+          "description": "For a person with several slugs (role variants): true marks this slug as the one a request naming the person resolves to; a slug names that canonical slug and files this one under the same person. nrv validate warns when a person has several slugs and none is canonical."
         }
       }
     },

@@ -3,7 +3,7 @@
 // person, nicknames in parentheses, a role as display name, shared surnames).
 
 import { describe, expect, test } from "bun:test";
-import { buildPeople, fold, scanNames } from "../lib/clone-names.ts";
+import { buildPeople, cloneNamesOf, displayNameIssue, fold, scanNames } from "../lib/clone-names.ts";
 import { selectVoices, voiceGate, voiceQuery } from "../lib/clone-voices.ts";
 import { agentXVoices } from "../lib/dispatch-cascade.ts";
 
@@ -163,5 +163,63 @@ describe("the generalist's voices", () => {
   test("agent-x gets the router's voices, and never a searched one", () => {
     expect(agentXVoices({ brief: "Escreva um ensaio sobre IA", suggestedClones: ["yoshua-bengio"], cloneLibrary: library, projectDir: "/p" }).slugs).toEqual(["yoshua-bengio"]);
     expect(agentXVoices({ brief: "Escreva um ensaio sobre IA", cloneLibrary: library, projectDir: "/p" }).slugs).toEqual([]);
+  });
+});
+
+describe("aliases and canonical, declared in the manifest", () => {
+  test("an alias is recognised like a nickname in parentheses", () => {
+    const people = buildPeople([
+      { slug: "nayib-bukele", name: "Nayib Bukele", aliases: ["Chivo"] },
+      { slug: "gary-vaynerchuk", name: "Gary Vaynerchuk", aliases: ["Gary Vee"] },
+    ]);
+    expect(scanNames("um discurso tipo o Chivo faria", people).matches.map((m) => [m.slug, m.via])).toEqual([["nayib-bukele", "nickname"]]);
+    expect(scanNames("posts no estilo Gary Vee", people).matches.map((m) => m.slug)).toEqual(["gary-vaynerchuk"]);
+    // Without the alias the same text names nobody.
+    expect(scanNames("um discurso tipo o Chivo faria", buildPeople([{ slug: "nayib-bukele", name: "Nayib Bukele" }])).matches).toEqual([]);
+  });
+
+  test("canonical: true picks the slug a person resolves to, over the inferred one", () => {
+    const inferred = buildPeople([{ slug: "david-droga-cco", name: "David Droga" }, { slug: "david-droga-ceo", name: "David Droga" }]);
+    expect(inferred[0].canonical).toBe("david-droga-cco");
+    expect(inferred[0].canonicalDeclared).toBe(false);
+    const declared = buildPeople([{ slug: "david-droga-cco", name: "David Droga" }, { slug: "david-droga-ceo", name: "David Droga", canonical: true }]);
+    expect(declared).toHaveLength(1);
+    expect(declared[0].canonical).toBe("david-droga-ceo");
+    expect(declared[0].canonicalDeclared).toBe(true);
+    expect(scanNames("na voz do David Droga", declared).matches.map((m) => m.slug)).toEqual(["david-droga-ceo"]);
+  });
+
+  test("canonical: <slug> files a slug under that slug's person and makes it canonical", () => {
+    const people = buildPeople([
+      { slug: "erico-rocha", name: "Erico Rocha" },
+      { slug: "ignition-launch-strategist", name: "Launch Strategist", canonical: "erico-rocha" },
+    ]);
+    expect(people).toHaveLength(1);
+    expect(people[0].slugs.sort()).toEqual(["erico-rocha", "ignition-launch-strategist"]);
+    expect(people[0].canonical).toBe("erico-rocha");
+    expect(people[0].canonicalDeclared).toBe(true);
+    // A canonical pointing at a slug that is not installed changes nothing.
+    const dangling = buildPeople([{ slug: "a-person", name: "A Person", canonical: "not-installed" }]);
+    expect(dangling[0].canonical).toBe("a-person");
+    expect(dangling[0].canonicalDeclared).toBe(false);
+  });
+
+  test("cloneNamesOf carries aliases and canonical from the registry, and drops what is not text", () => {
+    expect(cloneNamesOf({
+      "nayib-bukele": { display_name: "Nayib Bukele", aliases: ["Chivo", 3, " "], canonical: true },
+      "plain": { display_name: "Plain Person", aliases: [], canonical: null },
+      "pointer": { canonical: " nayib-bukele " },
+    })).toEqual([
+      { slug: "nayib-bukele", name: "Nayib Bukele", aliases: ["Chivo"], canonical: true },
+      { slug: "plain", name: "Plain Person" },
+      { slug: "pointer", name: "pointer", canonical: "nayib-bukele" },
+    ]);
+  });
+
+  test("displayNameIssue: the slug as a name, and a role with no person", () => {
+    expect(displayNameIssue("stanley-kubrick", "stanley-kubrick")).toBe("slug");
+    expect(displayNameIssue("washington-olivetto-copy", "Copywriter Brand")).toBe("role");
+    expect(displayNameIssue("washington-olivetto-brand-practice", "Washington Olivetto — Brand Practice Lead")).toBeNull();
+    expect(displayNameIssue("steve-jobs", "Steve Jobs")).toBeNull();
   });
 });
