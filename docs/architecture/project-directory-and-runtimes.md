@@ -51,7 +51,7 @@ project relies on the machine's `~/.nirvana/skills`.
 | Hermes | `nrv-hermes`, or `hermes chat --in <project>` | `AGENTS.md` injected from cwd | n/a (works in cwd) | shell hooks (`pre/post_tool_call`) + fs-watch |
 | OpenClaw | the project **is** the agent's workspace (below) | `AGENTS.md` in the workspace | n/a (workspace is the root) | `nrv audit emit` + fs-watch (tool hooks: see §4.3) |
 
-The scripted path (`nrv dispatch --exec`) passes the project
+The scripted path (`nrv dispatch --exec`, `nrv team step`) passes the project
 dir, the outputs root and the business or squad dir to the child runtime through
 the flag in the third column (`RUNTIME_DIR_GRANT_FLAG` in the driver). Runtimes
 without a flag (grok, pi, kimi, opencode) get a warning on the result.

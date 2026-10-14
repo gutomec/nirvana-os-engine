@@ -1,6 +1,6 @@
 # `nrv` — CLI reference
 
-Nobody needs to type these day to day. You talk to the agent you already use (Claude Code, Codex, Antigravity, Pi…) in plain language, and the agent runs `nrv`: *"what squads do I have?"*, *"use Nirvana to write the launch copy"*, *"stop that run"*, *"update Nirvana"*. This page is the reference underneath, for agents and for anyone who wants the direct commands.
+Nobody needs to type these day to day. You talk to the agent you already use (Claude Code, Codex, Antigravity, Pi…) in plain language, and the agent runs `nrv`: *"what squads do I have?"*, *"use Nirvana to write the launch copy"*, *"update Nirvana"*. This page is the reference underneath, for agents and for anyone who wants the direct commands.
 
 Run `nrv help` for the live reference, and `nrv <subcommand> --help` for any command's full options.
 
@@ -27,24 +27,22 @@ nrv <subcommand> [args]
 | `nrv config get <key>` / `nrv config explain <key>` | The effective value; `explain` adds the description, the default, the allowed scopes and the legacy variable. |
 | `nrv config set <key> <value> [--global\|--project]` / `nrv config unset <key> [...]` | Writes `<project>/.nirvana/config.yaml` (the default inside a project) or `~/.nirvana/config.yaml` (kept across `nrv update`), one line at a time, comments preserved. Refuses a value the schema rejects, a scope the key does not accept, and a key pinned by a variable in this shell, each with the reason; every write audits `x_settings_changed`. |
 
-Precedence, always: environment variable > `<project>/.nirvana/config.yaml` > `~/.nirvana/config.yaml` > the performance profile (`execution.profile`: `max`, `balanced`, `economy`) > the engine's `skills/harness/config.yaml` > the default. A profile moves effort, the workers' context ceiling, review, routing and the judge at once; a key set explicitly wins over it. What survives an update, and what to do when a value is not what you expect, is in [`docs/configuration.md`](configuration.md); the full key table, the variables that stay environment-only and the reasons are in [`docs/architecture/configuration.md`](architecture/configuration.md).
+Precedence, always: environment variable > `<project>/.nirvana/config.yaml` > `~/.nirvana/config.yaml` > the engine's `skills/harness/config.yaml` > the default. What survives an update, and what to do when a value is not what you expect, is in [`docs/configuration.md`](configuration.md); the full key table, the variables that stay environment-only and the reasons are in [`docs/architecture/configuration.md`](architecture/configuration.md).
 
 ## Talk to it / run work
 
 | Command | What it does |
 |---|---|
-| `nrv brief template` / `check <file>` / `decide <file> "<decision>"` | The six-section brief the orchestrator writes for one business (Request verbatim, Decisions, Your part, Inputs, Done when, Output). `check` validates it; `decide` adds a decision while the run is going, and the worker re-reads the brief at every phase. |
-| `nrv dispatch <business> --brief-file <file> --exec` | Run a business on the brief, on the session's runtime unless `--runtime <rt>` names another. The business runs as one agent that plays its seats. Without `--exec` it refuses; `--scaffold-only` only prepares the run folder. Exit 0 delivered, 1 failed, 2 withheld, 3 indeterminate, 4 refused. |
-| `nrv dispatch --business <slug> \| --squad <slug>[:<capabilityId>] \| --agent-x "<brief>" --exec` | Name the target yourself; the three flags are mutually exclusive with each other and with `--auto`, and none of them consults the router. `--squad` takes an optional capability id: without one the dispatch resolves the squad's capability from the brief. (`--judge-x` is the engine's Gauntlet judge, spawned by the evaluator adapter on an evaluation brief; it is not a producer.) |
-| `nrv dispatch --auto "<brief>" --exec` | No target named: the router picks one, falling through to `agent-x`, the generalist. `nrv auto "<brief>"` is the same. |
-| `nrv run <business> "<brief>"` | Dispatch + execute + verify + gate against a business you name (`--exec` implied). |
-| `nrv cards squad <slug>` | The work card of an installed squad: what a business reads to use it. |
-| `nrv revise <project> "<change>"` | Apply a change while keeping the same runtime session: a business run, a squad run or an agent-x run, resumed on the runtime that finished it. A route of several squads has no single session and is refused (exit 4). |
+| `nrv auto "<brief>"` | **Autopilot.** The router picks the best company for your brief, executes it headless, verifies, and runs the quality gate. (= `run --auto`.) |
+| `nrv run <business> "<brief>"` | Autopilot against a company you name: dispatch + execute + verify + gate. |
+| `nrv dispatch <business> "<brief>"` | Scaffold a run (brief + DNA injection + audit) without auto-executing. |
+| `nrv dispatch --business <slug> \| --squad <slug>[:<capabilityId>] \| --agent-x "<brief>" [--exec]` | Name the target yourself; the three flags are mutually exclusive with each other and with `--auto`, and none of them consults the router. `--squad` takes an optional capability id: without one the dispatch resolves the squad's capability from the brief. `--exec` runs it, otherwise it only scaffolds. (`--judge-x` is the engine's Gauntlet judge, spawned by the evaluator adapter on an evaluation brief; it is not a producer.) |
+| `nrv revise <project> "<change>"` | Apply a change while keeping the same runtime session. |
 | `nrv launch <name> --pillars=brand,marketing,gtm` | Scaffold a multi-pillar 360° launch (default: all 11 pillars). |
 | `nrv ask <clone> "<question>"` | Talk directly to a single specialist (mind-clone), DNA injected. |
 | `nrv multi-target plan\|run\|status <plan.json>` | Multi-target engine by plan file (alias `nrv mt`): `plan` compiles the waves, `run` executes them over the Run Kernel (`nrv config set multi_target.enabled false` or `NIRVANA_MULTI_TARGET_KILL_SWITCH=1` turns it off), `status` reads the projection. |
 
-Useful flags on `dispatch` / `run` / `auto`: `--project <YYYYMMDD>-<subject>-<part>` (the run's name; default `<YYYYMMDD>-<HHMM>-<target>`), `--review` / `--no-review` (ask for or decline the delivery review; otherwise `review.policy` decides), `--zip` / `--pdf` / `--html` (bundle the deliverables or build a report, only on request), `--runtime=claude-code|codex|antigravity-cli|pi|kimi-cli|grok-cli|qwen-code|opencode`, `--max-budget=<usd>` (only when the user named a number), `--timeout=<min>`, `--mode=agentic|cards` (how `--auto` routes), `--execution-mode=standard|gauntlet|auto` (default `standard`), `--gauntlet-intensity=light|balanced|exhaustive` (a Business target needs `NIRVANA_BUSINESS_GAUNTLET_ALLOWLIST=<slug>`), `--run-id=<runId>` (adopt a Run already prepared in the project's kernel, the way Glance does), `--safe` (restricted tools instead of the permission bypass Claude Code workers run with by default).
+Useful flags on `run` / `auto`: `--single` / `--team` (how many seats of the business run the brief — by default a director reads the brief against the org chart and decides, answering "one seat" when one is enough; `--single` skips that call, `--team` asks for a chain of 3 to 6), `--zip` / `--pdf` (bundle deliverables), `--runtime=claude-code|codex|antigravity-cli|kimi-cli|grok-cli|pi`, `--max-budget=<usd>`, `--timeout=<min>`, `--mode=agentic|cards` (routing mode), `--execution-mode=standard|gauntlet|auto` (default `standard`), `--gauntlet-intensity=light|balanced|exhaustive` (a Business target needs `NIRVANA_BUSINESS_GAUNTLET_ALLOWLIST=<slug>`), `--run-id=<runId>` (adopt a Run already prepared in the project's kernel, the way Glance does).
 
 ## See it happen
 
@@ -60,7 +58,7 @@ Useful flags on `dispatch` / `run` / `auto`: `--project <YYYYMMDD>-<subject>-<pa
 | Command | What it does |
 |---|---|
 | `nrv route "<brief>"` | Route a brief and show the decision (HIGH / AMBIGUOUS / NO_MATCH). |
-| `nrv find "<query>"` | Ranked candidates (businesses, squads with their capability ids) for a request, zero tokens. The orchestrator's shortlist; listed under QUALITY OF LIFE in `nrv help`. |
+| `nrv find "<query>"` | Dry-run capability discovery. |
 | `nrv search "<query>" [--kind=business\|squad\|mind-clone]` | Keyword + BM25 search across your libraries. |
 | `nrv list-businesses` / `nrv list-squads` / `nrv list-clones` | List what's in your libraries (`--format=table\|json`). |
 | `nrv inspect-clone <slug> [--commands\|--dna]` | Inspect a single specialist. |
@@ -69,11 +67,10 @@ Useful flags on `dispatch` / `run` / `auto`: `--project <YYYYMMDD>-<subject>-<pa
 
 | Command | What it does |
 |---|---|
-| `nrv init <dir>` | Create a new Nirvana project. `--copy` (portable delivery), `--scope=project` (isolated). By default agents in the project work as they would without Nirvana and use it only when a request names it, asks for a business, a squad or a mind-clone, or asks for another runtime; `--orchestrators=always` makes Nirvana the orchestrator of every artifact. Rerunning init switches an existing project to the mode it is given. |
+| `nrv init <dir>` | Create a new Nirvana project: `.nirvana/project.yaml`, a `.env` with the library scope, and the contract in `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`. `--orchestrators=always` (the default when run by an agent or a script) makes Nirvana the orchestrator of every concrete deliverable; `--orchestrators=on-demand` writes a short note and Nirvana acts only when asked by name. `--copy` (portable delivery), `--scope=project\|merge`. |
 | `nrv resume <project>` | Resume an incomplete project from its audit log. |
-| `nrv run-track stop <run-id\|project>` | Stop a run: end its dispatcher and worker and close it in the ledger, so the supervisor does not resume it. Killing the processes by hand leaves the run open. |
 | `nrv export <project> [--format=zip\|tgz]` | Bundle a project's outputs to share. |
-| `nrv clean <project> [--hard] [--force] [--dry-run]` | Remove a project scaffold (trash by default) and abandon the project's open runs in the ledger. A run still working there stops it (exit 4, with the command to end it); `--force` abandons it anyway without stopping its worker; `--dry-run` lists what it would close. |
+| `nrv clean <project> [--hard]` | Remove a project scaffold (trash by default). |
 
 A project is where a run's audit, briefs and deliverables live, for every runtime — including OpenClaw, whose agent must have the project as its workspace. How each one enters it: [docs/architecture/project-directory-and-runtimes.md](architecture/project-directory-and-runtimes.md).
 
@@ -115,7 +112,7 @@ A project is where a run's audit, briefs and deliverables live, for every runtim
 
 ```bash
 nrv doctor                                              # health check first
-nrv auto "crie uma landing page para um SaaS de logística"   # the router picks the target
+nrv auto "crie uma landing page para um SaaS de logística"   # autopilot, router picks the company
 nrv run brand-creative-studio "Manifesto for a SaaS called Atlas"
 nrv launch atlas --pillars=brand,marketing,gtm
 nrv ask rory-sutherland "Critique this headline: ..."

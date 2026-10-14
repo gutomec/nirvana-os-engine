@@ -12,12 +12,11 @@ Uma resolução só, em `skills/_shared/lib/settings.ts`, com a mesma ordem em t
 |---|---|---|---|
 | 1 | variável de ambiente | o shell, o `.env` do projeto (o Bun carrega o `.env` da pasta onde o comando roda), o env que um spawner monta para o filho | o usuário, o CI, um spawner fixando o efetivo no filho |
 | 2 | projeto | `<projeto>/.nirvana/config.yaml` | `nrv config set --project` (padrão dentro de um projeto) |
-| 3 | global do usuário | `~/.nirvana/config.yaml` (`NIRVANA_HOME` substitui o `~`) | `nrv config set --global`, `nrv embeddings enable`, o instalador (o perfil) |
-| 4 | perfil de desempenho | `execution.profile` resolvido nas camadas acima; os valores de cada perfil estão em `skills/_shared/lib/profiles.ts` | o usuário, ao escolher o perfil |
-| 5 | padrão do engine | `skills/harness/config.yaml` (instalado em `~/.nirvana/skills/harness/config.yaml`) | o engine; cada `nrv update` sobrescreve |
-| 6 | padrão do schema | `skills/_shared/lib/settings-schema.ts` | o código |
+| 3 | global do usuário | `~/.nirvana/config.yaml` (`NIRVANA_HOME` substitui o `~`) | `nrv config set --global`, `nrv embeddings enable` |
+| 4 | padrão do engine | `skills/harness/config.yaml` (instalado em `~/.nirvana/skills/harness/config.yaml`) | o engine; cada `nrv update` sobrescreve |
+| 5 | padrão do schema | `skills/_shared/lib/settings-schema.ts` | o código |
 
-A variável vence sempre: é o contrato de compatibilidade dos scripts, do CI e dos spawners. O perfil fica abaixo dos arquivos do usuário e acima dos padrões do engine: escolher `economy` muda várias chaves de uma vez, e uma chave gravada explicitamente no projeto ou no global continua valendo. O perfil nunca fixa modelo, porque um mesmo id não serve para todos os runtimes. O arquivo do engine é só a camada 4; ele deixou de ser o lugar onde o usuário persiste escolhas, porque a atualização o apaga. O arquivo global é novo neste corte e sobrevive ao `nrv update`. O arquivo de projeto é o mesmo `.nirvana/config.yaml` que o `locale-resolver.ts` já lia (`locale`); chaves que o schema não conhece são ignoradas, então o `locale` continua onde estava.
+A variável vence sempre: é o contrato de compatibilidade dos scripts, do CI e dos spawners. O arquivo do engine é só a camada 4; ele deixou de ser o lugar onde o usuário persiste escolhas, porque a atualização o apaga. O arquivo global é novo neste corte e sobrevive ao `nrv update`. O arquivo de projeto é o mesmo `.nirvana/config.yaml` que o `locale-resolver.ts` já lia (`locale`); chaves que o schema não conhece são ignoradas, então o `locale` continua onde estava.
 
 Descoberta do projeto: `NIRVANA_PROJECT_ROOT`, senão o ancestral mais próximo do diretório atual que tenha um `.nirvana/`. O `~` nunca conta como projeto, mesmo tendo `.nirvana/`: esse é o armazém global, e lê-lo como projeto faria o arquivo global sobrescrever a si mesmo.
 
@@ -35,7 +34,7 @@ nrv config explain <chave> [--json]               descrição, tipo, padrão, es
 
 `set` e `unset` gravam no projeto quando rodam dentro de um (diretório `.nirvana/` no cwd ou num ancestral, ou `NIRVANA_PROJECT_ROOT`) e no global fora dele. A gravação edita uma linha por vez, `seção:` e `  chave:`, preservando todo o resto do arquivo, comentários inclusive, e é atômica (arquivo temporário e rename). Strings vão entre aspas duplas, para que `off`, `no` e `1.0` nunca virem outra coisa num leitor YAML 1.1.
 
-Recusas, cada uma com o motivo e exit 4: valor que o schema rejeita (`routing.mode: valor inválido "turbo"; esperado agentic | cards`; para um valor aposentado, como `fast`, a mensagem diz que ele foi aposentado e por quê), escopo que a chave não aceita, chave fixada por variável no shell atual (o valor gravado só valeria sem a variável; o comando diz qual é) e `--project` fora de um projeto. Um arquivo que a resolução não consegue ler sai com exit 1 e o caminho. A gravação não valida o valor que substitui: um arquivo com um valor inválido pode ser consertado pelo próprio `nrv config set`.
+Recusas, cada uma com o motivo e exit 4: valor que o schema rejeita (`routing.mode: valor inválido "turbo"; esperado agentic | cards | fast`), escopo que a chave não aceita, chave fixada por variável no shell atual (o valor gravado só valeria sem a variável; o comando diz qual é) e `--project` fora de um projeto. Um arquivo que a resolução não consegue ler sai com exit 1 e o caminho. A gravação não valida o valor que substitui: um arquivo com um valor inválido pode ser consertado pelo próprio `nrv config set`.
 
 Cada `set` e `unset` que muda um arquivo grava `x_settings_changed { key, scope, path, from, to }` no audit, pelo mesmo `lib/audit.js` do resto do engine. Um valor já igual não escreve nem audita.
 
@@ -61,17 +60,14 @@ Gerada a partir do schema. `nrv config explain <chave>` mostra a descrição de 
 | `execution.headless_skip_permissions` | `NIRVANA_HEADLESS_SKIP_PERMISSIONS` | `true` | global, projeto | true / false |
 | `execution.child_env` | `NIRVANA_CHILD_ENV` | `inherit` | global, projeto | inherit / declared (o `nrv serve` usa `declared` salvo `NIRVANA_SERVE_CHILD_ENV=inherit`) |
 | `execution.max_dispatch_depth` | `NIRVANA_MAX_DISPATCH_DEPTH` | `4` | global, projeto | inteiro >= 0; 0 = ilimitado. Cadeia de agentes despachando agentes. No terminal: empresa (1), assento (2), squad usado pelo assento (3). No Glance o maestro é ele mesmo um filho e tudo desce um nível, então 4 |
-| `execution.profile` | `NIRVANA_PROFILE` | `none` | global, projeto | none / max / balanced / economy. Uma camada de padrões entre os arquivos do usuário e os padrões do engine (`_shared/lib/profiles.ts`); uma chave definida explicitamente vence o perfil |
-| `execution.context_window` | `NIRVANA_CONTEXT_WINDOW` | `0` | global, projeto | inteiro >= 0 (tokens); 0 = o padrão do runtime. Teto de contexto dos agentes despachados: `CLAUDE_CODE_AUTO_COMPACT_WINDOW` no claude-code, `model_auto_compact_token_limit` no codex |
-| `execution.visual_checks` | `NIRVANA_VISUAL_CHECKS` | `false` (`true` no perfil max) | global, projeto | true / false. Ligado, os agentes despachados conferem o próprio trabalho visual renderizando: capturas de tela, passadas por viewport, Lighthouse, leitura de imagens da saída. Desligado, pulam esses passos mesmo quando o workflow do squad os pede, e o usuário revisa o resultado |
+| `execution.business_mode` | `NIRVANA_BUSINESS_MODE` | `chain` | global, projeto | chain / session. Como uma empresa roda quando o pedido não traz `--team` nem `--single`: `chain` é o diretor e uma sessão por cargo, em série; `session` é uma sessão só, com os cargos como subagentes do runtime |
 | `glance.execution` | `NIRVANA_GLANCE_EXECUTION` | `true` | global, projeto | true / false |
 | `glance.maestro_max_budget_usd` | nenhuma | `5` | global, projeto | número >= 0 (USD); 0 = sem teto |
 | `runtime.provider_catalog_dir` | `NIRVANA_PROVIDER_CATALOG_DIR` | `""` | global, projeto | lista de caminhos separados pelo delimitador do sistema, ou vazio |
 | `runtime.allow_stale_catalog` | `NIRVANA_ALLOW_STALE_CATALOG` | `false` | global, projeto | true / false |
-| `routing.mode` | `NIRVANA_ROUTING_MODE` | `agentic` | global, projeto | agentic / cards. `cards` faz uma única chamada, sem ferramentas, sobre `.routing-cards.md` (uma linha por empresa e por squad, escrita pelo `nrv index` ao lado do digest) e leva os critérios de pronto do roteador ao brief. O valor `fast` foi aposentado em 13/10/2026: o BM25 só monta listas curtas e nunca decide quem executa. Um `fast` gravado num arquivo ou em `NIRVANA_ROUTING_MODE` é ignorado, com um aviso que diz de onde veio e como limpar, e vale o padrão do perfil; `nrv config set routing.mode fast` e `--mode=fast` saem com exit 4 |
+| `routing.mode` | `NIRVANA_ROUTING_MODE` | `agentic` | global, projeto | agentic / cards / fast. `cards` faz uma única chamada, sem ferramentas, sobre `.routing-cards.md` (uma linha por empresa e por squad, escrita pelo `nrv index` ao lado do digest) e leva os critérios de pronto do roteador ao brief |
 | `routing.dense` | `NIRVANA_ROUTER_DENSE` (`1` = fallback, `0` = off) | `off` | global, projeto | off / fallback |
-| `routing.on_router_failure` | nenhuma | `agent-x-only` | global, projeto | agent-x-only / fail. O valor `cascade` (BM25 antes do agent-x) foi aposentado: um `cascade` gravado vale como `agent-x-only`, com aviso |
-| `routing.jev` | `NIRVANA_ROUTING_JEV` | `auto` | global, projeto | auto / off. Só tem efeito com `TYPESAFE_API_KEY` configurada (ambiente, `.env` do projeto ou `~/.env`): com a chave e `auto`, o classificador Jev da TypeSafe decide o `--auto` acima do portão 0,8 e escolhe a voz antes da busca léxica; `off` desliga mesmo com a chave. Sem a chave, nada muda e nada é enviado |
+| `routing.on_router_failure` | nenhuma | `agent-x-only` | global, projeto | cascade / agent-x-only / fail |
 | `routing.timeout_ms` | `NIRVANA_ROUTING_TIMEOUT_MS` | `300000` (5 min) | global, projeto | inteiro > 0 (ms) |
 | `routing.digest_token_budget` | nenhuma | `0` (sem teto) | global, projeto | inteiro >= 0 (tokens); 0 = sem teto |
 | `host.orca` | `NIRVANA_ORCA_HOST` | `auto` | global, projeto | auto (só dentro de um terminal do Orca) / on / off |
@@ -94,9 +90,6 @@ Gerada a partir do schema. `nrv config explain <chave>` mostra a descrição de 
 | `quality_gate.escalate_after` | nenhuma | `2` | global, projeto | inteiro >= 0 |
 | `quality_gate.rubric_fallback` | nenhuma | `prose_shortform` | global, projeto | nome de rubrica |
 | `quality_gate.default_judge_model` | nenhuma | `inherit` | global, projeto | id de modelo ou inherit |
-| `review.policy` | `NIRVANA_REVIEW_POLICY` | `rule` | global, projeto | always / rule / on-request / never. Quando uma entrega passa por revisão |
-| `review.runtime` | `NIRVANA_REVIEW_RUNTIME` | `other` | global, projeto | other / same. Runtime do revisor |
-| `review.max_rounds` | `NIRVANA_REVIEW_MAX_ROUNDS` | `1` | global, projeto | inteiro >= 0. Rodadas de correção depois de uma revisão reprovada |
 
 Formas legadas das variáveis, mantidas por compatibilidade: `NIRVANA_MULTI_TARGET_KILL_SWITCH=1|true|on` desliga o multi-target e `NIRVANA_MULTI_TARGET_ENGINE=0|false|off` também (em `1` a flag antiga é aceita e não faz nada); `NIRVANA_HEADLESS_SKIP_PERMISSIONS` e `NIRVANA_GLANCE_EXECUTION` só desligam com `0|false|off|no`, qualquer outro texto mantém o padrão ligado; `NIRVANA_NO_UPDATE_CHECK=1|true|yes` desliga a verificação; uma variável vazia é o mesmo que ausente. Para todas as outras a variável carrega o valor no formato da chave, e um texto fora do tipo é erro com o nome da variável.
 
@@ -118,24 +111,18 @@ Cada interruptor do schema tem exatamente um caminho de leitura, `resolveSetting
 | `delivery.produces_to_rubric` | `harness/scripts/dispatch.ts` (`deliveryArgs`) |
 | `execution.default_runtime` | `harness/scripts/dispatch.ts`, `control-plane/execution-runner.ts` |
 | `execution.model` | `_shared/lib/system-model.ts` |
-| `execution.dna_injection` | `harness/lib/dispatch.ts`, `harness/lib/squad-exec.ts` |
+| `execution.dna_injection` | `harness/lib/dispatch.ts`, `harness/lib/squad-exec.ts`, `businesses/lib/employee-prompt.ts` |
 | `execution.headless_skip_permissions` | `_shared/lib/host-agent-driver.ts` |
-| `execution.profile` | `_shared/lib/settings.ts` (a camada de perfil, com os valores de `_shared/lib/profiles.ts`) |
-| `execution.context_window` | `_shared/lib/host-agent-driver.ts` (`contextWindowSetting`), `harness/scripts/guard.ts` |
-| `execution.visual_checks` | `harness/lib/host-agent-driver.ts` (`visualChecksLine`, no `AUTONOMOUS_DIRECTIVE` de todo worker) |
-| `review.policy`, `runtime`, `max_rounds` | `harness/scripts/dispatch.ts` → `harness/lib/solo-review.ts` |
+| `execution.business_mode` | `harness/scripts/dispatch.ts` |
 | `glance.execution` | `harness/scripts/glance.ts` |
 | `runtime.provider_catalog_dir`, `allow_stale_catalog` | `harness/lib/runtime-snapshot.ts` |
 | `routing.mode` | `_shared/lib/routing-mode.ts`; o modo `cards` roda em `harness/lib/cards-router.ts` |
 | `routing.timeout_ms` | `harness/lib/agentic-router.ts`, `harness/lib/cards-router.ts`, `harness/scripts/dispatch.ts` |
-| `routing.jev` | `_shared/lib/typesafe-client.ts` (`jevEnabled`), lido por `harness/scripts/dispatch.ts`, `harness/lib/business-solo.ts`, `harness/lib/squad-exec.ts`, `harness/scripts/find.ts --jev` e a linha do `nrv doctor` |
 | `routing.dense`, `on_router_failure`, `quality_gate.*` | `harness/lib/harness-config.ts` (`loadHarnessConfig`, `denseRoutingMode`, `setRoutingDense`) e, por ele, `router.js`, `dispatch.ts`, `revise.ts`, `supervisor.ts`, `embeddings.ts` |
 | `supervisor.progress_ping_sec`, `stall_threshold_ms` | `harness/scripts/supervisor.ts`; o limiar também é o `stallBudgetMs` padrão do heartbeat em `host-agent-driver.ts` |
 | `supervisor.touch_events_max` | `_shared/lib/host-agent-driver.ts`, que passa o teto ao sidecar como `--touch-max` |
 | `updates.check` | `harness/scripts/update-check.ts` |
 | `budget.*`, `baselines.*` | `harness/lib/budget.js` |
-
-**O pedido sai da máquina quando a chave da TypeSafe existe.** Com `TYPESAFE_API_KEY` no ambiente, no `.env` do projeto ou no `~/.env`, e `routing.jev` em `auto` (o padrão), o texto do pedido de cada `nrv dispatch --auto`, e o da parte de cada execução de empresa ou squad na escolha de voz, é enviado à TypeSafe (`POST` para `TYPESAFE_ENDPOINT`, padrão `https://api.typesafe.ai/v1/systemone`, identificador `jev-1.13.0`), junto com os cartões dos candidatos. A chave só sai como cabeçalho `Authorization`: nunca é impressa, gravada em log, em auditoria nem em arquivo. Para manter os pedidos na máquina com a chave configurada, `nrv config set routing.jev off`. O Jev é um classificador externo e não escolhe modelo: o roteador LLM e os workers continuam no modelo padrão do runtime. O `nrv doctor` mostra `jev: on (key found)`, `jev: off (no key)` ou `jev: off (routing.jev)`.
 
 `harness-config.ts` é um adaptador sobre a mesma resolução, não um segundo caminho: `loadHarnessConfig()` devolve a forma `routing` / `quality_gate` que os consumidores já leem, `denseRoutingMode()` é `routing.dense` efetivo e `setRoutingDense()` grava no arquivo global (com um caminho explícito, edita aquele arquivo, o gancho dos testes). O teste `settings-readers.test.ts` varre `skills/**/{lib,scripts}` e falha se qualquer arquivo voltar a ler uma variável do schema direto do ambiente; a exceção documentada é o fallback só-Node de `_shared/lib/host-agent-driver.js`, que sob Bun delega ao driver em TypeScript nas primeiras linhas.
 
@@ -164,13 +151,13 @@ Variáveis que o schema não absorve, agrupadas pelo motivo:
 
 **Identidade de um run.** Mudam a cada dispatch e são o pai que grava no filho. `NIRVANA_TRACE_ID`, `NIRVANA_PROJECT_ID`, `NIRVANA_BUSINESS_SLUG`, `NIRVANA_MULTI_TARGET_NODE_ID`, `NIRVANA_DISPATCH_TRACKS_RUN`, `NIRVANA_DISPATCH_SCRIPT`, `NIRVANA_RESOLVED_SQUAD_PATH`, `NIRVANA_BRIEF_VERIFIABLE`, `NIRVANA_BRIEF_RISK` (descrevem um brief, não uma preferência), `NIRVANA_RUNTIME`, `NIRVANA_AGENT_RUNTIME`, `NIRVANA_HOST_RUNTIME`, `NRV_IN_SWEEP`.
 
-**Escopo de biblioteca e locale.** Já têm contrato próprio: o escopo é `scope` em `.nirvana/project.yaml`, gravado por `nrv init --scope=<modo>` e lido por `_shared/lib/scope.ts` (a variável `NIRVANA_SCOPE` ainda vence, e um `.env` legado ainda é lido); o `locale` do projeto vive no mesmo `.nirvana/config.yaml`, lido por `locale-resolver.ts`. `NIRVANA_SCOPE`, `NIRVANA_SCOPE_QUIET`, `NIRVANA_GLOBAL_INCLUDE_ONLY`, `NIRVANA_GLOBAL_EXCLUDE`, `NIRVANA_LOCALE`.
+**Escopo de biblioteca e locale.** Já têm contrato próprio em `.env`, `--scope` e `_shared/lib/scope.ts`; o `locale` do projeto vive no mesmo `.nirvana/config.yaml`, lido por `locale-resolver.ts`. `NIRVANA_SCOPE`, `NIRVANA_SCOPE_QUIET`, `NIRVANA_GLOBAL_INCLUDE_ONLY`, `NIRVANA_GLOBAL_EXCLUDE`, `NIRVANA_LOCALE`.
 
 **Segredos e licença.** Nunca entram num arquivo que o `nrv config list` imprime e o doctor mostra. `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `GEMINI_API_KEY`, as demais chaves de API do painel, `CLAUDE_CODE_OAUTH_TOKEN`, `NIRVANA_PROVENANCE`, `NIRVANA_ARTIFACTS_KEY`. Continuam no `.env`.
 
 **Endpoints e distribuição.** Só quem constrói, publica ou testa o engine os muda. `NIRVANA_ENGINE_REPO`, `NIRVANA_ENGINE_URL`, `NIRVANA_ENGINE_TARBALL`, `NIRVANA_RELEASE_API`, `NIRVANA_CHANGELOG_URL`, `NIRVANA_ACTIVATE_URL`, `NIRVANA_VALIDATE_URL`, `NIRVANA_PACK_UPDATE_URL`, `NIRVANA_ARTIFACTS_URL`, `NIRVANA_STOREFRONT_URL`, `NIRVANA_PRODUCTS_FILE`, `NIRVANA_BUN`, `NIRVANA_SERVE_BUN`, `NIRVANA_SERVE_DISPATCH_BIN`.
 
-**Diagnóstico, afinação do roteador e seams de teste.** Botões de quem mede ou depura o engine, não preferências de operação. `NIRVANA_VERBOSE`, `NIRVANA_AUDIT_STRICT`, `NIRVANA_AUDIT_PREFIXES`, `NIRVANA_LIMITS_DEBUG`, `NIRVANA_CORPUS_SKIPPED`, `NIRVANA_NO_DESKTOP_NOTIFY`, `NIRVANA_UPDATE_CHECK_ASSUME_TTY`, `NIRVANA_SKIP_PATH_PERSIST`, `NIRVANA_SERVE_ALLOW_ROOT`, `NIRVANA_EMBEDDER`, `NIRVANA_EMBEDDER_MODEL`, `NIRVANA_ROUTER_FUSION`, `NIRVANA_ROUTER_INTENT_FILTER`, `NIRVANA_TOKENIZER_STEM`, `NIRVANA_BODY_DOC_MIN_OVERLAP`, `NIRVANA_BODY_DOC_MAX`, `NIRVANA_RULE_MIN_SCORE`, `NIRVANA_PRICING_USD`, `NIRVANA_MAX_GATE_RETRIES`, `NIRVANA_VOICE_FIDELITY_THRESHOLD`, `NIRVANA_VOICE_FIDELITY_FLOOR`, `NIRVANA_CONTEXT_ROLL_AT`, `NIRVANA_CONTEXT_WINDOW`.
+**Diagnóstico, afinação do roteador e seams de teste.** Botões de quem mede ou depura o engine, não preferências de operação. `NIRVANA_VERBOSE`, `NIRVANA_AUDIT_STRICT`, `NIRVANA_AUDIT_PREFIXES`, `NIRVANA_LIMITS_DEBUG`, `NIRVANA_CORPUS_SKIPPED`, `NIRVANA_NO_DESKTOP_NOTIFY`, `NIRVANA_UPDATE_CHECK_ASSUME_TTY`, `NIRVANA_SKIP_PATH_PERSIST`, `NIRVANA_SERVE_ALLOW_ROOT`, `NIRVANA_EMBEDDER`, `NIRVANA_EMBEDDER_MODEL`, `NIRVANA_ROUTER_FUSION`, `NIRVANA_ROUTER_INTENT_FILTER`, `NIRVANA_TOKENIZER_STEM`, `NIRVANA_BODY_DOC_MIN_OVERLAP`, `NIRVANA_BODY_DOC_MAX`, `NIRVANA_RULE_MIN_SCORE`, `NIRVANA_PRICING_USD`, `NIRVANA_MAX_GATE_RETRIES`, `NIRVANA_GATE_EXHAUSTED`, `NIRVANA_VOICE_FIDELITY_THRESHOLD`, `NIRVANA_VOICE_FIDELITY_FLOOR`, `NIRVANA_CONTEXT_ROLL_AT`, `NIRVANA_CONTEXT_WINDOW`.
 
 `LLM_CASCADE` (a cadeia de failover de cota) é uma preferência real de operação, mas tem sintaxe e arquivo próprios (`cascade.ts`); fica para um corte seguinte decidir se entra no schema.
 
