@@ -7,14 +7,15 @@
 // a tool needing a permission is auto-denied with exit 0,
 // `{"status":"SUCCESS","response":"","denied_actions":[...]}` on stdout and a
 // "jetski: no output produced" line on stderr.
-// Hermetic: a fake `agy` that records argv and env. No LLM, no network.
+// Hermetic: a fake `agy` that records argv, env and the stdin message. No LLM,
+// no network.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { ANSWER_ONLY_ENV, runHeadless, type RunHeadlessOpts } from "../../_shared/lib/host-agent-driver.ts";
 import { buildCardsRequest, buildCardsStatic } from "../lib/cards-router.ts";
-import { writeFakeCli } from "./helpers/fake-cli.ts";
+import { AGY_FAKE_PRELUDE, writeFakeCli } from "./helpers/fake-cli.ts";
 import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "agy-answer-only-"));
@@ -24,10 +25,13 @@ const MODE = path.join(TMP, "mode");
 const PATH_BEFORE = process.env.PATH;
 
 beforeAll(() => {
-  writeFakeCli(BIN, "agy", `
+  writeFakeCli(BIN, "agy", AGY_FAKE_PRELUDE + `
     import * as fs from "node:fs";
+    const prompt = await agyPrompt();
     fs.appendFileSync(${JSON.stringify(CALLS)}, JSON.stringify({
       argv: Bun.argv.slice(2),
+      prompt,
+      stdin: agyStdinRaw,
       answerOnly: process.env.NIRVANA_ANSWER_ONLY ?? null,
       depth: process.env.NIRVANA_DISPATCH_DEPTH ?? null,
     }) + "\\n");
@@ -38,14 +42,12 @@ beforeAll(() => {
         ? [{ action: "write_file", display_name: "WriteToFile" }]
         : [{ action: "command", display_name: "RunCommand" }];
       console.error('jetski: no output produced — a tool required the "' + denied[0].action + '" permission that headless mode cannot prompt for, so it was auto-denied');
-      console.log(JSON.stringify({ conversation_id: "conv-1", status: "SUCCESS", response: "", denied_actions: denied, usage }));
-      process.exit(0);
+      agyReply({ conversation_id: "conv-1", status: "SUCCESS", response: "", denied_actions: denied, usage });
     }
     if (mode === "denied-but-answered") {
-      console.log(JSON.stringify({ conversation_id: "conv-1", status: "SUCCESS", response: "{\\"target\\":\\"solo\\"}", denied_actions: [{ action: "write_file" }], usage }));
-      process.exit(0);
+      agyReply({ conversation_id: "conv-1", status: "SUCCESS", response: "{\\"target\\":\\"solo\\"}", denied_actions: [{ action: "write_file" }], usage });
     }
-    console.log(JSON.stringify({ conversation_id: "conv-1", status: "SUCCESS", response: "{\\"target\\":\\"solo\\"}", usage }));
+    agyReply({ conversation_id: "conv-1", status: "SUCCESS", response: "{\\"target\\":\\"solo\\"}", usage });
   `);
   process.env.PATH = `${BIN}${path.delimiter}${process.env.PATH}`;
 });
@@ -55,7 +57,7 @@ afterAll(() => {
   fs.rmSync(TMP, { recursive: true, force: true });
 });
 
-type Call = { argv: string[]; answerOnly: string | null; depth: string | null };
+type Call = { argv: string[]; prompt: string; stdin: string; answerOnly: string | null; depth: string | null };
 
 function run(mode: string, extra: Partial<RunHeadlessOpts> = {}) {
   fs.writeFileSync(MODE, mode);
@@ -100,14 +102,14 @@ describe("antigravity-cli: an answer-only call", () => {
   test("agy has no system-prompt flag: the cards router's fixed part goes first, the request after it", () => {
     const cards = "# Catalog\nbusiness:acme — reports";
     const fixed = buildCardsStatic(cards);
-    const argvFor = (brief: string) => {
+    const messageFor = (brief: string) => {
       const { r, calls } = run("ok", { appendSystemPrompt: fixed, prompt: buildCardsRequest(brief, []) });
       expect(r.ok, r.error ?? r.stderr).toBe(true);
-      const argv = calls[0].argv;
-      return argv[argv.indexOf("-p") + 1];
+      // The message content as sent on stdin, not as the fake reassembled it.
+      return JSON.parse(calls[0].stdin.trim()).message.content as string;
     };
-    const a = argvFor("Write a market report on coffee");
-    const b = argvFor("Uma landing page para um curso");
+    const a = messageFor("Write a market report on coffee");
+    const b = messageFor("Uma landing page para um curso");
     // Exactly the fixed part, then the separator, then the request: nothing
     // variable (cwd, a timestamp, the brief) sits in front of the fixed part.
     expect(a).toBe(`${fixed}\n\n---\n\n${buildCardsRequest("Write a market report on coffee", [])}`);

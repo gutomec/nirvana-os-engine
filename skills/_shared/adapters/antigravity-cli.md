@@ -15,7 +15,7 @@
 | `runtime` | `antigravity-cli` |
 | `vendor` | Google |
 | `cli` | `agy` (installed by the official installer to `~/.local/bin/agy` on macOS; `agy update` updates it in place) |
-| `min_version` | 1.2.10 recommended: from there a turn that fails mid-stream exits 3 instead of 0. `--output-format` and `--conversation` exist on every build the engine supports |
+| `min_version` | 1.2.10 recommended: from there a turn that fails mid-stream exits 3 instead of 0. `--output-format`, `--input-format stream-json` and `--conversation` exist on every build the engine supports (all three are on 1.3.3) |
 | `default_model` | Inherited from the runtime. The engine never sets a model; the user's agy config decides. A model is passed only when the user asks for one (`--model`). `agy models` lists the ids |
 | `tested_against` | agy 1.3.3 (flag surface, changelog, bundled docs). No model call was made for this doc |
 | `config_root` | `~/.gemini/config/` (global customization root: `config.json`, `hooks.json`, `mcp_config.json`, `skills.json`, `rules.json`, `plugins.json`, `agents.json`, `skills/`, `rules/`). Workspace root: `<project>/.agents/`. CLI settings: `~/.gemini/antigravity-cli/settings.json` |
@@ -122,16 +122,18 @@ A protocol `max_turns` is therefore not enforceable on agy. The engine does not 
 **What the engine runs.** Every turn is one `agy` process, spawned once (`runAntigravity` in `skills/_shared/lib/host-agent-driver.ts`):
 
 ```bash
-agy -p "<prompt or bootstrap>" --output-format json \
+printf '%s\n' '{"event":"user","message":{"content":"<prompt>"}}' | \
+agy --input-format stream-json --output-format stream-json \
   [--conversation <id> | --continue] \
   [--model <id>] \
   [--mode plan | --dangerously-skip-permissions] \
-  [--add-dir <dir>]...
+  [--add-dir <dir>]... \
+  -p=
 ```
 
-- `-p` (alias `--print`, `--prompt`): run one prompt non-interactively. agy has **no system-prompt flag** (1.3.3 flags: `add-dir`, `agent`, `continue`, `conversation`, `dangerously-skip-permissions`, `disable-slash-commands`, `effort`, `input-format`, `json-schema`, `log-file`, `mode`, `model`, `new-project`, `output-format`, `print`, `print-timeout`, `project`, `prompt`, `sandbox`), so the fixed part travels in the message: the prompt is `appendSystemPrompt + "\n\n---\n\n" + prompt` when a preamble is set. The fixed part always comes first and nothing variable (cwd, a timestamp, the request) precedes it, so a provider prefix cache can hit; the routers also run in one constant folder for the same reason. Whether Google's backend caches that prefix is the provider's decision, not visible in the envelope beyond `cache_read_tokens`. Above the argv budget the message is the bootstrap, whose temp-file path changes per call, so there the prefix cannot repeat.
-- Prompt delivery: argv up to 100 000 bytes (6 000 on Windows). Above that, the engine writes the prompt to a UTF-8 temp file and sends a short bootstrap telling agy to read and execute it. The engine does not use `--input-format stream-json` yet, so the file read needs tool approval in `--safe` mode.
-- `--output-format json`: one JSON object at the end. The engine reads `response` (or `result`), `session_id` / `sessionId` / `conversation_id`, `is_error`, `error`, `denied_actions` and `usage` (`input_tokens`, `output_tokens`, `thinking_tokens`, `cache_read_tokens`). No USD cost and no model name are reported. The run is marked `costUnavailable`; when the model is known (the `--model` the run passed, or a `model` field should a build add one) the driver prices the tokens with the estimator's price table and marks the result `costEstimated: true`. Otherwise `costUsd` stays `null`, which every report shows as unknown, never as $0.
+- `-p=` (alias `--print`, `--prompt`): run one prompt non-interactively, here read from stdin. It goes last and in the `=` form: a bare `-p` followed by another flag takes that flag as the prompt and exits 2. agy has **no system-prompt flag** (1.3.3 flags: `add-dir`, `agent`, `continue`, `conversation`, `dangerously-skip-permissions`, `disable-slash-commands`, `effort`, `input-format`, `json-schema`, `log-file`, `mode`, `model`, `new-project`, `output-format`, `print`, `print-timeout`, `project`, `prompt`, `sandbox`), so the fixed part travels in the message: the prompt is `appendSystemPrompt + "\n\n---\n\n" + prompt` when a preamble is set. The fixed part always comes first and nothing variable (cwd, a timestamp, the request) precedes it, so a provider prefix cache can hit; the routers also run in one constant folder for the same reason. Whether Google's backend caches that prefix is the provider's decision, not visible in the envelope beyond `cache_read_tokens`. The message bytes are the same whatever the prompt's size, because every size takes the one transport below.
+- Prompt delivery: stdin, for every call and every size (fresh or resumed, worker or answer-only), as ONE NDJSON line `{"event":"user","message":{"content":"<full prompt>"}}`; stdin is then closed, so agy ends after that turn. No argv budget applies and no temp file is written. Before 2026-10-14 a prompt over the argv budget (100 000 bytes, 6 000 on Windows, so almost every call there) went to a temp file behind a "read this file" message; live on 1.3.3 (2026-10-13) the model in `--mode plan` tried to read it with a shell command, agy auto-denied it and the router got `response: ""`, and the temp path changed the message on every call. Measured on 1.3.3: the block form `"content":[{"type":"text","text":"..."}]` is also accepted, an unknown event name only warns (`ignoring unsupported stream input message event "..."`), a line with no `event` is an error.
+- `--output-format stream-json`: NDJSON on stdout, an `{"event":"init",...}` line, step updates, and a final `{"event":"result","result":{...}}` whose `result` object has the shape `--output-format json` prints whole (`conversation_id`, `status`, `response`, `error`, `duration_seconds`, `num_turns`, `usage`, `denied_actions`). A run with no result line is a failed run carrying agy's stderr. From that object the engine reads `response` (or `result`), `session_id` / `sessionId` / `conversation_id`, `is_error`, `error`, `denied_actions` and `usage` (`input_tokens`, `output_tokens`, `thinking_tokens`, `cache_read_tokens`). No USD cost and no model name are reported. The run is marked `costUnavailable`; when the model is known (the `--model` the run passed, or a `model` field should a build add one) the driver prices the tokens with the estimator's price table and marks the result `costEstimated: true`. Otherwise `costUsd` stays `null`, which every report shows as unknown, never as $0.
 - Resume: `--conversation <id>` when the previous envelope returned a real id; `--continue` (agy: "Continue the most recent conversation") only when the id is the engine's placeholder `nrv-agy-<uuid>`. agy cannot be given an id up front.
 - `--model <id>`: only from `opts.model` or the resolved system model.
 - `--dangerously-skip-permissions`: unless `opts.yolo === false` or `opts.noTools`.
@@ -143,7 +145,7 @@ agy -p "<prompt or bootstrap>" --output-format json \
 
 **No re-spawn.** A failed run is reported as failed. Since 1.2.10 a model or agent error mid-turn exits 3 after the turn was paid for, so the two retries that used to re-run the turn (without `--output-format`, and `--conversation` → `--continue`) are gone. Recovery is the caller's (the delivery pipeline's cold retry).
 
-**Light layer.** The `RUNTIMES` adapter used for short helper calls runs `agy -p "<persona>\n\n---\n\n<message>" [--dangerously-skip-permissions]` with the same argv/temp-file rule, in text mode, and trims stdout. The skip flag follows the `execution.headless_skip_permissions` setting (`NIRVANA_HEADLESS_SKIP_PERMISSIONS`).
+**Light layer.** The `RUNTIMES` adapter used for short helper calls runs `agy --input-format stream-json --output-format stream-json [--dangerously-skip-permissions] -p=` with `<persona>\n\n---\n\n<message>` as the one stdin event, and returns the result event's `response`, trimmed. The skip flag follows the `execution.headless_skip_permissions` setting (`NIRVANA_HEADLESS_SKIP_PERMISSIONS`).
 
 **Native subagents.** Inside an interactive agy session the model can delegate to subagents defined in `.agents/agents/`, address one with `@<name> <message>`, or start a session as one with `--agent <name>` (works headless since 1.2.11). Nirvana does not rely on them for dispatch.
 
@@ -233,7 +235,7 @@ echo '{"type":"human_escalation_required","trigger_id":"budget","severity":"high
 ## 12. Runtime-specific validators
 
 - **Flags exist**: every flag the engine builds is in `agy --help` on 1.3.3. Re-run `agy --help` after an update before adding a new one.
-- **Approval coherent**: a run without `--dangerously-skip-permissions` must not need tools to start (the large-prompt bootstrap needs a file read).
+- **Approval coherent**: a run without `--dangerously-skip-permissions` must not need tools to start (the prompt arrives on stdin, so none is needed to read it).
 - **Model valid**: a model passed with `--model` must appear in `agy models`.
 - **Rules size**: a generated `AGENTS.md` / `GEMINI.md` must stay under 24 000 bytes or agy truncates it.
 - **JSON configs one level deep**: since 1.2.10 a directory entry in `skills.json`, `rules.json`, `agents.json` or `plugins.json` loads only the items directly inside it; nested items need `include_only`.
@@ -243,13 +245,13 @@ echo '{"type":"human_escalation_required","trigger_id":"budget","severity":"high
 ## 13. Known limitations
 
 1. **Effort is not passed.** agy has `--effort low|medium|high|xhigh|max` (since 1.2.11, the same levels as the engine's), but `EFFORT_CAPABLE` holds only `claude-code` and `codex`, so a requested effort only logs "has no effort setting" and agy runs at its default.
-2. **Answer-only calls rely on plan mode.** agy has no switch that removes tools; `--mode plan` without the skip flag makes headless agy auto-deny any tool that needs a permission (§5). A model that tries one anyway produces no answer, and the run fails with the denied actions named. On Windows the router prompt is above the 6 000-byte argv budget, so it goes through the temp-file bootstrap, which needs a file read in plan mode; that path was not measured.
+2. **Answer-only calls rely on plan mode.** agy has no switch that removes tools; `--mode plan` without the skip flag makes headless agy auto-deny any tool that needs a permission (§5). A model that tries one anyway produces no answer, and the run fails with the denied actions named. The prompt arrives on stdin, so reading it needs no tool on any OS.
 3. **`--continue` can pick the wrong conversation** when the previous envelope returned no id and two runs share a directory.
 4. **No turn limit** (§6) and no per-call tool list (§5).
 5. **Hook re-injection.** In the operator's own session the `nirvana-os` `PreInvocation` hook ignores `invocationNum`, so it re-sends the session context before every model call. Dispatched workers and answer-only calls skip it (§10).
 9. **No system-prompt flag.** The fixed part of a prompt is a preamble of the message (§7), so prompt caching depends on the provider matching the prefix.
 6. **Quota stops are immediate.** `GEMINI_API_KEY` sessions stop on daily quota, spend cap or depleted credits (1.2.12, 1.2.13); server retry delays above 30 s stop the run; "Your AI credits balance is too low to continue." (1.2.15). Expect exit 3.
-7. **Windows.** The argv budget is 6 000 bytes, so most briefs go through the temp-file bootstrap. agy itself: the terminal sandbox needs no admin rights (1.2.17), sandboxed commands fall back to Windows PowerShell when PowerShell 7 came from the Microsoft Store (1.3.3), and `config.json`, `hooks.json` and plugin manifests saved with a UTF-8 BOM load (1.2.16, 1.3.1). Hook commands run under `cmd /c`.
+7. **Windows.** The prompt goes on stdin, so the 6 000-byte argv budget of the other argv runtimes does not apply to agy. agy itself: the terminal sandbox needs no admin rights (1.2.17), sandboxed commands fall back to Windows PowerShell when PowerShell 7 came from the Microsoft Store (1.3.3), and `config.json`, `hooks.json` and plugin manifests saved with a UTF-8 BOM load (1.2.16, 1.3.1). Hook commands run under `cmd /c`.
 8. **Fast release cadence.** One release every one or two days; behavior in headless mode has changed several times in a month (1.2.6, 1.2.9, 1.2.10, 1.3.2).
 
 ---
@@ -275,3 +277,4 @@ echo '{"type":"human_escalation_required","trigger_id":"budget","severity":"high
 | 1.0.0 | 2026-06-06 | Doc inicial — successor to gemini-cli (sunset 2026-06-18); covers Squad 5.0 + Business 1.0 + Harness 1.0 against Antigravity 2.0 (Gemini 3 Pro) |
 | 2.0.0 | 2026-10-11 | Rewritten against agy 1.3.3. Removed flags that never existed (`--max-iterations`, `--tools`, `--resume`, `--checkpoint`), the `~/.antigravity/*` paths and the 2.0 versioning. Documents the real driver argv (one spawn, `--conversation` / `--continue`), exit 3 + `AGY_ERROR`, the 1.3.2 plan-mode change, hooks, rules, skills, plugins, subagents and Windows notes |
 | 2.1.0 | 2026-10-13 | Answer-only calls run in `--mode plan` without the skip flag, and an empty answer with `denied_actions` is a failed run. No system-prompt flag: the fixed part stays first in the message. Cost priced from tokens when the model is known, else unknown. The `nirvana-os` hook steps aside in dispatched and answer-only children |
+| 2.2.0 | 2026-10-14 | The prompt goes on stdin as one stream-json `user` event (`--input-format stream-json --output-format stream-json -p=`) for every call and size; the temp-file bootstrap is gone for agy. The result is the final `result` event |

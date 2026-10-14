@@ -25,7 +25,7 @@ import { salientError, runtimeAvailable } from "../../_shared/lib/host-agent-dri
 import { classify } from "../lib/quota-detector.ts";
 import { runWithCascade } from "../lib/cascade-runner.ts";
 import { isInCooldown } from "../lib/cooldown-registry.ts";
-import { writeFakeCli } from "./helpers/fake-cli.ts";
+import { AGY_FAKE_PRELUDE, writeFakeCli } from "./helpers/fake-cli.ts";
 import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 // Verbatim stderr from the failed run of the 2026-08-05 matrix: benign chatter
@@ -96,10 +96,9 @@ describe("cascade — a dead runtime hands off instead of ending the run", () =>
       process.exit(1);
     `);
     // `agy` is next in the cascade and works.
-    writeFakeCli(BIN, "agy", `
-      try { await Bun.stdin.text(); } catch {}
-      console.log(JSON.stringify({ response: "guide written" }));
-      process.exit(0);
+    writeFakeCli(BIN, "agy", AGY_FAKE_PRELUDE + `
+      await agyPrompt();
+      agyReply({ response: "guide written" });
     `);
     fs.writeFileSync(path.join(PROJ, ".env"), "LLM_CASCADE=codex,antigravity-cli\n");
     process.env.PATH = `${BIN}${path.delimiter}${process.env.PATH}`;

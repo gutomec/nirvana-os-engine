@@ -11,7 +11,7 @@ import * as path from "node:path";
 import { runtimeAvailable } from "../../_shared/lib/host-agent-driver.ts";
 import { runWithCascade } from "../lib/cascade-runner.ts";
 import { markCooldown, isInCooldown, getCooldown } from "../lib/cooldown-registry.ts";
-import { writeFakeCli } from "./helpers/fake-cli.ts";
+import { AGY_FAKE_PRELUDE, writeFakeCli } from "./helpers/fake-cli.ts";
 import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 describe("cascade-runner starts on the requested runtime", () => {
@@ -38,10 +38,9 @@ describe("cascade-runner starts on the requested runtime", () => {
       console.error("Error authenticating: 401 Unauthorized");
       process.exit(1);
     `);
-    writeFakeCli(BIN, "agy", `
-      try { await Bun.stdin.text(); } catch {}
-      console.log(JSON.stringify({ response: "done" }));
-      process.exit(0);
+    writeFakeCli(BIN, "agy", AGY_FAKE_PRELUDE + `
+      await agyPrompt();
+      agyReply({ response: "done" });
     `);
     process.env.PATH = `${BIN}${path.delimiter}${process.env.PATH}`;
     process.env.HARNESS_LOGS_DIR = path.join(TMP, "logs");

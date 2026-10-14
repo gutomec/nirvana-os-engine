@@ -11,7 +11,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { runHeadless } from "../../_shared/lib/host-agent-driver.ts";
-import { writeFakeCli } from "./helpers/fake-cli.ts";
+import { AGY_FAKE_PRELUDE, writeFakeCli } from "./helpers/fake-cli.ts";
 import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "agy-no-respawn-"));
@@ -21,24 +21,23 @@ const MODE = path.join(TMP, "mode");
 const PATH_BEFORE = process.env.PATH;
 
 beforeAll(() => {
-  writeFakeCli(BIN, "agy", `
+  writeFakeCli(BIN, "agy", AGY_FAKE_PRELUDE + `
     import * as fs from "node:fs";
+    await agyPrompt();
     fs.appendFileSync(${JSON.stringify(CALLS)}, JSON.stringify(Bun.argv.slice(2)) + "\\n");
     const mode = fs.existsSync(${JSON.stringify(MODE)}) ? fs.readFileSync(${JSON.stringify(MODE)}, "utf8") : "ok";
     if (mode === "agy-error") {
-      console.log(JSON.stringify({ conversation_id: "conv-1", response: "partial", is_error: true, error: "unknown model error" }));
       console.error("AGY_ERROR: unknown error while resuming conversation conv-1");
-      process.exit(3);
+      agyReply({ conversation_id: "conv-1", response: "partial", is_error: true, error: "unknown model error" }, 3);
     }
     if (mode === "flag-error") { console.error("error: unknown option '--output-format'"); process.exit(1); }
     // agy 1.3.3 on an unknown --conversation id: exit 0, a warning, a NEW conversation.
     if (mode === "unknown-conv") {
       console.error('warning: conversation "conv-gone" not found');
-      console.log(JSON.stringify({ conversation_id: "conv-new", status: "SUCCESS", response: "OK\\n" }));
-      process.exit(0);
+      agyReply({ conversation_id: "conv-new", status: "SUCCESS", response: "OK\\n" });
     }
-    if (mode === "other-conv") { console.log(JSON.stringify({ conversation_id: "conv-other", response: "done" })); process.exit(0); }
-    console.log(JSON.stringify({ conversation_id: "conv-1", response: "done" }));
+    if (mode === "other-conv") agyReply({ conversation_id: "conv-other", response: "done" });
+    agyReply({ conversation_id: "conv-1", response: "done" });
   `);
   process.env.PATH = `${BIN}${path.delimiter}${process.env.PATH}`;
 });

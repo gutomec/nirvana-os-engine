@@ -101,12 +101,13 @@ const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR
  * this keeps a prompt from being what pushes it over.
  *
  * A single POSIX-sized number here was not a theoretical gap: the argv adapters
- * (agy, kimi, opencode, pi) would hand Windows a command line between 32 KB and
- * 100 KB believing it safe, and the interpreter route would cut it at 8 KB.
+ * (kimi, opencode, pi; agy until it moved to stdin) would hand Windows a
+ * command line between 32 KB and 100 KB believing it safe, and the interpreter
+ * route would cut it at 8 KB.
  *
  * KNOWN TRADE-OFF, measured: AUTONOMOUS_DIRECTIVE is about 3 KB (5,942 bytes until 0.13.9) and
  * `withPreamble` merges it ahead of every prompt, so on Windows the argv branch
- * is effectively unreachable for those four adapters — every dispatch takes the
+ * is effectively unreachable for those three adapters — every dispatch takes the
  * temp-file route. That is deliberate rather than accidental, because no number
  * fixes it: the interpreter's whole budget is 8,191, so directive plus any real
  * prompt cannot fit there regardless. The file channel is the lossless one —
@@ -667,9 +668,9 @@ const RUNTIMES: RuntimeAdapter[] = [
   },
   {
     // Antigravity CLI (`agy`) — Google's agent CLI (Gemini models). `agy --help`
-    // (audited 2026-08-06): -p/--print runs a single prompt non-interactively;
-    // NO stdin channel and NO prompt-file flag documented, so large prompts
-    // degrade to the temp-file bootstrap. --dangerously-skip-permissions for
+    // (audited 2026-08-06): -p/--print runs a single prompt non-interactively.
+    // The message goes on stdin as one stream-json event, whatever its size
+    // (runAntigravity's transport, live on 1.3.3). --dangerously-skip-permissions for
     // autonomous runs (without it agy halts waiting for approval; `agy --help`
     // audited 2026-08-26: "Auto-approve all tool permission requests without
     // prompting").
@@ -678,9 +679,12 @@ const RUNTIMES: RuntimeAdapter[] = [
     buildCall(persona, userMsg) {
       const merged = persona ? `${persona}\n\n---\n\n${userMsg}` : userMsg;
       const autonomy = headlessSkipPermissions() ? ["--dangerously-skip-permissions"] : [];
-      return argvOrPromptFile(merged, (p) => ["-p", p, ...autonomy]);
+      return { args: [...AGY_STREAM_ARGS, ...autonomy, AGY_PROMPT_FROM_STDIN], input: agyStdinMessage(merged) };
     },
-    parseStdout(stdout) { return stdout.trim(); },
+    parseStdout(stdout) {
+      const j = agyStreamResult(stdout);
+      return typeof j?.response === "string" ? j.response.trim() : "";
+    },
     envHints: ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
   },
   {
@@ -1990,6 +1994,41 @@ function runCodex(opts: RunHeadlessOpts): RunHeadlessResult {
 const SYNTHETIC_AGY_SID = "nrv-agy-";
 
 /**
+ * agy's stdin transport (verified live on agy 1.3.3, 2026-10-13). Both formats
+ * are stream-json; `-p=` goes LAST and in the `=` form, because a bare `-p`
+ * followed by another flag takes that flag as the prompt and exits 2. Every
+ * other flag sits before it.
+ */
+const AGY_STREAM_ARGS = ["--input-format", "stream-json", "--output-format", "stream-json"];
+const AGY_PROMPT_FROM_STDIN = "-p=";
+
+/** The one NDJSON line a turn sends on stdin. The caller closes stdin after it,
+ *  so agy ends after that turn. The text is passed whole: what comes first in
+ *  it (the fixed part, see withPreamble) is the first thing the model reads. */
+export function agyStdinMessage(text: string): string {
+  return JSON.stringify({ event: AGY_USER_EVENT, message: { content: text } }) + "\n";
+}
+/** agy's stream-json input event name. A constant, not a literal in the object:
+ *  check-audit-parity reads every `event: "<name>"` literal as an audit event. */
+const AGY_USER_EVENT = "user";
+
+/** The `result` object of agy's final `{"event":"result","result":{...}}`
+ *  stream-json line (the same shape `--output-format json` printed whole), or
+ *  null when the stream carries none. */
+export function agyStreamResult(stdout: string): Record<string, any> | null {
+  const lines = (stdout || "").split("\n");
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const t = lines[i].trim();
+    if (!t.startsWith("{")) continue;
+    try {
+      const ev = JSON.parse(t);
+      if (ev?.event === "result" && ev.result && typeof ev.result === "object") return ev.result;
+    } catch { /* not an event line */ }
+  }
+  return null;
+}
+
+/**
  * A resume agy did not honour, read from its output, or null when it held (or
  * nothing says otherwise). Two signs, either one enough: stderr carries
  * `conversation "<id>" not found` (agy 1.3.3), or the envelope's conversation
@@ -2016,12 +2055,15 @@ export function agyResumeLost(requested: string, stdout: string, stderr: string)
 }
 
 // Antigravity CLI (`agy`), Google's agent CLI (Gemini models).
-// Prompt delivery: `agy --help` (audited 2026-08-06) documents NO stdin
-// channel and NO prompt-file flag — argv for small prompts, temp-file
-// bootstrap above MAX_ARGV_PROMPT_BYTES. Note: the bootstrap needs the child
-// to READ the file, so in --safe mode (no skip-permissions) a large-prompt
-// run can block on approval — a pre-existing agy constraint (headless agy
-// without the skip flag halts anyway).
+// Prompt delivery: stdin, always, as one stream-json `user` event
+// (AGY_STREAM_ARGS, agyStdinMessage). It used to be argv for small prompts and
+// a "read this file" bootstrap above MAX_ARGV_PROMPT_BYTES, which on Windows
+// (6,000 bytes) was almost every call. Live on agy 1.3.3 (2026-10-13) that
+// broke twice: in `--mode plan` the model reached for a shell command to read
+// the file, agy auto-denied it and the router got an empty answer; and the
+// temp path made every message different, so no prefix cache could hit. Stdin
+// has neither problem and no size limit, and one path for every size keeps the
+// bytes of the message identical however long the request is.
 function runAntigravity(opts: RunHeadlessOpts): RunHeadlessResult {
   const started = Date.now();
   // `agy` does not let us choose a conversation id up front, so when its
@@ -2032,17 +2074,16 @@ function runAntigravity(opts: RunHeadlessOpts): RunHeadlessResult {
   // `--continue` (the most recent conversation in this directory), which can
   // resume the wrong one when two runs share a directory.
   const sid = opts.sessionId || `${SYNTHETIC_AGY_SID}${randomUUID()}`;
-  // agy headless: -p / --print / --prompt all accept the prompt as argv value.
-  // Output formats: "json" (single object) or "stream-json" (NDJSON events).
-  // We use single-object json for parity with runClaudeCode.
+  // Output is stream-json too (stdin needs it): NDJSON events, the last one
+  // `{"event":"result","result":{...}}` whose object is what
+  // `--output-format json` printed whole, so the handling below is unchanged.
   // Resume = --continue (most recent conversation); we can't set our own id
   // upfront. Autonomy = --dangerously-skip-permissions (without it headless agy
   // auto-denies every tool that needs a permission; answer-only calls rely on
   // exactly that, below).
   //
-  // --output-format json: under non-TTY, `agy -p` in TEXT mode can drop the
-  // final response from stdout (documented terminal-render bug); JSON does not
-  // suffer from it.
+  // Never TEXT output: under non-TTY, `agy -p` in TEXT mode can drop the
+  // final response from stdout (documented terminal-render bug).
   //
   // ONE spawn, never a re-spawn. Since agy 1.2.10 a model or agent error in the
   // middle of a turn exits 3 with an `AGY_ERROR` line, after the turn was paid
@@ -2054,8 +2095,7 @@ function runAntigravity(opts: RunHeadlessOpts): RunHeadlessResult {
   // no agy output proves that a failed --conversation run never reached the
   // model, so both are gone: a failed run is reported as failed, and the
   // callers' own recovery (the delivery pipeline's cold retry) decides.
-  const delivery = argvOrPromptFile(withPreamble(opts), (p) => ["-p", p]);
-  const args = [...delivery.args, "--output-format", "json"];
+  const args = [...AGY_STREAM_ARGS];
   const resumeById = !!opts.sessionId && !opts.sessionId.startsWith(SYNTHETIC_AGY_SID);
   if (opts.sessionId) args.push(...(resumeById ? ["--conversation", opts.sessionId!] : ["--continue"]));
   const agyModel = opts.model ?? resolveSystemModel("antigravity-cli");
@@ -2071,33 +2111,31 @@ function runAntigravity(opts: RunHeadlessOpts): RunHeadlessResult {
   if (opts.noTools) args.push("--mode", "plan");
   else if (opts.yolo !== false) args.push("--dangerously-skip-permissions");
   for (const d of opts.addDirs ?? []) args.push("--add-dir", d);
+  args.push(AGY_PROMPT_FROM_STDIN);
 
-  const spawnOpts = {
+  const r = driverSpawnSync("agy", args, {
     cwd: opts.cwd,
-    encoding: "utf8" as const,
+    input: agyStdinMessage(withPreamble(opts)),
+    encoding: "utf8",
     ...(typeof opts.timeoutMs === "number" ? { timeout: opts.timeoutMs } : {}),
     maxBuffer: 64 * 1024 * 1024,
-  };
-  let r!: SpawnSyncReturns<string>;
-  try {
-    r = driverSpawnSync("agy", args, spawnOpts);
-  } finally {
-    removeTmpFiles(delivery.tmpFiles);
-  }
+  });
 
   const durationMs = Date.now() - started;
   const exitCode = r.status ?? (r.signal ? 124 : 1);
   const stderr = (r.stderr || "").trim();
 
-  const rawStdout = (r.stdout || "").trim();
   let sessionId: string | null = sid;
-  let result = rawStdout;
+  let result = "";
   let envelopeError: string | null = null;
   let costUsd: number | null = null;
   let usage: RunHeadlessResult["usage"];
   let reportedModel: string | null = null;
-  try {
-    const j = JSON.parse(rawStdout);
+  const j = agyStreamResult(r.stdout || "");
+  // No result event: the turn did not finish (or never started), whatever the
+  // exit code says. stderr carries the reason.
+  if (!j) envelopeError = salientError(stderr, `agy printed no result event (exit ${exitCode})`);
+  else {
     sessionId = j.session_id || j.sessionId || j.conversation_id || sid;
     // Token counts (`agy -p --output-format json`, 1.2.13: `usage` carries
     // input_tokens, output_tokens, thinking_tokens, cache_read_tokens and
@@ -2117,8 +2155,6 @@ function runAntigravity(opts: RunHeadlessOpts): RunHeadlessResult {
         reasoningOutputTokens: n(u.thinking_tokens),
       };
     }
-    // JSON format (new builds): the response comes in a field; text (old
-    // builds): the whole stdout IS the response.
     if (typeof j.response === "string") result = j.response;
     else if (typeof j.result === "string") result = j.result;
     // Failure contract: is_error / error in the envelope = failed run.
@@ -2133,13 +2169,13 @@ function runAntigravity(opts: RunHeadlessOpts): RunHeadlessResult {
     }
     if (typeof j.total_cost_usd === "number" && Number.isFinite(j.total_cost_usd)) costUsd = j.total_cost_usd;
     if (typeof j.model === "string" && j.model) reportedModel = j.model;
-  } catch { /* plain text — keep the whole stdout */ }
+  }
 
   // A resume by id that agy did not honour. agy 1.3.3 answers an unknown
   // `--conversation <id>` with exit 0, `warning: conversation "<id>" not found`
   // on stderr and a NEW conversation_id in the envelope: the turn ran, paid,
   // with none of the previous context. Not re-run; said, and the new id kept.
-  const lost = resumeById ? agyResumeLost(opts.sessionId!, rawStdout, stderr) : null;
+  const lost = resumeById ? agyResumeLost(opts.sessionId!, j ? JSON.stringify(j) : "", stderr) : null;
   if (lost) sessionId = lost.newId;
 
   // No USD in agy's envelope (1.3.3: token counts only, and no model name). The

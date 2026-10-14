@@ -20,7 +20,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
-import { writeFakeCli } from "./helpers/fake-cli.ts";
+import { AGY_FAKE_PRELUDE, writeFakeCli } from "./helpers/fake-cli.ts";
 import { SCOPE_GUARD_EN } from "../../_shared/lib/scope-guard.ts";
 import { spawnBudgetMs, TEARDOWN_BUDGET_MS } from "./helpers/test-budgets.ts";
 import * as runLedger from "../lib/run-ledger.ts";
@@ -249,10 +249,10 @@ describe("nrv revise — the outcome goes through the delivery pipeline", () => 
         const sessionFile = path.join(home, "outputs", pid, "businesses", "biz", "session.json");
         const session = JSON.parse(fs.readFileSync(sessionFile, "utf8"));
         fs.writeFileSync(sessionFile, JSON.stringify({ ...session, runtime: "antigravity-cli", session_id: "conv-gone" }, null, 2));
-        writeFakeCli(path.join(home, "bin"), "agy", `
+        writeFakeCli(path.join(home, "bin"), "agy", AGY_FAKE_PRELUDE + `
+          await agyPrompt();
           console.error('warning: conversation "conv-gone" not found');
-          console.log(JSON.stringify({ conversation_id: "conv-new", status: "SUCCESS", response: "OK" }));
-          process.exit(0);
+          agyReply({ conversation_id: "conv-new", status: "SUCCESS", response: "OK" });
         `);
       },
     });

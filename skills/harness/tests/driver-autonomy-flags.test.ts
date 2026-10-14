@@ -19,7 +19,7 @@ import {
   runHeadless, type Runtime,
 } from "../../_shared/lib/host-agent-driver.ts";
 import { childDepth } from "../../_shared/lib/dispatch-depth.ts";
-import { CAPTURE_PRELUDE, readCapturedArgs, writeFakeCli } from "./helpers/fake-cli.ts";
+import { AGY_FAKE_PRELUDE, CAPTURE_PRELUDE, readCapturedArgs, writeFakeCli } from "./helpers/fake-cli.ts";
 import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-driver-autonomy-"));
@@ -45,7 +45,7 @@ beforeAll(() => {
   const fake = (name: string, body: string) => writeFakeCli(BIN, name, CAPTURE_PRELUDE + body);
   fake("claude", `await stdinLen(); if (captureDir) fs.writeFileSync(path.join(captureDir, "claude-env.json"), JSON.stringify({ CLAUDE_CODE_DISABLE_WORKFLOWS: process.env.CLAUDE_CODE_DISABLE_WORKFLOWS ?? null })); process.stdout.write(JSON.stringify({ type: "result", is_error: false, result: "ok", session_id: "s1", total_cost_usd: 0.01 }));`);
   fake("codex", `await stdinLen(); const oi = argv.indexOf("-o"); if (oi >= 0) fs.writeFileSync(argv[oi + 1], "ok"); console.log(JSON.stringify({ type: "turn.completed" }));`);
-  fake("agy", `process.stdout.write(JSON.stringify({ response: "ok", session_id: "a1" }));`);
+  fake("agy", AGY_FAKE_PRELUDE + `await agyPrompt(); agyReply({ response: "ok", session_id: "a1" });`);
   fake("kimi", `console.log(JSON.stringify({ type: "result", is_error: false, session_id: "k1" }));`);
   fake("grok", `process.stdout.write(JSON.stringify({ text: "ok", session_id: "gk1" }));`);
   fake("pi", `console.log(JSON.stringify({ type: "session", id: "p1" })); console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "ok" }] } }));`);
@@ -98,7 +98,9 @@ describe("light layer — buildCall argv per adapter", () => {
       ["-p", "--no-session-persistence", "--output-format", "json", "--dangerously-skip-permissions", "--append-system-prompt", "persona"],
       ["-p", "--no-session-persistence", "--output-format", "json", "--append-system-prompt", "persona"]],
     ["codex", ["exec", "--dangerously-bypass-approvals-and-sandbox"], ["exec"]],
-    ["antigravity-cli", ["-p", MERGED, "--dangerously-skip-permissions"], ["-p", MERGED]],
+    ["antigravity-cli",
+      ["--input-format", "stream-json", "--output-format", "stream-json", "--dangerously-skip-permissions", "-p="],
+      ["--input-format", "stream-json", "--output-format", "stream-json", "-p="]],
     ["grok-cli", ["--prompt-file", "<file>", "--always-approve", "--trust"], ["--prompt-file", "<file>"]],
     ["opencode", ["run", MERGED, "--auto"], ["run", MERGED]],
   ])("%s passes its documented autonomy flag by default and drops it under =0", (name, byDefault, restricted) => {

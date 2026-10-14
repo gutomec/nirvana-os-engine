@@ -1,6 +1,6 @@
 // antigravity-usage.test.ts — the agy runner keeps the token counts its CLI reports.
 //
-// `agy -p --output-format json` answers with a `usage` block (input, output,
+// agy's result (`--output-format json`, or the final stream-json `result` event) carries a `usage` block (input, output,
 // thinking and cache-read tokens) and no USD. The runner kept only `response`,
 // so every Antigravity run reached the ledger with no cost and the estimator had
 // nothing to price.
@@ -10,7 +10,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { runHeadless } from "../../_shared/lib/host-agent-driver.ts";
 import { estimateCostUsd } from "../lib/cost-estimator.ts";
-import { writeFakeCli } from "./helpers/fake-cli.ts";
+import { AGY_FAKE_PRELUDE, writeFakeCli } from "./helpers/fake-cli.ts";
 import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "agy-usage-"));
@@ -19,11 +19,12 @@ const PATH_BEFORE = process.env.PATH;
 
 beforeAll(() => {
   // The shape agy 1.2.13 prints, values chosen to make the arithmetic visible.
-  writeFakeCli(BIN, "agy", `
-    console.log(JSON.stringify({
+  writeFakeCli(BIN, "agy", AGY_FAKE_PRELUDE + `
+    await agyPrompt();
+    agyReply({
       conversation_id: "conv-1", status: "success", response: "done", duration_seconds: 1.5, num_turns: 1,
       usage: { input_tokens: 1000000, output_tokens: 200000, thinking_tokens: 100000, cache_read_tokens: 400000, total_tokens: 1300000 },
-    }));
+    });
   `);
   process.env.PATH = `${BIN}${path.delimiter}${process.env.PATH}`;
 });
