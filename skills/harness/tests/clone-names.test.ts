@@ -223,3 +223,34 @@ describe("aliases and canonical, declared in the manifest", () => {
     expect(displayNameIssue("steve-jobs", "Steve Jobs")).toBeNull();
   });
 });
+
+describe("the Jev's rerank, between the router's suggestion and the search", () => {
+  const hit = (slug: string) => ({ slug, display_name: slug, score: 1, normalized: 1, coverage: { matched: 9, total: 20 }, below_gate: false }) as any;
+  test("a named person or a router suggestion never reaches it; otherwise it decides before the search", () => {
+    let calls = 0;
+    const rerank = (c: string[]) => { calls++; return { ok: true, slug: c[0] }; };
+    const base = { names: NAMES, installed: () => true, search: () => [hit("rory-sutherland"), hit("naval-ravikant")], limit: 3, rerank };
+    expect(selectVoices({ ...base, brief: "escreva no estilo Hormozi" }).how).toBe("asked");
+    expect(selectVoices({ ...base, brief: "uma oferta", suggested: ["naval-ravikant"] }).how).toBe("suggested");
+    expect(calls).toBe(0);
+    const r = selectVoices({ ...base, brief: "uma oferta irresistível", rerankCandidates: ["dhh"] });
+    expect(calls).toBe(1);
+    expect(r).toMatchObject({ how: "rerank", voices: [{ slug: "rory-sutherland" }] });
+  });
+
+  test("its pool: the search's hits and the extra candidates, one slot per person, nothing taken or uninstalled", () => {
+    let pool: string[] = [];
+    selectVoices({
+      brief: "x", names: NAMES, installed: (s) => s !== "ghost", search: () => [hit("david-droga-cco"), hit("ghost"), hit("naval-ravikant")], taken: ["naval-ravikant"],
+      rerank: (c) => { pool = c; return { ok: true, slug: null }; }, rerankCandidates: ["david-droga-ceo", "dhh"],
+    });
+    expect(pool).toEqual(["david-droga-cco", "dhh"]);
+  });
+
+  test("an answer outside the pool offers nothing; an error falls to the search; a throw too", () => {
+    const base = { brief: "x", names: NAMES, installed: () => true, search: () => [hit("rory-sutherland")] };
+    expect(selectVoices({ ...base, rerank: () => ({ ok: true, slug: "not-a-candidate" }) })).toMatchObject({ how: "none", voices: [] });
+    expect(selectVoices({ ...base, rerank: () => ({ ok: false, slug: null }) })).toMatchObject({ how: "search" });
+    expect(selectVoices({ ...base, rerank: () => { throw new Error("x"); } })).toMatchObject({ how: "search" });
+  });
+});

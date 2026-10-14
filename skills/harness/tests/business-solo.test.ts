@@ -72,6 +72,31 @@ describe("voices for the request", () => {
     expect(requestVoices("Write it like Gary Halbert would, or copy-legend", pinned as any, library, names, () => []).voices.map((x) => x.slug)).toEqual(["gary-halbert"]);
   });
 
+  test("with the Jev on, it picks among the search's hits and the seats' assigned voices", () => {
+    // A person the request only describes ("o autor de Rápido e Devagar") is often a seat's voice the words never reach.
+    const seen: string[][] = [];
+    const rerank = (cands: string[]) => { seen.push(cands); return { ok: true, slug: "copy-legend", confidence: 0.97 }; };
+    const r = requestVoices("## Request (verbatim)\nUm livro na linha do autor de Rápido e Devagar\n", seats as any, library, [], () => [hit("off-topic", true)], 3, { rerank });
+    expect(seen).toEqual([["off-topic", "copy-legend"]]);
+    expect(r.voices.map((v) => v.slug)).toEqual(["copy-legend"]);
+    expect(r.voices[0].why).toContain("Jev");
+    // "none" offers nothing, and the lexical search does not stand in.
+    expect(requestVoices("x", seats as any, library, [], () => [hit("halbert", false)], 3, { rerank: () => ({ ok: true, slug: null }) }).voices).toEqual([]);
+    // An error leaves the lexical search to decide, as without the Jev.
+    expect(requestVoices("x", seats as any, library, [], () => [hit("halbert", false)], 3, { rerank: () => ({ ok: false, slug: null }) }).voices.map((v) => v.slug)).toEqual(["halbert"]);
+  });
+
+  test("prepareBusinessSolo runs no rerank when the Jev is off (the default under test)", () => {
+    const any = (slug: string) => ({ dir: path.join(TMP, "clones", slug), files: [] });
+    const prep = prepareBusinessSolo(baseArgs({ cloneLookup: any, voiceSearch: () => [hit("halbert", false)] }));
+    expect(prep.voices.map((v: any) => v.slug)).toEqual(["halbert"]);
+    let seen: string[] = [];
+    const withRerank = prepareBusinessSolo(baseArgs({ cloneLookup: any, voiceSearch: () => [hit("halbert", false)], voiceRerank: (c) => { seen = c; return { ok: true, slug: null }; } }));
+    // The seat's assigned voice joins the search's hit as a candidate.
+    expect(seen).toEqual(["halbert", "copy-legend"]);
+    expect(withRerank.voices).toEqual([]);
+  });
+
   test("a search hit whose terms are a small share of the request is not offered", () => {
     const thin = { ...hit("thin", false), coverage: { matched: 3, total: 16 } };
     expect(requestVoices("x", [], library, [], () => [thin]).voices).toEqual([]);

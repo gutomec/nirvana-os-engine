@@ -33,7 +33,9 @@ import { writeSquadCards } from "../../_shared/lib/work-cards.ts";
 import { squadRunEnv } from "../../_shared/lib/squad-env.ts";
 import { findCloneForTask, type CloneHit } from "../../_shared/lib/clone-search.ts";
 import { parseWorkBrief } from "./work-brief.ts";
-import { missingVoiceNotice, selectVoices, unsettledVoiceNotice, voiceQuery, type VoiceSelection } from "./clone-voices.ts";
+import { missingVoiceNotice, selectVoices, unsettledVoiceNotice, voiceQuery, type VoiceRerank, type VoiceSelection } from "./clone-voices.ts";
+import { jevVoiceRerank } from "./jev-voice.ts";
+import { jevEnabled } from "../../_shared/lib/typesafe-client.ts";
 import { cloneNamesOf } from "./clone-names.ts";
 
 export interface SeatVoice { slug: string; name?: string; dir: string | null; files: string[]; pinned?: boolean }
@@ -84,6 +86,8 @@ export interface BusinessSoloArgs {
   /** The clone library: its entries (for names a brief mentions) and its search. */
   cloneNames?: () => Array<{ slug: string; name: string }>;
   voiceSearch?: (query: string, gateQuery?: string) => CloneHit[];
+  /** The Jev's pick among the voice candidates; default: on when jevEnabled(), `null` keeps it off. */
+  voiceRerank?: VoiceRerank | null;
   /** Ranks a seat's assigned voices for this request (most relevant first). */
   seatVoiceRank?: (query: string, slugs: string[]) => string[];
 }
@@ -240,9 +244,12 @@ export function preferredSquads(bizDir: string | null): string[] {
 export function requestVoices(
   brief: string, seats: Seat[], cloneLookup: CloneLookup,
   names: Array<{ slug: string; name: string }>, search: (query: string, gateQuery?: string) => CloneHit[], limit = 3,
-  opts: { suggested?: string[]; extraQuery?: string } = {},
+  opts: { suggested?: string[]; extraQuery?: string; rerank?: VoiceRerank } = {},
 ): { voices: RequestVoice[]; missing: string[]; ambiguous: VoiceSelection["ambiguous"]; overflow: string[] } {
   const sel = selectVoices({
+    // The seats' assigned voices are candidates too: a person the request only
+    // describes ("o autor de Rápido e Devagar") is often one of them.
+    ...(opts.rerank ? { rerank: opts.rerank, rerankCandidates: seats.flatMap((s) => s.voices.filter((v) => !v.pinned).map((v) => v.slug)) } : {}),
     brief, names, search, limit,
     installed: (slug) => cloneLookup(slug) !== null,
     // A voice the request asks for is offered as asked even when a seat carries
@@ -545,7 +552,11 @@ export function prepareBusinessSolo(args: BusinessSoloArgs): PreparedSolo {
   const context = businessContext(args.bizDir);
   try {
     const search = args.voiceSearch ?? ((q: string, gateQuery?: string) => findCloneForTask(q, { limit: 6, cwd: args.projectDir, gateQuery }));
-    const sel = requestVoices(briefText, seats, cloneLookup, names(), search, 3, { suggested: args.suggestedClones, extraQuery: context });
+    // With a TypeSafe key (and routing.jev on), the Jev picks among the candidates before the lexical search.
+    const rerank = args.voiceRerank === undefined
+      ? (jevEnabled({ cwd: args.projectDir }) ? jevVoiceRerank(loadCloneRegistry({ cwd: args.projectDir }) as Record<string, any>, { cwd: args.projectDir }) : undefined)
+      : (args.voiceRerank ?? undefined);
+    const sel = requestVoices(briefText, seats, cloneLookup, names(), search, 3, { suggested: args.suggestedClones, extraQuery: context, ...(rerank ? { rerank } : {}) });
     ({ voices, missing: missingVoices } = sel);
     unsettledVoices = { ambiguous: sel.ambiguous, overflow: sel.overflow };
   } catch { voices = []; } // a library that cannot be read leaves the seats' own voices

@@ -35,8 +35,15 @@ export interface VoiceSelection {
   ambiguous: Array<{ name: string; candidates: string[] }>;
   /** Asked for, installed, and left out because the run was already at `limit`. */
   overflow: string[];
-  how: "asked" | "suggested" | "search" | "none";
+  how: "asked" | "suggested" | "rerank" | "search" | "none";
 }
+
+/**
+ * A classifier's pick among the voice candidates (the Jev, jev-voice.ts, when a
+ * TypeSafe key is configured). `ok: false` means it could not answer, and the
+ * lexical search decides; `ok: true` with no slug means no voice fits.
+ */
+export type VoiceRerank = (candidates: string[], request: string) => { ok: boolean; slug: string | null; confidence?: number; error?: string };
 
 export interface VoiceSelectionInput {
   brief: string;
@@ -51,8 +58,15 @@ export interface VoiceSelectionInput {
   extraQuery?: string;
   /** Clones the router chose for this request (already validated by it; checked again here). */
   suggested?: string[];
+  /** Between the router's suggestion and the lexical search: a classifier picks among the candidates. */
+  rerank?: VoiceRerank;
+  /** Candidates for the rerank beyond the search's (a business's seat voices). */
+  rerankCandidates?: string[];
   limit?: number;
 }
+
+/** How many of the search's hits the rerank sees, before the extra candidates. */
+export const RERANK_SEARCH_CANDIDATES = 8;
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -162,7 +176,34 @@ export function selectVoices(input: VoiceSelectionInput): VoiceSelection {
   if (voices.length) return { voices, missing, ambiguous: [], overflow: [], how: "suggested" };
 
   const own = voiceQuery(input.brief);
-  for (const h of input.search(voiceQuery(input.brief, input.extraQuery), own)) {
+  const hits = input.search(voiceQuery(input.brief, input.extraQuery), own);
+  // The classifier reads what each candidate declares and refuses, so it sees
+  // the search's hits whatever their coverage, plus the extra candidates (the
+  // seat voices, which a described person like "o autor de Rápido e Devagar"
+  // reaches when the words do not).
+  if (input.rerank) {
+    const pool: string[] = [];
+    const free = (slug: string) => {
+      const who = personOf(people, slug)?.key ?? slug;
+      return !taken.has(slug) && !takenPeople.has(who) && input.installed(slug);
+    };
+    const pooled = new Set<string>();
+    for (const slug of [...hits.slice(0, RERANK_SEARCH_CANDIDATES).map((h) => h.slug), ...(input.rerankCandidates ?? [])]) {
+      const who = personOf(people, slug)?.key ?? slug;
+      if (pooled.has(who) || !free(slug)) continue;
+      pooled.add(who);
+      pool.push(slug);
+    }
+    if (pool.length) {
+      let r: ReturnType<VoiceRerank>;
+      try { r = input.rerank(pool, own); } catch { r = { ok: false, slug: null }; }
+      if (r.ok) {
+        if (r.slug && pool.includes(r.slug)) take(r.slug, `chosen by the Jev classifier among ${pool.length} candidates${typeof r.confidence === "number" ? ` (p=${r.confidence.toFixed(2)})` : ""}`);
+        return { voices, missing, ambiguous: [], overflow: [], how: voices.length ? "rerank" : "none" };
+      }
+    }
+  }
+  for (const h of hits) {
     if (voices.length >= limit) break;
     if (h.below_gate !== false || !voiceGate(h) || !input.installed(h.slug)) continue;
     take(h.slug, `matches ${h.coverage.matched}/${h.coverage.total} of the request's terms`, h.display_name);

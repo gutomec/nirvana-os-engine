@@ -26,7 +26,9 @@ import { briefExcerpt } from "../../_shared/lib/brief-excerpt.ts";
 import { resolveClonePersona, loadCloneRegistry } from "../../_shared/lib/clone-resolver.ts";
 import { layersForPhase } from "../../_shared/lib/dna-layer-policy.ts";
 import { findCloneForTask } from "../../_shared/lib/clone-search.ts";
-import { selectVoices, unsettledVoiceNotice } from "./clone-voices.ts";
+import { selectVoices, unsettledVoiceNotice, type VoiceRerank } from "./clone-voices.ts";
+import { jevVoiceRerank } from "./jev-voice.ts";
+import { jevEnabled } from "../../_shared/lib/typesafe-client.ts";
 import { cloneNamesOf } from "./clone-names.ts";
 import { summaryFileOf } from "./business-solo.ts";
 import { paths } from "../../_shared/lib/bun-helpers.ts";
@@ -99,11 +101,16 @@ function appendAudit(payload: Record<string, any>, projectRoot?: string): void {
 // can read different scopes (the exact leak fixed in the business loader on
 // 2026-08-18: a test run from the engine repo picked up the repo's derived
 // registry and injected clones its fixture never wrote).
-export function squadCloneInjection(brief: string, cwd?: string, opts: { suggested?: string[]; extraQuery?: string } = {}): { block: string; decision: string; missingClones: string[]; mode?: "reference" | "full" | "fragments"; personaDirs?: string[] } {
+export function squadCloneInjection(brief: string, cwd?: string, opts: { suggested?: string[]; extraQuery?: string; rerank?: VoiceRerank | null } = {}): { block: string; decision: string; missingClones: string[]; mode?: "reference" | "full" | "fragments"; personaDirs?: string[] } {
   let names: Array<{ slug: string; name: string }> = [];
+  let registry: Record<string, any> = {};
   try {
-    names = cloneNamesOf(loadCloneRegistry({ cwd }) as Record<string, any>);
+    registry = loadCloneRegistry({ cwd }) as Record<string, any>;
+    names = cloneNamesOf(registry);
   } catch { names = []; }
+  // With a TypeSafe key (and routing.jev on), the Jev picks among the candidates
+  // before the lexical search; `rerank: null` keeps it off.
+  const rerank = opts.rerank === undefined ? (jevEnabled({ cwd }) ? jevVoiceRerank(registry, { cwd }) : undefined) : (opts.rerank ?? undefined);
   const selection = selectVoices({
     brief, names,
     // Whether the files open is decided below, where the persona is read.
@@ -114,10 +121,12 @@ export function squadCloneInjection(brief: string, cwd?: string, opts: { suggest
     // vacuous gate. `below_gate` mirrors the router's Stage 3 coverage bands.
     search: (query, gateQuery) => { try { return findCloneForTask(query, { limit: 6, cwd, gateQuery }); } catch { return []; } },
     suggested: opts.suggested, extraQuery: opts.extraQuery,
+    ...(rerank ? { rerank } : {}),
   });
   const picked = selection.voices.map((v) => ({ slug: v.slug, reason: v.why }));
   const decision = selection.how === "asked" ? "REQUESTED by the user"
     : selection.how === "suggested" ? "CHOSEN by the router"
+    : selection.how === "rerank" ? "CHOSEN by the Jev classifier"
     : selection.how === "search" ? "found by SEARCH" : "DEFAULT, no useful clone";
   const unsettled = unsettledVoiceNotice(selection);
   if (!picked.length && !selection.missing.length && !unsettled) return { block: "", decision, missingClones: [] };

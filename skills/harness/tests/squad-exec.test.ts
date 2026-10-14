@@ -230,6 +230,17 @@ describe("squadCloneInjection, the rule the business path shares", () => {
     } finally { fs.rmSync(cwd, { recursive: true, force: true }); }
   });
 
+  test("a rerank that answers none offers no clone, whatever the search finds", () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-squad-voices-"));
+    try {
+      let calls = 0;
+      const r = squadCloneInjection("write a launch email sequence for my online course on copywriting", cwd, { rerank: () => { calls++; return { ok: true, slug: null }; } });
+      expect(r.block).toBe("");
+      expect(r.decision).toBe("DEFAULT, no useful clone");
+      expect(calls).toBeLessThanOrEqual(1);
+    } finally { fs.rmSync(cwd, { recursive: true, force: true }); }
+  });
+
   test("nothing asked for and nothing above the coverage gate: no clone", () => {
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-squad-voices-"));
     try {
