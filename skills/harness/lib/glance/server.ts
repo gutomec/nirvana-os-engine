@@ -42,6 +42,7 @@ import { orcaOpenUrl } from "../../../_shared/lib/orca.ts";
 import { listRuntimes, runtimeAvailable } from "../../../_shared/lib/host-agent-driver.ts";
 import { deriveAgentStates, summarizeStates } from "./agent-state.ts";
 import { readSubsystems } from "./subsystems.ts";
+import { readServices } from "./services.ts";
 import { paths, invalidatePathsCache, overridePath } from "../../../_shared/lib/bun-helpers.ts";
 import { readEnvFile, writeEnvFile, setVar, deleteVar, getVar, toMap } from "../../../_shared/lib/env-file.ts";
 import { CONFIG_SCHEMA, getField, isEditableKey, maskSecret } from "./config-schema.ts";
@@ -1651,6 +1652,12 @@ export async function startServer(opts: ServerOptions) {
       // a subsystem whose health cannot be determined answers `status: null` and
       // the view renders `—` rather than a green light nobody measured.
       if (p === "/api/subsystems") return json({ subsystems: readSubsystems(currentProjectRoot()) });
+
+      // Services the operator declared beside the engine (services.ts). Same
+      // rules, separate endpoint so the engine row's payload never changes:
+      // read-only, no spawn, no network, and a service is `up` only when it
+      // wrote a valid, recent status itself.
+      if (p === "/api/services") return json({ services: readServices(currentProjectRoot()) });
 
       if (p === "/api/audit/report") {
         const sc = getScope();

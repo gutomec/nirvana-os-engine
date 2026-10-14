@@ -47,6 +47,24 @@ function glance() {
       const row = window.NirvanaSubsystemRow;
       return row ? row.rowSummary(this.subsystemRow) : '';
     },
+    // The declared services strip, same cells as the engine row. `null` until
+    // /api/services answers; an empty list hides the row.
+    services: null,
+    get servicesRow() {
+      const row = window.NirvanaSubsystemRow;
+      if (!row || !this.services) return { cells: [], up: 0, down: 0, unknown: 0 };
+      const built = row.buildSubsystemRow({ subsystems: this.services });
+      // The tooltip carries what the manifest declared, after what was read.
+      built.cells = built.cells.map((cell) => {
+        const extra = [cell.description, cell.owner ? `owner: ${cell.owner}` : null, cell.docs ? `docs: ${cell.docs}` : null].filter(Boolean);
+        return extra.length ? { ...cell, title: `${cell.title} · ${extra.join(' · ')}` } : cell;
+      });
+      return built;
+    },
+    get servicesSummary() {
+      const row = window.NirvanaSubsystemRow;
+      return row ? row.rowSummary(this.servicesRow) : '';
+    },
     // Per-list loading/error state — distinguishes "carregando" from "vazio"
     // from "falhou" (the catch used to be silent and everything became empty-state).
     listLoading: { squads: false, businesses: false, projects: false, 'mind-clones': false },
@@ -479,6 +497,7 @@ function glance() {
         this.fetchSetupSources(),
         this.fetchSetupStatus(),
         this.fetchSubsystems(),
+        this.fetchServices(),
         this.fetchKnownProjects(),
       ]);
       this.flash(`refreshed · ${this.squads.length} squads, ${this.businesses.length} bus`);
@@ -558,6 +577,12 @@ function glance() {
     async fetchSubsystems() {
       try { this.subsystems = (await api('/api/subsystems')).subsystems; }
       catch (e) { this.subsystems = null; }
+    },
+    // Declared services (services.ts). Same honesty: a failed fetch hides the
+    // row instead of painting every declared service red.
+    async fetchServices() {
+      try { this.services = (await api('/api/services')).services; }
+      catch (e) { this.services = null; }
     },
     // ─── Project switcher (topnav) — OTHER Nirvana projects on this machine,
     // distinct from projectFilter above (which only filters within the ONE
@@ -1061,6 +1086,7 @@ function glance() {
         this.flash(`▶ switched to ${(data.to || '').split('/').slice(-1)[0] || data.to}`, 2000);
         this.refetchProjectScopedViews();
         try { this.fetchSubsystems && this.fetchSubsystems(); } catch {}
+        try { this.fetchServices && this.fetchServices(); } catch {}
         try { this.fetchSetupStatus && this.fetchSetupStatus(); } catch {}
         try { this.fetchKnownProjects && this.fetchKnownProjects(); } catch {}
       } catch (e) {
