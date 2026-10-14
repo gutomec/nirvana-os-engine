@@ -23,26 +23,32 @@
 <meta name="twitter:description" content="Guia de instalação do Nirvana-OS no macOS, no Windows, no Windows com WSL e no Linux: engine estável e beta, pacotes do squads.sh, primeiro projeto, ativação dos squads, atualização e solução de problemas.">
 <meta name="twitter:image" content="https://gutomec.github.io/nirvana-os-engine/assets/og/og-install.jpg">
 <script type="application/ld+json">{"@context": "https://schema.org", "@type": "HowTo", "name": "Instalar o Nirvana-OS", "url": "https://gutomec.github.io/nirvana-os-engine/install.html", "inLanguage": "pt-BR", "step": [{"@type": "HowToStep", "name": "Instalar o engine"}, {"@type": "HowToStep", "name": "Instalar um pack do squads.sh"}, {"@type": "HowToStep", "name": "Iniciar o projeto com nrv init"}, {"@type": "HowToStep", "name": "Conversar com o seu agente"}]}</script>
+<link rel="preload" href="./assets/fonts/geist.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="./assets/fonts/geist-mono.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="./assets/site.css">
 <link rel="stylesheet" href="./assets/guide.css">
+<script src="./assets/site.js"></script>
 <script src="./assets/guide.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#conteudo">Pular para o conteúdo</a>
 
 <header class="top">
-  <div class="bar">
-    <a class="brand" href="./index.html"><span class="dot" aria-hidden="true"></span>Nirvana-OS</a>
+  <div class="wrap">
+    <a class="logo" href="./index.html"><span class="dot" aria-hidden="true"></span>Nirvana-OS</a>
     <nav aria-label="Site">
-      <a href="./index.html">Início</a>
+      <a class="sec" href="./index.html#runtimes">Runtimes</a>
+      <a class="sec" href="./index.html#fluxo">Como funciona</a>
+      <a class="sec" href="./index.html#materiais">Materiais</a>
+      <a class="sec" href="./index.html#comecar">Começar</a>
       <a href="./install.html" aria-current="page">Instalação</a>
       <a href="./beta.html">Beta</a>
-      <a href="./install.html#problemas">Problemas</a>
     </nav>
-    <button class="theme" id="theme" type="button">tema</button>
+    <button class="tt" id="tt" type="button" aria-label="Mudar o tema">tema</button>
   </div>
 </header>
 
-<main id="conteudo">
+<main class="wrap" id="conteudo">
   <section class="hero">
     <p class="eyebrow">Guia de instalação</p>
     <h1>Instale o Nirvana-OS e converse com o seu agente.</h1>
@@ -369,8 +375,18 @@
 </main>
 
 <footer>
-  <span>Nirvana-OS · engine source-available (SUL v1.0) · conteúdo nos pacotes do squads.sh</span>
-  <span><a href="https://github.com/gutomec/nirvana-os-engine">GitHub</a> · <a href="https://squads.sh/pt/packs">Pacotes</a></span>
+  <div class="wrap">
+    <div class="links">
+      <a href="./install.html">Instalação</a>
+      <a href="./beta.html">Beta</a>
+      <a href="./install.html#problemas">Solução de problemas</a>
+      <a href="https://github.com/gutomec/nirvana-os-engine">Código no GitHub</a>
+      <a href="https://github.com/gutomec/nirvana-os-engine/blob/main/docs/CLI.md">Referência do nrv</a>
+      <a href="https://github.com/gutomec/nirvana-os-engine/blob/main/CHANGELOG.md">Changelog</a>
+      <a href="https://squads.sh/pt/packs">Pacotes</a>
+    </div>
+    <div>Nirvana-OS · motor open core sob licença SUL · autoria de Luiz Gustavo Vieira Rodrigues.</div>
+  </div>
 </footer>
 </body>
 </html>
