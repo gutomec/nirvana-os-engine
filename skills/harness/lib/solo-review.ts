@@ -26,6 +26,7 @@ import { parse as parseYaml } from "yaml";
 import { runHeadless, runtimeAvailable, type Runtime, type RunHeadlessResult } from "./host-agent-driver.ts";
 import { extractJsonObject, jsonObjectsIn } from "../../_shared/lib/model-json.ts";
 import { isRunStateFile } from "../../_shared/lib/run-plumbing.ts";
+import { briefWorkDirs } from "../../_shared/lib/brief-work-dirs.ts";
 import { doneWhenCriteria, type Criterion } from "./work-brief.ts";
 import { soloDirective } from "./business-solo.ts";
 import { loadRuntimeRules, matchedVetoes, type RuntimeRule } from "./runtime-rules.ts";
@@ -138,46 +139,71 @@ function realOrSame(p: string): string {
   try { return fs.realpathSync.native(p); } catch { return p; }
 }
 
+/** Where an evidence string points, and why it does not count when it does not. */
+export type EvidenceVerdict = { file: string } | { file: null; why: string };
+
 /**
  * The deliverable an evidence string points at: the first named file that
- * exists under the outputs root and is work, not run state (`_SUMMARY.md` is
- * the worker's own claim, never its proof). null when there is none. Paths are
- * normalised from either separator and resolved against the outputs root.
+ * exists under the outputs root, or under a folder the brief places the work
+ * in (`workDirs`, brief-work-dirs.ts), and is work, not run state. Paths are
+ * normalised from either separator; a relative one resolves against the
+ * outputs root, then against each work folder.
+ *
+ * When nothing counts, `why` says what is true of the files it named: one that
+ * exists but is run state (`_work/`, `_review/`, `_SUMMARY.md`) is refused as
+ * run state, one that exists elsewhere as outside the folders, and only a path
+ * that names nothing on disk "names no file that exists". The old single
+ * message called `_work/revisao.md` nonexistent while it sat on disk
+ * (2026-10-14), and a worker cannot fix what it is told wrongly.
  */
-export function evidenceFileUnder(outputsRoot: string, evidence: string): string | null {
+export function evidenceVerdict(outputsRoot: string, evidence: string, workDirs: readonly string[] = []): EvidenceVerdict {
   const root = realOrSame(path.resolve(outputsRoot));
+  const bases = [root, ...workDirs.map((d) => realOrSame(path.resolve(d)))];
+  let runState: string | null = null;
+  let outside: string | null = null;
   for (const ref of evidencePaths(evidence)) {
     const norm = ref.replace(/\\/g, "/");
     const absolute = path.isAbsolute(norm) || /^[A-Za-z]:\//.test(norm);
-    const candidate = absolute ? path.resolve(norm) : path.resolve(root, norm);
-    let isFile = false;
-    try { isFile = fs.statSync(candidate).isFile(); } catch { isFile = false; }
-    if (!isFile) continue;
-    const rel = path.relative(root, realOrSame(candidate));
-    if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) continue;
-    if (isRunStateFile(rel)) continue;
-    return candidate;
+    const candidates = absolute ? [path.resolve(norm)] : bases.map((b) => path.resolve(b, norm));
+    for (const candidate of candidates) {
+      let isFile = false;
+      try { isFile = fs.statSync(candidate).isFile(); } catch { isFile = false; }
+      if (!isFile) continue;
+      const real = realOrSame(candidate);
+      const base = bases.find((b) => { const rel = path.relative(b, real); return !!rel && !rel.startsWith("..") && !path.isAbsolute(rel); });
+      if (!base) { outside ??= ref; continue; }
+      if (base === root && isRunStateFile(path.relative(root, real))) { runState ??= ref; continue; }
+      return { file: candidate };
+    }
   }
-  return null;
+  const quoted = `"${evidence.slice(0, 160)}"`;
+  if (runState) return { file: null, why: `its evidence (${quoted}) cites ${runState}, which is run state (_work/, _review/, _SUMMARY.md, _CLAIMS.json): it exists, but it is not a deliverable and does not count as proof; cite the deliverable it checks` };
+  if (outside) return { file: null, why: `its evidence (${quoted}) cites ${outside}, which exists but sits outside the outputs root${workDirs.length ? " and the brief's work folders" : ""}` };
+  return { file: null, why: `its evidence (${quoted}) names no file that exists under the outputs root${workDirs.length ? " or the brief's work folders" : ""}` };
+}
+
+/** evidenceVerdict's file, or null. */
+export function evidenceFileUnder(outputsRoot: string, evidence: string, workDirs: readonly string[] = []): string | null {
+  return evidenceVerdict(outputsRoot, evidence, workDirs).file;
 }
 
 export interface ClaimProblem { id: string; description: string; why: string }
 
 /** Every blocking criterion without a claim whose evidence names a file that
- *  exists under the outputs root. The cheap, model-free half of a review, and
- *  the claims check the delivery pipeline runs on every business delivery. */
-export function claimProblems(outputsRoot: string, criteria: Criterion[]): ClaimProblem[] {
+ *  exists under the outputs root or a folder the brief places the work in.
+ *  The cheap, model-free half of a review, and the claims check the delivery
+ *  pipeline runs on every business delivery. */
+export function claimProblems(outputsRoot: string, criteria: Criterion[], workDirs: readonly string[] = []): ClaimProblem[] {
   const blocking = criteria.filter((c) => c.blocking);
   if (!blocking.length) return [];
   const claims = readClaims(path.join(outputsRoot, "_CLAIMS.json"));
   const out: ClaimProblem[] = [];
   for (const c of blocking) {
     const claim = claims?.find((x) => x.id === c.id);
-    if (!claims) out.push({ id: c.id, description: c.description, why: "_CLAIMS.json is missing or not a JSON array" });
-    else if (!claim || !claim.evidence) out.push({ id: c.id, description: c.description, why: "no claim for it in _CLAIMS.json" });
-    else if (!evidenceFileUnder(outputsRoot, claim.evidence)) {
-      out.push({ id: c.id, description: c.description, why: `its evidence ("${claim.evidence.slice(0, 160)}") names no file that exists under the outputs root` });
-    }
+    if (!claims) { out.push({ id: c.id, description: c.description, why: "_CLAIMS.json is missing or not a JSON array" }); continue; }
+    if (!claim || !claim.evidence) { out.push({ id: c.id, description: c.description, why: "no claim for it in _CLAIMS.json" }); continue; }
+    const v = evidenceVerdict(outputsRoot, claim.evidence, workDirs);
+    if (v.file === null) out.push({ id: c.id, description: c.description, why: v.why });
   }
   return out;
 }
@@ -204,18 +230,18 @@ export const NO_DELIVERABLE = "no deliverable file under the outputs root";
 
 /** What can be checked without a model: there is a delivery, a summary, and,
  *  for every blocking criterion, a claim whose evidence names a file that
- *  exists under the outputs root. */
-export function precheckSolo(outputsRoot: string, criteria: Criterion[]): Precheck {
+ *  exists under the outputs root or a folder the brief places the work in. */
+export function precheckSolo(outputsRoot: string, criteria: Criterion[], workDirs: readonly string[] = []): Precheck {
   const problems: string[] = [];
   if (!deliverableFiles(outputsRoot).length) problems.push(NO_DELIVERABLE);
   if (!fs.existsSync(path.join(outputsRoot, "_SUMMARY.md"))) problems.push("_SUMMARY.md is missing");
   const claims = readClaims(path.join(outputsRoot, "_CLAIMS.json"));
   if (!claims) problems.push("_CLAIMS.json is missing or not a JSON array");
   else {
-    for (const p of claimProblems(outputsRoot, criteria)) {
+    for (const p of claimProblems(outputsRoot, criteria, workDirs)) {
       problems.push(p.why.startsWith("no claim")
         ? `no evidence claimed for blocking criterion ${p.id}`
-        : `the evidence for blocking criterion ${p.id} names no file that exists under the outputs root`);
+        : `the evidence for blocking criterion ${p.id} ${p.why.replace(/^its evidence \(".*?"\) /s, "")}`);
     }
   }
   return { ok: problems.length === 0, problems };
@@ -448,7 +474,8 @@ export function runSoloReviewStage(a: SoloReviewArgs): SoloReviewOutcome {
   const run = a.runImpl ?? runHeadless;
   const briefText = (() => { try { return fs.readFileSync(a.briefFile, "utf8"); } catch { return ""; } })();
   const criteria = criteriaFromBrief(briefText);
-  let precheck = precheckSolo(a.outputsRoot, criteria);
+  const workDirs = briefWorkDirs(briefText, a.outputsRoot);
+  let precheck = precheckSolo(a.outputsRoot, criteria, workDirs);
   const decision = decideReview({
     policy: a.policy, userAsked: a.userAsked, userDeclined: a.userDeclined,
     sensitive: businessWantsReview(a.bizDir), precheckFailed: !precheck.ok,
@@ -510,7 +537,7 @@ export function runSoloReviewStage(a: SoloReviewArgs): SoloReviewOutcome {
     const fix = correct(buildPrecheckRevisionPrompt(precheck.problems, a.outputsRoot));
     emit("x_solo_revision", { business_slug: a.business, round: rounds, ok: fix.ok, runtime: a.worker.runtime, reason: "no-deliverable" });
     if (!fix.ok) { log(`  revision round ${rounds} failed: ${fix.error ?? "unknown"}`); break; }
-    precheck = precheckSolo(a.outputsRoot, criteria);
+    precheck = precheckSolo(a.outputsRoot, criteria, workDirs);
   }
   if (precheck.problems.includes(NO_DELIVERABLE)) {
     emit("x_review_skipped", { business_slug: a.business, reason: "no deliverable under the outputs root", rounds });
@@ -592,7 +619,7 @@ export function runSoloReviewStage(a: SoloReviewArgs): SoloReviewOutcome {
     const fix = correct(buildRevisionPrompt(score.gaps, criteria, score.untraceable, answerFile));
     emit("x_solo_revision", { business_slug: a.business, round: rounds, ok: fix.ok, runtime: a.worker.runtime, ...(score.blockingMissed.length ? { serious: true } : {}) });
     if (!fix.ok) { log(`  revision round ${rounds} failed: ${fix.error ?? "unknown"}`); break; }
-    precheck = precheckSolo(a.outputsRoot, criteria);
+    precheck = precheckSolo(a.outputsRoot, criteria, workDirs);
     pass++;
   }
   const reservations = score && !score.approved

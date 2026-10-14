@@ -54,6 +54,7 @@ import { loadHarnessConfig } from "../lib/harness-config.ts";
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
 import { scopeGuard } from "../../_shared/lib/scope-guard.ts";
 import { stamp } from "../../_shared/lib/audit-provenance.ts";
+import { briefWorkDirs, workElsewhereRule } from "../../_shared/lib/brief-work-dirs.ts";
 
 const ANSI = { reset: "\x1b[0m", bold: "\x1b[1m", dim: "\x1b[2m", green: "\x1b[32m", red: "\x1b[31m", yellow: "\x1b[33m", cyan: "\x1b[36m", lime: "\x1b[38;5;154m" };
 const noColor = process.argv.includes("--no-color") || !process.stdout.isTTY;
@@ -267,14 +268,17 @@ const ledgerRun: { handle: runLedger.LedgerHandle; runId: string } | null = (() 
 const solo = role === "solo";
 // The user's USE_* rules, as the dispatch handed them to the worker.
 const rulesDirective = formatRulesForDirective(loadRuntimeRules(resolveCascadeRoot(projectRoot || process.cwd())));
+// The folders the brief places the work in: a revision works there too, and
+// is never told to move that work under the outputs root.
+const workDirs = briefWorkDirs(brief, oroot);
 const revisePrompt = [
   "REVISION INSTRUCTION (same session: you have the full context of what you produced):",
   "",
   change,
   "",
-  `Rewrite or update the deliverables as files under: ${oroot}`,
+  `Rewrite or update the deliverables in the places the brief names. ${workElsewhereRule(oroot, workDirs)}`,
   solo
-    ? `Then update ${path.join(oroot, "_SUMMARY.md")} and ${path.join(oroot, "_CLAIMS.json")} so they describe the revised delivery; each claim's evidence names a file that exists under ${oroot}.`
+    ? `Then update ${path.join(oroot, "_SUMMARY.md")} and ${path.join(oroot, "_CLAIMS.json")} so they describe the revised delivery; each claim's evidence names a file that exists under ${oroot}${workDirs.length ? ` or under ${workDirs.join(", ")}` : ""}, never a file under _work/ or _review/ (run state does not count as proof).`
     : `Then update ${path.join(oroot, "_SUMMARY.md")} so it describes the revised delivery.`,
   scopeGuard(),
   'Do not print a summary: deliver the updated files. Update the assumptions section ("## Assumptions" or its equivalent in the language of the deliverable) if anything changed.',
@@ -289,7 +293,7 @@ const res = runWithCascade({
   cwd: projectRoot,
   // A squad's own tree, granted again as the run granted it: its resource map
   // names files under it, and claude-code and agy refuse an ungranted path.
-  addDirs: [projDir, oroot, ...squadDirs()],
+  addDirs: [projDir, oroot, ...workDirs, ...squadDirs()],
   // The folder the session was started in (absent on runs from before runs
   // had one): claude resumes a session only from its own folder.
   workspace: session.workspace || undefined,

@@ -445,7 +445,7 @@ export function buildSoloPrompt(
   lines.push("## When you finish", "", "Write these, then end your turn:", "");
   lines.push(
     `- \`${summaryFileOf(args.outputsRoot)}\`: one page at most. What you delivered and where, the decisions you took, what is still open. The orchestrator reads only this.`,
-    `- \`${claimsFileOf(args.outputsRoot)}\`: a JSON array with one entry per "Done when" item of the brief, in order: \`{"id": "d1", "evidence": "<file>:<lines>, <what it shows>"}\`.`,
+    `- \`${claimsFileOf(args.outputsRoot)}\`: a JSON array with one entry per "Done when" item of the brief, in order: \`{"id": "d1", "evidence": "<file>:<lines>, <what it shows>"}\`. A file under \`_work/\` or \`_review/\` is run state, never proof.`,
     `- \`${participationFile(args.projectDir)}\` (outside the deliverables on purpose): \`{"seats": [{"seat": "<slug>", "files": ["<path>"]}], "squads": ["<slug>"], "clones": ["<slug>"]}\`, naming only what you actually used.`,
   );
   return lines.join("\n");

@@ -77,6 +77,7 @@ import { scopeGuard } from "../../_shared/lib/scope-guard.ts";
 import { isRunStatePath } from "../../_shared/lib/run-state.ts";
 import { isRunStateFile } from "../../_shared/lib/run-plumbing.ts";
 import { inBuildOutput, isDependencyDirName, isDependencyNoise } from "../../_shared/lib/deliverable-noise.ts";
+import { briefWorkDirs, workElsewhereRule } from "../../_shared/lib/brief-work-dirs.ts";
 import { soloDirective } from "./business-solo.ts";
 import { claimProblems, criteriaFromBrief, SERIOUS_EXTRA_ROUNDS, type ClaimProblem } from "./solo-review.ts";
 import { runFolderOf } from "../../_shared/lib/run-workspace.ts";
@@ -1067,11 +1068,14 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
   // when" criterion with a claim whose evidence names a file on disk. Cheap,
   // no model, and the one completeness signal a run with no manifest has.
   const criteria = (args.claimsCheck ?? args.targetKind === "business") ? criteriaFromBrief(args.brief) : [];
+  // The folders the brief places the work in, outside the outputs root: the
+  // claims may cite files there, and every correction is told to work there.
+  const workDirs = briefWorkDirs(args.brief, args.outputsRoot);
   interface Evaluation { files: string[]; run: GateRun; claims: ClaimProblem[]; serious: string[]; seriousFindings: SeriousFinding[]; pass: boolean }
   const evaluate = (): Evaluation => {
     const files = gateableFiles(args.outputsRoot, namedInBrief);
     const run = runGateOnce(files, gateOpts);
-    const claims = criteria.length ? claimProblems(args.outputsRoot, criteria) : [];
+    const claims = criteria.length ? claimProblems(args.outputsRoot, criteria, workDirs) : [];
     const seriousFindings = [
       ...seriousFindingsOf(run, args.outputsRoot),
       ...claims.map(c => ({ key: findingKey("criterion", c.id), text: `blocking criterion ${c.id} (${c.description}): ${c.why}`, detail: "" })),
@@ -1137,8 +1141,9 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
       ...fixLines,
       "",
       `The deliverables are in ${path.resolve(args.outputsRoot)}.`,
+      workElsewhereRule(path.resolve(args.outputsRoot), workDirs),
       ...(ev.claims.length
-        ? [`Each blocking criterion needs an entry in _CLAIMS.json, {"id": "<id>", "evidence": "<file>:<lines>, <what it shows>"}, whose file exists under ${path.resolve(args.outputsRoot)}.`]
+        ? [`Each blocking criterion needs an entry in _CLAIMS.json, {"id": "<id>", "evidence": "<file>:<lines>, <what it shows>"}, whose file exists under ${path.resolve(args.outputsRoot)}${workDirs.length ? ` or under ${workDirs.join(", ")}` : ""}. Files under _work/ and _review/ are run state and do not count as proof: cite the deliverable they check.`]
         : []),
       ...(solo ? ["Then update _SUMMARY.md and _CLAIMS.json wherever what they say changed."] : []),
       "Hyphen rule (the most common failure): use '-' only for compound words; never to join clauses or as a dash. Replace it with a comma, a colon or a period.",
@@ -1149,7 +1154,7 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
     // the directive that keeps it from dispatching, never the generic one.
     const directive = solo ? soloDirective(args.rulesDirective ?? "") : AUTONOMOUS_DIRECTIVE + (args.rulesDirective ?? "");
     const revise = (resume: string | undefined, prompt: string) => runHeadlessImpl({
-      runtime: args.runtime, prompt, cwd: args.projectRoot, addDirs: [args.projectDir, args.outputsRoot],
+      runtime: args.runtime, prompt, cwd: args.projectRoot, addDirs: [args.projectDir, args.outputsRoot, ...workDirs],
       sessionId: resume,
       appendSystemPrompt: directive,
       maxBudgetUsd: args.maxBudgetUsd, timeoutMs: args.timeoutMs, yolo: args.yolo,

@@ -385,6 +385,17 @@ describe("nrv revise continues the ORIGINAL worker", () => {
     expect(row.child_pid).toBeNull();
   }, 30_000);
 
+  test("a revision keeps the folder the brief places the work in, and never asks to move it under the outputs root", () => {
+    const site = path.join(TMP, `site-${Date.now()}`);
+    fs.mkdirSync(site, { recursive: true });
+    const c = runRevise({ "nota.md": PASSING_MD, "_CLAIMS.json": JSON.stringify([{ id: "d1", evidence: "nota.md:1-14, o relatório inteiro" }]) },
+      { brief: BRIEF.replace("## Output\nnota.md", `## Output\nnota.md; o site em ${site}, corrigido no lugar`) });
+    expect(c.status).toBe(0);
+    expect(c.prompt).toContain(`The brief places work in: ${site}.`);
+    expect(c.prompt).toContain("never copy it under");
+    expect(c.prompt).not.toContain("Rewrite or update the deliverables as files under");
+  }, 30_000);
+
   test("a squad run from before squad runs recorded their session: refused with a clear message, exit 4", () => {
     const home = path.join(TMP, "squad-case");
     fs.mkdirSync(path.join(home, "outputs", "proj-squad", "squads", "copy"), { recursive: true });
