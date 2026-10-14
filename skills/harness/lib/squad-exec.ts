@@ -26,7 +26,7 @@ import { briefExcerpt } from "../../_shared/lib/brief-excerpt.ts";
 import { resolveClonePersona, loadCloneRegistry } from "../../_shared/lib/clone-resolver.ts";
 import { layersForPhase } from "../../_shared/lib/dna-layer-policy.ts";
 import { findCloneForTask } from "../../_shared/lib/clone-search.ts";
-import { selectVoices } from "./clone-voices.ts";
+import { selectVoices, unsettledVoiceNotice } from "./clone-voices.ts";
 import { summaryFileOf } from "./business-solo.ts";
 import { paths } from "../../_shared/lib/bun-helpers.ts";
 import { scopeBoundary, scopeGuard } from "../../_shared/lib/scope-guard.ts";
@@ -58,6 +58,8 @@ export interface SquadExecArgs {
   ledger?: { runId: string; watchDir?: string };
   /** Failures of the squad's environment (squad-env.ts) the worker is told about. */
   envProblems?: string[];
+  /** Clones the router chose for this request; offered when the request names none. */
+  suggestedClones?: string[];
   /** Squads root override (tests). */
   squadsRoot?: string;
   /** Test seam: canned cascade runner (zero-token tests). */
@@ -96,7 +98,7 @@ function appendAudit(payload: Record<string, any>, projectRoot?: string): void {
 // can read different scopes (the exact leak fixed in the business loader on
 // 2026-08-18: a test run from the engine repo picked up the repo's derived
 // registry and injected clones its fixture never wrote).
-export function squadCloneInjection(brief: string, cwd?: string): { block: string; decision: string; missingClones: string[]; mode?: "reference" | "full" | "fragments"; personaDirs?: string[] } {
+export function squadCloneInjection(brief: string, cwd?: string, opts: { suggested?: string[]; extraQuery?: string } = {}): { block: string; decision: string; missingClones: string[]; mode?: "reference" | "full" | "fragments"; personaDirs?: string[] } {
   let names: Array<{ slug: string; name: string }> = [];
   try {
     names = Object.entries(loadCloneRegistry({ cwd }) as Record<string, any>).map(([slug, c]) => ({ slug, name: String(c?.display_name || slug) }));
@@ -109,11 +111,15 @@ export function squadCloneInjection(brief: string, cwd?: string): { block: strin
     // is max-normalized, so the top hit is 1.0 by construction even for an
     // out-of-domain brief ("consertar a bomba hidráulica do trator") — a
     // vacuous gate. `below_gate` mirrors the router's Stage 3 coverage bands.
-    search: (query) => { try { return findCloneForTask(query, { limit: 6, cwd }); } catch { return []; } },
+    search: (query, gateQuery) => { try { return findCloneForTask(query, { limit: 6, cwd, gateQuery }); } catch { return []; } },
+    suggested: opts.suggested, extraQuery: opts.extraQuery,
   });
   const picked = selection.voices.map((v) => ({ slug: v.slug, reason: v.why }));
-  const decision = selection.how === "asked" ? "REQUESTED by the user" : selection.how === "search" ? "found by SEARCH" : "DEFAULT, no useful clone";
-  if (!picked.length && !selection.missing.length) return { block: "", decision, missingClones: [] };
+  const decision = selection.how === "asked" ? "REQUESTED by the user"
+    : selection.how === "suggested" ? "CHOSEN by the router"
+    : selection.how === "search" ? "found by SEARCH" : "DEFAULT, no useful clone";
+  const unsettled = unsettledVoiceNotice(selection);
+  if (!picked.length && !selection.missing.length && !unsettled) return { block: "", decision, missingClones: [] };
   // The execution.dna_injection setting:
   // reference (the default) = a card naming the persona files, read on demand;
   // fragments = SOUL + phase layers (squads execute → execute layers) with a
@@ -159,7 +165,17 @@ export function squadCloneInjection(brief: string, cwd?: string): { block: strin
       `through the \`knowledge_management.mind_clone_generation_pipeline.execute\` capability).\n`
     );
   }
+  if (unsettled) parts.push(`--- MIND-CLONE ASKS NOT SETTLED ---\n\n${unsettled}`);
   return { block: parts.join("\n\n"), decision, missingClones, mode: dnaMode, personaDirs };
+}
+
+/** What a squad does, for the voice search: its description and domains. */
+export function squadContext(squadDir: string): string {
+  try {
+    const y = parseYaml(fs.readFileSync(path.join(squadDir, "squad.yaml"), "utf8")) ?? {};
+    const domains = Array.isArray(y.domains) ? y.domains : [];
+    return [String(y.description ?? ""), ...domains.map(String)].join(" ").slice(0, 1500);
+  } catch { return ""; }
 }
 
 // ── the manifest an executor reads ──────────────────────────────────────────
@@ -529,7 +545,10 @@ export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
     }
   }
 
-  const cloneInj = squadCloneInjection(args.brief, args.projectDir);
+  const cloneInj = squadCloneInjection(args.brief, args.projectDir, {
+    suggested: args.suggestedClones,
+    extraQuery: squadContext(path.join(args.squadsRoot ?? paths.SQUADS_DIR, args.squadSlug)),
+  });
   for (const slug of cloneInj.missingClones) {
     appendAudit({
       event: "mind_clone_missing_degraded", trace_id: args.projectId, project_id: args.projectId,

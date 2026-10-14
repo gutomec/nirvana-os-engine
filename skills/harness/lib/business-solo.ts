@@ -33,9 +33,9 @@ import { writeSquadCards } from "../../_shared/lib/work-cards.ts";
 import { squadRunEnv } from "../../_shared/lib/squad-env.ts";
 import { findCloneForTask, type CloneHit } from "../../_shared/lib/clone-search.ts";
 import { parseWorkBrief } from "./work-brief.ts";
-import { missingVoiceNotice, selectVoices } from "./clone-voices.ts";
+import { missingVoiceNotice, selectVoices, unsettledVoiceNotice, voiceQuery, type VoiceSelection } from "./clone-voices.ts";
 
-export interface SeatVoice { slug: string; name?: string; dir: string | null; files: string[] }
+export interface SeatVoice { slug: string; name?: string; dir: string | null; files: string[]; pinned?: boolean }
 
 export interface Seat {
   slug: string;
@@ -63,6 +63,8 @@ export interface BusinessSoloArgs {
   runtime: Runtime;
   /** Squads the router picked, and the ones the request names. */
   mandatorySquads?: string[];
+  /** Clones the router chose for this request; offered when the request names none. */
+  suggestedClones?: string[];
   optionalSquads?: string[];
   briefSquads?: string[];
   /** Failures of a carded squad's environment (squad-env.ts), by slug: its card tells the worker. */
@@ -80,7 +82,9 @@ export interface BusinessSoloArgs {
   memoryDirs?: string[];
   /** The clone library: its entries (for names a brief mentions) and its search. */
   cloneNames?: () => Array<{ slug: string; name: string }>;
-  voiceSearch?: (query: string) => CloneHit[];
+  voiceSearch?: (query: string, gateQuery?: string) => CloneHit[];
+  /** Ranks a seat's assigned voices for this request (most relevant first). */
+  seatVoiceRank?: (query: string, slugs: string[]) => string[];
 }
 
 /** `env`: the carded squads' environments (squad-env.ts squadRunEnv), for this run's child only. */
@@ -175,10 +179,12 @@ export function readSeats(bizDir: string, cloneLookup: CloneLookup, nameOf: (slu
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) fm = parsed;
     } catch { fm = {}; }
     const slug = typeof fm.name === "string" && fm.name.trim() ? fm.name.trim() : path.basename(name, ".md");
-    const refs = [...new Set([...listOf(fm.pinned_mind_clones), ...listOf(fm.assigned_mind_clones)].map((r) => r.slice(r.lastIndexOf("/") + 1)))];
+    const tail = (r: string) => r.slice(r.lastIndexOf("/") + 1);
+    const pinned = new Set(listOf(fm.pinned_mind_clones).map(tail));
+    const refs = [...new Set([...listOf(fm.pinned_mind_clones), ...listOf(fm.assigned_mind_clones)].map(tail))];
     const voices = refs.map((s) => {
       const hit = cloneLookup(s);
-      return { slug: s, name: nameOf(s), dir: hit?.dir ?? null, files: hit?.files ?? [] };
+      return { slug: s, name: nameOf(s), dir: hit?.dir ?? null, files: hit?.files ?? [], pinned: pinned.has(s) };
     });
     // Business Protocol v2 §6.10: an empty list is the same as none, and both mean every squad.
     const authorized = listOf(fm.squads_authorized);
@@ -232,19 +238,34 @@ export function preferredSquads(bizDir: string | null): string[] {
  */
 export function requestVoices(
   brief: string, seats: Seat[], cloneLookup: CloneLookup,
-  names: Array<{ slug: string; name: string }>, search: (query: string) => CloneHit[], limit = 3,
-): { voices: RequestVoice[]; missing: string[] } {
+  names: Array<{ slug: string; name: string }>, search: (query: string, gateQuery?: string) => CloneHit[], limit = 3,
+  opts: { suggested?: string[]; extraQuery?: string } = {},
+): { voices: RequestVoice[]; missing: string[]; ambiguous: VoiceSelection["ambiguous"]; overflow: string[] } {
   const sel = selectVoices({
     brief, names, search, limit,
     installed: (slug) => cloneLookup(slug) !== null,
-    taken: seats.flatMap((s) => s.voices.map((v) => v.slug)),
+    // A voice the request asks for is offered as asked even when a seat carries
+    // it; only a pinned seat voice is always on the prompt already.
+    taken: seats.flatMap((s) => s.voices.filter((v) => v.pinned).map((v) => v.slug)),
+    suggested: opts.suggested, extraQuery: opts.extraQuery,
   });
   const voices = sel.voices.map((v) => {
     const hit = cloneLookup(v.slug)!;
     return { ...v, dir: hit.dir, files: hit.files };
   });
-  return { voices, missing: sel.missing };
+  return { voices, missing: sel.missing, ambiguous: sel.ambiguous, overflow: sel.overflow };
 }
+
+/** What the business does, for the voice search: its description, domains and products. */
+export function businessContext(bizDir: string): string {
+  try {
+    const y = parseYaml(fs.readFileSync(path.join(bizDir, "business.yaml"), "utf8")) ?? {};
+    return [String(y.description ?? ""), ...listOf(y.domains), ...listOf(y.produces).map((p) => p.replace(/-/g, " "))].join(" ").slice(0, 1500);
+  } catch { return ""; }
+}
+
+/** At most this many of the seats' assigned voices reach the Voices list; the rest stay named on their seat. */
+export const SEAT_VOICES_LISTED = 6;
 
 /** The squads that get a card: the router's picks, the ones the request names
  *  and the business's preferred ones. */
@@ -326,6 +347,10 @@ export interface SoloExtras {
   inputs?: string[];
   /** Clones the request asked for that are not installed. */
   missingVoices?: string[];
+  /** Asks the selection could not settle: a name two clones share, asks past the limit. */
+  unsettledVoices?: Pick<VoiceSelection, "ambiguous" | "overflow">;
+  /** Seat voices worth listing for this request (pinned, then the most relevant assigned). */
+  seatVoicesListed?: Set<string>;
   /** Squads the seats may use that have no card. */
   authorizedSquads?: string[];
 }
@@ -365,9 +390,15 @@ export function buildSoloPrompt(
 
   // Each clone once, wherever it comes from: a seat carries it or the request fits it.
   const clones = new Map<string, { name?: string; dir: string | null; note: string }>();
-  for (const s of seats) for (const v of s.voices) if (!clones.has(v.slug)) clones.set(v.slug, { name: v.name, dir: v.dir, note: "seat voice" });
-  for (const v of voices) if (!clones.has(v.slug)) clones.set(v.slug, { name: v.name, dir: v.dir, note: `fits this request, ${v.why}` });
-  if (clones.size || extras.missingVoices?.length) {
+  // The request's voices first: what the user asked for leads the list.
+  for (const v of voices) if (!clones.has(v.slug)) clones.set(v.slug, { name: v.name, dir: v.dir, note: v.why === "asked for in the brief" ? "asked for in the request" : `fits this request, ${v.why}` });
+  for (const s of seats) for (const v of s.voices) {
+    if (clones.has(v.slug)) continue;
+    if (extras.seatVoicesListed && !extras.seatVoicesListed.has(v.slug)) continue;
+    clones.set(v.slug, { name: v.name, dir: v.dir, note: v.pinned ? "seat voice, pinned" : "seat voice" });
+  }
+  const unsettled = extras.unsettledVoices ? unsettledVoiceNotice(extras.unsettledVoices) : "";
+  if (clones.size || extras.missingVoices?.length || unsettled) {
     lines.push("## Voices", "", "To write in a clone's voice, open its persona files first; never claim a voice you did not load. Name the ones you used in participation.json.", "");
     for (const [slug, c] of clones) {
       lines.push(c.dir
@@ -375,6 +406,11 @@ export function buildSoloPrompt(
         : `- \`${slug}\`: not installed · ${c.note}`);
     }
     if (extras.missingVoices?.length) lines.push(`- ${missingVoiceNotice(extras.missingVoices)}`);
+    for (const l of unsettled ? unsettled.split("\n") : []) lines.push(`- ${l}`);
+    if (extras.seatVoicesListed) {
+      const unlisted = seats.flatMap((s) => s.voices).filter((v) => !clones.has(v.slug)).length;
+      if (unlisted) lines.push(`- ${unlisted} more seat voice(s) are named on their seats above; \`nrv inspect-clone <slug>\` locates one when the work needs it.`);
+    }
     lines.push("");
   }
 
@@ -457,6 +493,27 @@ export function creditSoloRun(o: {
   return played;
 }
 
+/** The pinned seat voices, and the assigned ones this request makes most relevant. */
+export function listedSeatVoices(seats: Seat[], query: string, rank: (query: string, slugs: string[]) => string[]): Set<string> {
+  const listed = new Set<string>();
+  const assigned: string[] = [];
+  for (const s of seats) for (const v of s.voices) {
+    if (v.pinned) listed.add(v.slug);
+    else if (!assigned.includes(v.slug)) assigned.push(v.slug);
+  }
+  if (assigned.length <= SEAT_VOICES_LISTED) { for (const a of assigned) listed.add(a); return listed; }
+  let ranked: string[] = [];
+  try { ranked = rank(query, assigned); } catch { ranked = []; }
+  for (const a of ranked.slice(0, SEAT_VOICES_LISTED)) listed.add(a);
+  return listed;
+}
+
+/** The given clones in order of relevance to the query (the library's BM25, restricted to them). */
+function rankAmong(query: string, slugs: string[], cwd: string): string[] {
+  return findCloneForTask(query, { limit: slugs.length, cwd, only: slugs })
+    .filter((h) => (h.coverage.matched ?? 0) > 0).map((h) => h.slug);
+}
+
 /** Everything a run needs, written to the run folder: the brief, the squad
  *  cards and the prompt. Shared by the run, the scaffold-only path and the
  *  Gauntlet producer, so the three hand the worker the same map. It also
@@ -484,13 +541,18 @@ export function prepareBusinessSolo(args: BusinessSoloArgs): PreparedSolo {
   const briefText = (() => { try { return fs.readFileSync(briefFile, "utf8"); } catch { return args.brief; } })();
   let voices: RequestVoice[] = [];
   let missingVoices: string[] = [];
+  let unsettledVoices: Pick<VoiceSelection, "ambiguous" | "overflow"> = { ambiguous: [], overflow: [] };
+  const context = businessContext(args.bizDir);
   try {
-    const search = args.voiceSearch ?? ((q: string) => findCloneForTask(q, { limit: 6, cwd: args.projectDir }));
-    ({ voices, missing: missingVoices } = requestVoices(briefText, seats, cloneLookup, names(), search));
+    const search = args.voiceSearch ?? ((q: string, gateQuery?: string) => findCloneForTask(q, { limit: 6, cwd: args.projectDir, gateQuery }));
+    const sel = requestVoices(briefText, seats, cloneLookup, names(), search, 3, { suggested: args.suggestedClones, extraQuery: context });
+    ({ voices, missing: missingVoices } = sel);
+    unsettledVoices = { ambiguous: sel.ambiguous, overflow: sel.overflow };
   } catch { voices = []; } // a library that cannot be read leaves the seats' own voices
+  const seatVoicesListed = listedSeatVoices(seats, voiceQuery(briefText, context), args.seatVoiceRank ?? ((q, slugs) => rankAmong(q, slugs, args.projectDir)));
   const inputs = briefInputPaths(briefText, args.projectRoot);
   const prompt = buildSoloPrompt({ ...args, briefFile }, seats, memory.dirs, squadCards, voices, {
-    memoryNewer: memory.newer, inputs, missingVoices, authorizedSquads: authorized,
+    memoryNewer: memory.newer, inputs, missingVoices, authorizedSquads: authorized, unsettledVoices, seatVoicesListed,
   }) + "\n\n" + scopeGuard();
   fs.writeFileSync(path.join(args.projectDir, "solo-prompt.md"), prompt);
   // What the worker may touch: the run, the business, its voices, the squads

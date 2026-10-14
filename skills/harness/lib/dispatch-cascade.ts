@@ -35,6 +35,8 @@ import { runWithCascade } from "./cascade-runner.ts";
 import type { RouterFailurePolicy } from "./harness-config.ts";
 import { scopeBoundary, scopeGuard } from "../../_shared/lib/scope-guard.ts";
 import { briefExcerpt } from "../../_shared/lib/brief-excerpt.ts";
+import { loadCloneRegistry, resolveClonePersona } from "../../_shared/lib/clone-resolver.ts";
+import { missingVoiceNotice, selectVoices, unsettledVoiceNotice } from "./clone-voices.ts";
 
 export type DispatchStepKind = "business" | "squad" | "agent-x";
 
@@ -355,8 +357,44 @@ export interface RunAgentXArgs {
   ledger?: { runId: string; watchDir?: string };
   audit: (event: string, payload: Record<string, any>) => void;
   agentsDir?: string;
+  /** Clones the router chose for this request; offered when the request names none. */
+  suggestedClones?: string[];
+  /** Test seam: the clone library (slug → display name, and where a persona lives). */
+  cloneLibrary?: { names: Array<{ slug: string; name: string }>; dirOf: (slug: string) => string | null };
   /** Test seam: canned cascade runner (zero-token tests). */
   runWithCascadeImpl?: typeof runWithCascade;
+}
+
+/**
+ * The voices the generalist is offered: the ones the request asks for, else the
+ * ones the router chose. Never the library search: a request that reached the
+ * generalist is one no specialist recognised, and a clone found by its words
+ * would be a guess (measured 2026-10-13: half of out-of-domain requests drew one).
+ */
+export function agentXVoices(args: Pick<RunAgentXArgs, "brief" | "suggestedClones" | "cloneLibrary" | "projectDir">): { lines: string[]; dirs: string[]; slugs: string[] } {
+  let lib = args.cloneLibrary;
+  if (!lib) {
+    try {
+      const reg = loadCloneRegistry({ cwd: args.projectDir }) as Record<string, any>;
+      lib = {
+        names: Object.entries(reg).map(([slug, c]) => ({ slug, name: String(c?.display_name || slug) })),
+        dirOf: (slug) => resolveClonePersona(slug, { depth: "reference", cwd: args.projectDir })?.source ?? null,
+      };
+    } catch { return { lines: [], dirs: [], slugs: [] }; }
+  }
+  const dirOf = lib.dirOf;
+  const sel = selectVoices({ brief: args.brief, names: lib.names, installed: (s) => dirOf(s) !== null, search: () => [], suggested: args.suggestedClones, limit: 3 });
+  const lines: string[] = [];
+  const dirs: string[] = [];
+  for (const v of sel.voices) {
+    const dir = dirOf(v.slug)!;
+    dirs.push(dir);
+    lines.push(`- \`${v.slug}\`${v.name && v.name !== v.slug ? ` (${v.name})` : ""}: \`${dir}\`, AGENT.md and SOUL.md inside · ${v.why}`);
+  }
+  if (sel.missing.length) lines.push(`- ${missingVoiceNotice(sel.missing)}`);
+  const unsettled = unsettledVoiceNotice(sel);
+  if (unsettled) for (const l of unsettled.split("\n")) lines.push(`- ${l}`);
+  return { lines, dirs, slugs: sel.voices.map((v) => v.slug) };
 }
 
 export interface AgentXResult {
@@ -389,6 +427,7 @@ export function runAgentX(args: RunAgentXArgs): AgentXResult {
   const fileBrief = (() => { try { return fs.readFileSync(args.briefPath, "utf8"); } catch { return null; } })();
   const briefInFile = fileBrief !== null && fileBrief.trim() === args.brief.trim();
   const summaryFile = path.join(args.outputsRoot, "_SUMMARY.md");
+  const voices = agentXVoices(args);
 
   const prompt = [
     persona,
@@ -401,6 +440,12 @@ export function runAgentX(args: RunAgentXArgs): AgentXResult {
     `- brief file: ${args.briefPath}${briefInFile ? " (read it first; it is the whole brief)" : ""}`,
     `- cascade reason: ${args.reason}`,
     ...(briefInFile ? [] : ["", "## Brief", args.brief]),
+    ...(voices.lines.length ? [
+      "",
+      "## Voices",
+      "To write in a clone's voice, open its persona files first; never claim a voice you did not load.",
+      ...voices.lines,
+    ] : []),
     "",
     "## Output",
     `Write every final deliverable as a file under: ${args.outputsRoot}`,
@@ -420,6 +465,7 @@ export function runAgentX(args: RunAgentXArgs): AgentXResult {
     // Parity with dispatch_squad: the proof-of-dispatch event carries what the
     // generalist was asked to do, bounded — see brief-excerpt.ts for the cap.
     brief_excerpt: briefExcerpt(args.brief), brief_chars: args.brief.length,
+    voices: voices.slugs,
   });
 
   const cascadeImpl = args.runWithCascadeImpl ?? runWithCascade;
@@ -428,7 +474,7 @@ export function runAgentX(args: RunAgentXArgs): AgentXResult {
     // inherited its parent's role, which let it dispatch as the operator or,
     // under a seat, as that employee.
     dispatchRole: "agent-x",
-    runtime: args.runtime, prompt, cwd: args.projectRoot, addDirs: [args.projectDir, args.outputsRoot],
+    runtime: args.runtime, prompt, cwd: args.projectRoot, addDirs: [args.projectDir, args.outputsRoot, ...voices.dirs],
     appendSystemPrompt: args.appendSystemPrompt,
     maxBudgetUsd: args.maxBudgetUsd, timeoutMs: args.timeoutMs, yolo: args.yolo,
     brief: args.brief, projectRoot: args.projectRoot, outputsRoot: args.outputsRoot,

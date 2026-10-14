@@ -77,6 +77,19 @@ fit that name; `nrv list-businesses` and the squads the user mentions settle
 it, and when two fit equally, ask. A name with no exact match is never a reason
 to do the work yourself.
 
+A squad the user names (its slug, or what it is: "o squad de copy de
+infoproduto") is the target: dispatch it with `--squad`, not a business that
+carries it. A business joins only for a part the user asked for that the squad
+does not deliver.
+
+A part is a deliverable the user asked for. What the request says about its
+circumstances (an audit next month, the stack it runs on) goes into a brief; it
+is not another part and does not bring another business.
+
+Read the finalists before you decide: a line of `nrv find` is a claim.
+`nrv cards squad <slug>` and the business's `business.yaml` (`produces`,
+`not_for`) say what each delivers and what it refuses.
+
 Decide which run in parallel (independent parts) and which in sequence (one
 builds on another's output). There is no director and no router agent: this
 decision is yours, and it is the only planning in the run. When no business
@@ -94,11 +107,14 @@ Six sections, headings exactly as the template has them, content in the
 user's language:
 
 - **Request (verbatim)**: the user's own words, pasted, unedited.
-- **Decisions**: what the user already decided in the conversation. When
-  `nrv find` showed squads that fit the work, name each as `squad <slug>`:
-  the worker gets their cards instead of searching for them. A voice the user
-  asked for goes in as `clone <slug>`; without one the engine searches the
-  library, and a name listed as a fact about the product is not a request.
+- **Decisions**: what the user already decided in the conversation. Name a
+  squad as `squad <slug>` when its card shows it delivers a part no seat of
+  the business covers: the worker gets its card instead of searching for it.
+  A squad `nrv find` listed and nobody read is a guess, not a decision. A voice
+  the user asked for goes in as `clone <slug>`, the slug `nrv find-clone`
+  gives for the person they named or described ("o criador da Ethereum");
+  without one the engine searches the library, and a name listed as a fact
+  about the product is not a request.
 - **Your part**: what this business delivers, and what another one covers.
 - **Inputs**: paths the worker needs (attachments, another business's `_SUMMARY.md`).
 - **Done when**: observable criteria; mark with `(blocking)` the ones the

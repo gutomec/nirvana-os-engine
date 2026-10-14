@@ -371,7 +371,18 @@ describe("agentic router — digest staleness + injected runner", () => {
     expect(reask).toContain("Do not decide again");
     expect(reask).toContain("Routing decision: acme-web + squad-a");
     expect(calls[1].allowedTools).toBeUndefined();
+    // No tools means saying so: an absent list let the runtime grant its full set.
+    expect(calls[1].noTools).toBe(true);
     expect(calls[0].allowedTools).toEqual(["Read", "Glob", "Grep", "Bash"]);
+    // The envelope names the field the parser reads, or the clones are lost.
+    expect(reask).toContain('"suggested_mind_clones":[]');
+  }, 30_000);
+
+  test("the re-ask keeps the clones it transcribes and its cost counts", async () => {
+    const { impl } = narratingRunner('{"kind":"decision","primary_business":"acme-web","mandatory_squads":[],"optional_squads":[],"suggested_mind_clones":["jane-doe"],"rationale":"t"}');
+    const d = await agenticRoute({ brief: "landing page", runtime: "claude-code", cwd: tmp, runHeadlessImpl: impl, paths: routerPaths });
+    expect(d.suggested_mind_clones).toEqual(["jane-doe"]);
+    expect(d.cost_usd).toBeCloseTo(0.02, 6);
   }, 30_000);
 
   test("a first answer that parses is never re-asked", async () => {

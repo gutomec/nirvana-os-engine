@@ -74,6 +74,8 @@ import { loadHarnessConfig } from "../lib/harness-config.ts";
 import { describeSettingSource, resolveSetting, settingsEnvForChild } from "../../_shared/lib/settings.ts";
 import { planRouteWithFallback, resolveDispatchPlan, runAgentX, type DispatchPlan } from "../lib/dispatch-cascade.ts";
 import { runSquadHeadless } from "../lib/squad-exec.ts";
+import { partsToPlan } from "../lib/auto-parts-plan.ts";
+import { engineGate } from "./multi-target.ts";
 import { prepareSquadEnvs, squadRunEnv } from "../../_shared/lib/squad-env.ts";
 import { writeWorkerSession } from "../lib/run-session.ts";
 import { parseSquadTarget, resolveSquadCapability } from "../lib/capability-resolver.ts";
@@ -1010,6 +1012,10 @@ async function fastBm25Business(briefText: string): Promise<{ slug: string | nul
 let autoMandatorySquads: string[] = [];
 // Read only by a business session, which lists them beside the mandatory ones.
 let autoOptionalSquads: string[] = [];
+// The clones the router chose for this request. Every executor below (business,
+// squad, agent-x) offers them when the request names none of its own; before,
+// the routers computed them and nothing downstream read them.
+let autoSuggestedClones: string[] = [];
 /**
  * Corpus language mix, for the fast-mode notice. Best-effort and cached by the
  * process: a warning must never cost the dispatch it is warning about.
@@ -1172,12 +1178,54 @@ if (briefTarget) {
 
   // Whatever runs next (business, squad or agent-x) and the judge after it
   // read `brief`, so the router's done states ride in it.
+  // The request as the user wrote it, before the router's done states join it:
+  // a part's brief carries the request, not another target's criteria.
+  const originalBrief = brief;
   if (routedDone.length) {
     brief = withDoneWhen(brief, routedDone);
     console.log(c("dim", `  done when: ${routedDone.length} state(s) added to the brief`));
   }
 
   const step = plan.steps[0];
+  autoSuggestedClones = plan.suggestedMindClones;
+  if (autoSuggestedClones.length) console.log(c("dim", `  voices chosen by the router: ${autoSuggestedClones.join(", ")}`));
+  // The router saw deliverables for more than one target: each goes to its own,
+  // in the order the parts depend on each other, through the multi-target engine
+  // (one node per target, one brief per node). Before, --auto ran the primary
+  // target alone and the other parts were never delivered.
+  const routedParts = decision.ok ? (decision.parts ?? []) : [];
+  if (routedParts.length > 1) {
+    const primary = step.slug ?? null;
+    console.log(c("lime", "  →") + c("bold", ` ${routedParts.length} parts, one target each:`));
+    for (const p of routedParts) console.log(c("dim", `     - ${p.kind} ${p.slug}: ${p.part}${p.after.length ? ` (after ${p.after.join(", ")})` : ""}`));
+    const gate = engineGate(process.env);
+    if (!gate.enabled) {
+      console.error(c("yellow", `  ⚠ the multi-target engine is switched off (${gate.reason}); running ${primary ?? "the first target"} only.`));
+      emit("x_route_parts", { project_id: projectId || null, primary, parts: routedParts, dispatched: primary ? [primary] : [], engine: "off" });
+    } else {
+      const mtProject = projectId || `${new Date().toISOString().slice(0, 16).replace(/[-T:]/g, "").replace(/^(\d{8})(\d{4})$/, "$1-$2")}-auto-parts`;
+      const planFile = path.join(PROJECT_ROOT, ".nirvana", "plans", `${mtProject}.json`);
+      fs.mkdirSync(path.dirname(planFile), { recursive: true });
+      fs.writeFileSync(planFile, JSON.stringify(partsToPlan({
+        request: originalBrief, parts: routedParts, projectId: mtProject, primary,
+        supportSquads: plan.mandatorySquads, suggestedClones: plan.suggestedMindClones,
+        ...(explicitRuntime ? { runtime: explicitRuntime } : {}),
+      }), null, 2) + "\n");
+      emit("x_route_parts", { project_id: mtProject, primary, parts: routedParts, dispatched: routedParts.map((p) => p.slug), plan_file: planFile });
+      const run = ["run", planFile, "--project", mtProject, ...(explicitRuntime ? ["--runtime", explicitRuntime] : [])];
+      if (!wantExec) {
+        console.log(c("dim", `  plan: ${planFile}`));
+        console.log(`  Run it: nrv multi-target ${run.join(" ")}`);
+        process.exit(3);
+      }
+      console.log(c("dim", `  plan: ${planFile} → nrv multi-target run`));
+      const child = Bun.spawnSync([process.execPath, path.join(import.meta.dir, "multi-target.ts"), ...run], {
+        cwd: PROJECT_ROOT, stdin: "inherit", stdout: "inherit", stderr: "inherit",
+        env: { ...process.env, NIRVANA_PROJECT_ROOT: PROJECT_ROOT },
+      });
+      process.exit(child.exitCode ?? 1);
+    }
+  }
   if (step.kind === "business") {
     slug = step.slug!;
     autoMandatorySquads = plan.mandatorySquads;
@@ -1730,7 +1778,7 @@ if (pendingCascade?.kind === "squad-only") {
     const produce = (candidateRoot: string, candidateBrief: string) => {
       supersedePriorRuns(canonicalRunId);
       const candidate = runSquadHeadless({ squadSlug: squad, brief: candidateBrief, projectId: pid, projectDir: projDir, projectRoot,
-        outputsDir: candidateRoot, runtime: rt, capabilityId, envProblems: squadEnvProblems.get(squad),
+        outputsDir: candidateRoot, runtime: rt, capabilityId, envProblems: squadEnvProblems.get(squad), suggestedClones: autoSuggestedClones,
         maxBudgetUsd: budget.candidateBudgetUsd, timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
         rulesDirective, autonomousDirective: AUTONOMOUS_DIRECTIVE, runWithCascadeImpl: pinnedCascade,
         ledger: { runId: canonicalRunId, watchDir: candidateRoot } });
@@ -1805,7 +1853,7 @@ if (pendingCascade?.kind === "squad-only") {
     const r = runSquadHeadless({
       squadSlug: sq, brief, projectId: pid, projectDir: projDir, projectRoot,
       outputsDir: outDir, runtime: rt,
-      capabilityId: capabilityById.get(sq), envProblems: squadEnvProblems.get(sq),
+      capabilityId: capabilityById.get(sq), envProblems: squadEnvProblems.get(sq), suggestedClones: autoSuggestedClones,
       maxBudgetUsd: effectiveBudgetUsd(),
       timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
       rulesDirective, autonomousDirective: AUTONOMOUS_DIRECTIVE, runWithCascadeImpl: pinnedCascade,
@@ -1969,7 +2017,7 @@ if (pendingCascade?.kind === "agent-x") {
     const produce = (candidateRoot: string, candidateBrief: string, candidateBriefPath: string) => {
       supersedePriorRuns(canonicalRunId);
       const candidate = runAgentX({ brief: candidateBrief, briefPath: candidateBriefPath, runtime: rt, projectId: pid, projectDir: projDir,
-        projectRoot: PROJECT_ROOT, outputsRoot: candidateRoot, reason: pendingCascade.reason, appendSystemPrompt: AUTONOMOUS_DIRECTIVE + rulesDirective,
+        projectRoot: PROJECT_ROOT, outputsRoot: candidateRoot, reason: pendingCascade.reason, appendSystemPrompt: AUTONOMOUS_DIRECTIVE + rulesDirective, suggestedClones: autoSuggestedClones,
         maxBudgetUsd: budget.candidateBudgetUsd, timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
         yolo, ledger: { runId: canonicalRunId, watchDir: candidateRoot }, audit: emit, runWithCascadeImpl: pinnedCascade });
       if (candidate.sessionId) runLedger.recordSession(legacy, canonicalRunId, candidate.sessionId);
@@ -2041,6 +2089,7 @@ if (pendingCascade?.kind === "agent-x") {
     projectDir: projDir, projectRoot: PROJECT_ROOT, outputsRoot: oroot,
     reason: pendingCascade.reason,
     appendSystemPrompt: AUTONOMOUS_DIRECTIVE + rulesDirective,
+    suggestedClones: autoSuggestedClones,
     maxBudgetUsd: effectiveBudgetUsd(),
     timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
     yolo,
@@ -2171,6 +2220,7 @@ const soloArgs = (oroot: string, briefFileForRun?: string) => ({
   slug, bizDir, brief, ...(briefFileForRun ? { briefFile: briefFileForRun } : {}),
   projectId: pid, projectDir: projDir, projectRoot, outputsRoot: oroot, runtime: runtimeDecision.runtime,
   mandatorySquads: autoMandatorySquads, optionalSquads: autoOptionalSquads, briefSquads, rulesDirective, squadEnvProblems,
+  suggestedClones: autoSuggestedClones,
 });
 const outputPath = path.join(projDir, "agent-prompt.md");
 let promptSize = 0;

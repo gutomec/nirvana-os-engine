@@ -52,20 +52,29 @@ function baseArgs(extra: Partial<BusinessSoloArgs> = {}): BusinessSoloArgs {
 
 describe("voices for the request", () => {
   const hit = (slug: string, below_gate: boolean) =>
-    ({ slug, display_name: slug.toUpperCase(), score: 1, normalized: 1, coverage: { matched: 9, total: 30 }, below_gate }) as any;
+    ({ slug, display_name: slug.toUpperCase(), score: 1, normalized: 1, coverage: { matched: 9, total: 20 }, below_gate }) as any;
   const library = (slug: string) => ({ dir: path.join(TMP, "clones", slug), files: [] });
   const seats = [{ slug: "al-copy", role: "", file: "x", voices: [{ slug: "copy-legend", dir: null, files: [] }], squads: null }];
 
   test("the library's search fills a business whose seats carry no voice, above the gate only", () => {
     const { voices: v } = requestVoices("## Request (verbatim)\nWrite a sales page\n", [], library, [], () => [hit("halbert", false), hit("off-topic", true), hit("sugarman", false)]);
     expect(v.map((x) => x.slug)).toEqual(["halbert", "sugarman"]);
-    expect(v[0].why).toBe("matches 9/30 of the request's terms");
+    expect(v[0].why).toBe("matches 9/20 of the request's terms");
   });
 
-  test("a clone the brief asks for wins over the search; a seat's own voice is not repeated", () => {
+  test("a clone the brief asks for wins over the search, even one a seat already carries", () => {
     const names = [{ slug: "gary-halbert", name: "Gary Halbert" }, { slug: "copy-legend", name: "Copy Legend" }];
     const { voices: v } = requestVoices("Write it like Gary Halbert would, or copy-legend", seats as any, library, names, () => [hit("other", false)]);
-    expect(v.map((x) => [x.slug, x.why])).toEqual([["gary-halbert", "asked for in the brief"]]);
+    // The seat's voice is offered as asked: the worker learns the user wanted it.
+    expect(v.map((x) => [x.slug, x.why]).sort()).toEqual([["copy-legend", "asked for in the brief"], ["gary-halbert", "asked for in the brief"]]);
+    // A pinned seat voice is already on the prompt and is not offered twice.
+    const pinned = [{ ...seats[0], voices: [{ slug: "copy-legend", dir: null, files: [], pinned: true }] }];
+    expect(requestVoices("Write it like Gary Halbert would, or copy-legend", pinned as any, library, names, () => []).voices.map((x) => x.slug)).toEqual(["gary-halbert"]);
+  });
+
+  test("a search hit whose terms are a small share of the request is not offered", () => {
+    const thin = { ...hit("thin", false), coverage: { matched: 3, total: 16 } };
+    expect(requestVoices("x", [], library, [], () => [thin]).voices).toEqual([]);
   });
 
   test("clones listed as facts about a product are not a request; `clone <slug>` is", () => {
@@ -315,7 +324,7 @@ describe("runBusinessSolo", () => {
 
   test("each clone the worker declares is credited with where it came from", () => {
     const events: any[] = [];
-    const hit = { slug: "bencivenga", display_name: "Gary Bencivenga", score: 1, normalized: 1, coverage: { matched: 9, total: 30 }, below_gate: false } as any;
+    const hit = { slug: "bencivenga", display_name: "Gary Bencivenga", score: 1, normalized: 1, coverage: { matched: 9, total: 20 }, below_gate: false } as any;
     runBusinessSolo(baseArgs({
       emit: (event, payload) => events.push({ event, ...payload }),
       voiceSearch: () => [hit],

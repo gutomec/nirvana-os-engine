@@ -90,8 +90,21 @@ function cloneDoc(c: any) {
     Array.isArray(m.domains) ? m.domains.join(" ") : "",
     m.serves || m.when_to_use || "",
   ].filter(Boolean).join(" ");
+  // The same text without the person's name: what the clone DECLARES it does.
+  // Coverage is counted on it, so a surname that is also a common word ("rocha",
+  // "filho", "porto") cannot carry a clone over the gate. Names have their own
+  // path (harness/lib/clone-names.ts); here they only help ranking.
+  const needText = [
+    tags.join(" "),
+    c.pack_category || "",
+    c.manifest_category || "",
+    m.one_liner || "",
+    Array.isArray(m.domains) ? m.domains.join(" ") : "",
+    m.serves || m.when_to_use || "",
+  ].filter(Boolean).join(" ");
   return {
     text,
+    needText,
     slug: c.slug,
     display_name: c.display_name || c.slug,
     one_liner: m.one_liner || null,
@@ -115,8 +128,9 @@ export function buildCloneCorpus(opts: { cwd?: string } = {}): Array<ReturnType<
 
 function toHit(h: any, briefTokens: string[]): CloneHit {
   // Same coverage implementation as the router's Stage 3 gate — extracted to
-  // bm25.coverage precisely so this file and router.js cannot drift.
-  const cov = bm25.coverage(briefTokens, new Set(bm25.tokenize(h.doc.text)));
+  // bm25.coverage precisely so this file and router.js cannot drift. Counted
+  // on what the clone declares, never on its name (see cloneDoc).
+  const cov = bm25.coverage(briefTokens, new Set(bm25.tokenize(h.doc.needText ?? h.doc.text)));
   return {
     slug: h.doc.slug,
     display_name: h.doc.display_name,
@@ -141,16 +155,21 @@ function toHit(h: any, briefTokens: string[]): CloneHit {
  *  normalized score. Empty array when registry is empty or brief is blank. */
 export function findCloneForTask(
   brief: string,
-  opts: { limit?: number; minNormalized?: number; cwd?: string } = {},
+  opts: { limit?: number; minNormalized?: number; cwd?: string; gateQuery?: string; only?: string[] } = {},
 ): CloneHit[] {
   const reg = loadCloneRegistry({ cwd: opts.cwd });
-  const docs = Object.values(reg).map(cloneDoc);
+  // `only`: rank these clones and no others (a business's seat voices).
+  const only = opts.only ? new Set(opts.only) : null;
+  const docs = Object.values(reg).filter((c: any) => !only || only.has(c.slug)).map(cloneDoc);
   if (!docs.length || !brief) return [];
 
   const idx = bm25.buildIndex(docs);
   const hits = bm25.query(idx, brief, { topK: opts.limit || 8 });
   const minNorm = opts.minNormalized != null ? opts.minNormalized : 0;
-  const briefTokens = bm25.tokenize(brief);
+  // `gateQuery`: the text coverage is measured against when it is narrower than
+  // the ranking query (the run's own part, without the business description
+  // that only helps the ranking).
+  const briefTokens = bm25.tokenize(opts.gateQuery || brief);
 
   return hits.filter((h: any) => h.normalized >= minNorm).map((h: any) => toHit(h, briefTokens));
 }
