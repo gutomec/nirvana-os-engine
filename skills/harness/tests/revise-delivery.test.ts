@@ -24,6 +24,9 @@ import { writeFakeCli } from "./helpers/fake-cli.ts";
 import { SCOPE_GUARD_PT_BR } from "../../_shared/lib/scope-guard.ts";
 import { spawnBudgetMs, TEARDOWN_BUDGET_MS } from "./helpers/test-budgets.ts";
 
+/** Codex's usage-limit message as the 2026-10-14 incident logs carry it. */
+const QUOTA_MESSAGE = "You’ve hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/settings/usage to purchase more credits or try again at 1:21 AM.";
+
 const SKILLS = path.resolve(import.meta.dir, "..", "..");
 const REVISE = path.join(SKILLS, "harness", "scripts", "revise.ts");
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-revise-test-"));
@@ -83,7 +86,7 @@ interface ReviseCase {
 /** A project laid out the way dispatch.ts leaves one (outputs/<pid>/businesses/
  *  <slug>/session.json), with `files` already in the outputs root, plus a fake
  *  runtime that succeeds without touching disk. Then: `nrv revise`. */
-function runRevise(files: Record<string, string | Buffer>, opts: { env?: Record<string, string>; runtimeFails?: boolean; setup?: (pid: string, home: string) => void } = {}): ReviseCase {
+function runRevise(files: Record<string, string | Buffer>, opts: { env?: Record<string, string>; runtimeFails?: boolean | "quota"; brief?: string; setup?: (pid: string, home: string) => void } = {}): ReviseCase {
   const n = caseSeq++;
   const home = path.join(TMP, `case-${n}`);
   const pid = `proj-revise-${n}`;
@@ -108,10 +111,14 @@ function runRevise(files: Record<string, string | Buffer>, opts: { env?: Record<
   const promptFile = path.join(home, "runtime-prompt.log");
   // Bun/TS body with a per-OS launcher: a `#!/bin/sh` fake is invisible to
   // Windows, which is why this whole file used to fail there.
-  const envelope = opts.runtimeFails
+  const envelope = opts.runtimeFails === "quota"
+    // The real Codex message of the 2026-10-14 incident, curly apostrophe included.
+    ? { type: "result", is_error: true, result: QUOTA_MESSAGE, session_id: "sess-fake", total_cost_usd: 0 }
+    : opts.runtimeFails
     // A runtime that errors AFTER the edits are on disk — the usual shape of a
-    // usage/turn limit at the end of a long revision.
-    ? { type: "result", is_error: true, result: "usage limit reached", session_id: "sess-fake", total_cost_usd: 0 }
+    // turn limit at the end of a long revision. (A usage limit is a quota: it
+    // waits for the reset instead, see the quota test below.)
+    ? { type: "result", is_error: true, result: "Reached max turns (40)", session_id: "sess-fake", total_cost_usd: 0 }
     : { type: "result", is_error: false, result: "ok", session_id: "sess-fake", total_cost_usd: 0 };
   writeFakeCli(binDir, "claude", `
     import * as fs from "node:fs";
@@ -265,6 +272,15 @@ describe("nrv revise — the outcome goes through the delivery pipeline", () => 
     expect(events(c)).toContain("x_runtime_errored_with_artifacts");
     expect(events(c)).toContain("x_delivery_withheld");
     expect(events(c)).not.toContain("delivered");
+  }, spawnBudgetMs(2));
+
+  test("a revision stopped on a spent quota waits for the reset: no gate, no judge, exit 75", () => {
+    const c = runRevise({ "guia.md": PASSING_MD }, { runtimeFails: "quota" });
+    expect(c.status).toBe(75);
+    expect(events(c)).toContain("revision_failed");
+    expect(events(c)).toContain("x_delivery_quota_wait");
+    for (const e of ["judge_invoked", "gate_passed", "gate_failed", "revision_auto", "x_runtime_errored_with_artifacts", "delivered"]) expect(events(c)).not.toContain(e);
+    expect(c.stdout).toContain("Waiting on quota");
   }, spawnBudgetMs(2));
 
   test("a FAILED revision with nothing on disk keeps the historical exit 1", () => {

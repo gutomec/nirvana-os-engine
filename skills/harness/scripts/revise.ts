@@ -16,6 +16,8 @@
 //   2 = delivery WITHHELD — gate FAILED after the revision budget
 //   3 = delivery INDETERMINATE — zero gateable artifacts; nothing was judged
 //   4 = invalid args (EXIT.INVALID_ARGS per SCRIPT_CONTRACT; was 2)
+//  75 = waiting on quota — the revision, a correction or the judge met a spent
+//       quota; nothing more ran, and the run resumes at or after the reset
 //
 // 0 means DELIVERED, and only that. This script used to exit 0 whenever the
 // text-only gate had nothing to chew on, while emitting `delivered` with
@@ -267,7 +269,10 @@ const deliveryArgs = {
 /** One outcome report for both doors: a clean revision and a salvaged one. */
 function printOutcome(result: DeliveryResult): void {
   console.log("");
-  if (result.exitCode === 0) {
+  if (result.quotaWait) {
+    console.log(c("yellow", `⏸ Waiting on quota (exit ${result.exitCode}): ${result.quotaWait.hint}. Nothing more ran; nothing was delivered.`));
+    console.log(c("dim", `  Resets: ${result.quotaWait.resetAt}${result.quotaWait.named ? "" : " (estimated)"}.`));
+  } else if (result.exitCode === 0) {
     console.log(c("green", "✓ Revision applied and delivered."));
   } else if (result.exitCode === 2) {
     console.log(c("yellow", "⚠ Revision applied, delivery WITHHELD — the quality gate failed (exit 2)."));
@@ -292,7 +297,7 @@ if (!res.ok) {
   // abandoning it — same policy the dispatch path applies (deliverAfterRuntimeError).
   // No artifacts -> the historical exit 1 stands.
   const outcome = deliverAfterRuntimeError({ ...deliveryArgs, runtimeError, errorContext: { revision: true } });
-  if (!outcome.judged) process.exit(1);
+  if (!outcome.result) process.exit(1);
   printOutcome(outcome.result!);
   process.exit(outcome.exitCode);
 }

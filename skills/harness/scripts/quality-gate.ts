@@ -16,10 +16,23 @@
 //   0 = PASS (all selected rubrics passed)
 //   1 = FAIL (at least one rubric failed)
 //   2 = artifact not found or no rubrics applicable
+//   3 = NOT JUDGED: the judge's runtime is out of quota. The verdict says so
+//       (`judge_unavailable: {reason: "quota", reset_at, hint}`) and carries
+//       no heuristic stand-in: a gate that could not judge decides nothing.
 
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
+import { quotaStop } from "../lib/quota-detector.ts";
+
+/** The judge could not run because its runtime's quota is spent. */
+export type JudgeUnavailable = { reason: "quota"; reset_at: string; hint: string };
+
+/** The quota stop in a failed judge call's error text, or null. */
+export function judgeQuotaOf(errorText: string | null | undefined): JudgeUnavailable | null {
+  const q = quotaStop(errorText ?? "");
+  return q ? { reason: "quota", reset_at: q.resetAt, hint: q.hint } : null;
+}
 
 export type RubricResult = {
   name: string;
@@ -188,6 +201,17 @@ async function runWithRevisions(artifact: string, content: string, args: string[
   // schema). That says nothing about the artifact, so it is not a fail: the
   // heuristic rubrics decide this file, as they do with the judge off.
   if (!result.schema_valid) {
+    // A spent quota is not "no verdict": the judge could not run. Say so and
+    // decide nothing, instead of letting the heuristics pass or fail the file.
+    const unavailable = result.judge_runtime === "error" ? judgeQuotaOf((result.schema_errors ?? []).join("\n")) : null;
+    if (unavailable) {
+      console.error(`[gate] the judge's runtime is out of quota (${unavailable.hint}): ${path.basename(artifact)} is NOT judged.`);
+      console.log(JSON.stringify({
+        status: "INDETERMINATE", mode: "unjudged", score: 0, results: [], artifact,
+        timestamp: new Date().toISOString(), judge_unavailable: unavailable,
+      }, null, 2));
+      return 3;
+    }
     console.error(`[gate] judge gave no usable verdict (${(result.schema_errors ?? []).join(", ") || result.judge_runtime}); the heuristic rubrics decide ${path.basename(artifact)}.`);
     return -1;
   }
