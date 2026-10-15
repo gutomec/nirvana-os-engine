@@ -62,7 +62,7 @@ import { runSquadHeadless } from "../lib/squad-exec.ts";
 import { squadRunEnv } from "../../_shared/lib/squad-env.ts";
 import { parseSquadTarget, resolveSquadCapability } from "../lib/capability-resolver.ts";
 import { parseMessageTargetSpec } from "../lib/control-plane/agent-x-canary-queue.ts";
-import { runDelivery, deliverAfterRuntimeError, gateableFiles, producesForRubric, runGateOnce, type DeliveryArgs, type DeliveryResult, type RuntimeErrorOutcome } from "../lib/delivery-pipeline.ts";
+import { runDelivery, deliverAfterRuntimeError, gateableFiles, producesForRubric, runGateOnce, QUOTA_WAIT_EXIT, type DeliveryArgs, type DeliveryResult, type RuntimeErrorOutcome } from "../lib/delivery-pipeline.ts";
 import { runBusinessPostGate } from "../lib/business-post-gate.ts";
 import { parseExecutionOptions } from "../lib/gauntlet/execution-options.ts";
 import { decideBusinessCanary, runBusinessCanaryWithRollback } from "../lib/gauntlet/business-canary.ts";
@@ -1262,12 +1262,22 @@ function deliverAfterError(opts: DeliverOpts, runtimeError: string, errorContext
   return deliverAfterRuntimeError({ ...deliveryArgs(opts), runtimeError, errorContext });
 }
 
+/** The run kernel knows four outcomes; a delivery waiting on quota ended this
+ *  attempt without a verdict, which the kernel records as failed. */
+function kernelExit(code: number): 0 | 1 | 2 | 3 {
+  return code === QUOTA_WAIT_EXIT ? 1 : (code as 0 | 1 | 2 | 3);
+}
+
 function printDeliverySummary(res: DeliveryResult, pid: string, oroot: string, zipPath: string | null, runtimeErrored = false): void {
   console.log("");
-  if (runtimeErrored) {
+  if (runtimeErrored && !res.quotaWait) {
     console.log(c("yellow", "⚠ The runtime reported an error at the end of the run — the artifacts that already existed were verified and judged anyway."));
   }
-  if (res.exitCode === 0) {
+  if (res.quotaWait) {
+    const at = new Date(res.quotaWait.resetAt);
+    console.log(c("yellow", `⏸ Waiting on quota (exit ${res.exitCode}): ${res.quotaWait.step === "judge" ? "the judge" : res.quotaWait.step === "correction" ? "a correction" : "the worker"} met a spent quota (${res.quotaWait.hint}). Nothing was judged as final and nothing was delivered.`));
+    console.log(c("dim", `  Resets: ${Number.isFinite(at.getTime()) ? at.toLocaleString() : res.quotaWait.resetAt}${res.quotaWait.named ? "" : " (estimated: the runtime named no time)"}. The supervisor resumes the run at or after it; the files stay on disk.`));
+  } else if (res.exitCode === 0) {
     console.log(c("green", "✓ Autopilot complete."));
   } else if (res.exitCode === 2) {
     console.log(c("yellow", "⚠ Delivery WITHHELD — the quality gate failed after the revisions (exit 2)."));
@@ -1487,8 +1497,8 @@ if (pendingCascade?.kind === "squad-only") {
   publication.verify();
   if (squadError) {
     const outcome = deliverAfterError(squadDeliverOpts, squadError, { squad_slug: failedSquad });
-    publication.finish({ exitCode: outcome.exitCode, gateOutcome: outcome.result?.gateOutcome ?? "indeterminate", error: squadError }, oroot);
-    if (!outcome.judged) {
+    publication.finish({ exitCode: kernelExit(outcome.exitCode), gateOutcome: outcome.result?.gateOutcome ?? "indeterminate", error: squadError }, oroot);
+    if (!outcome.result) {
       console.error(c("red", `✗ nothing was produced in ${oroot} — nothing to judge.`));
       process.exit(1);
     }
@@ -1498,7 +1508,7 @@ if (pendingCascade?.kind === "squad-only") {
 
   console.log(c("lime", "▶") + c("bold", " Delivery pipeline — verify → gate → deliver"));
   const res = deliver(squadDeliverOpts);
-  publication.finish({ exitCode: res.exitCode, gateOutcome: res.gateOutcome }, oroot);
+  publication.finish({ exitCode: kernelExit(res.exitCode), gateOutcome: res.gateOutcome }, oroot);
   printDeliverySummary(res, pid, oroot, null);
   process.exit(res.exitCode);
 }
@@ -1705,8 +1715,8 @@ if (pendingCascade?.kind === "agent-x") {
     emit("agent_exec_failed", { trace_id: pid, project_id: pid, employee: "agent-x", runtime: rt, exit_code: r.exitCode, error: r.error || r.stderr });
     const runtimeError = r.error || r.stderr || `exit ${r.exitCode}`;
     const outcome = deliverAfterError(agentXDeliverOpts, runtimeError, { employee: "agent-x" });
-    publication.finish({ exitCode: outcome.exitCode, gateOutcome: outcome.result?.gateOutcome ?? "indeterminate", error: runtimeError }, oroot);
-    if (!outcome.judged) {
+    publication.finish({ exitCode: kernelExit(outcome.exitCode), gateOutcome: outcome.result?.gateOutcome ?? "indeterminate", error: runtimeError }, oroot);
+    if (!outcome.result) {
       console.error(c("red", `✗ nothing was produced in ${oroot} — nothing to judge.`));
       process.exit(1);
     }
@@ -1718,7 +1728,7 @@ if (pendingCascade?.kind === "agent-x") {
 
   console.log(c("lime", "▶") + c("bold", " Delivery pipeline — verify → gate → deliver"));
   const res = deliver(agentXDeliverOpts);
-  publication.finish({ exitCode: res.exitCode, gateOutcome: res.gateOutcome }, oroot);
+  publication.finish({ exitCode: kernelExit(res.exitCode), gateOutcome: res.gateOutcome }, oroot);
   printDeliverySummary(res, pid, oroot, null);
   process.exit(res.exitCode);
 }
@@ -2216,21 +2226,23 @@ if (wantExec) {
   publication.verify();
   if (runtimeError) {
     const outcome = deliverAfterError(bizDeliverOpts, runtimeError, { employee: intake, mode: businessSession ? "session" : ranSingle ? "single" : "team" });
-    publication.finish({ exitCode: outcome.exitCode, gateOutcome: outcome.result?.gateOutcome ?? "indeterminate", error: runtimeError }, oroot);
-    if (!outcome.judged) {
+    publication.finish({ exitCode: kernelExit(outcome.exitCode), gateOutcome: outcome.result?.gateOutcome ?? "indeterminate", error: runtimeError }, oroot);
+    if (!outcome.result) {
       console.error(c("red", `✗ nothing was produced in ${oroot} — nothing to judge.`));
       process.exit(1);
     }
     delivery = outcome.result!;
-    advanceHandoff();
+    // A worker stopped on a spent quota is paused, not finished.
+    if (!delivery.quotaWait) advanceHandoff();
   } else {
     delivery = deliver(bizDeliverOpts);
-    publication.finish({ exitCode: delivery.exitCode, gateOutcome: delivery.gateOutcome }, oroot);
+    publication.finish({ exitCode: kernelExit(delivery.exitCode), gateOutcome: delivery.gateOutcome }, oroot);
   }
 
   printDeliverySummary(delivery, pid, oroot, zipPathOut, !!runtimeError);
   // Fail-closed exit contract: 0 delivered · 2 withheld (gate fail) ·
-  // 3 indeterminate (nothing gateable) · 1 verify/exec failure.
+  // 3 indeterminate (nothing gateable) · 1 verify/exec failure ·
+  // 75 waiting on quota (nothing more ran; the supervisor resumes at the reset).
   process.exit(delivery.exitCode);
 }
 

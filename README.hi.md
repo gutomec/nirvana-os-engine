@@ -145,18 +145,18 @@ Packs क्यूरेट की गई कंपनियाँ, squads औ�
 
 ## Betas
 
-Betas GitHub पर prereleases हैं। एक-लाइन कमांड नवीनतम स्टेबल इंस्टॉल करती है, इसलिए beta उसका tarball पिन करके इंस्टॉल होता है। मौजूदा beta `v0.15.0-beta.7` है। टैग की शुरुआत `v` से होती है; उसके बिना डाउनलोड 404 देता है। किसी नए beta के लिए, इस टैग को [release सूची](https://github.com/gutomec/nirvana-os-engine/releases) के टैग से बदलें।
+Betas GitHub पर prereleases हैं। एक-लाइन कमांड नवीनतम स्टेबल इंस्टॉल करती है, इसलिए beta उसका tarball पिन करके इंस्टॉल होता है। मौजूदा beta `v0.15.0-beta.8` है। टैग की शुरुआत `v` से होती है; उसके बिना डाउनलोड 404 देता है। किसी नए beta के लिए, इस टैग को [release सूची](https://github.com/gutomec/nirvana-os-engine/releases) के टैग से बदलें।
 
 macOS, Linux और WSL:
 
 ```bash
-curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.7/nirvana-os-engine.tar.gz bash
+curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.8/nirvana-os-engine.tar.gz bash
 ```
 
 Windows (PowerShell), एक ही लाइन में:
 
 ```powershell
-$env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.7/nirvana-os-engine.tar.gz'; irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
+$env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.8/nirvana-os-engine.tar.gz'; irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
 ```
 
 इसके बाद, अगर विंडो अब भी खुली है, तो `Remove-Item Env:NIRVANA_ENGINE_URL` चलाएँ: जब तक यह variable मौजूद है, `nrv update` पिन किया गया tarball दोबारा इंस्टॉल करता है। Windows कमांड single quotes इस्तेमाल करती हैं, क्योंकि पेस्ट में खोया हुआ double quote PowerShell को `>>` पर इंतज़ार करता छोड़ देता है।
@@ -229,4 +229,4 @@ Beta परफ़ॉर्मेंस प्रोफ़ाइल (`max`, `bala
 
 लाइसेंस: Nirvana-OS Sustainable Use License (SUL) v1.0। स्रोत प्रकाशित और खुले तौर पर पठनीय है, और इंजन उपयोग के लिए मुफ़्त है। यह source-available है, OSI-अनुमोदित ओपन-सोर्स लाइसेंस नहीं, और कुछ व्यावसायिक उपयोगों के लिए अलग व्यावसायिक लाइसेंस चाहिए। किसी भी सारांश पर, इस पर भी, भरोसा करने से पहले [LICENSE](./LICENSE) पढ़ें।
 
-स्थिति: beta (0.x, अभी 0.14.11)। इंजन आज काम करता है और मिनटों में इंस्टॉल होता है। 1.0 तक सतह के बदलते रहने की उम्मीद रखें।
+स्थिति: beta (0.x, अभी 0.14.12)। इंजन आज काम करता है और मिनटों में इंस्टॉल होता है। 1.0 तक सतह के बदलते रहने की उम्मीद रखें।

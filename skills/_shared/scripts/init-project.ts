@@ -395,8 +395,9 @@ async function main() {
     // below it stay where they are. v3 (invocation) and v2 (on-demand): the
     // dependency text names the per-squad environments (~/.nirvana/envs/<squad>),
     // not the shared store, and the on-demand note names the `nirvana` skill.
-    const refreshManagedBlock = (dst: string, label: string, olderMarkers: string[], currentMarker: string, templatePath: string, endSentinel?: string): boolean => {
-      if (!fs.existsSync(dst) || !fs.existsSync(templatePath)) return false;
+    // A null template removes the block instead of replacing it.
+    const refreshManagedBlock = (dst: string, label: string, olderMarkers: string[], currentMarker: string, templatePath: string | null, endSentinel?: string): boolean => {
+      if (!fs.existsSync(dst) || (templatePath !== null && !fs.existsSync(templatePath))) return false;
       const existing = fs.readFileSync(dst, "utf8");
       const old = olderMarkers.find((m) => existing.includes(m));
       if (!old) return false;
@@ -412,7 +413,7 @@ async function main() {
       const end = Number.isFinite(cut) ? start + old.length + cut : existing.length;
       // A snippet may open with a separator (`---`) before its marker; the
       // block replaced here starts at the marker, so drop that lead-in.
-      const template = fs.readFileSync(templatePath, "utf8").replace(/^[\s\S]*?(?=<!-- nirvana-os:)/, "").replace(/\s*$/, "\n");
+      const template = templatePath === null ? "" : fs.readFileSync(templatePath, "utf8").replace(/^[\s\S]*?(?=<!-- nirvana-os:)/, "").replace(/\s*$/, "\n");
       let tail = existing.slice(end).replace(/^\s*/, "");
       // A second copy of the old block (an earlier init appended one it did not
       // recognise) goes with it: same bounds, same rule.
@@ -425,6 +426,12 @@ async function main() {
         const c2 = Math.min(m2 >= 0 ? m2 : Infinity, s2 >= 0 ? s2 + endSentinel!.length : Infinity);
         const dupEnd = Number.isFinite(c2) ? dupAt + old.length + c2 : tail.length;
         tail = (tail.slice(0, dupAt).replace(/\s*(---\s*)?$/, "\n") + tail.slice(dupEnd).replace(/^\s*/, "\n")).replace(/^\s*/, "");
+      }
+      if (templatePath === null) {
+        const head = existing.slice(0, start).replace(/\s*(---\s*)?$/, "\n");
+        fs.writeFileSync(dst, head + (tail ? "\n" + tail : ""));
+        log.ok(`removed ${label} (${old.match(/v\d+/)![0]}), already present as ${currentMarker.match(/v\d+/)![0]}: ${dst}`);
+        return true;
       }
       fs.writeFileSync(dst, existing.slice(0, start) + template + (tail ? "\n" + tail : ""));
       log.ok(`refreshed ${label} (${old.match(/v\d+/)![0]} → ${currentMarker.match(/v\d+/)![0]}): ${dst}`);
@@ -439,6 +446,34 @@ async function main() {
     // it end at its own last line, not at the end of the file.
     const refreshOnDemandContract = (dst: string) =>
       refreshManagedBlock(dst, "on-demand contract", ["<!-- nirvana-os:on-demand-contract:v1 -->"], ON_DEMAND_MARKER, onDemandSnippet, "`nrv glance`.");
+
+    // Blocks the 0.15 line writes: its invocation contract v4, its on-demand
+    // note v3, and the invocation contract v3 of 0.15.0-beta.1 to beta.5, which
+    // shares this line's v3 marker and is told apart by its heading. Going back
+    // from the beta, this init did not know them and appended its own contract
+    // beside them: two contradictory sets of instructions in one file. Each is
+    // now replaced in place by this line's block for the chosen mode, or removed
+    // when that block is already in the file (an earlier init appended it). The
+    // user's lines around it stay: each ends at its own last line.
+    const LATER_BLOCKS: Array<{ marker: string; end: string; is?: (rest: string) => boolean }> = [
+      { marker: "<!-- nirvana-os:on-demand-contract:v3 -->", end: "never invoke Nirvana again." },
+      { marker: "<!-- nirvana-os:invocation-contract:v4 -->", end: "user's own lines." },
+      { marker: INVOCATION_CONTRACT_MARKER, end: "user's own lines.", is: (rest) => /^\s*# Project guidelines \(any agent runtime\)/.test(rest) },
+    ];
+    const replaceLaterBlocks = (dst: string, label: string, currentMarker: string, templatePath: string) => {
+      for (const block of LATER_BLOCKS) {
+        if (!fs.existsSync(dst)) return;
+        const text = fs.readFileSync(dst, "utf8");
+        const at = text.indexOf(block.marker);
+        if (at < 0 || (block.is && !block.is(text.slice(at + block.marker.length)))) continue;
+        // A copy of this line's block elsewhere in the file is the one kept. The
+        // beta's v3 shares this line's marker: replacing it also drops any later
+        // copy, so it is always replaced.
+        const rest = text.slice(0, at) + text.slice(at + block.marker.length);
+        const keepCurrent = block.marker !== currentMarker && rest.includes(currentMarker);
+        refreshManagedBlock(dst, label, [block.marker], currentMarker, keepCurrent ? null : templatePath, block.end);
+      }
+    };
 
     // How Nirvana behaves in THIS project is the owner's call, and it matters
     // most exactly when the project already has instruction files: appending
@@ -480,6 +515,7 @@ async function main() {
       // explicit request. No invocation contract, no writing contract — the
       // project's configured behavior stays its own.
       for (const name of ["AGENTS.md", "CLAUDE.md", "GEMINI.md"]) {
+        replaceLaterBlocks(path.join(target, name), "on-demand contract", ON_DEMAND_MARKER, onDemandSnippet);
         refreshOnDemandContract(path.join(target, name));
         appendWithMarker(onDemandSnippet, path.join(target, name), ON_DEMAND_MARKER, "on-demand contract");
       }
@@ -488,6 +524,7 @@ async function main() {
         const dst = path.join(target, name);
         // Phase 0: a contract written by an earlier engine is brought to the
         // current text, in place.
+        replaceLaterBlocks(dst, "invocation contract", INVOCATION_CONTRACT_MARKER, agentsTemplate);
         refreshInvocationContract(dst);
         refreshWritingContract(dst);
         // Phase 1: only copy the base if the file is absent (never overwrite

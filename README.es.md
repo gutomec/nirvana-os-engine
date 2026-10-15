@@ -145,18 +145,18 @@ Una actualización nunca lleva el motor a una release más antigua. Un motor est
 
 ## Betas
 
-Las betas son prereleases en GitHub. El comando de una línea instala la última estable, así que una beta se instala fijando su tarball. La beta actual es `v0.15.0-beta.7`. La etiqueta empieza con `v`; sin ella la descarga devuelve 404. Para una beta más nueva, cambia esa etiqueta por una de la [lista de releases](https://github.com/gutomec/nirvana-os-engine/releases).
+Las betas son prereleases en GitHub. El comando de una línea instala la última estable, así que una beta se instala fijando su tarball. La beta actual es `v0.15.0-beta.8`. La etiqueta empieza con `v`; sin ella la descarga devuelve 404. Para una beta más nueva, cambia esa etiqueta por una de la [lista de releases](https://github.com/gutomec/nirvana-os-engine/releases).
 
 macOS, Linux y WSL:
 
 ```bash
-curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.7/nirvana-os-engine.tar.gz bash
+curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.8/nirvana-os-engine.tar.gz bash
 ```
 
 Windows (PowerShell), en una sola línea:
 
 ```powershell
-$env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.7/nirvana-os-engine.tar.gz'; irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
+$env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.8/nirvana-os-engine.tar.gz'; irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
 ```
 
 Después, si la ventana sigue abierta, ejecuta `Remove-Item Env:NIRVANA_ENGINE_URL`: mientras la variable exista, `nrv update` reinstala el tarball fijado. Los comandos de Windows usan comillas simples porque una comilla doble perdida al pegar deja a PowerShell esperando en `>>`.
@@ -229,4 +229,4 @@ Autor: **Luiz Gustavo Vieira Rodrigues (gutomec / Prospecteezy)**. Sin coautores
 
 Licencia: la Nirvana-OS Sustainable Use License (SUL) v1.0. El código fuente está publicado y es abiertamente legible, y el motor es gratis para usar. Es source-available, no una licencia open-source aprobada por la OSI, y ciertos usos comerciales requieren una licencia comercial aparte. Lee [LICENSE](./LICENSE) antes de confiar en cualquier resumen, incluido este.
 
-Estado: beta (0.x, actualmente 0.14.11). El motor funciona hoy y se instala en minutos. Espera que la superficie siga moviéndose hasta la 1.0.
+Estado: beta (0.x, actualmente 0.14.12). El motor funciona hoy y se instala en minutos. Espera que la superficie siga moviéndose hasta la 1.0.

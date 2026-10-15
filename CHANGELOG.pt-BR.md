@@ -6,6 +6,34 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que os instaladores de uma linha e os setups de pack consomem.
 
+## 0.14.12 — 2026-10-14
+
+### Cota: uma cota esgotada pausa a execução em vez de queimá-la
+
+Medido em 2026-10-14, numa execução do Codex que bateu no limite de uso do plano: a mensagem virou um erro genérico, a entrega pela metade foi para o gate e para correções que bateram no mesmo limite, e um dispatch sem relação, feito numa pasta fora de qualquer projeto, disparou uma varredura que retomou a execução antes da liberação e gastou uma tentativa.
+
+- Uma mensagem de limite de uso agora é classificada como cota, seja qual for o apóstrofo. O Codex escreve "You’ve hit your usage limit" com apóstrofo tipográfico, e todos os padrões esperavam o reto. As aspas são normalizadas antes de qualquer padrão, e o horário de liberação que a mensagem traz é lido ("try again at 1:21 AM", "try again at Oct 14th, 2026 1:21 AM", o "resets 3am (America/Sao_Paulo)" e o "resets May 26, 8pm" do Claude, um epoch ou um horário ISO). Um horário sem data é a próxima ocorrência no fuso local. O runtime fica em cooldown até essa liberação em vez do padrão da janela.
+- Um worker que para por cota esgotada fica em pausa, não é julgado: nenhum gate, nenhuma correção e nenhum juiz roda no runtime parado. A linha do ledger fica `failed` com `meta.stop_reason: "quota"` e `meta.quota_reset_at`, o evento é `x_delivery_quota_wait`, e `nrv dispatch` e `nrv revise` saem com 75. Uma correção cujo runtime falhou (cota, credencial, transporte) deixa de ser rodada e não gasta o limite de revisões; uma cota ali pausa a entrega do mesmo jeito. Um juiz que encontra a cota esgotada faz o gate dizer que não conseguiu julgar (`x_gate_unjudged_quota`, `quality-gate.ts` sai com 3) em vez de cair nas heurísticas.
+- O supervisor deixa intocada uma execução parada por cota até a liberação, com um `x_ledger_quota_wait` por horário e nenhuma tentativa gasta. Um dispatch feito numa pasta fora de qualquer projeto não varre mais todos os projetos da máquina: a varredura preguiçosa cobre o projeto do próprio dispatch, e a varredura da máquina inteira é `nrv supervisor sweep --all-projects` ou `watch`. Os eventos da varredura e do ledger vão para o audit do próprio projeto varrido, e um `nrv supervisor sweep` em primeiro plano para com Ctrl+C ou SIGTERM e encerra todos os processos que iniciou.
+
+### O gate julga o trabalho da execução, nunca as dependências dela
+
+Árvores de dependências, caches e lockfiles nunca são julgados (`node_modules`, `vendor`, `.git`, `.venv`, `venv`, `__pycache__`, `.next`, `coverage` e afins, `package-lock.json`, `bun.lock`, `yarn.lock`, `pnpm-lock.yaml`, `Cargo.lock`, `poetry.lock`), nem textos de licença e de aviso que o brief não pediu. A saída de build (`dist`, `build`, `out`) fica de fora enquanto houver uma árvore de fontes e entra quando é a entrega inteira. Uma lista só, `skills/_shared/lib/deliverable-noise.ts`. Medido no mesmo incidente: uma entrega de site mandou 26 arquivos para o juiz, entre eles o README do Playwright e o `ThirdPartyNotices.txt`, em nove minutos de julgamento.
+
+### Retomadas e revisões mantêm a pasta do brief
+
+A retomada do supervisor pedia "os arquivos finais sob a raiz de saídas", e um worker retomado copiou para dentro dos entregáveis o projeto inteiro que estava corrigindo. Os prompts de retomada, do `nrv revise` e de correção agora mantêm a pasta onde o brief coloca o trabalho e dizem para nunca copiá-la para dentro da raiz de saídas, citando as pastas que o brief dá como caminhos absolutos; a revisão e as correções recebem acesso a elas.
+
+### A licença Genesis Circle sobrevive aos pacotes instalados depois dela
+
+Uma chave Genesis Circle libera todos os pacotes, mas o engine só a encontrava onde o pacote atualizado deixou a própria licença ou no arquivo único legado `~/.nirvana-license/PROVENANCE.json`. O setup de cada pacote gravava esse arquivo legado, então quem instalou o Genesis antes de existirem as cópias por pacote e depois outro pacote (web-design) perdia o Genesis inteiro: o `nrv doctor` avisava e o `nrv update` recusava todos os outros pacotes.
+
+Os leitores (`nrv update <pack>`, `nrv license --pack`, `nrv doctor`) agora procuram o arquivo do próprio pacote, depois `~/.nirvana-license/packs/genesis-circle/`, depois o arquivo legado. O `setup.ts` de um pacote e o `nrv license install` não substituem mais uma licença Genesis Circle no arquivo legado pela de outro pacote, e o setup dá a essa licença Genesis a sua própria cópia; o Genesis continua gravando as duas, então engines antigos que leem só o arquivo legado continuam com ela. Quando nenhuma licença serve, a mensagem do doctor acrescenta "If you own Genesis Circle, run its setup again". A verificação da assinatura não mudou. O `setup.ts` vai dentro do zip de cada pacote, então os pacotes base precisam ser reconstruídos para levá-lo.
+
+### `nrv init` depois do beta 0.15 deixa um contrato só
+
+Na volta do beta 0.15, o `nrv init` não reconhecia os blocos que o beta grava (a nota on-demand v3, o contrato de invocação v4 e o contrato de invocação v3 do beta.1 ao beta.5, que tem o mesmo marcador desta linha) e acrescentava o próprio contrato ao lado deles: o contrato completo junto da nota on-demand do beta, ou duas notas on-demand. Cada um desses blocos agora é substituído no lugar pelo bloco desta linha para o modo escolhido, ou removido quando o bloco desta linha já está lá (um arquivo que a 0.14.11 duplicou). As linhas do próprio usuário, acima e abaixo, ficam.
+
 ## 0.14.11 — 2026-10-10
 
 ### Cada squad instala no próprio ambiente, preparado quando ela roda

@@ -421,6 +421,11 @@ try {
 // Falhar aqui não pode ser silencioso: o pack funciona sem a licença instalada,
 // o que quebra é só o update autenticado, e é agora que dá para dizer isso.
 console.log("[4/4] Installing and checking the license (soft)...");
+// The edition whose key unlocks every pack, and the edition a PROVENANCE.json names.
+const GENESIS = "genesis-circle";
+const editionOf = (p: string): string | null => {
+  try { return JSON.parse(readFileSync(p, "utf8")).edition ?? null; } catch { return null; }
+};
 const provSrc = join(HERE, "PROVENANCE.json");
 if (existsSync(provSrc)) {
   const licDir = join(HOME, ".nirvana-license");
@@ -430,11 +435,27 @@ if (existsSync(provSrc)) {
   // was refused. Engines that know the per-pack copy read it first; older ones
   // keep reading the single file, written exactly as before.
   const packLicDir = /^[a-z0-9][a-z0-9._-]{0,99}$/i.test(slug) && !slug.includes("..") ? join(licDir, "packs", slug) : null;
+  // A Genesis Circle key unlocks every pack, and older engines read only the
+  // single file: another pack never replaces a Genesis license there. Genesis
+  // itself always writes both. An install from before the per-pack copies has
+  // Genesis only in the single file, so it also gets its own copy here.
+  const legacyProv = join(licDir, "PROVENANCE.json");
+  const keepGenesis = packLicDir !== null && slug !== GENESIS && editionOf(provSrc) !== GENESIS && editionOf(legacyProv) === GENESIS;
   try {
     mkdirSync(licDir, { recursive: true });
-    copyFileSync(provSrc, join(licDir, "PROVENANCE.json"));
     const licNotice = join(HERE, "LICENSE.txt");
-    if (existsSync(licNotice)) copyFileSync(licNotice, join(licDir, "LICENSE.txt"));
+    if (keepGenesis) {
+      const genesisDir = join(licDir, "packs", GENESIS);
+      if (!existsSync(join(genesisDir, "PROVENANCE.json"))) {
+        mkdirSync(genesisDir, { recursive: true });
+        copyFileSync(legacyProv, join(genesisDir, "PROVENANCE.json"));
+        if (existsSync(join(licDir, "LICENSE.txt"))) copyFileSync(join(licDir, "LICENSE.txt"), join(genesisDir, "LICENSE.txt"));
+      }
+      console.log(`    \x1b[2mThe Genesis Circle license at ${legacyProv} was kept: it covers every pack.\x1b[0m`);
+    } else {
+      copyFileSync(provSrc, legacyProv);
+      if (existsSync(licNotice)) copyFileSync(licNotice, join(licDir, "LICENSE.txt"));
+    }
     if (packLicDir) {
       mkdirSync(packLicDir, { recursive: true });
       copyFileSync(provSrc, join(packLicDir, "PROVENANCE.json"));

@@ -20,7 +20,12 @@ import type { Runtime } from "./host-agent-driver.ts";
 export type QuotaClass =
   | { kind: "ok" }
   | { kind: "transient"; retryAfterSec?: number; hint: string }
-  | { kind: "quota_exhausted"; ttlSec: number; hint: string; window: "5h" | "weekly" | "monthly" | "unknown" }
+  | {
+      kind: "quota_exhausted"; ttlSec: number; hint: string; window: "5h" | "weekly" | "monthly" | "unknown";
+      /** ISO time the message itself names as the reset ("try again at 1:21 AM"),
+       *  when it names one. Absent when ttlSec is a default for the window. */
+      resetAt?: string;
+    }
   | { kind: "auth_failed"; hint: string }
   | { kind: "error"; hint: string };
 
@@ -35,11 +40,111 @@ interface RunResultLike {
 // Default cool-downs when the error names a window but no exact reset time.
 const DEFAULT_TTL = { "5h": 5 * 3600, "weekly": 7 * 24 * 3600, "monthly": 30 * 24 * 3600, "unknown": 30 * 60 };
 
-function findRetryAfterSec(text: string): number | undefined {
+/**
+ * Typographic quotes and apostrophes as their ASCII forms. Codex prints
+ * "You’ve hit your usage limit" with U+2019, and every pattern below was
+ * written with a straight apostrophe: the real message classified as `error`,
+ * so no cooldown was written and nothing downstream knew it was a quota (the
+ * 2026-10-14 Camila incident). Normalising once, before any pattern runs,
+ * covers every table at the same time.
+ */
+export function normalizeQuotes(text: string): string {
+  return text.replace(/[\u2018\u2019\u201A\u201B\u2032\u02BC\u00B4]/g, "'").replace(/[\u201C\u201D\u201E\u201F\u2033]/g, '"');
+}
+
+const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+
+/** The UTC offset of an IANA zone at `at`, in ms (zone time minus UTC). Null for an unknown zone. */
+function zoneOffsetMs(timeZone: string, at: number): number | null {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit",
+    }).formatToParts(new Date(at));
+    const n = (t: string) => Number(parts.find(p => p.type === t)?.value);
+    return Date.UTC(n("year"), n("month") - 1, n("day"), n("hour"), n("minute"), n("second")) - Math.floor(at / 1000) * 1000;
+  } catch { return null; }
+}
+
+/** Wall-clock fields in a zone ("local", "utc" or an IANA name) as epoch ms. */
+function wallClockMs(zone: string, y: number, mo: number, d: number, h: number, mi: number): number {
+  if (zone === "local") return new Date(y, mo, d, h, mi, 0, 0).getTime();
+  const utc = Date.UTC(y, mo, d, h, mi, 0, 0);
+  if (zone === "utc") return utc;
+  const off = zoneOffsetMs(zone, utc);
+  if (off === null) return new Date(y, mo, d, h, mi, 0, 0).getTime();
+  // One correction pass covers a DST change between the guess and the answer.
+  const guess = utc - off;
+  const off2 = zoneOffsetMs(zone, guess) ?? off;
+  return utc - off2;
+}
+
+/** Today's date fields in a zone. */
+function todayIn(zone: string, now: number): { y: number; mo: number; d: number } {
+  if (zone === "local") { const t = new Date(now); return { y: t.getFullYear(), mo: t.getMonth(), d: t.getDate() }; }
+  const off = zone === "utc" ? 0 : (zoneOffsetMs(zone, now) ?? 0);
+  const t = new Date(now + off);
+  return { y: t.getUTCFullYear(), mo: t.getUTCMonth(), d: t.getUTCDate() };
+}
+
+/**
+ * The reset time a quota message names, as epoch ms, or undefined.
+ *
+ * The forms the CLIs print:
+ *   Codex:  "try again at 1:21 AM", "try again at Oct 14th, 2026 1:21 AM"
+ *   Claude: "resets 3am", "resets 8pm (America/Sao_Paulo)", "resets May 26, 8pm",
+ *           "will reset at 3:30pm", "usage limit reached|1760416860" (epoch seconds)
+ *   any:    an ISO time after "reset"/"try again" ("resets at 2026-10-14T04:21:00Z")
+ *
+ * A time with no date is the NEXT occurrence: in the named zone when the
+ * message names one, else in this machine's local time (the CLI printed it in
+ * the user's), rolling to the next day when that time has already passed. A
+ * date with no year is this year, or the next one when it has passed.
+ */
+export function findResetAtMs(rawText: string, now: number = Date.now()): number | undefined {
+  const text = normalizeQuotes(rawText);
+  const epoch = text.match(/limit\s+reached\s*\|\s*(\d{10})\b/i);
+  if (epoch) return Number(epoch[1]) * 1000;
+  const iso = text.match(/(?:reset|try\s+again|available)[^\n]{0,24}?(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2}))/i);
+  if (iso) { const t = Date.parse(iso[1]); if (Number.isFinite(t)) return t; }
+  const m = text.match(new RegExp(
+    String.raw`(?:try\s+again|resets?|available\s+again)\s+(?:at\s+|on\s+)?` +
+    String.raw`(?:(${MONTHS.join("|")})[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s*(?:(\d{4}),?\s*)?(?:at\s+)?)?` +
+    String.raw`(\d{1,2})(?::(\d{2}))?\s*([ap]\.?m\.?)?(?![\d:])` +
+    String.raw`(?:\s*\(?\s*(UTC|GMT|[A-Za-z]+\/[A-Za-z_]+(?:\/[A-Za-z_]+)?)\)?)?`,
+    "i",
+  ));
+  if (!m) return undefined;
+  const [, monthName, dayStr, yearStr, hourStr, minStr, ampm, zoneRaw] = m;
+  // A bare number with neither minutes nor am/pm is not a time ("resets 5 times").
+  if (!minStr && !ampm) return undefined;
+  let hour = Number(hourStr);
+  const minute = minStr ? Number(minStr) : 0;
+  if (minute > 59) return undefined;
+  if (ampm) {
+    if (hour < 1 || hour > 12) return undefined;
+    const pm = ampm.toLowerCase().startsWith("p");
+    hour = (hour % 12) + (pm ? 12 : 0);
+  } else if (hour > 23) return undefined;
+  const zone = !zoneRaw ? "local" : /^(utc|gmt)$/i.test(zoneRaw) ? "utc" : zoneRaw;
+  if (monthName) {
+    const mo = MONTHS.indexOf(monthName.slice(0, 3).toLowerCase());
+    const day = Number(dayStr);
+    const explicitYear = yearStr ? Number(yearStr) : null;
+    let at = wallClockMs(zone, explicitYear ?? todayIn(zone, now).y, mo, day, hour, minute);
+    if (explicitYear === null && at < now - 24 * 3600 * 1000) at = wallClockMs(zone, todayIn(zone, now).y + 1, mo, day, hour, minute);
+    return at;
+  }
+  const today = todayIn(zone, now);
+  let at = wallClockMs(zone, today.y, today.mo, today.d, hour, minute);
+  if (at <= now) at = wallClockMs(zone, today.y, today.mo, today.d + 1, hour, minute);
+  return at;
+}
+
+function findRetryAfterSec(text: string, now: number = Date.now()): number | undefined {
   // RFC-ish: "retry-after: 42" or "try again in 12s" or "wait 5 minutes"
   const m1 = text.match(/retry[-_ ]after[:\s]+(\d+)/i);
   if (m1) return parseInt(m1[1], 10);
-  const m2 = text.match(/try again in\s+(\d+)\s*(s|sec|second|m|min|minute|h|hour)/i);
+  const m2 = text.match(/(?:try again|resets?)\s+in\s+(\d+)\s*(s|sec|second|m|min|minute|h|hour)/i);
   if (m2) {
     const n = parseInt(m2[1], 10);
     const u = m2[2].toLowerCase();
@@ -55,6 +160,8 @@ function findRetryAfterSec(text: string): number | undefined {
     if (u.startsWith("m")) return n * 60;
     return n;
   }
+  const at = findResetAtMs(text, now);
+  if (at !== undefined) return Math.max(60, Math.ceil((at - now) / 1000));
   return undefined;
 }
 
@@ -249,15 +356,61 @@ function classifyPi(text: string): QuotaClass {
   return { kind: "error", hint: text.slice(0, 200) };
 }
 
-export function classify(runtime: Runtime, r: RunResultLike): QuotaClass {
+export function classify(runtime: Runtime, r: RunResultLike, now: number = Date.now()): QuotaClass {
   if (r.ok && r.exitCode === 0) return { kind: "ok" };
-  const text = [r.stderr, r.error, r.result].filter(Boolean).join("\n");
+  const text = normalizeQuotes([r.stderr, r.error, r.result].filter(Boolean).join("\n"));
   if (!text) return { kind: "error", hint: `runtime ${runtime} exit ${r.exitCode} with no output` };
-  if (runtime === "claude-code") return refineServerFailure(classifyClaudeCode(text), text);
-  if (runtime === "codex") return refineServerFailure(classifyCodex(text), text);
-  if (runtime === "antigravity-cli") return refineServerFailure(classifyAntigravity(text), text);
-  if (runtime === "pi") return refineServerFailure(classifyPi(text), text);
-  return { kind: "error", hint: `unknown runtime ${runtime}` };
+  let v: QuotaClass;
+  if (runtime === "claude-code") v = refineServerFailure(classifyClaudeCode(text), text);
+  else if (runtime === "codex") v = refineServerFailure(classifyCodex(text), text);
+  else if (runtime === "antigravity-cli") v = refineServerFailure(classifyAntigravity(text), text);
+  else if (runtime === "pi") v = refineServerFailure(classifyPi(text), text);
+  else return { kind: "error", hint: `unknown runtime ${runtime}` };
+  return withNamedReset(v, text, now);
+}
+
+/** A quota whose message names its reset gets that reset, whatever window the
+ *  table guessed: the window default is only for a message that names none. */
+function withNamedReset(v: QuotaClass, text: string, now: number): QuotaClass {
+  if (v.kind !== "quota_exhausted") return v;
+  const at = findResetAtMs(text, now);
+  if (at !== undefined && at > now) {
+    return { ...v, ttlSec: Math.max(60, Math.ceil((at - now) / 1000)), resetAt: new Date(at).toISOString() };
+  }
+  const rel = findRetryAfterSec(text, now);
+  if (rel !== undefined && rel > 0) return { ...v, ttlSec: rel, resetAt: new Date(now + rel * 1000).toISOString() };
+  return v;
+}
+
+/**
+ * The runtime never reached the model: the connection broke, the name did not
+ * resolve, the stream dropped. Not a verdict on the work and not a quota. A
+ * caller that counts attempts (the gate's correction rounds) must not count
+ * one that failed this way.
+ */
+export function isTransportFailure(text: string | null | undefined): boolean {
+  return /\b(?:ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|EPIPE|ENETUNREACH)\b|socket\s+hang\s+up|fetch\s+failed|network\s+(?:error|is\s+unreachable)|stream\s+(?:disconnected|error|closed\s+before)|connection\s+(?:reset|refused|closed|error)|error\s+sending\s+request/i.test(text ?? "");
+}
+
+/**
+ * Is this text a spent quota, whichever runtime printed it? For a caller that
+ * holds an error string but not the runtime that produced it (the judge's
+ * failed call, a ledger row's last_error). Null when it is not a quota.
+ * `resetAt` is always set: the time the message names, else now + the
+ * window's default cooldown.
+ */
+export function quotaStop(text: string | null | undefined, runtime?: Runtime | null, now: number = Date.now()): { resetAt: string; hint: string; named: boolean } | null {
+  if (!text) return null;
+  // The named runtime's own table first; then the two generic ones, so a row
+  // that recorded no runtime (or one with no table) is still read.
+  const runtimes = [...new Set<Runtime>([...(runtime ? [runtime] : []), "codex", "claude-code"])];
+  for (const rt of runtimes) {
+    const v = classify(rt, { ok: false, exitCode: 1, error: text }, now);
+    if (v.kind === "quota_exhausted") {
+      return { resetAt: v.resetAt ?? new Date(now + v.ttlSec * 1000).toISOString(), hint: v.hint, named: !!v.resetAt };
+    }
+  }
+  return null;
 }
 
 /**

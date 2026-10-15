@@ -16,6 +16,8 @@
 //   2 = delivery WITHHELD — gate FAILED after the revision budget
 //   3 = delivery INDETERMINATE — zero gateable artifacts; nothing was judged
 //   4 = invalid args (EXIT.INVALID_ARGS per SCRIPT_CONTRACT; was 2)
+//  75 = waiting on quota — the revision, a correction or the judge met a spent
+//       quota; nothing more ran, and the run resumes at or after the reset
 //
 // 0 means DELIVERED, and only that. This script used to exit 0 whenever the
 // text-only gate had nothing to chew on, while emitting `delivered` with
@@ -32,6 +34,7 @@ import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
 import { scopeGuard } from "../../_shared/lib/scope-guard.ts";
 import { stamp } from "../../_shared/lib/audit-provenance.ts";
 import { squadRunEnv } from "../../_shared/lib/squad-env.ts";
+import { briefWorkDirs } from "../../_shared/lib/brief-work-dirs.ts";
 
 const ANSI = { reset: "\x1b[0m", bold: "\x1b[1m", dim: "\x1b[2m", green: "\x1b[32m", red: "\x1b[31m", yellow: "\x1b[33m", cyan: "\x1b[36m", lime: "\x1b[38;5;154m" };
 const noColor = process.argv.includes("--no-color") || !process.stdout.isTTY;
@@ -140,12 +143,16 @@ if (!runtimeAvailable(rt)) {
   process.exit(1);
 }
 
+// The folders the brief places the work in: a revision works there too, and is
+// never told to move that work under the outputs root (2026-10-14, a resumed
+// worker copied the whole project it was fixing into its deliverables).
+const workDirs = briefWorkDirs(readIfExists(path.join(projectRoot, "brief.md")), oroot);
 const revisePrompt = [
   "INSTRUÇÃO DE REVISÃO (mesma sessão — você tem o contexto completo do que produziu):",
   "",
   change,
   "",
-  `Reescreva/atualize os entregáveis como arquivos sob: ${oroot}`,
+  `Reescreva/atualize os entregáveis nos lugares que o brief indica. Os entregáveis escritos sob ${oroot} continuam lá; o trabalho que o brief coloca em outra pasta (um projeto a revisar ou corrigir, um projeto novo a criar) é feito lá, no lugar, e nunca copiado para dentro de ${oroot}.${workDirs.length ? ` O brief coloca trabalho em: ${workDirs.join(", ")}.` : ""}`,
   scopeGuard("pt-BR"),
   'Não imprima resumo: entregue os arquivos atualizados. Atualize a seção "## Premissas assumidas" se algo mudou.',
 ].join("\n");
@@ -156,7 +163,7 @@ const res = runHeadless({
   runtime: rt,
   prompt: revisePrompt,
   cwd: projectRoot,
-  addDirs: [projDir, oroot],
+  addDirs: [projDir, oroot, ...workDirs],
   // The folder the session was started in (absent on runs from before runs
   // had one): claude resumes a session only from its own folder.
   workspace: session.workspace || undefined,
@@ -267,7 +274,10 @@ const deliveryArgs = {
 /** One outcome report for both doors: a clean revision and a salvaged one. */
 function printOutcome(result: DeliveryResult): void {
   console.log("");
-  if (result.exitCode === 0) {
+  if (result.quotaWait) {
+    console.log(c("yellow", `⏸ Waiting on quota (exit ${result.exitCode}): ${result.quotaWait.hint}. Nothing more ran; nothing was delivered.`));
+    console.log(c("dim", `  Resets: ${result.quotaWait.resetAt}${result.quotaWait.named ? "" : " (estimated)"}.`));
+  } else if (result.exitCode === 0) {
     console.log(c("green", "✓ Revision applied and delivered."));
   } else if (result.exitCode === 2) {
     console.log(c("yellow", "⚠ Revision applied, delivery WITHHELD — the quality gate failed (exit 2)."));
@@ -292,7 +302,7 @@ if (!res.ok) {
   // abandoning it — same policy the dispatch path applies (deliverAfterRuntimeError).
   // No artifacts -> the historical exit 1 stands.
   const outcome = deliverAfterRuntimeError({ ...deliveryArgs, runtimeError, errorContext: { revision: true } });
-  if (!outcome.judged) process.exit(1);
+  if (!outcome.result) process.exit(1);
   printOutcome(outcome.result!);
   process.exit(outcome.exitCode);
 }

@@ -24,6 +24,10 @@
 //       completeness ceiling capped an otherwise deliverable outcome)
 //   3 = indeterminate (zero gateable artifacts — nothing was judged;
 //       no gate_passed, no delivered)
+//  75 = waiting on quota (QUOTA_WAIT_EXIT): the worker, a correction or the
+//       judge stopped on a spent runtime quota. Nothing more runs; the row is
+//       `failed` with meta.stop_reason "quota" and meta.quota_reset_at, and
+//       the supervisor resumes it at or after that time.
 //
 // Ledger: the pipeline keeps marking verifying → gated → delivered|withheld
 // (never-stall guarantee, bd750d6e). Ledger failures never break a delivery.
@@ -44,6 +48,8 @@ import { runHeadless, runtimeAvailable, AUTONOMOUS_DIRECTIVE, type Runtime } fro
 import type { DispatchRole } from "../../_shared/lib/dispatch-depth.ts";
 import { scopeGuard } from "../../_shared/lib/scope-guard.ts";
 import { isRunStatePath } from "../../_shared/lib/run-state.ts";
+import { inBuildOutput, isDependencyDirName, isDependencyNoise } from "../../_shared/lib/deliverable-noise.ts";
+import { briefWorkDirs } from "../../_shared/lib/brief-work-dirs.ts";
 import { runFolderOf } from "../../_shared/lib/run-workspace.ts";
 import { detectKind } from "../../_shared/lib/surface.ts";
 import { GATEABLE_EXTS } from "../scripts/quality-gate.ts";
@@ -51,6 +57,8 @@ import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
 import { resolveSetting } from "../../_shared/lib/settings.ts";
 import { judgeScope, type HarnessConfig } from "./harness-config.ts";
 import * as runLedger from "./run-ledger.ts";
+import { classify, isTransportFailure, quotaStop } from "./quota-detector.ts";
+import { markCooldown } from "./cooldown-registry.ts";
 
 // ── deliverable surface (moved verbatim from scripts/dispatch.ts) ─────────
 
@@ -80,6 +88,20 @@ export function listFiles(dir: string): string[] {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, e.name);
     if (e.isDirectory()) out.push(...listFiles(full));
+    else if (e.isFile()) out.push(full);
+  }
+  return out;
+}
+
+/** listFiles() without descending into dependency trees (deliverable-noise.ts
+ *  DEPENDENCY_DIRS): a `node_modules` holds tens of thousands of files and
+ *  none of them is the run's work. */
+export function listWorkFiles(dir: string): string[] {
+  const out: string[] = [];
+  if (!fs.existsSync(dir)) return out;
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) { if (!isDependencyDirName(e.name)) out.push(...listWorkFiles(full)); }
     else if (e.isFile()) out.push(full);
   }
   return out;
@@ -146,24 +168,38 @@ function insideCapturedEntity(root: string, rel: string, memo: Map<string, boole
  *
  * Run state is dropped outright — it is never a deliverable, and if dropping
  * it empties the surface the outcome is INDETERMINATE, which is the honest
- * answer. A captured entity is dropped only while the run has work of its own
- * left to judge: when the entity IS the deliverable (a run asked to build a
- * squad) it stays, so this filter can narrow noise and never silence signal. */
+ * answer. So is dependency noise (deliverable-noise.ts): installed packages,
+ * caches, lockfiles and licence texts the brief did not ask for. Build output
+ * (`dist/`, `build/`, `out/`) is dropped while a source tree is left to judge
+ * and kept when it IS the delivery. A captured entity is dropped only while
+ * the run has work of its own left to judge: when the entity IS the
+ * deliverable (a run asked to build a squad) it stays, so these filters can
+ * narrow noise and never silence signal. */
 export function gateableFiles(dir: string, named: Set<string>): string[] {
-  const all = listFiles(dir).filter(f =>
+  const all = listWorkFiles(dir).filter(f =>
     GATEABLE_EXTS.has(path.extname(f).toLowerCase()) && isDeliverable(f, named));
-  const own = all.filter(f => !isRunStateUnderOutputs(path.relative(dir, f)));
+  const own = all.filter(f => {
+    const rel = path.relative(dir, f);
+    return !isRunStateUnderOutputs(rel) && !isDependencyNoise(rel, named);
+  });
+  const sources = own.filter(f => !inBuildOutput(path.relative(dir, f)));
+  const pool = sources.length > 0 ? sources : own;
   const memo = new Map<string, boolean>();
-  const authored = own.filter(f => !insideCapturedEntity(dir, path.relative(dir, f), memo));
-  return authored.length > 0 ? authored : own;
+  const authored = pool.filter(f => !insideCapturedEntity(dir, path.relative(dir, f), memo));
+  return authored.length > 0 ? authored : pool;
 }
 
 /** Non-stub artifacts under `outputsRoot` — the SAME discovery runDelivery
  * uses for its `produced` list. The runtime-error salvage path asks this
- * (never a second scanner) whether a not-ok run left anything worth judging. */
+ * (never a second scanner) whether a not-ok run left anything worth judging;
+ * an installed `node_modules` alone is not. */
 export function candidateArtifacts(outputsRoot: string, brief: string): string[] {
-  const named = briefNamedFiles(brief);
-  return listFiles(outputsRoot).filter(f => isDeliverable(f, named));
+  return producedFiles(outputsRoot, briefNamedFiles(brief));
+}
+
+/** The work under an outputs root: non-stub, not dependency noise. */
+function producedFiles(outputsRoot: string, named: Set<string>): string[] {
+  return listWorkFiles(outputsRoot).filter(f => isDeliverable(f, named) && !isDependencyNoise(path.relative(outputsRoot, f), named));
 }
 
 // ── gate runner ───────────────────────────────────────────────────────────
@@ -213,7 +249,15 @@ export const REPORT_EXTS: ReadonlySet<string> = new Set([".md", ".txt"]);
 /** Run the quality gate over each artifact; collect fix lists for failures.
  * Accepts a bare script path (legacy signature, offline heuristics) or full
  * GateRunOpts. Parses the normalized verdict {status, mode, results[]}. */
-export function runGateOnce(files: string[], gate: string | GateRunOpts): { pass: boolean; fails: { file: string; fixes: string[] }[] } {
+export interface GateRun {
+  pass: boolean;
+  fails: { file: string; fixes: string[] }[];
+  /** The judge could not run because its runtime's quota is spent: the files
+   *  it should have graded have no verdict, and the run decides nothing. */
+  judgeQuota?: { resetAt: string; hint: string };
+}
+
+export function runGateOnce(files: string[], gate: string | GateRunOpts): GateRun {
   const opts: GateRunOpts = typeof gate === "string" ? { gateScript: gate, offline: true } : gate;
   const fails: { file: string; fixes: string[] }[] = [];
   for (const f of files) {
@@ -230,10 +274,17 @@ export function runGateOnce(files: string[], gate: string | GateRunOpts): { pass
       encoding: "utf8",
       env: { ...process.env, ...(opts.env ?? {}) },
     });
+    let verdict: any = null;
+    try { verdict = JSON.parse(g.stdout); } catch { verdict = null; }
+    // The judge's runtime is out of quota: every other file would fail the
+    // same way. The run stops here and says it could not judge.
+    if (verdict?.judge_unavailable?.reason === "quota") {
+      return { pass: false, fails, judgeQuota: { resetAt: String(verdict.judge_unavailable.reset_at ?? ""), hint: String(verdict.judge_unavailable.hint ?? "judge runtime quota exhausted") } };
+    }
     if (g.status !== 0) {
       const fixes: string[] = [];
       try {
-        const v = JSON.parse(g.stdout);
+        const v = verdict ?? JSON.parse(g.stdout);
         for (const r of v.results || []) if (!r.passed && !r.skipped) fixes.push(...(r.fix_list || []));
       } catch { /* keep empty */ }
       fails.push({ file: f, fixes });
@@ -257,7 +308,21 @@ export function decideGateOutcome(files: string[], gatePass: boolean): GateOutco
 
 // ── the delivery pipeline ─────────────────────────────────────────────────
 
-export type DeliveryExitCode = 0 | 1 | 2 | 3;
+/** Exit code of a delivery that stopped on a spent runtime quota (EX_TEMPFAIL):
+ *  not a verdict, a pause until the reset. */
+export const QUOTA_WAIT_EXIT = 75;
+
+export type DeliveryExitCode = 0 | 1 | 2 | 3 | typeof QUOTA_WAIT_EXIT;
+
+/** Why a delivery is waiting: which step met the spent quota, and when the
+ *  quota resets (the time the runtime named, else now + its window's default). */
+export interface QuotaWait {
+  step: "worker" | "correction" | "judge";
+  resetAt: string;
+  /** True when the runtime's message named the reset time. */
+  named: boolean;
+  hint: string;
+}
 
 export interface DeliveryLedger {
   handle: runLedger.LedgerHandle;
@@ -356,6 +421,8 @@ export interface DeliveryResult {
   /** Reason string when the completeness ceiling downgraded an otherwise
    * deliverable outcome to `withheld`; null when no cap bound the result. */
   ceilingApplied: string | null;
+  /** Set when the delivery stopped on a spent quota (exit QUOTA_WAIT_EXIT). */
+  quotaWait?: QuotaWait;
 }
 
 const SKILLS_DEFAULT = (() => {
@@ -365,6 +432,45 @@ const SKILLS_DEFAULT = (() => {
 
 function ledgerTry<T>(fn: () => T, warn: (m: string) => void): T | null {
   try { return fn(); } catch (e) { warn(`[run-ledger] ${(e as Error)?.message ?? e}`); return null; }
+}
+
+/**
+ * A spent quota ends the delivery for now, whichever step met it: the worker
+ * (deliverAfterRuntimeError), a correction or the judge (runDelivery).
+ *
+ * Measured on 2026-10-14: a worker stopped on Codex's usage limit went on into
+ * the gate and into corrections that met the same limit, and the judge on the
+ * same exhausted runtime fell back to heuristics. Every step after the stop
+ * spent calls against a runtime known to be dead.
+ *
+ * So: the runtime is cooled down until the reset, the ledger row goes to
+ * `failed` with meta.stop_reason "quota" and meta.quota_reset_at (the
+ * supervisor resumes it at or after that time, without spending a retry),
+ * the audit carries x_delivery_quota_wait, and nothing more runs.
+ */
+function recordQuotaWait(args: DeliveryArgs, q: QuotaWait, error: string, extra: { files: number; revisions: number }): void {
+  const warn = args.warn ?? ((l: string) => console.error(l));
+  const led = args.ledger ?? null;
+  if (q.step !== "judge") {
+    const ttlSec = Math.max(60, Math.ceil((Date.parse(q.resetAt) - Date.now()) / 1000));
+    try { markCooldown(args.projectRoot, args.runtime, ttlSec, q.hint, "5h"); } catch { /* the ledger still carries the reset */ }
+  }
+  const metaPatch = { stop_reason: "quota", quota_reset_at: q.resetAt, quota_reset_named: q.named, quota_step: q.step, runtime_errored: q.step === "worker" || undefined };
+  if (led) {
+    ledgerTry(() => {
+      const row = runLedger.getRun(led.handle, led.runId);
+      if (!row || runLedger.isTerminal(row.state)) return;
+      if (row.state === "failed") { runLedger.patchMeta(led.handle, led.runId, metaPatch); return; }
+      runLedger.markState(led.handle, led.runId, "failed", { error, metaPatch });
+    }, warn);
+  }
+  args.audit("x_delivery_quota_wait", {
+    trace_id: args.pid, project_id: args.pid, business_slug: args.slug, runtime: args.runtime,
+    step: q.step, reset_at: q.resetAt, reset_named: q.named, hint: q.hint,
+    files: extra.files, revisions: extra.revisions, outputs_root: args.outputsRoot,
+  });
+  const local = new Date(q.resetAt);
+  warn(`  ⏸ ${q.step === "judge" ? "the judge" : q.step === "correction" ? "a correction" : "the worker"} stopped on a spent quota (${q.hint}); nothing more runs until ${Number.isFinite(local.getTime()) ? local.toLocaleString() : q.resetAt}${q.named ? "" : " (no reset time named; the window's default)"}. The files stay in ${args.outputsRoot}.`);
 }
 
 export function runDelivery(args: DeliveryArgs): DeliveryResult {
@@ -450,7 +556,7 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
     }
   }
 
-  const produced = listFiles(args.outputsRoot).filter(f => isDeliverable(f, namedInBrief));
+  const produced = producedFiles(args.outputsRoot, namedInBrief);
   if (produced.length === 0 && !manifestVerified) {
     warn(`  verify: no non-stub deliverable under ${args.outputsRoot}`);
     emit("verify_failed", { trace_id: args.pid, project_id: args.pid, business_slug: args.slug, outputs_root: args.outputsRoot });
@@ -503,8 +609,26 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
     };
   }
 
-  let gate = runGateOnce(gatedFiles, gateOpts);
   let revUsed = 0;
+  /** A spent quota met by a correction or by the judge: recordQuotaWait, and nothing more runs. */
+  const finishQuota = (q: QuotaWait, error: string): DeliveryResult => {
+    recordQuotaWait(args, q, error, { files: produced.length, revisions: revUsed });
+    return { exitCode: QUOTA_WAIT_EXIT, delivered: false, gateOutcome: "indeterminate", produced, gatedFiles, revisionsUsed: revUsed, sessionId, zipPath: null, verifySource, ceilingApplied: null, quotaWait: q };
+  };
+  const judgeQuotaWait = (run: GateRun): DeliveryResult => {
+    const q = run.judgeQuota!;
+    const named = !!q.resetAt && Number.isFinite(Date.parse(q.resetAt));
+    // The gate says it could not judge: no gate_passed, no gate_failed, and no
+    // heuristic verdict standing in for the judge's.
+    emit("x_gate_unjudged_quota", { trace_id: args.pid, project_id: args.pid, business_slug: args.slug, files: gatedFiles.length, revisions: revUsed, reset_at: q.resetAt || null, hint: q.hint });
+    return finishQuota({ step: "judge", resetAt: named ? q.resetAt : new Date(Date.now() + 30 * 60_000).toISOString(), named, hint: q.hint }, `judge: ${q.hint}`);
+  };
+  // The folders the brief places the work in, outside the outputs root: every
+  // correction is told to work there and is granted them.
+  const workDirs = briefWorkDirs(args.brief, args.outputsRoot);
+
+  let gate = runGateOnce(gatedFiles, gateOpts);
+  if (gate.judgeQuota) return judgeQuotaWait(gate);
   while (!gate.pass && revUsed < maxRevisions) {
     revUsed++;
     warn(`  gate FAIL — auto-revision ${revUsed}/${maxRevisions}`);
@@ -517,12 +641,13 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
       ...fixLines,
       "",
       `Os entregáveis ficam em ${path.resolve(args.outputsRoot)}.`,
+      `O trabalho que o brief coloca em outra pasta (um projeto a revisar ou corrigir, um projeto novo a criar) é feito lá, no lugar: nunca o copie para dentro de ${path.resolve(args.outputsRoot)}.${workDirs.length ? ` O brief coloca trabalho em: ${workDirs.join(", ")}.` : ""}`,
       "Regra de hífen (a mais comum): use '-' só para palavras compostas; nunca para emendar orações nem como travessão — troque por vírgula, dois-pontos ou ponto.",
       scopeGuard("pt-BR"),
       "Não imprima resumo: entregue os arquivos corrigidos.",
     ].join("\n");
     const revise = (resume: string | undefined, prompt: string) => runHeadlessImpl({
-      runtime: args.runtime, prompt, cwd: args.projectRoot, addDirs: [args.projectDir, args.outputsRoot],
+      runtime: args.runtime, prompt, cwd: args.projectRoot, addDirs: [args.projectDir, args.outputsRoot, ...workDirs],
       sessionId: resume,
       appendSystemPrompt: AUTONOMOUS_DIRECTIVE + (args.rulesDirective ?? ""),
       maxBudgetUsd: args.maxBudgetUsd, timeoutMs: args.timeoutMs, yolo: args.yolo,
@@ -536,7 +661,10 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
     });
     let rr = revise(sessionId || undefined, fixPrompt);
     let coldRetry = false;
-    if (!rr.ok && sessionId) {
+    // A spent quota is not a session that failed to resume: a cold retry would
+    // meet the same limit, and so would every round after it.
+    const quotaNow = !rr.ok ? classify(args.runtime, rr) : null;
+    if (!rr.ok && sessionId && quotaNow?.kind !== "quota_exhausted" && quotaNow?.kind !== "auth_failed") {
       // The session could not be resumed (expired, pruned, another runtime).
       // Without a second try the gate re-ran on unchanged files and the round
       // was spent; a cold run gets the brief the resumed one would have had.
@@ -551,14 +679,32 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
       warn(`  revision ${revUsed}: the session did NOT resume — this correction ran without the previous context`);
       for (const w of rr.warnings ?? []) warn(`    ${w}`);
     }
-    emit("revision_auto", { trace_id: args.pid, project_id: args.pid, business_slug: args.slug, attempt: revUsed, ok: rr.ok, ...(coldRetry ? { cold_retry: true } : {}), ...(rr.resumeLost ? { resume_lost: true } : {}) });
+    // A correction whose runtime failed (a spent quota, a credential, the
+    // transport) did not run: it is not a round. Counted, it spent the limit
+    // and re-gated unchanged files (2026-10-14).
+    const failure = !rr.ok ? classify(args.runtime, rr) : null;
+    const notARound = !!failure && (failure.kind !== "error" || isTransportFailure([rr.error, rr.stderr].filter(Boolean).join("\n")));
+    const failureKind = failure ? (failure.kind === "error" ? "transport" : failure.kind) : null;
+    emit("revision_auto", { trace_id: args.pid, project_id: args.pid, business_slug: args.slug, attempt: revUsed, ok: rr.ok, ...(coldRetry ? { cold_retry: true } : {}), ...(rr.resumeLost ? { resume_lost: true } : {}), ...(notARound ? { counted: false, runtime_failure: failureKind } : {}) });
     if (rr.sessionId) {
       sessionId = rr.sessionId;
       args.onSession?.(rr.sessionId);
       if (led) ledgerTry(() => runLedger.recordSession(led.handle, led.runId, rr.sessionId), warn);
     }
+    if (notARound) {
+      revUsed--;
+      const why = String(rr.error || rr.stderr || `exit ${rr.exitCode}`);
+      if (failure!.kind === "quota_exhausted") {
+        const q = quotaStop(why, args.runtime);
+        return finishQuota({ step: "correction", resetAt: q?.resetAt ?? new Date(Date.now() + failure!.ttlSec * 1000).toISOString(), named: q?.named ?? false, hint: failure!.hint }, why);
+      }
+      warn(`  correction ${revUsed + 1} did not run (${failureKind}: ${why.slice(0, 160)}): not counted as a round, and no further correction runs on this runtime`);
+      emit("x_corrections_blocked", { trace_id: args.pid, project_id: args.pid, business_slug: args.slug, revisions: revUsed });
+      break;
+    }
     gatedFiles = gateableFiles(args.outputsRoot, namedInBrief);
     gate = runGateOnce(gatedFiles, gateOpts);
+    if (gate.judgeQuota) return judgeQuotaWait(gate);
   }
 
   const gateOutcome = decideGateOutcome(gatedFiles, gate.pass);
@@ -683,9 +829,12 @@ export interface RuntimeErrorOutcome {
   /** true when artifacts existed and the delivery pipeline ran over them. */
   judged: boolean;
   candidates: number;
-  /** 1 when there was nothing to judge; otherwise the pipeline's own code
-   * (0 delivered · 2 withheld · 3 indeterminate). */
+  /** 1 when there was nothing to judge; QUOTA_WAIT_EXIT when the worker
+   * stopped on a spent quota (nothing judged, `result.quotaWait` says until
+   * when); otherwise the pipeline's own code (0 delivered · 2 withheld ·
+   * 3 indeterminate). */
   exitCode: DeliveryExitCode;
+  /** Null only when nothing was produced and nothing was decided. */
   result: DeliveryResult | null;
 }
 
@@ -711,6 +860,20 @@ export interface RuntimeErrorOutcome {
 export function deliverAfterRuntimeError(args: RuntimeErrorArgs): RuntimeErrorOutcome {
   const warn = args.warn ?? ((l: string) => console.error(l));
   const led = args.ledger ?? null;
+  // A worker that stopped on a spent quota was interrupted, not finished: no
+  // gate, no correction, no judge on a runtime known to be dead. The row waits
+  // for the reset (recordQuotaWait); what it wrote stays on disk for the resume.
+  const quota = quotaStop(args.runtimeError, args.runtime);
+  if (quota) {
+    const candidates = candidateArtifacts(args.outputsRoot, args.brief);
+    const q: QuotaWait = { step: "worker", resetAt: quota.resetAt, named: quota.named, hint: quota.hint };
+    recordQuotaWait(args, q, args.runtimeError, { files: candidates.length, revisions: 0 });
+    const result: DeliveryResult = {
+      exitCode: QUOTA_WAIT_EXIT, delivered: false, gateOutcome: "indeterminate", produced: candidates, gatedFiles: [],
+      revisionsUsed: 0, sessionId: args.sessionId ?? null, zipPath: null, verifySource: "scan", ceilingApplied: null, quotaWait: q,
+    };
+    return { judged: false, candidates: candidates.length, exitCode: QUOTA_WAIT_EXIT, result };
+  }
   if (led) {
     ledgerTry(() => runLedger.markState(led.handle, led.runId, "failed", {
       error: args.runtimeError,
