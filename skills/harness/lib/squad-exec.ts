@@ -86,6 +86,9 @@ export interface SquadExecResult {
   ok: boolean;
   squadSlug: string;
   sessionId: string | null;
+  /** The runtime that finished the squad's work, after any cascade handoff:
+   *  the session is its. */
+  finalRuntime?: string;
   costUsd: number | null;
   durationMs: number;
   outputsDir: string;
@@ -677,7 +680,7 @@ export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
   }, args.projectRoot);
 
   return {
-    ok: res.ok, squadSlug: args.squadSlug, sessionId: res.sessionId,
+    ok: res.ok, squadSlug: args.squadSlug, sessionId: res.sessionId, finalRuntime: res.finalRuntime,
     costUsd: res.costUsd, durationMs: res.durationMs, outputsDir: outDir,
     error: res.ok ? undefined : (res.error || res.stderr || `exit ${res.exitCode}`),
   };

@@ -74,7 +74,7 @@ export const COMMANDS: Command[] = [
   { name: "audit-where", target: "harness/scripts/audit-where.ts", category: "observability", args: "[--project <dir>] [--trace <id>]", summary: "Which audit files a run wrote, and why those", visibility: "user" },
   { name: "audit-tail", target: "harness/scripts/audit-tail.ts", category: "observability", args: "[--follow] [--trace <id>] [--only orchestration|hooks|all]", summary: "Follow a run's audit, normalized, from now on", visibility: "user" },
   { name: "team", target: "harness/scripts/chain.ts", category: "dispatch", args: "plan|step|review|verdict ...", summary: "A business's org chart: plan the chain, get each seat's prompt, review it", visibility: "user" },
-  { name: "revise", target: "harness/scripts/revise.ts", category: "dispatch", args: '<project> "<change>"', summary: "Apply a change keeping the same runtime session", visibility: "user" },
+  { name: "revise", target: "harness/scripts/revise.ts", category: "dispatch", args: '<project>|--last [<target>] "<change>"', summary: "Apply a change keeping the same runtime session (a fresh seeded one when none can continue)", visibility: "user" },
   { name: "ask", target: "harness/scripts/ask.ts", category: "dispatch", args: "<clone> [question]", summary: "Talk to a single mind-clone (DNA injected)", visibility: "user" },
   { name: "exec", target: "harness/scripts/exec.ts", category: "dispatch", args: '[--runtime=<rt>] "<prompt>"', summary: "The runtime as itself: one prompt, its answer, no persona and no gate", visibility: "user" },
   { name: "build-catalog", target: "harness/scripts/build-catalog.ts", category: "dev", args: "[--stdout]", summary: "Rebuild the survey catalog (slug + full description)", visibility: "dev" },

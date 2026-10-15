@@ -34,7 +34,9 @@ import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { runHeadless, runtimeAvailable, AUTONOMOUS_DIRECTIVE, LEDGER_DEFAULT_TIMEOUT_MS, type Runtime } from "../lib/host-agent-driver.ts";
-import { listRuntimes, retiredRuntimeMessage } from "../../_shared/lib/host-agent-driver.ts";
+import { continueSessionOnNextWorker, listRuntimes, onLedgerStall, retiredRuntimeMessage, sessionHome } from "../../_shared/lib/host-agent-driver.ts";
+import { reportStall, STALLED_EXIT } from "../lib/stall-guard.ts";
+import { readRunSession, sessionTarget, writeWorkerSession } from "../lib/run-session.ts";
 import { amplify } from "../lib/amplifier.ts";
 import { proxyEnrichBrief } from "../lib/brief-proxy.ts";
 import { resolveRoutingMode, routingModeOrigin } from "../../_shared/lib/routing-mode.ts";
@@ -113,7 +115,7 @@ function arg(name: string, fallback?: string): string | undefined {
 // filter(!startsWith("--")) treats the "X" in "--project X" as a positional,
 // which made "--project caso-bruno" leak its value as the inline brief and
 // override --brief-file. Skip the token after each known value-flag.
-const VALUE_FLAGS = new Set(["--project", "--runtime", "--manifest", "--brief-file", "--outputs-root", "--max-budget", "--timeout", "--max-revisions", "--execution-mode", "--gauntlet-intensity", "--business", "--squad", "--run-id"]);
+const VALUE_FLAGS = new Set(["--project", "--runtime", "--manifest", "--brief-file", "--outputs-root", "--max-budget", "--timeout", "--max-revisions", "--execution-mode", "--gauntlet-intensity", "--business", "--squad", "--run-id", "--continue-from"]);
 function extractPositional(argv: string[]): string[] {
   const out: string[] = [];
   for (let i = 0; i < argv.length; i++) {
@@ -493,8 +495,9 @@ if (!slug && !autoMode && !explicitTarget) {
   console.error("    --execution-mode=<mode> standard|gauntlet|auto (default: standard)");
   console.error("    --gauntlet-intensity=<profile> light|balanced|exhaustive");
   console.error("    --run-id=<runId>        the Run's id in the project kernel: adopted when prepared (Glance), created otherwise (multi-target nodes); default run_<project>");
+  console.error("    --continue-from=<project>  the same business, squad or agent-x as that project: its worker continues that project's session with this brief");
   console.error("    --max-budget=<usd>      cost ceiling for the run (claude --max-budget-usd)");
-  console.error("    --timeout=<min>         wall-clock ceiling for the run (default 24h; a real hang is caught by ~5 min of inactivity)");
+  console.error("    --timeout=<min>         wall-clock ceiling for the run (default none; a hang is caught by the stall guard, exit 76)");
   console.error("    --safe                  opt in to restricted mode (limited tools + sandbox); default = full trust");
   console.error("    --no-judge              skip the LLM judge for this run; the offline heuristic gate still runs");
   console.error("    --strict-route          an ambiguous route FAILS instead of auto-picking the top candidate");
@@ -507,6 +510,9 @@ if (!slug && !autoMode && !explicitTarget) {
   console.error("    3  INDETERMINATE — nothing was judged: zero gateable artifacts,");
   console.error("       or scaffold without --exec (nothing dispatched, nothing delivered)");
   console.error("    4  invalid arguments");
+  console.error("   75  waiting on quota: nothing more ran; the run resumes at or after the reset");
+  console.error("   76  STALLED: the worker showed no activity for execution.stall_timeout_min (or never");
+  console.error("       started within execution.stall_no_start_min); it was ended, nothing was judged");
   console.error("");
   console.error("Example:");
   // Example slugs and briefs are user-library DATA, kept in the user's language.
@@ -527,6 +533,27 @@ if (!brief) {
   console.error(c("red", "ERROR: pass an inline brief or --brief-file"));
   process.exit(4);
 }
+
+// --continue-from <project>: a new brief for the same worker, in the session
+// that produced the earlier delivery. The target must be named and must be that
+// project's worker; anything else is an input error and nothing runs.
+const continueFromId = arg("--continue-from");
+const continueFrom = (() => {
+  if (continueFromId === undefined) return null;
+  const refuse = (msg: string): never => { console.error(c("red", `ERROR: ${msg}`)); process.exit(4); };
+  if (!/^[A-Za-z0-9._-]+$/.test(continueFromId) || continueFromId === "." || continueFromId === "..") refuse(`--continue-from must be a project id, never a path: '${continueFromId}'`);
+  const found = readRunSession(continueFromId);
+  if (!found.ok) return refuse(`--continue-from: ${found.reason}`);
+  const target = sessionTarget(found, found.data);
+  const wanted = explicitTarget?.kind === "squad" ? { kind: "squad", slug: explicitTarget.slug }
+    : explicitTarget?.kind === "agent-x" ? { kind: "agent-x", slug: "agent-x" }
+    : (!autoMode && slug && (!explicitTarget || explicitTarget.kind === "business")) ? { kind: "business", slug } : null;
+  if (!wanted) return refuse("--continue-from needs the target named (the business, --squad=<slug> or --agent-x), not --auto");
+  if (wanted.kind !== found.kind || wanted.slug !== target) {
+    refuse(`--continue-from ${continueFromId} is a ${found.kind === "agent-x" ? "agent-x" : `${found.kind} ${target}`} run; this dispatch names ${wanted.kind === "agent-x" ? "agent-x" : `${wanted.kind} ${wanted.slug}`}. A session continues only with its own worker.`);
+  }
+  return { projectId: continueFromId, kind: found.kind, slug: target, data: found.data };
+})();
 
 // Never route/dispatch against a stale corpus (routing-360 Phase 2.5);
 // <50ms when fresh — mtime stats only.
@@ -549,6 +576,30 @@ let ledgerRunId: string | null = null;
 function ledgerTry<T>(fn: () => T): T | null {
   try { return fn(); } catch (e) { console.error(`[run-ledger] ${(e as Error)?.message ?? e}`); return null; }
 }
+
+// A confirmed stall ends the whole dispatch, whichever worker it hit (the
+// producer, a seat, a correction round): the heartbeat sidecar already ended
+// the worker and marked the row; here the gate is skipped, _STATUS.json says
+// why and what next, the kernel Run is closed as failed, and the exit is 76.
+// Without this the notice the orchestrating agent waits on would never come.
+let stallPublication: { finish: (verdict: { exitCode: 0 | 1 | 2 | 3; gateOutcome: any; error?: string }, outputsRoot: string) => void } | null = null;
+onLedgerStall((stall, result, opts) => {
+  let row: runLedger.RunRow | null = null;
+  try { row = runLedger.getRun(runLedger.openLedger(opts.ledger?.dbPath), opts.ledger!.runId); } catch { row = null; }
+  if (row) {
+    reportStall(row, stall as never, { audit: emit });
+    const oroot = typeof row.meta?.outputs_root === "string" ? row.meta.outputs_root as string : "";
+    try { stallPublication?.finish({ exitCode: 1, gateOutcome: "indeterminate", error: String(row.last_error ?? "stalled") }, oroot); } catch { /* the ledger has it */ }
+  } else {
+    console.error(c("red", `■ STALLED (exit ${STALLED_EXIT}): ${String(result.error ?? "the worker stalled")}`));
+  }
+  process.exit(STALLED_EXIT);
+});
+
+/** Stamped on every ledger row this process opens: the stall guard's owner. A
+ *  live dispatcher decides its own run's stalls; the supervisor waits for it
+ *  (stall-guard.ts dispatcherOwnsStall). */
+const dispatcherMeta = (): Record<string, unknown> => ({ dispatcher_pid: process.pid, dispatcher_started_at: runLedger.processStartedAt(process.pid) });
 
 // Harness config (quality_gate.*, routing.on_router_failure) — Phase 4.
 const harnessConfig = loadHarnessConfig();
@@ -638,6 +689,10 @@ const explicitRuntime: Runtime | null = (() => {
   if (eq) return normRuntime(eq.split("=")[1]);
   if (process.argv.includes("--claude-code")) return "claude-code";
   if (runtimeFlagGiven) return normRuntime(runtime);
+  // A continued session lives in its own runtime: that runtime runs the work
+  // unless the owner named another one (then the work starts fresh there).
+  const continued = typeof continueFrom?.data.runtime === "string" ? normRuntime(continueFrom.data.runtime) : null;
+  if (continued && continueFrom?.data.session_id && runtimeAvailable(continued)) return continued;
   return null;
 })();
 // An unidentified host is a STATE THE SYSTEM DECLARES, never a silent
@@ -936,6 +991,38 @@ if (briefTarget) {
   } else {
     console.log(c("lime", "▶") + c("bold", " Explicit target — agent-x") + c("dim", " (no router)"));
     pendingCascade = { kind: "agent-x", reason: step.reason, plan };
+  }
+}
+
+// --continue-from: the brief says what this run continues, and the worker gets
+// the earlier session when there is one to continue (host-agent-driver.ts
+// continueSessionOnNextWorker: the first worker of this dispatch on that
+// runtime resumes it, from the folder it was started in). With no id, on
+// another runtime, or for a business that runs as a team chain (whose seats
+// each keep their own session), the worker starts fresh with the earlier
+// delivery as input.
+if (continueFrom) {
+  const prevOut = typeof continueFrom.data.outputs_root === "string" ? continueFrom.data.outputs_root : null;
+  const prevSid = typeof continueFrom.data.session_id === "string" && continueFrom.data.session_id ? continueFrom.data.session_id : null;
+  const prevRt = typeof continueFrom.data.runtime === "string" ? normRuntime(continueFrom.data.runtime) : null;
+  const teamChain = continueFrom.kind === "business" && wantTeam;
+  const resumable = !!prevSid && prevRt === runtimeDecision.runtime && !teamChain;
+  brief = [brief, "", "## Continues",
+    `This brief continues project ${continueFrom.projectId}${resumable ? ", in the same session" : ""}.`
+    + (prevOut ? ` Its delivery is in ${prevOut}: read it as input and leave it as it is.` : "")
+    + " Write this run's deliverables where your prompt says.",
+  ].join("\n");
+  if (resumable) {
+    continueSessionOnNextWorker({ sessionId: prevSid!, runtime: prevRt!, fromProject: continueFrom.projectId,
+      workspace: typeof continueFrom.data.workspace === "string" && continueFrom.data.workspace ? continueFrom.data.workspace : null });
+    console.log(c("dim", `  continue-from ${continueFrom.projectId}: session ${prevSid} (${prevRt})`));
+  } else {
+    const reason = !prevSid ? "no_session_id" : teamChain ? "team_chain" : "runtime_changed";
+    const why = !prevSid ? "that run recorded no session id"
+      : teamChain ? "this business runs as a team chain, whose seats each keep their own session"
+      : `its session is ${prevRt}'s and this run uses ${runtimeDecision.runtime}`;
+    console.error(c("yellow", `⚠ continue-from ${continueFrom.projectId}: ${why}; the worker starts a FRESH session with that delivery as input.`));
+    emit("x_continue_fresh_session", { from_project: continueFrom.projectId, reason, runtime: runtimeDecision.runtime, previous_runtime: prevRt, previous_session_id: prevSid });
   }
 }
 
@@ -1438,13 +1525,14 @@ if (pendingCascade?.kind === "squad-only") {
   const publication = openStandardPublication({ kernelPath: KERNEL_PATH, projectId: pid, runId: canonicalRunIdFor(pid, runIdFlag),
     traceId: pid, target: { kind: "squad", slug: squads[0], capabilityId }, snapshot: frozenExecutionSnapshot(pid, rt, "squad"),
     audit: emit, warn: line => console.error(c("yellow", line)) });
+  stallPublication = publication;
   if (publication.incompatible || publication.collided) process.exit(1);
   ledgerTry(() => {
     ledgerHandle = runLedger.openLedger();
     const row = runLedger.openRun(ledgerHandle, {
       traceId: pid, projectId: pid, targetSlug: squads.join(","), targetKind: "squad",
       runtime: rt,
-      meta: { project_dir: projDir, project_root: projectRoot, scaffold_root: scaffoldRoot,
+      meta: { ...dispatcherMeta(), project_dir: projDir, project_root: projectRoot, scaffold_root: scaffoldRoot,
         brief_path: path.join(scaffoldRoot, "brief.md"), outputs_root: oroot, mode: "squad-only" },
     });
     ledgerRunId = row.run_id;
@@ -1461,6 +1549,16 @@ if (pendingCascade?.kind === "squad-only") {
   let lastSession: string | null = null;
   let squadError: string | null = null;
   let failedSquad: string | null = null;
+  // One session file per squad that ran (squads/<slug>/session.json), so
+  // `nrv revise` continues that squad's own conversation (run-session.ts).
+  const recordSquadSession = (sq: string, r: { sessionId: string | null; finalRuntime?: string }) => {
+    try {
+      const sqDir = path.join(scaffoldRoot, "squads", sq);
+      writeWorkerSession({ projectId: pid, kind: "squad", slug: sq, runtime: r.finalRuntime ?? rt, sessionId: r.sessionId,
+        projectDir: sqDir, projectRoot, outputsRoot: squads.length > 1 ? path.join(oroot, sq) : oroot,
+        workspace: runFolderOf(sqDir, projectRoot) ?? null });
+    } catch (e) { console.error(c("yellow", `  ⚠ session.json for squad '${sq}' not written: ${(e as Error)?.message ?? e}`)); }
+  };
   for (const sq of squads) {
     const outDir = squads.length > 1 ? path.join(oroot, sq) : oroot;
     const r = runSquadHeadless({
@@ -1473,6 +1571,7 @@ if (pendingCascade?.kind === "squad-only") {
       ...(ledgerRunId ? { ledger: { runId: ledgerRunId, watchDir: outDir } } : {}),
     });
     lastSession = r.sessionId ?? lastSession;
+    recordSquadSession(sq, r);
     if (!r.ok) {
       // Stop the chain, but do NOT abandon what is already on disk — the
       // delivery pipeline below decides (see deliverAfterRuntimeError).
@@ -1493,6 +1592,8 @@ if (pendingCascade?.kind === "squad-only") {
     // A revision round resumes the last squad's worker: its packages and Python
     // come first (squadRunEnv resolves a name to the first squad that has it).
     env: squadRunEnv([...squads].reverse()),
+    // A correction round that minted a new session: the last squad's file follows it.
+    onSession: (sid: string) => { lastSession = sid; recordSquadSession(squads[squads.length - 1], { sessionId: sid }); },
   };
   publication.verify();
   if (squadError) {
@@ -1555,6 +1656,7 @@ if (pendingCascade?.kind === "judge-x") {
   const publication = openStandardPublication({ kernelPath: KERNEL_PATH, projectId: pid, runId: canonicalRunIdFor(pid, runIdFlag),
     traceId: pid, target: JUDGE_X_TARGET, snapshot: frozenExecutionSnapshot(pid, rt, "agent-x"),
     audit: emit, warn: line => console.error(c("yellow", line)) });
+  stallPublication = publication;
   if (publication.incompatible) process.exit(1);
 
   console.log(c("lime", "▶") + c("bold", ` Judge-x — exec headless (${rt})`));
@@ -1673,13 +1775,14 @@ if (pendingCascade?.kind === "agent-x") {
   const publication = openStandardPublication({ kernelPath: KERNEL_PATH, projectId: pid, runId: canonicalRunIdFor(pid, runIdFlag),
     traceId: pid, target: { kind: "agent-x", slug: "agent-x" }, snapshot: frozenExecutionSnapshot(pid, rt, "agent-x"),
     audit: emit, warn: line => console.error(c("yellow", line)) });
+  stallPublication = publication;
   if (publication.incompatible || publication.collided) process.exit(1);
   ledgerTry(() => {
     ledgerHandle = runLedger.openLedger();
     const row = runLedger.openRun(ledgerHandle, {
       traceId: pid, projectId: pid, targetSlug: "agent-x", targetKind: "agent-x",
       runtime: rt,
-      meta: { project_dir: projDir, project_root: PROJECT_ROOT, scaffold_root: scaffoldRoot,
+      meta: { ...dispatcherMeta(), project_dir: projDir, project_root: PROJECT_ROOT, scaffold_root: scaffoldRoot,
         brief_path: briefPath, outputs_root: oroot, mode: "agent-x" },
     });
     ledgerRunId = row.run_id;
@@ -1705,9 +1808,20 @@ if (pendingCascade?.kind === "agent-x") {
     audit: emit,
   });
   if (ledgerRunId) ledgerTry(() => runLedger.recordSession(ledgerHandle!, ledgerRunId!, r.sessionId));
+  // agent-x/session.json: `nrv revise` continues the generalist's own session.
+  try {
+    writeWorkerSession({ projectId: pid, kind: "agent-x", slug: "agent-x", runtime: r.finalRuntime ?? rt, sessionId: r.sessionId,
+      projectDir: projDir, projectRoot: PROJECT_ROOT, outputsRoot: oroot, workspace: runFolderOf(projDir, PROJECT_ROOT) ?? null });
+  } catch (e) { console.error(c("yellow", `  ⚠ agent-x session.json not written: ${(e as Error)?.message ?? e}`)); }
   const agentXDeliverOpts = {
     pid, slugOrNull: null, targetKind: "agent-x" as const, rt, oroot,
     projDir, projectRoot: PROJECT_ROOT, sessionId: r.sessionId, withManifest: false,
+    onSession: (sid: string) => {
+      try {
+        writeWorkerSession({ projectId: pid, kind: "agent-x", slug: "agent-x", runtime: r.finalRuntime ?? rt, sessionId: sid,
+          projectDir: projDir, projectRoot: PROJECT_ROOT, outputsRoot: oroot, workspace: runFolderOf(projDir, PROJECT_ROOT) ?? null });
+      } catch { /* the ledger carries the session too */ }
+    },
   };
   publication.verify();
   if (!r.ok) {
@@ -1839,6 +1953,7 @@ if (wantExec && !businessCanaryDecision.enabled) {
         ? Math.floor(((timeoutMin ? parseInt(timeoutMin, 10) * 60_000 : LEDGER_DEFAULT_TIMEOUT_MS) + 5 * 60_000) / 1000)
         : 900,
       meta: {
+        ...dispatcherMeta(),
         project_dir: projDir, project_root: projectRoot, scaffold_root: scaffoldRoot,
         outputs_root: execOutputsRoot ?? null,
         prompt_path: teamChainRun ? null : outputPath, brief_path: tmpBriefFile,
@@ -1975,7 +2090,7 @@ if (wantExec) {
       ledgerTry(() => {
         ledgerHandle = runLedger.openLedger();
         const row = runLedger.openRun(ledgerHandle, { traceId: pid, projectId: pid, targetSlug: slug, targetKind: "business",
-          runtime: rt, meta: { project_dir: projDir, project_root: projectRoot, scaffold_root: scaffoldRoot,
+          runtime: rt, meta: { ...dispatcherMeta(), project_dir: projDir, project_root: projectRoot, scaffold_root: scaffoldRoot,
             outputs_root: oroot, prompt_path: outputPath, brief_path: tmpBriefFile, mode: "single" } });
         ledgerRunId = row.run_id;
       });
@@ -1992,6 +2107,7 @@ if (wantExec) {
   const publication = businessCanaryDecision.enabled ? inertStandardPublication(canonicalRunIdFor(pid, runIdFlag))
     : openStandardPublication({ kernelPath: KERNEL_PATH, projectId: pid, runId: canonicalRunIdFor(pid, runIdFlag), traceId: pid,
       target: { kind: "business", slug }, snapshot: frozenExecutionSnapshot(pid, rt, "business"), audit: emit, warn: line => console.error(c("yellow", line)) });
+  stallPublication = publication;
   if (publication.incompatible || publication.collided) {
     const error = publication.collided ? `run ${publication.runId} is already terminal` : "runtime incompatible with the provider catalog";
     if (ledgerRunId) ledgerTry(() => runLedger.markState(ledgerHandle!, ledgerRunId!, "failed", { error }));
@@ -2050,6 +2166,7 @@ if (wantExec) {
       maxBudgetUsd: effectiveBudgetUsd(),
       timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
       rulesDirective,
+      ledgerRunId,
     });
     // A director that failed decided nothing, so no seat ran and the chain has
     // nothing on disk. The run used to die there, taking the business with it.
@@ -2101,6 +2218,7 @@ if (wantExec) {
         maxBudgetUsd: effectiveBudgetUsd(),
         timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
         rulesDirective, autonomousDirective: AUTONOMOUS_DIRECTIVE,
+        ...(ledgerRunId ? { ledger: { runId: ledgerRunId, watchDir: sqDir } } : {}),
       });
       if (sr.ok) priorSquadDirs.push({ slug: sq, dir: sr.outputsDir });
       else console.error(c("yellow", `  ⚠ mandatory squad '${sq}' failed: ${sr.error}`));
@@ -2159,8 +2277,9 @@ if (wantExec) {
     session_id: res.sessionId, project_dir: projDir, project_root: projectRoot,
     outputs_root: oroot, zip_path: null, created_at: new Date().toISOString(),
     // Where the session was started: `nrv revise` resumes from the same folder,
-    // since claude keeps a session under its working directory.
-    workspace: runWorkspace ?? null,
+    // since claude keeps a session under its working directory. A run that
+    // continued an earlier project's session ran in that project's folder.
+    workspace: sessionHome(res.sessionId) ?? runWorkspace ?? null,
     // The manifest travels with the session: without it `nrv revise` loses the
     // one completeness proof the system has (promised paths vs disk truth) and
     // silently downgrades to the scan fallback on every revision.

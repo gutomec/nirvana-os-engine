@@ -49,11 +49,14 @@ export function orcaHostActive(env: NodeJS.ProcessEnv = process.env): boolean {
 }
 
 /** Headless dispatches become Orca worker terminals only when the host is
- *  active AND `host.orca_workers` is on (its default). */
+ *  active AND `execution.orca_workers` is `on`. Its default is `off`: being
+ *  inside an Orca terminal no longer moves workers into Orca tabs, because an
+ *  interactive TUI can stop on a dialog nobody answers (a trust prompt held an
+ *  agy worker for 94 minutes on 2026-10-15) where the headless child cannot. */
 export function orcaWorkersActive(env: NodeJS.ProcessEnv = process.env): boolean {
   if (!orcaHostActive(env)) return false;
-  try { return resolveSetting("host.orca_workers").value === true; }
-  catch { return true; }
+  try { return resolveSetting("execution.orca_workers").value === "on"; }
+  catch { return false; }
 }
 
 export interface OrcaCall<T = any> {
@@ -136,6 +139,38 @@ export function orcaFire(args: string[], env: NodeJS.ProcessEnv = process.env): 
     child.on("error", () => { /* binary absent — never fatal */ });
     child.unref();
   } catch { /* best-effort */ }
+}
+
+/** The Orca identifiers of a worker terminal, as the run ledger records them
+ *  (`meta.orca_worker`), so a stop or a stall can end what the engine opened. */
+export interface OrcaWorkerRecord {
+  terminal: string | null;
+  run_id?: string | null;
+  task_id?: string | null;
+  dispatch_id?: string | null;
+}
+
+/** The `meta.orca_worker` record of a ledger row, or null when it has none or
+ *  the engine already closed that terminal. */
+export function orcaWorkerOf(meta: Record<string, unknown> | null | undefined): OrcaWorkerRecord | null {
+  const w = meta?.orca_worker as Record<string, unknown> | null | undefined;
+  if (!w || typeof w !== "object" || typeof w.terminal !== "string" || !w.terminal || w.closed_at) return null;
+  const str = (v: unknown) => (typeof v === "string" && v ? v : null);
+  return { terminal: w.terminal, run_id: str(w.run_id), task_id: str(w.task_id), dispatch_id: str(w.dispatch_id) };
+}
+
+/** End a worker terminal the engine opened: its task is marked failed and its
+ *  terminal closed, which ends the agent CLI running in it. Synchronous, so the
+ *  caller can say whether Orca confirmed the close; never throws. Called
+ *  whatever the host detection says: a recorded terminal is proof Orca ran it. */
+export function closeOrcaWorker(w: OrcaWorkerRecord, opts: { call?: typeof orcaJson; env?: NodeJS.ProcessEnv } = {}): boolean {
+  const call = opts.call ?? orcaJson;
+  const env = opts.env ?? process.env;
+  try {
+    if (w.run_id && w.task_id) call(["orchestration", "task-update", "--run", w.run_id, "--id", w.task_id, "--status", "failed"], { timeoutMs: 10_000, env });
+    if (!w.terminal) return false;
+    return call(["terminal", "close", "--terminal", w.terminal], { timeoutMs: 15_000, env }).ok;
+  } catch { return false; }
 }
 
 // ── the workspace card ────────────────────────────────────────────────────

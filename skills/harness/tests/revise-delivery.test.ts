@@ -78,29 +78,55 @@ interface ReviseCase {
   stdout: string;
   audit: any[];
   runtimeCalls: number;
-  /** Everything the fake runtime received: its argv and its stdin. */
+  /** Everything the fake runtime received: its argv and its stdin, per call. */
   prompt: string;
   oroot: string;
+  /** NIRVANA_DISPATCH_ROLE of each runtime call. */
+  roles: string[];
+  home: string;
+  pid: string;
 }
 
 /** A project laid out the way dispatch.ts leaves one (outputs/<pid>/businesses/
  *  <slug>/session.json), with `files` already in the outputs root, plus a fake
  *  runtime that succeeds without touching disk. Then: `nrv revise`. */
-function runRevise(files: Record<string, string | Buffer>, opts: { env?: Record<string, string>; runtimeFails?: boolean | "quota"; brief?: string; setup?: (pid: string, home: string) => void } = {}): ReviseCase {
+function runRevise(files: Record<string, string | Buffer>, opts: {
+  env?: Record<string, string>; runtimeFails?: boolean | "quota"; brief?: string; setup?: (pid: string, home: string) => void;
+  /** The worker the run had: a business (businesses/<slug>), a squad (squads/copy) or agent-x. */
+  kind?: "business" | "squad" | "agent-x"; sessionId?: string | null;
+  /** The CLI arguments after the script; `{pid}` is replaced by the case's project id. */
+  args?: string[];
+  /** The fake claude answers a `--resume` like a pruned session: "No conversation found". */
+  missingSession?: boolean;
+  /** Write no session.json at all (a run from before runs recorded one). */
+  noSessionFile?: boolean;
+  /** The gate's reservations already on disk from the run's last gate. */
+  reservations?: string;
+} = {}): ReviseCase {
   const n = caseSeq++;
   const home = path.join(TMP, `case-${n}`);
   const pid = `proj-revise-${n}`;
-  const slug = "biz";
+  const kind = opts.kind ?? "business";
+  const slug = kind === "business" ? "biz" : kind === "squad" ? "copy" : "agent-x";
   const projectRoot = path.join(home, "outputs", pid);
-  const projDir = path.join(projectRoot, "businesses", slug);
-  const oroot = path.join(projDir, "deliverables");
+  const projDir = kind === "business" ? path.join(projectRoot, "businesses", slug)
+    : kind === "squad" ? path.join(projectRoot, "squads", slug) : path.join(projectRoot, "agent-x");
+  const oroot = kind === "business" ? path.join(projDir, "deliverables") : path.join(projectRoot, "deliverables");
   fs.mkdirSync(oroot, { recursive: true });
+  fs.mkdirSync(projDir, { recursive: true });
   for (const [name, body] of Object.entries(files)) fs.writeFileSync(path.join(oroot, name), body as any);
-  if (opts.brief) fs.writeFileSync(path.join(projectRoot, "brief.md"), opts.brief);
-  fs.writeFileSync(path.join(projDir, "session.json"), JSON.stringify({
+  // The run's brief lives at its scaffold root; agent-x's is brief-enriched.md.
+  if (opts.brief) fs.writeFileSync(path.join(projectRoot, kind === "agent-x" ? "brief-enriched.md" : "brief.md"), opts.brief);
+  if (opts.reservations) fs.writeFileSync(path.join(oroot, "_QA-RESERVATIONS.md"), opts.reservations);
+  const sessionId = opts.sessionId === undefined ? "sess-original" : opts.sessionId;
+  if (!opts.noSessionFile) fs.writeFileSync(path.join(projDir, "session.json"), JSON.stringify(kind === "business" ? {
     project_id: pid, business_slug: slug, employee: "ceo", runtime: "claude-code",
-    session_id: "sess-original", project_dir: projDir, project_root: projectRoot,
+    session_id: sessionId, project_dir: projDir, project_root: projectRoot,
     outputs_root: oroot, zip_path: null,
+  } : {
+    project_id: pid, target_kind: kind, target_slug: slug, runtime: "claude-code",
+    session_id: sessionId, project_dir: projDir, project_root: projectRoot,
+    outputs_root: oroot, workspace: null, manifest: null,
   }, null, 2));
 
   // Fake `claude`: swallows the prompt, prints the runtime's JSON envelope,
@@ -110,6 +136,7 @@ function runRevise(files: Record<string, string | Buffer>, opts: { env?: Record<
   fs.mkdirSync(binDir, { recursive: true });
   const callsFile = path.join(home, "runtime-calls.log");
   const promptFile = path.join(home, "runtime-prompt.log");
+  const rolesFile = path.join(home, "runtime-roles.log");
   // Bun/TS body with a per-OS launcher: a `#!/bin/sh` fake is invisible to
   // Windows, which is why this whole file used to fail there.
   const envelope = opts.runtimeFails === "quota"
@@ -126,14 +153,23 @@ function runRevise(files: Record<string, string | Buffer>, opts: { env?: Record<
     let stdin = "";
     try { stdin = await Bun.stdin.text(); } catch {}
     try { fs.appendFileSync(${JSON.stringify(callsFile)}, "call\\n"); } catch {}
-    try { fs.writeFileSync(${JSON.stringify(promptFile)}, process.argv.slice(2).join("\\n") + "\\n" + stdin); } catch {}
-    console.log(JSON.stringify(${JSON.stringify(envelope)}));
+    try { fs.appendFileSync(${JSON.stringify(rolesFile)}, (process.env.NIRVANA_DISPATCH_ROLE ?? "") + "\\n"); } catch {}
+    try { fs.appendFileSync(${JSON.stringify(promptFile)}, process.argv.slice(2).join("\\n") + "\\n" + stdin + "\\n=== end of call ===\\n"); } catch {}
+    const argv = process.argv.slice(2);
+    if (${JSON.stringify(!!opts.missingSession)} && argv.includes("--resume")) {
+      process.stderr.write("No conversation found with session ID: " + argv[argv.indexOf("--resume") + 1] + "\\n");
+      process.exit(1);
+    }
+    const env = ${JSON.stringify(envelope)};
+    const assigned = argv.includes("--session-id") ? argv[argv.indexOf("--session-id") + 1] : null;
+    console.log(JSON.stringify(assigned ? { ...env, session_id: assigned } : env));
     process.exit(0);
   `);
 
   const logs = path.join(home, "harness-logs");
   opts.setup?.(pid, home);
-  const r = spawnSync(process.execPath, [REVISE, pid, "encurte o texto", "--no-color"], {
+  const cli = opts.args ? opts.args.map(a => a.replace("{pid}", pid)) : [pid, "encurte o texto"];
+  const r = spawnSync(process.execPath, [REVISE, ...cli, "--no-color"], {
     cwd: home,
     encoding: "utf8",
     env: {
@@ -155,7 +191,8 @@ function runRevise(files: Record<string, string | Buffer>, opts: { env?: Record<
     : [];
   const runtimeCalls = fs.existsSync(callsFile) ? fs.readFileSync(callsFile, "utf8").split("\n").filter(Boolean).length : 0;
   const prompt = fs.existsSync(promptFile) ? fs.readFileSync(promptFile, "utf8") : "";
-  return { status: r.status, stdout: (r.stdout || "") + (r.stderr || ""), audit, runtimeCalls, prompt, oroot };
+  const roles = fs.existsSync(rolesFile) ? fs.readFileSync(rolesFile, "utf8").split("\n").slice(0, -1) : [];
+  return { status: r.status, stdout: (r.stdout || "") + (r.stderr || ""), audit, runtimeCalls, prompt, oroot, roles, home, pid };
 }
 
 /** DELIVERY-level events only. quality-gate.ts appends its own per-file
@@ -300,4 +337,132 @@ describe("nrv revise — the outcome goes through the delivery pipeline", () => 
     expect(events(c)).toContain("revision_failed");
     expect(events(c)).not.toContain("delivered");
   }, spawnBudgetMs(2));
+});
+
+describe("nrv revise continues a squad or agent-x worker like a business one", () => {
+  test("a squad run resumes the squad's own session, as a squad, and delivers", () => {
+    const c = runRevise({ "nota.md": PASSING_MD }, { kind: "squad" });
+    expect(c.status, c.stdout).toBe(0);
+    expect(c.prompt).toContain("--resume\nsess-original");
+    expect(c.roles.every(r => r === "squad")).toBe(true);
+    expect(c.audit.find(l => l.event === "revision_requested")).toMatchObject({ target_kind: "squad", target_slug: "copy", session_id: "sess-original" });
+  }, 30_000);
+
+  test("an agent-x run resumes the generalist's session, as agent-x", () => {
+    const c = runRevise({ "nota.md": PASSING_MD }, { kind: "agent-x", brief: "# Brief\n\nNota." });
+    expect(c.status, c.stdout).toBe(0);
+    expect(c.prompt).toContain("--resume\nsess-original");
+    expect(c.roles.every(r => r === "agent-x")).toBe(true);
+  }, 30_000);
+
+  test("the revision runs under a ledger row of the trace, closed by the verdict", () => {
+    const c = runRevise({ "nota.md": PASSING_MD }, { kind: "squad" });
+    expect(c.status, c.stdout).toBe(0);
+    expect(c.audit.some(l => l.event === "x_ledger_state_changed" && l.to === "running")).toBe(true);
+    expect(c.audit.some(l => l.event === "x_ledger_state_changed" && l.to === "delivered")).toBe(true);
+  }, 30_000);
+
+  test("a run whose runtime returned no session id runs a FRESH session seeded with the brief, the deliverables, the reservations and the change", () => {
+    const c = runRevise({ "nota.md": PASSING_MD }, {
+      kind: "squad", sessionId: null, brief: "# Brief\n\nCarta para a Eduarda, centralizada.",
+      reservations: "# QA reservations\n\n- html-layout: o título não está centralizado.",
+    });
+    expect(c.status, c.stdout).toBe(0);
+    expect(c.runtimeCalls).toBe(1);
+    expect(c.stdout).toContain("FRESH session");
+    expect(c.stdout).toContain("returned no session id");
+    expect(c.prompt).not.toContain("--resume");
+    expect(c.prompt).toContain("--session-id");
+    expect(c.prompt).toContain("Carta para a Eduarda, centralizada.");
+    expect(c.prompt).toContain(`The delivered work is in ${c.oroot}`);
+    expect(c.prompt).toContain("o título não está centralizado");
+    expect(c.prompt).toContain("encurte o texto");
+    expect(c.audit.find(l => l.event === "x_revise_fresh_session")).toMatchObject({ reason: "no_session_id", target_kind: "squad", previous_session_id: null });
+    expect(c.audit.find(l => l.event === "revision_requested")).toMatchObject({ fresh_session: "no_session_id", session_id: null });
+    // The fresh session is the one the next revision continues.
+    const file = path.join(c.home, "outputs", c.pid, "squads", "copy", "session.json");
+    expect(JSON.parse(fs.readFileSync(file, "utf8")).session_id).toMatch(/^[0-9a-f-]{36}$/);
+  }, 30_000);
+
+  test("a session the runtime no longer knows: the resume is tried, then a FRESH seeded session runs, audited as resume_failed", () => {
+    const c = runRevise({ "nota.md": PASSING_MD }, { kind: "squad", missingSession: true, brief: "# Brief\n\nNota curta." });
+    expect(c.status, c.stdout).toBe(0);
+    expect(c.runtimeCalls).toBe(2);
+    const [first, second] = c.prompt.split("=== end of call ===");
+    expect(first).toContain("--resume\nsess-original");
+    expect(second).not.toContain("--resume");
+    expect(second).toContain("NEW session");
+    expect(second).toContain("Nota curta.");
+    expect(c.audit.find(l => l.event === "x_revise_fresh_session")).toMatchObject({ reason: "resume_failed", previous_session_id: "sess-original" });
+  }, 30_000);
+
+  test("a squad run from before squad runs recorded their session runs a FRESH seeded session, never a refusal", () => {
+    const c = runRevise({ "nota.md": PASSING_MD }, { kind: "squad", noSessionFile: true, brief: "# Brief\n\nUma nota curta para o cliente." });
+    expect(c.status, c.stdout).toBe(0);
+    expect(c.stdout).toContain("FRESH session");
+    expect(c.prompt).not.toContain("--resume");
+    expect(c.prompt).toContain("NEW session");
+    expect(c.prompt).toContain("Uma nota curta para o cliente.");
+    expect(c.audit.find(l => l.event === "x_revise_fresh_session")).toMatchObject({ reason: "legacy_run", target_kind: "squad", target_slug: "copy" });
+    const written = JSON.parse(fs.readFileSync(path.join(c.home, "outputs", c.pid, "squads", "copy", "session.json"), "utf8"));
+    expect(written.session_id).toMatch(/^[0-9a-f-]{36}$/);
+  }, 30_000);
+
+  test("--runtime naming another runtime runs fresh there, never resumes a foreign id", () => {
+    const c = runRevise({ "nota.md": PASSING_MD }, {
+      kind: "agent-x", args: ["{pid}", "encurte o texto", "--runtime", "claude-code"],
+      setup: (pid, home) => {
+        // The session belongs to codex; the owner asks for claude-code.
+        const file = path.join(home, "outputs", pid, "agent-x", "session.json");
+        const data = JSON.parse(fs.readFileSync(file, "utf8"));
+        fs.writeFileSync(file, JSON.stringify({ ...data, runtime: "codex", session_id: "codex-thread-1" }));
+      },
+    });
+    expect(c.status, c.stdout).toBe(0);
+    expect(c.prompt).not.toContain("codex-thread-1");
+    expect(c.audit.find(l => l.event === "x_revise_fresh_session")).toMatchObject({ reason: "runtime_changed", previous_runtime: "codex", runtime: "claude-code" });
+  }, 30_000);
+
+  test("--last picks the newest run of the named worker, and resumes it", () => {
+    const c = runRevise({ "nota.md": PASSING_MD }, {
+      kind: "squad", args: ["--last", "copy", "encurte o texto"],
+      setup: (pid, home) => {
+        // An older run of the same squad, and a newer one of another squad.
+        for (const [run, squad, sid, age] of [["old-run", "copy", "sess-old", 3600], ["other-run", "design", "sess-other", -3600]] as const) {
+          const dir = path.join(home, "outputs", run, "squads", squad);
+          fs.mkdirSync(dir, { recursive: true });
+          const file = path.join(dir, "session.json");
+          fs.writeFileSync(file, JSON.stringify({ project_id: run, target_kind: "squad", target_slug: squad, runtime: "claude-code", session_id: sid }));
+          const t = new Date(Date.now() - age * 1000);
+          fs.utimesSync(file, t, t);
+        }
+        const mine = path.join(home, "outputs", pid, "squads", "copy", "session.json");
+        const t = new Date(Date.now() - 60_000);
+        fs.utimesSync(mine, t, t);
+      },
+    });
+    expect(c.status, c.stdout).toBe(0);
+    expect(c.stdout).toContain("--last → proj-revise-");
+    expect(c.prompt).toContain("--resume\nsess-original");
+  }, 30_000);
+
+  test("--last with nothing to continue is a clear refusal (exit 4)", () => {
+    const c = runRevise({ "nota.md": PASSING_MD }, { kind: "squad", args: ["--last", "nobody", "encurte"] });
+    expect(c.status).toBe(4);
+    expect(c.stdout).toContain("nrv run-track list");
+    expect(c.runtimeCalls).toBe(0);
+  }, 30_000);
+
+  test("a route of several squads has no single worker to continue: exit 4, nothing runs", () => {
+    const c = runRevise({ "nota.md": PASSING_MD }, {
+      kind: "squad",
+      setup: (pid, home) => {
+        const other = path.join(home, "outputs", pid, "squads", "design");
+        fs.mkdirSync(other, { recursive: true });
+        fs.writeFileSync(path.join(other, "session.json"), JSON.stringify({ project_id: pid, target_kind: "squad", target_slug: "design", runtime: "claude-code", session_id: "s2" }));
+      },
+    });
+    expect(c.status).toBe(4);
+    expect(c.runtimeCalls).toBe(0);
+  }, 30_000);
 });

@@ -363,7 +363,7 @@ A dispatch returns *"Async agent launched successfully"*: a launch receipt, neit
 
 **On OpenClaw there is no in-process subagent, so the scripted path IS the dispatch.** Work is delegated with `bash background:true` to a child CLI, tracked with `process poll`, and the child announces its own completion: exactly what `nrv dispatch --exec` does, with the same prep step, ledger, gate and audit. Details: `../_shared/adapters/openclaw.md`. The same holds for any runtime whose only delegation primitive is a shell.
 
-**Inside Orca** (`TERM_PROGRAM=Orca`, `ORCA_TERMINAL_HANDLE` set), prefer the scripted path for seats and squads: each becomes a visible Orca worker terminal that the engine waits on, then verifies and gates as always. Details: `../_shared/adapters/orca.md`.
+**Inside Orca** (`TERM_PROGRAM=Orca`, `ORCA_TERMINAL_HANDLE` set), the scripted path runs each seat and squad as the invisible headless child, as everywhere else. With `execution.orca_workers: on` each becomes a visible Orca worker terminal that the engine waits on, then verifies and gates as always; a worker whose TUI stops on a trust, permission or plan dialog falls back to the headless child. Details: `../_shared/adapters/orca.md`.
 
 Everywhere else (claude-code, codex, antigravity), dispatch through the runtime's **native in-process subagent** (the `Agent` tool, codex `[agents]`, antigravity dynamic subagents), not `nrv dispatch --exec` and not a child `claude -p`: it runs inside the user's session (Rule 11) and reports by notification. Reserve `--exec` / `runHeadless` for headless runs and sub-process-only runtimes (legacy gemini-cli, hermes).
 
@@ -462,7 +462,22 @@ RUN=$(nrv run-track open --target agent-x --kind agent-x --outputs <output_path>
 
 `--outputs` matters: with no child process to watch, the newest write under that path is one of the run's proofs of life. A long run with no other sign of life renews its lease with `nrv run-track beat <run-id>`.
 
-To learn how a detached dispatch ended, use `nrv run-track status <run-id|trace-id>` (one shot) or `nrv run-track wait <run-id|trace-id> [--timeout <sec>]` (blocks until an outcome), with the outcome in the exit code: 0 delivered, 2 withheld, 1 failed/abandoned/killed, 6 timed out, 5 no such run.
+To learn how a detached dispatch ended, use `nrv run-track status <run-id|trace-id>` (one shot) or `nrv run-track wait <run-id|trace-id> [--timeout <sec>]` (blocks until an outcome), with the outcome in the exit code: 0 delivered, 2 withheld, 1 failed/abandoned/killed, 76 stalled, 6 timed out, 5 no such run.
+
+**A scripted dispatch always ends.** `nrv dispatch --exec` and `nrv revise` carry a stall guard: a worker with no sign of life (no output, no file written under the run's folders, no tool activity, no live child run, no CPU work) for `execution.stall_timeout_min` (90), or none at all within `execution.stall_no_start_min` (45) of its start, is ended, and the dispatch exits **76** with `_STATUS.json` beside the work (`state: stalled`, the reason and `next`). Nothing was judged and the supervisor leaves the run to you: run `nrv run-track status <run>` once, then `nrv revise <project> "<what to do>"` (it resumes the worker's session), or tell the user.
+
+### Changes, corrections and follow-ups: revise, never a new dispatch
+
+Any correction, adjustment, new version or follow-up on work already dispatched in this project (the same deliverable or subject) goes back to the worker that made it:
+
+```bash
+nrv revise <project> "<the change>"
+nrv revise --last [<business|squad|agent-x>] "<the change>"   # the newest run (of that worker)
+```
+
+The worker continues its own session (business, squad and agent-x runs all record one) and keeps everything it knew; a new dispatch rebuilds that context from nothing. The project id is the folder under `outputs/`. Revise exits like a dispatch. When no session can be continued (no id recorded, a pruned session, `--runtime` naming another runtime) it still runs, in a fresh session seeded with the brief, the delivery and the gate's reservations, and says so (`x_revise_fresh_session`). A run of several squads has no single worker to continue: a change to it is a new dispatch to the squad it concerns.
+
+A new brief on the same subject for the same business, squad or agent-x (the next piece, a sequel) is a dispatch with `--continue-from <project>`: its worker continues that project's session.
 
 A run that dies without reaching a terminal state (crash, kill, quota, a session closed mid-flight) does not stall silently: the supervisor (`nrv supervisor sweep|status|watch`, plus a lazy sweep on every `nrv dispatch`) resumes, re-dispatches or salvages it, and a brief that entered the system reaches a terminal state or gets picked up again. How liveness, recovery and salvage work: `references/05-subsystems.md`.
 

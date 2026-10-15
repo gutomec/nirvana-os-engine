@@ -161,6 +161,9 @@ export function runWithCascade(args: CascadeRunArgs): CascadeRunResult {
     }
 
     const r = runHeadless(currentOpts);
+    // A stall the run's own guard confirmed ended the worker: no retry and no
+    // handoff, the caller reports it (stall-guard.ts).
+    if (r.stalled) return { ...r, handoffs, finalRuntime: chosen };
     const verdict = classify(chosen, r);
 
     if (verdict.kind === "ok") {

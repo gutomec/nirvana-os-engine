@@ -47,6 +47,7 @@ import { createRequire } from "node:module";
 import { spawnSync } from "node:child_process";
 import { ensureDir } from "../../_shared/lib/ensure-dir.ts";
 import { quotaStop } from "./quota-detector.ts";
+import { descendants, processTable, processTreeCpuMs } from "./process-cpu.ts";
 
 // ── states ──────────────────────────────────────────────────────────────
 
@@ -372,7 +373,7 @@ function auditLib(): AuditLib {
  *  sweep started outside any project used to file every `x_ledger_*` event of
  *  every project it touched in `~/.harness-logs`, where the project's own
  *  coordinator never looked (2026-10-14). */
-function emitLedgerAudit(event: string, payload: Record<string, unknown>, row?: (Pick<RunRow, "trace_id" | "project_id"> & { project_root?: string | null }) | null): void {
+export function emitLedgerAudit(event: string, payload: Record<string, unknown>, row?: (Pick<RunRow, "trace_id" | "project_id"> & { project_root?: string | null }) | null): void {
   try {
     auditLib().emit(event, payload, {
       trace_id: row?.trace_id ?? undefined,
@@ -550,6 +551,38 @@ export function findChildPid(parentPid: number, excludePid?: number, timeoutMs?:
     }
     return null;
   } catch { return null; }
+}
+
+/** Ends `pid` and what it started. Windows has no process groups: `process.kill`
+ *  ends only that pid and leaves the CLI's own children running, so taskkill /T
+ *  takes the tree. POSIX: every descendant is signalled by pid, from a snapshot
+ *  taken before the first signal, and the group too when the pid leads one.
+ *  Never pid 1, this process or its parent. */
+export function killProcessTree(pid: number, signal: NodeJS.Signals = "SIGTERM"): number[] {
+  if (!Number.isFinite(pid) || pid <= 1) return [];
+  if (pid === process.pid || pid === process.ppid) return [];
+  if (process.platform === "win32") {
+    const r = spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { windowsHide: true, encoding: "utf8" });
+    if (r.status !== 0) { try { process.kill(pid, signal); } catch { /* already gone */ } }
+    return [pid];
+  }
+  const rows = processTable();
+  const tree = [pid, ...(rows ? descendants(rows, pid) : [])].filter((p) => p !== process.pid && p !== process.ppid);
+  try { process.kill(-pid, signal); } catch { /* not a group leader */ }
+  for (const p of tree) { try { process.kill(p, signal); } catch { /* already gone */ } }
+  return tree;
+}
+
+/** The dispatcher that runs this row (meta.dispatcher_pid) is alive and is
+ *  still that dispatcher: the start time recorded beside its pid matches, or
+ *  cannot be read ("cannot prove recycling" is not "recycled"). */
+export function dispatcherAlive(row: RunRow): boolean {
+  const pid = Number(row.meta?.dispatcher_pid) || 0;
+  if (pid <= 0 || !pidAlive(pid)) return false;
+  const recorded = typeof row.meta?.dispatcher_started_at === "string" ? row.meta.dispatcher_started_at as string : null;
+  if (!recorded) return true;
+  const current = processStartedAt(pid);
+  return current === null || current === recorded;
 }
 
 /** One file the sweep found newer than the mark it was given. */
@@ -898,7 +931,10 @@ export function markState(handle: LedgerHandle, runId: string, next: RunState, e
     run_id: runId, from: row.state, to: next, error: extra.error ?? null, last_error: extra.error ?? row.last_error ?? null,
   }, row);
   const updated = getRun(handle, runId)!;
-  if (SENTINEL_STATES.has(next)) writeRunSignal(updated);
+  // A stall the dispatcher confirmed (stall-guard.ts) ends this attempt too: a
+  // waiter learns it at once instead of on its slow backstop. A supervisor
+  // escalation passes through `stalled` on its way to the salvage and is not one.
+  if (SENTINEL_STATES.has(next) || (next === "stalled" && updated.meta?.stall)) writeRunSignal(updated);
   projectToHost(updated);
   return updated;
 }
@@ -1299,6 +1335,10 @@ const HEARTBEAT_DISCOVERY_TIMEOUT_MS = 1500;
  *  small --interval is. */
 const MAX_DISCOVERY_ATTEMPTS = 2;
 
+/** How often a quiet tick samples the worker's CPU for the stall guard. Tests
+ *  shorten it through NIRVANA_HEARTBEAT_CPU_SAMPLE_MS. */
+const CPU_SAMPLE_MS = Math.max(0, Number(process.env.NIRVANA_HEARTBEAT_CPU_SAMPLE_MS) || 60_000);
+
 function heartbeatArg(name: string): string | undefined {
   const i = process.argv.indexOf(name);
   return i !== -1 ? process.argv[i + 1] : undefined;
@@ -1323,12 +1363,42 @@ export function heartbeatMain(): void {
   // Absent flag = 0 = report nothing, so a caller that never asked for file
   // reporting keeps the old event stream byte for byte.
   let touchBudget = Math.max(0, parseInt(heartbeatArg("--touch-max") || "0", 10));
+  // The stall guard (stall-guard.ts): absent flags = 0 = off, so a caller that
+  // never asked for it keeps the observe-only sidecar.
+  const thresholds = {
+    silenceMs: Math.max(0, Number(heartbeatArg("--stall-kill-ms") || "0") || 0),
+    noStartMs: Math.max(0, Number(heartbeatArg("--no-start-ms") || "0") || 0),
+  };
+  const guardOn = thresholds.silenceMs > 0 || thresholds.noStartMs > 0;
+  const guard = guardOn ? createRequire(import.meta.url)("./stall-guard.ts") as typeof import("./stall-guard.ts") : null;
 
   const handle = openLedger(dbPath);
+  const startedAt = Date.now();
   let lastBytes = fileSize(outFile) + fileSize(errFile);
   let lastMtime = watchDir ? latestMtimeMs(watchDir) : 0;
-  let lastActivityAt = Date.now();
+  let lastActivityAt = startedAt;
   let stallRecorded = false;
+  // What the stall rule counts: output, writes, strong CPU, and the wider
+  // signals (run folders, hooks, child runs) checked while the run is quiet.
+  // Output that landed before this process took its baseline is a start too.
+  let lastSignAt = startedAt;
+  let everActive = lastBytes > 0;
+  let wideCheckedAt = 0;
+  const shortest = Math.min(...[thresholds.silenceMs, thresholds.noStartMs].filter((t) => t > 0), Number.POSITIVE_INFINITY);
+  // Look wider once the run has been quiet for a while, at most every minute.
+  const wideAfterMs = Math.min(stallMs, shortest / 2);
+  const wideEveryMs = Math.max(intervalMs, Math.min(60_000, shortest / 6));
+  const setupMs = Math.min(30_000, shortest / 10);
+  if (guardOn && getRun(handle, runId)) {
+    patchMeta(handle, runId, { stall_guard: { silence_ms: thresholds.silenceMs, no_start_ms: thresholds.noStartMs, sidecar_pid: process.pid, started_at: new Date(startedAt).toISOString() } });
+  }
+  // CPU of the worker's tree: a CLI run headless prints once, at the end, and a
+  // model that reasons for an hour writes nothing meanwhile. A rate above
+  // STALL_CPU_MIN_MS_PER_MIN counts as a sign of life for the stall rule; an
+  // idle TUI polling its backend (~0.4 s a minute) does not.
+  let cpuBaseline: { root: number; ms: number; at: number } | null = null;
+  let cpuSampledAt = 0;
+  let workerPid = 0;
 
   // Identity discovery: the dispatcher recorded no child_pid (it can't know
   // one — it's about to block inside spawnSync, and spawnSync exposes the
@@ -1374,6 +1444,8 @@ export function heartbeatMain(): void {
     if (parentPid > 0 && !pidAlive(parentPid)) break;
     const row = getRun(handle, runId);
     if (!row || isTerminal(row.state)) break;
+    // Another decider (the Orca wait loop) already confirmed the stall.
+    if (row.state === "stalled" && row.meta?.stall) break;
 
     const bytes = fileSize(outFile) + fileSize(errFile);
     // `sinceMs` is the PREVIOUS high-water mark, so the sweep reports only what
@@ -1387,6 +1459,26 @@ export function heartbeatMain(): void {
     if (mtime > lastMtime) lastMtime = mtime;
 
     const now = Date.now();
+    let thinkingHard = false;
+    if (activity) cpuBaseline = null;
+    else if (guard && parentPid > 0 && now - cpuSampledAt >= CPU_SAMPLE_MS) {
+      cpuSampledAt = now;
+      const root = workerPid && pidAlive(workerPid) ? workerPid : parentPid;
+      const cpu = processTreeCpuMs(root, process.pid);
+      if (cpu !== null) {
+        const grew = cpuBaseline?.root === root ? cpu - cpuBaseline.ms : 0;
+        if (cpuBaseline?.root === root) thinkingHard = grew >= guard.STALL_CPU_MIN_MS_PER_MIN * Math.max(1, (now - cpuBaseline.at) / 60_000);
+        cpuBaseline = { root, ms: cpu, at: now };
+      }
+    }
+    if (activity || thinkingHard) { lastSignAt = now; everActive = true; }
+    if (thinkingHard && !activity) {
+      // Working without a word: the lease is renewed, so the supervisor does
+      // not read a long think as an orphan.
+      lastActivityAt = now;
+      stallRecorded = false;
+      renewLease(handle, runId, leaseSec, "cpu");
+    }
     if (activity) {
       lastActivityAt = now;
       stallRecorded = false;
@@ -1413,6 +1505,48 @@ export function heartbeatMain(): void {
       }, row);
     }
 
+    if (guard && !activity && now - lastSignAt >= wideAfterMs) {
+      // The wider signals: files anywhere under the run's folders, the run's
+      // hook-recorded tool events, a live child run. Read when the run is quiet,
+      // and once more right before a stall is confirmed.
+      const lookWide = (): void => {
+        wideCheckedAt = Date.now();
+        const wide = guard.latestWideActivity(handle, row, guard.runFolders(row, [watchDir]), wideCheckedAt, Math.max(wideCheckedAt - lastSignAt, intervalMs) + intervalMs);
+        if (wide && wide.at > lastSignAt) {
+          lastSignAt = wide.at;
+          // Files the dispatcher itself writes while it launches the worker (a
+          // prompt, a session record) are not the worker starting.
+          if (wide.source !== "files" || wide.at > startedAt + setupMs) everActive = true;
+          if (wide.at > lastActivityAt) {
+            lastActivityAt = wide.at;
+            stallRecorded = false;
+            renewLease(handle, runId, leaseSec, `wide:${wide.source}`);
+          }
+        }
+      };
+      if (now - wideCheckedAt >= wideEveryMs) lookWide();
+      const verdict = guard.stallVerdict({ startedAt, lastActivityAt: lastSignAt, everActive, now: Date.now(), thresholds });
+      if (verdict) {
+        lookWide();
+        const confirmed = guard.stallVerdict({ startedAt, lastActivityAt: lastSignAt, everActive, now: Date.now(), thresholds });
+        if (confirmed) {
+          const stalled = guard.confirmStall(handle, runId, confirmed, {
+            decidedBy: "heartbeat", workerPid: workerPid || row.child_pid || null,
+            signals: {
+              output_bytes: bytes, watch_dir: watchDir ?? null, folders: guard.runFolders(row, [watchDir]),
+              last_sign_at: new Date(lastSignAt).toISOString(), started_at: new Date(startedAt).toISOString(),
+              ever_active: everActive, cpu_rate_min_ms_per_min: guard.STALL_CPU_MIN_MS_PER_MIN,
+            },
+          });
+          if (stalled) {
+            const out = guard.endStalledWorker(stalled, { parentPid, workerPid, selfPid: process.pid });
+            emitLedgerAudit("x_ledger_stall_worker_ended", { run_id: runId, pids: out.ended, orca_closed: out.orcaClosed }, stalled);
+          }
+          break;
+        }
+      }
+    }
+
     if (!childDiscovered && parentPid > 0 && discoveryAttempts < MAX_DISCOVERY_ATTEMPTS
         && (activity || discoveryAttempts === 0)) {
       discoveryAttempts++;
@@ -1426,6 +1560,7 @@ export function heartbeatMain(): void {
       if (childPid) {
         recordChildPid(handle, runId, childPid, processStartedAt(childPid, HEARTBEAT_DISCOVERY_TIMEOUT_MS));
         childDiscovered = true;
+        workerPid = childPid;
       }
     }
   }

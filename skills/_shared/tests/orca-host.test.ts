@@ -197,8 +197,13 @@ describe("with a fake orca on PATH", () => {
     const r = orcaJson(["orchestration", "run-create", "--objective", "x"]);
     expect(r.ok).toBe(false);
     expect(r.error?.code).toBe("run_required");
-    expect(orcaWorkersActive()).toBe(true);
-    expect(runOrcaWorker({ runtime: "claude-code", prompt: "p", cwd: root })).toBeNull();
+    // execution.orca_workers is off by default: inside Orca the headless child runs.
+    expect(orcaWorkersActive()).toBe(false);
+    process.env.NIRVANA_ORCA_WORKERS = "on";
+    try {
+      expect(orcaWorkersActive()).toBe(true);
+      expect(runOrcaWorker({ runtime: "claude-code", prompt: "p", cwd: root })).toBeNull();
+    } finally { delete process.env.NIRVANA_ORCA_WORKERS; }
     const r2 = orcaJson(["no", "such"], { timeoutMs: 5_000 });
     expect(r2.ok).toBe(false);
     expect(r2.error?.code).toBe("unknown_command");

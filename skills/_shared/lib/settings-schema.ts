@@ -234,6 +234,29 @@ export const SETTINGS = {
   "execution.dna_injection": enumSetting("execution.dna_injection",
     "Profundidade da injeção de DNA dos mind-clones: reference = cartão (caminho, one_liner, routing) e o executor lê o arquivo quando precisar; fragments = camadas da fase; full = persona inteira.",
     ["reference", "fragments", "full"], { default: "reference", env: "NIRVANA_DNA_INJECTION" }),
+  // A worker that hangs (a TUI parked on a dialog, a CLI waiting on a dead
+  // socket) used to keep its dispatch open forever: nothing ended it, so the
+  // completion notice the orchestrating agent waits on never came. The heartbeat
+  // sidecar now ends it. Sized from 213 healthy runs (2026-08-28 to 10-15): the
+  // longest silent gap of a delivered run was 71.8 min, and the longest wait for
+  // a first sign of life 25.5 min. These are hang detectors, never spend
+  // ceilings: a run that keeps showing activity is never ended by them.
+  "execution.stall_timeout_min": numberSetting("execution.stall_timeout_min",
+    "Minutes of total silence (no worker output, no file written under the run folder, no hook-recorded tool activity, no live child run) after which a dispatch ends its worker and exits 76 as stalled. A hang detector, not a spend or time ceiling: a worker that keeps showing activity runs as long as it needs. 0 = off.",
+    { default: 90, type: nonNegative, env: "NIRVANA_STALL_TIMEOUT_MIN", expects: "number >= 0 (minutes, fractions allowed); 0 = off" }),
+  "execution.stall_no_start_min": numberSetting("execution.stall_no_start_min",
+    "Minutes after the worker starts with no activity of any kind (nothing printed, written, run or dispatched) after which the dispatch ends it and exits 76 as stalled: a worker that never started. A hang detector, not a spend or time ceiling. 0 = off.",
+    { default: 45, type: nonNegative, env: "NIRVANA_STALL_NO_START_MIN", expects: "number >= 0 (minutes, fractions allowed); 0 = off" }),
+  // Off by default since 0.14.13: an interactive TUI in a terminal tab can stop
+  // on a trust, permission or plan dialog that no one answers, and the headless
+  // child cannot. `on` is for the owner who wants to watch workers in Orca.
+  "execution.orca_workers": enumSetting("execution.orca_workers",
+    "Inside Orca, run dispatched workers in visible Orca terminal tabs: off (default) = the invisible headless child, also inside an Orca terminal; on = an Orca worker terminal per dispatch, falling back to the headless child when the agent stops on a dialog.",
+    ["off", "on"], {
+      default: "off", env: "NIRVANA_ORCA_WORKERS",
+      // The variable predates the enum as a boolean (1/true/0/false).
+      fromEnv: (raw) => { const word = parseBooleanWord(raw); return word === null ? raw : word ? "on" : "off"; },
+    }),
   "execution.headless_skip_permissions": booleanSetting("execution.headless_skip_permissions",
     "Headless children run with full access: every runtime skips its own CLI approvals (claude --dangerously-skip-permissions); false = restricted path.",
     { default: true, env: "NIRVANA_HEADLESS_SKIP_PERMISSIONS", fromEnv: offWordDisables }),
@@ -297,9 +320,6 @@ export const SETTINGS = {
   "host.orca": enumSetting("host.orca",
     "Host Orca: auto = só dentro de um terminal do Orca; on = sempre que o app responder; off = nunca chamar o Orca.",
     ["auto", "on", "off"], { default: "auto", env: "NIRVANA_ORCA_HOST" }),
-  "host.orca_workers": booleanSetting("host.orca_workers",
-    "Com o host Orca ativo, cada despacho headless roda num terminal de worker do Orca; false mantém o processo filho invisível.",
-    { default: true, env: "NIRVANA_ORCA_WORKERS" }),
 
   "supervisor.progress_ping_sec": numberSetting("supervisor.progress_ping_sec",
     "Intervalo em segundos do aviso de progresso de um run longo; 0 silencia.",
