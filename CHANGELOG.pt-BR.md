@@ -6,6 +6,41 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que os instaladores de uma linha e os setups de pack consomem.
 
+## 0.14.13 — 2026-10-15
+
+### Toda execução registra uma sessão, e as revisões a continuam
+
+Uma correção começava do zero sempre que o worker não deixava um id de sessão: um worker do Orca nunca registrava um, uma execução de squad ou de agent-x não guardava arquivo de sessão, e uma execução encerrada à força ou por timeout perdia o id que tinha. Agora toda execução registra uma sessão de onde pode ser retomada, e o `nrv revise` a continua.
+
+- Execuções headless: claude e grok começam com um id escolhido pelo engine (`--session-id`), kimi com `--session` (uma versão sem a flag é repetida sem ela), pi como antes. O codex lê o id da thread no stream `--json` qualquer que seja o código de saída, senão no arquivo de sessão que o codex gravou para a pasta da execução desde o início dela. O agy guarda o id da conversa que a saída nomeou quando a execução morre no meio do turno. Uma execução do claude encerrada à força, com falha ou por timeout guarda o id assim que a transcrição existe.
+- Workers do Orca começam com um id atribuído (claude, grok, kimi, pi) ou têm o id lido dos arquivos do próprio CLI (`sessions/` do codex, `history.jsonl` do agy). Uma revisão no Orca retoma a sessão no terminal; o opencode retoma como processo headless. Os tokens de um worker do claude são lidos da transcrição e precificados.
+- Execuções só de squad e de agent-x gravam `session.json` ao lado do scaffold (`squads/<slug>/`, `agent-x/`), então o `nrv revise` continua uma execução de squad ou de agent-x como aquele worker, igual a uma de empresa. Uma retomada sempre roda na pasta onde a sessão nasceu.
+- O `nrv revise` não desiste mais quando não consegue continuar: sem id, com sessão apagada, numa execução anterior aos arquivos de sessão ou com `--runtime` apontando outro runtime, ele roda uma sessão nova semeada com o brief, a entrega, o `_QA-RESERVATIONS.md` e a mudança, auditada como `x_revise_fresh_session` com o motivo. Novos: `nrv revise --last [<business|squad|agent-x>] "<mudança>"` e `--runtime`. A revisão agora roda sob uma linha do ledger do seu trace.
+- `nrv dispatch --continue-from <projeto>`: a mesma empresa, squad ou agent-x continua a sessão daquele projeto com um brief novo (`x_session_continued`), recusa outro worker (saída 4) e começa do zero com a entrega anterior como insumo quando a sessão não pode continuar (`x_continue_fresh_session`). Uma empresa que roda como cadeia de cargos começa do zero, porque cada cargo guarda a própria sessão.
+- Os SKILL.md do harness e do nirvana e o AGENTS.md dizem isso: uma correção ou um desdobramento de trabalho já despachado é `nrv revise`, nunca um dispatch novo.
+
+### Um dispatch sempre termina: o guarda de travamento
+
+Um dispatch é aguardado pelo aviso de conclusão, que só chega quando o dispatch termina, e um worker parado num diálogo manteve um aberto por 94 minutos em 2026-10-15. O processo de heartbeat agora traz um guarda de travamento (`harness/lib/stall-guard.ts`). Ele só confirma um travamento quando nada se mexe: nenhuma saída do worker, nenhum arquivo nas pastas da execução, nenhum evento de ferramenta registrado por hook, nenhuma execução filha viva, nenhum crescimento de CPU acima de 1 s por minuto.
+
+- Duas configurações, ambas detectores de travamento e nunca tetos de gasto: `execution.stall_timeout_min` (90) de silêncio e `execution.stall_no_start_min` (45) sem um primeiro sinal de vida; 0 desliga cada uma (`NIRVANA_STALL_TIMEOUT_MIN`, `NIRVANA_STALL_NO_START_MIN`). Dimensionadas a partir de 213 execuções entregues, cujo maior intervalo em silêncio foi de 71,8 minutos.
+- Num travamento a linha vai para `stalled` com `meta.stall` e `meta.salvaged`, a árvore de processos do worker é encerrada (`taskkill /T` no Windows) e o terminal do Orca é fechado. `nrv dispatch` e `nrv revise` pulam o gate, gravam `_STATUS.json` (estado, motivo e próximos passos) e saem com **76**.
+- Os cargos de uma cadeia e os squads obrigatórios da empresa agora rodam sob a linha do ledger do dispatch, então o guarda cobre os dois também.
+- O supervisor deixa uma execução com dispatcher vivo (`meta.dispatcher_pid`, agora gravado em toda linha que um dispatch ou uma revisão conduz) com esse dispatcher até a execução ficar em silêncio além do limite mais 15 minutos, e nunca relança nem salva um travamento que o dispatcher confirmou. Um revise que sai com 76 e um redispatch que trava continuam `stalled`.
+- `nrv run-track status` e `wait` respondem 76 para uma execução travada, com o travamento e os próximos passos, e para um dispatcher vivo cujo lease ninguém renovou além do limite mais a folga. Um arquivo de sinal de uma tentativa anterior não encerra mais uma espera, e um dispatcher vivo entre dois workers não aparece mais como `killed`.
+
+### Workers do Orca desligados por padrão
+
+`execution.orca_workers` (`off` | `on`, padrão `off`, `NIRVANA_ORCA_WORKERS` ainda aceita `1`/`true`) substitui `host.orca_workers`, que vinha ligado: uma TUI interativa pode parar num diálogo que ninguém responde, e o processo headless não. Com `on`:
+
+- a tela é lida de novo por seis segundos depois da injeção, e um diálogo de confiança, de permissão ou de revisão de plano, ou uma tarefa deixada sem enviar, fecha o terminal e roda o mesmo brief como processo headless;
+- a espera termina pelo orçamento de silêncio do guarda de travamento em vez do limite de 7 dias do ledger, e o terminal de um worker que estourou o timeout ou travou é fechado;
+- os ids de terminal, Run, Task e dispatch ficam gravados na linha do ledger (`meta.orca_worker`), e o `nrv run-track close` fecha um terminal registrado.
+
+### Preços
+
+O estimador de custo conhece `claude-fable-5-1`, `claude-opus-5-5`, `claude-sonnet-5-5` e `claude-haiku-5-5` (claude.com/pricing, 2026-10-15).
+
 ## 0.14.12 — 2026-10-14
 
 ### Cota: uma cota esgotada pausa a execução em vez de queimá-la
