@@ -54,6 +54,7 @@ and you do not plan how it is made.
    `then` line. Never edit the squad folder to make it pass.
 8. **The commands are the interface.** Do not read the engine's source or call a
    runtime's CLI to test it; `nrv doctor` reports which runtimes work.
+9. **A change to dispatched work is a revise, never a new dispatch.** See §7.
 
 ## 1. Understand the request
 
@@ -178,6 +179,9 @@ worker re-reads its brief at every phase:
 nrv brief decide .nirvana/briefs/<business>.md "<the decision>"
 ```
 
+`nrv brief decide` is only for a question the worker asked while it runs. Once
+the run is past that point, or has ended, a change goes through `nrv revise` (§7).
+
 When the user asks to stop a run, stop it with `nrv run-track stop <run-id|project>`:
 it ends the dispatcher and the worker and closes the run. Never `kill` its
 processes: the run stays open, and the supervisor resumes it once its lease
@@ -215,6 +219,27 @@ you mistook for a result: the run is finished and nobody knows.
 An honest failure is the system working: a worker that reports it was blocked
 (a missing credential, a hard dependency) did its job by telling you. Surface
 it; do not re-dispatch the same brief hoping for a different outcome.
+
+## 7. Changes, corrections and follow-ups
+
+Any correction, adjustment, new version or follow-up on work already dispatched
+in this project (the same deliverable or subject) is a revise, never a new
+dispatch:
+
+```bash
+nrv revise <project> "<the change>"
+nrv revise --last [<business|squad>] "<the change>"   # the newest run (of that worker)
+```
+
+The worker continues its own session and keeps everything it knew; a new
+dispatch rebuilds that context from nothing. The project id is the `--project`
+you named (the folder under `outputs/`). Revise exits like a dispatch (table
+above). When no session can be continued it still runs, in a fresh session
+seeded with the brief, the delivery and the gate findings, and says so.
+
+A new brief on the same subject for the same business or squad (the next piece,
+a sequel) is a dispatch with `--continue-from <project>`: its worker continues
+that project's session.
 
 ## Proving it ran
 

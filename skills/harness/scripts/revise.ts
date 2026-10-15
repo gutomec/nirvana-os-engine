@@ -11,14 +11,21 @@
 // The revision continues the ORIGINAL worker: the same role (a business runs
 // as one `solo` worker with the solo directive, a squad as `squad`, the
 // generalist as `agent-x`; none of them may open anything), on the runtime that
-// finished the run, pinned when the owner chose it (flag or brief). A run whose
-// runtime returned no session id, a run from before squad and agent-x runs
-// recorded one, and a route of several squads have no single conversation to
-// continue, and are refused (exit 4): a change to them is a new dispatch.
+// finished the run, pinned when the owner chose it (flag or brief), from the
+// folder the session was started in.
+//
+// When there is no conversation to continue (a run whose runtime returned no
+// id, a run from before runs recorded one, a session the runtime pruned, or
+// `--runtime` naming another runtime), the revision does not fail: it runs a
+// FRESH session seeded with the run's brief, its deliverables as the work to
+// revise, the gate's findings and the change, and says so on screen and in
+// the audit (`x_revise_fresh_session`, with the reason). A route of several
+// squads has no single worker to continue and is refused (exit 4).
 //
 // Usage:
 //   nrv revise <project_id> "<change request>"
-//   nrv revise <project_id> "<change>" --zip --max-budget=10 --timeout=20 --yolo
+//   nrv revise --last [<business|squad|agent-x>] "<change>"   the newest run (of that worker)
+//   nrv revise <project_id> "<change>" --zip --max-budget=10 --timeout=20 --runtime=<rt>
 //
 // Exit codes (SAME TABLE as dispatch.ts — BREAKING, see CHANGELOG):
 //   0 = revised + DELIVERED (gate pass, or with reservations for findings
@@ -40,7 +47,10 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { spawnSync } from "node:child_process";
 import { runtimeAvailable, AUTONOMOUS_DIRECTIVE, type Runtime } from "../lib/host-agent-driver.ts";
-import { findRunSessions, type RunSessionFile } from "../lib/run-session.ts";
+import { findRunSessions, latestRunSession, runRoots as projectRunRoots, type RunSessionFile } from "../lib/run-session.ts";
+import { looksLikeMissingSession } from "../../_shared/lib/session-capture.ts";
+import { detectExecutionRuntime } from "../lib/control-plane/execution-runner.ts";
+import { GATE_FINDINGS_FILE } from "../lib/delivery-pipeline.ts";
 import { resolveCascadeRoot } from "../lib/cascade.ts";
 import { formatRulesForDirective, loadRuntimeRules } from "../lib/runtime-rules.ts";
 import { paths } from "../../_shared/lib/bun-helpers.ts";
@@ -80,18 +90,32 @@ const positional: string[] = [];
     positional.push(a);
   }
 }
-const projectId = positional[0];
-const change = positional[1];
+// `--last [<target>]`: the change is the last positional; a target before it
+// narrows the search to that worker's runs.
+const wantLast = process.argv.includes("--last");
+const lastPick = wantLast
+  ? latestRunSession({ target: positional.length >= 2 ? positional[0] : null })
+  : null;
+const projectId = wantLast ? lastPick?.projectId : positional[0];
+const change = wantLast ? positional[positional.length - 1] : positional[1];
+const runtimeFlag = arg("--runtime");
 const wantZip = process.argv.includes("--zip");
 // Default = full trust (same criterion as dispatch.ts). --safe opts into restricted.
 const yolo = !process.argv.includes("--safe");
 const maxBudget = arg("--max-budget");
 const timeoutMin = arg("--timeout");
 
+if (wantLast && !lastPick && change) {
+  console.error(`✗ --last: no run with a session file${positional.length >= 2 ? ` of '${positional[0]}'` : ""} under ${path.join(process.cwd(), "outputs")} or ~/.nirvana/outputs.`);
+  console.error("  List the project's runs with `nrv run-track list`, then name one: nrv revise <project> \"<change>\".");
+  process.exit(4);
+}
 if (!projectId || !change) {
-  console.error('Usage: nrv revise <project_id> "<change>" [--zip] [--max-budget=<usd>] [--timeout=<min>] [--safe]');
+  console.error('Usage: nrv revise <project_id> "<change>" [--zip] [--max-budget=<usd>] [--timeout=<min>] [--runtime=<rt>] [--safe]');
+  console.error('       nrv revise --last [<business|squad|agent-x>] "<change>"');
   process.exit(4);   // EXIT.INVALID_ARGS — 2 now means WITHHELD (see the table above)
 }
+if (lastPick) console.log(`  --last → ${projectId} (${lastPick.kind === "agent-x" ? "agent-x" : `${lastPick.kind} ${lastPick.slug}`})`);
 
 function appendAudit(payload: Record<string, any>, projectRoot?: string): void {
   try {
@@ -106,14 +130,9 @@ function readIfExists(p: string): string | null {
   try { return fs.existsSync(p) ? fs.readFileSync(p, "utf8") : null; } catch { return null; }
 }
 
-/** The run folders a project id can live in, nearest first. */
+/** The run folders a project id can live in, nearest first (run-session.ts). */
 function runRoots(pid: string): string[] {
-  return [
-    path.join(process.cwd(), "outputs", pid),            // new visible default
-    path.join(os.homedir(), ".nirvana", "outputs", pid),
-    path.join(process.cwd(), ".nirvana", "outputs", pid),
-    path.join(os.homedir(), pid),
-  ];
+  return projectRunRoots(pid);
 }
 
 /** The session files of the run, from the nearest run folder that holds any. */
@@ -149,16 +168,40 @@ function sessionlessKind(pid: string): "squad" | "agent-x" | null {
   return null;
 }
 
-const sessions = findSessions(projectId);
-if (!sessions.length) {
-  const kind = sessionlessKind(projectId);
-  if (kind) {
-    console.error(c("red", `✗ '${projectId}' is a ${kind} run from before ${kind} runs recorded their session: it keeps no session.json to continue.`));
-    console.error("  Its deliverables stay where they are; a change to them is a new dispatch.");
-    process.exit(4);
+/** A session for a run that kept no session.json (a squad or agent-x run from
+ *  before those runs wrote one): its one worker folder, read from the run
+ *  folder, with no id. The revision then runs fresh and seeded, and the file is
+ *  written when the new session comes back. */
+function legacySession(pid: string): RunSessionFile | null {
+  const kind = sessionlessKind(pid);
+  if (!kind) return null;
+  for (const root of runRoots(pid)) {
+    const dirs = kind === "agent-x" ? (fs.existsSync(path.join(root, "agent-x")) ? ["agent-x"] : [])
+      : (() => { try { return fs.readdirSync(path.join(root, "squads"), { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name); } catch { return []; } })();
+    if (dirs.length !== 1) continue;
+    const projectDir = kind === "agent-x" ? path.join(root, "agent-x") : path.join(root, "squads", dirs[0]);
+    const meta: Record<string, any> = ledger?.row?.meta ?? {};
+    const deliverables = path.join(root, "deliverables");
+    const data = {
+      project_id: pid, target_kind: kind, target_slug: kind === "agent-x" ? "agent-x" : dirs[0],
+      runtime: ledger?.row?.runtime ?? null, session_id: null, project_dir: projectDir,
+      project_root: ledger?.row?.project_root ?? meta.project_root ?? process.cwd(),
+      outputs_root: meta.outputs_root ?? (fs.existsSync(deliverables) ? deliverables : root),
+      workspace: root, manifest: null, created_at: new Date().toISOString(),
+    };
+    return { file: path.join(projectDir, "session.json"), kind, slug: data.target_slug, legacy: data } as RunSessionFile & { legacy: Record<string, unknown> };
   }
-  console.error(c("red", `✗ no run '${projectId}' with a session to continue was found (looked for businesses/<slug>/, squads/<slug>/ and agent-x/session.json under ${runRoots(projectId).join(", ")}).`));
-  process.exit(1);
+  return null;
+}
+
+let sessions: RunSessionFile[] = findSessions(projectId);
+if (!sessions.length) {
+  const legacy = legacySession(projectId);
+  if (legacy) sessions = [legacy];
+  else {
+    console.error(c("red", `✗ no run '${projectId}' with a session to continue was found (looked for businesses/<slug>/, squads/<slug>/ and agent-x/session.json under ${runRoots(projectId).join(", ")}).`));
+    process.exit(1);
+  }
 }
 if (sessions.length > 1) {
   console.error(c("red", `✗ '${projectId}' ran ${sessions.length} workers (${sessions.map(s => s.kind === "agent-x" ? "agent-x" : `${s.kind} ${s.slug}`).join(", ")}), and nrv revise continues one worker's own session.`));
@@ -166,7 +209,8 @@ if (sessions.length > 1) {
   process.exit(4);
 }
 const { file: sessionFile, kind } = sessions[0];
-const session = JSON.parse(fs.readFileSync(sessionFile, "utf8"));
+const legacyData = (sessions[0] as RunSessionFile & { legacy?: Record<string, unknown> }).legacy;
+const session: Record<string, any> = legacyData ? { ...legacyData } : JSON.parse(fs.readFileSync(sessionFile, "utf8"));
 const meta: Record<string, unknown> = ledger?.row?.meta ?? {};
 const metaStr = (key: string): string | null => {
   const v = meta[key] ?? session[key];
@@ -174,7 +218,7 @@ const metaStr = (key: string): string | null => {
 };
 // The runtime that owns the session: the conversation can be resumed only
 // there. The ledger's runtime is the fallback for a session that never named one.
-const rt = ((session.runtime as string) || ledger?.row?.runtime || "") as Runtime;
+const sessionRuntime = ((session.runtime as string) || ledger?.row?.runtime || "") as Runtime;
 const sessionId = session.session_id as string | null;
 // The worker's slug: the business's, the squad's, or "agent-x".
 const slug = ((kind === "business" ? session.business_slug : session.target_slug) as string) || sessions[0].slug;
@@ -188,7 +232,33 @@ const oroot = session.outputs_root as string;
 const role: DispatchRole = kind === "business" ? "solo" : kind;
 // The owner chose this runtime (a flag, or a mention in the brief): the
 // revision stays on it and never hands off to another vendor.
-const pinned = ["flag", "brief"].includes(metaStr("runtime_source") ?? "");
+const pinned = ["flag", "brief"].includes(metaStr("runtime_source") ?? "") || !!runtimeFlag;
+
+// ── continue, or start fresh and say why ───────────────────────────────────
+//
+// The conversation is continued whenever it exists. When it cannot be, the
+// revision is not refused: it runs in a fresh session seeded with what the
+// original worker knew (freshPrompt below). The reasons, as audited:
+//   legacy_run          the run predates session files
+//   no_session_id       the runtime returned no id (an Orca worker before 0.15, qwen, opencode)
+//   runtime_changed     --runtime names another runtime than the session's
+//   runtime_unavailable the session's runtime is not installed, and nobody pinned it
+//   resume_failed       the runtime no longer knows the session (pruned, deleted)
+let freshReason: string | null = legacyData ? "legacy_run" : !sessionId ? "no_session_id" : null;
+let rt: Runtime = sessionRuntime;
+if (runtimeFlag && runtimeFlag !== sessionRuntime) { rt = runtimeFlag as Runtime; freshReason ??= "runtime_changed"; }
+if (!rt) { rt = detectExecutionRuntime().runtime; }
+if (!runtimeAvailable(rt) && !pinned) {
+  const fallback = detectExecutionRuntime();
+  if (fallback.available && fallback.runtime !== rt) { rt = fallback.runtime; freshReason ??= "runtime_unavailable"; }
+}
+const FRESH_WHY: Record<string, string> = {
+  legacy_run: "the run is from before runs recorded their session",
+  no_session_id: `the ${kind} run's runtime${sessionRuntime ? ` (${sessionRuntime})` : ""} returned no session id`,
+  runtime_changed: `--runtime ${runtimeFlag} is not the session's runtime (${sessionRuntime || "unknown"})`,
+  runtime_unavailable: `the session's runtime (${sessionRuntime}) is not installed`,
+  resume_failed: `${sessionRuntime} no longer knows session ${sessionId}`,
+};
 
 /** The brief the run answered: where the run recorded it, else the run's
  *  scaffold root (`<run>/brief.md`, two levels above businesses/<slug> or
@@ -223,18 +293,13 @@ function envSquads(): string[] {
   } catch { return []; }
 }
 
-if (!sessionId) {
-  console.error(c("red", `✗ '${projectId}': the ${kind} run's runtime${rt ? ` (${rt})` : ""} returned no session id, so there is no conversation to continue.`));
-  console.error("  Its deliverables stay where they are; a change to them is a new dispatch (nrv dispatch).");
-  process.exit(4);
-}
-
 console.log("");
 console.log(c("lime", "▶") + c("bold", ` nrv revise — ${projectId} (${rt})`));
-console.log(c("dim", `  resume session: ${sessionId}`));
+if (freshReason) console.log(c("yellow", `  FRESH session: ${FRESH_WHY[freshReason]}. Seeded with the brief, the deliverables and the gate findings.`));
+else console.log(c("dim", `  resume session: ${sessionId}`));
 
 if (!runtimeAvailable(rt)) {
-  console.error(c("red", `✗ runtime '${rt}' is not on the PATH.`));
+  console.error(c("red", `✗ runtime '${rt}' is not on the PATH${pinned ? " (pinned by the owner, so no other runtime takes the revision)" : ""}.`));
   process.exit(1);
 }
 
@@ -274,7 +339,7 @@ const ledgerRun: { handle: runLedger.LedgerHandle; runId: string } | null = (() 
       traceId: projectId, projectId, projectRoot: row.project_root, targetSlug: row.target_slug ?? slug, targetKind: kind, runtime: rt,
       // This process is the revision's dispatcher: `nrv run-track stop` ends it
       // with its worker, instead of the earlier run's pid the copied meta carries.
-      sessionId, meta: { ...row.meta, revision_of: row.run_id, dispatch_role: role,
+      sessionId: freshReason ? null : sessionId, meta: { ...row.meta, revision_of: row.run_id, dispatch_role: role,
         dispatcher_pid: process.pid, dispatcher_started_at: runLedger.processStartedAt(process.pid) },
     });
     runLedger.markState(handle, fresh.run_id, "running");
@@ -304,12 +369,41 @@ const revisePrompt = [
   'Do not print a summary: deliver the updated files. Update the assumptions section ("## Assumptions" or its equivalent in the language of the deliverable) if anything changed.',
 ].join("\n");
 
-appendAudit({ event: "revision_requested", trace_id: projectId, project_id: projectId, business_slug: kind === "business" ? slug : null,
-  target_kind: kind, target_slug: slug, runtime: rt, session_id: sessionId, dispatch_role: role, pinned }, projectRoot);
+/** The prompt of a revision that cannot continue the conversation: what the
+ *  original worker knew, rebuilt from disk, then the change. */
+function freshPrompt(reason: string): string {
+  const findingsFile = path.join(oroot, GATE_FINDINGS_FILE);
+  const findings = readIfExists(findingsFile)?.trim();
+  const capped = findings && findings.length > 8000 ? `${findings.slice(-8000)}\n(older rounds cut; the whole file is ${findingsFile})` : findings;
+  return [
+    `REVISION INSTRUCTION (NEW session: ${FRESH_WHY[reason] ?? reason}, so you do not have the conversation that produced this work).`,
+    "",
+    "The brief this work answered:",
+    "",
+    brief?.trim() || "(the run recorded no brief; the deliverables below are the whole record)",
+    "",
+    `The delivered work is in ${oroot}${workDirs.length ? ` and in ${workDirs.join(", ")}` : ""}. Read it before you change anything: it is the input of this revision, not a draft to redo. Change what the request below asks and keep the rest as it is.`,
+    ...(capped ? ["", `The quality gate's findings on that work (${findingsFile}):`, "", capped] : []),
+    "",
+    "The change requested:",
+    "",
+    ...revisePrompt.split("\n").slice(2),
+  ].join("\n");
+}
 
-const res = runWithCascade({
+appendAudit({ event: "revision_requested", trace_id: projectId, project_id: projectId, business_slug: kind === "business" ? slug : null,
+  target_kind: kind, target_slug: slug, runtime: rt, session_id: freshReason ? null : sessionId, dispatch_role: role, pinned,
+  ...(freshReason ? { fresh_session: freshReason } : {}) }, projectRoot);
+
+function auditFresh(reason: string): void {
+  appendAudit({ event: "x_revise_fresh_session", trace_id: projectId, project_id: projectId, business_slug: kind === "business" ? slug : null,
+    target_kind: kind, target_slug: slug, runtime: rt, previous_runtime: sessionRuntime || null, previous_session_id: sessionId ?? null, reason }, projectRoot);
+}
+if (freshReason) auditFresh(freshReason);
+
+const runRevision = (resume: string | undefined, prompt: string) => runWithCascade({
   runtime: rt,
-  prompt: revisePrompt,
+  prompt,
   cwd: projectRoot,
   // A squad's own tree, granted again as the run granted it: its resource map
   // names files under it, and claude-code and agy refuse an ungranted path.
@@ -319,7 +413,7 @@ const res = runWithCascade({
   workspace: session.workspace || undefined,
   // The same squad packages and Python the run had, on the revision's child only.
   env: squadRunEnv(envSquads()),
-  sessionId,
+  sessionId: resume,
   appendSystemPrompt: solo ? soloDirective(rulesDirective) : AUTONOMOUS_DIRECTIVE + rulesDirective,
   dispatchRole: role,
   pinned,
@@ -330,14 +424,26 @@ const res = runWithCascade({
   brief: brief ?? change, projectRoot, outputsRoot: oroot, taskHint: `revise ${projectId}`, projectId,
   ...(ledgerRun ? { ledger: { runId: ledgerRun.runId, watchDir: oroot } } : {}),
 });
+let res = freshReason ? runRevision(undefined, freshPrompt(freshReason)) : runRevision(sessionId!, revisePrompt);
+// The runtime no longer knows the session: the change runs once more, in a
+// fresh seeded session, instead of failing. A spent quota or a model error is
+// not this, and is reported as it is.
+if (!freshReason && !res.ok && looksLikeMissingSession([res.error, res.stderr, res.result].filter(Boolean).join("\n"))) {
+  freshReason = "resume_failed";
+  console.error(c("yellow", `⚠ The session did not resume (${FRESH_WHY.resume_failed}): the revision runs in a FRESH session, seeded with the brief, the deliverables and the gate findings.`));
+  auditFresh(freshReason);
+  res = runRevision(undefined, freshPrompt(freshReason));
+}
 // A run that was not pinned may have been handed to another runtime; the
 // session it came back with belongs to that one.
 const finalRuntime = (res.finalRuntime ?? rt) as Runtime;
 
-// claude --resume can mint a fresh session id; persist whatever we got back.
-if ((res.sessionId && res.sessionId !== sessionId) || finalRuntime !== rt) {
+// claude --resume can mint a fresh session id, and a fresh revision has a new
+// one; persist whatever we got back, so the next revision continues it.
+if ((res.sessionId && res.sessionId !== sessionId) || finalRuntime !== sessionRuntime) {
   if (res.sessionId) session.session_id = res.sessionId;
   session.runtime = finalRuntime;
+  fs.mkdirSync(path.dirname(sessionFile), { recursive: true });
   fs.writeFileSync(sessionFile, JSON.stringify(session, null, 2));
 }
 if (ledgerRun && res.sessionId) {
@@ -409,7 +515,8 @@ const deliveryArgs: DeliveryArgs = {
   projectDir: projDir,
   projectRoot,
   workingDir: process.cwd(),
-  sessionId: (session.session_id as string | null) ?? sessionId,
+  // A fresh revision's corrections continue the fresh session, never the lost one.
+  sessionId: (session.session_id as string | null) ?? (freshReason ? null : sessionId),
   maxRevisions: inSweep ? 0 : config.quality_gate.max_revisions,
   // Unattended, strict: the supervisor reads exit 2 and escalates. A human's
   // revision follows rule A like any delivery.

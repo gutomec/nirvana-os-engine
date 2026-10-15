@@ -64,6 +64,7 @@ import { runOrcaWorker } from "./orca-worker.ts";
 import { confineToWorkspace, FENCE_FILE_PREFIX, RUN_WORKSPACE_ENV } from "./run-workspace.ts";
 import { claudeRunCost } from "./claude-session-cost.ts";
 import { estimateCostUsd } from "../../harness/lib/cost-estimator.ts";
+import { codexSessionFor, findClaudeTranscript, looksLikeMissingSession } from "./session-capture.ts";
 
 /** `execution.child_env`. The variable NIRVANA_CHILD_ENV wins over any file
  *  (settings precedence), which is how a child that was itself filtered — it
@@ -1669,7 +1670,14 @@ function runClaudeCode(opts: RunHeadlessOpts): RunHeadlessResult {
   const started = Date.now();
   const args: string[] = ["-p", "--output-format", "json"];
 
+  // Every run has an id before it starts: a resume names the session it
+  // continues, a fresh run takes one the engine chose (`claude --help`, 2.1.301:
+  // `--session-id <uuid>` "Use a specific session ID for the conversation").
+  // A run that is killed, times out or fails before printing its JSON still
+  // left a session under that id, and `nrv revise` can continue it.
+  const preassigned = opts.sessionId ? null : randomUUID();
   if (opts.sessionId) args.push("--resume", opts.sessionId);
+  else args.push("--session-id", preassigned!);
   // Model and effort: the caller's explicit value, else the user's pin, else
   // NOTHING — a bare `claude` uses what the user configured in their claude.
   const ccModel = opts.model ?? resolveSystemModel("claude-code");
@@ -1791,7 +1799,7 @@ function runClaudeCode(opts: RunHeadlessOpts): RunHeadlessResult {
   let isError = exitCode !== 0;
   try {
     const parsed = JSON.parse(stdout.trim());
-    sessionId = parsed.session_id ?? null;
+    sessionId = parsed.session_id ?? opts.sessionId ?? preassigned;
     result = typeof parsed.result === "string" ? parsed.result : JSON.stringify(parsed.result ?? "");
     // A resumed session reports its cumulative total (claude 2.1.277+): the
     // run's own spend is the difference from the total last recorded for it.
@@ -1799,8 +1807,13 @@ function runClaudeCode(opts: RunHeadlessOpts): RunHeadlessResult {
     if (typeof parsed.subtype === "string") resultSubtype = parsed.subtype;
     if (typeof parsed.is_error === "boolean") isError = isError || parsed.is_error;
   } catch {
-    // Non-JSON stdout (e.g. early crash). Keep raw for diagnostics.
+    // Non-JSON stdout (e.g. early crash, a kill, a timeout). Keep raw for
+    // diagnostics. The session is still the one the run was given, when it
+    // exists: a resumed one always does, a fresh one once its transcript was
+    // written (a CLI that died before its first turn left nothing to resume).
     result = stdout.trim();
+    if (opts.sessionId) sessionId = opts.sessionId;
+    else if (preassigned && findClaudeTranscript(preassigned)) sessionId = preassigned;
   }
 
   return {
@@ -1969,6 +1982,11 @@ function runCodex(opts: RunHeadlessOpts): RunHeadlessResult {
       }
     } catch { /* not a json line */ }
   }
+  // The stream names the thread on its first event, so a run killed or timed
+  // out after it started still has it. When the stream carries none (an older
+  // codex, output lost), the session codex filed for this folder since the run
+  // started is the one (session-capture.ts).
+  if (!sessionId && !opts.ephemeral) sessionId = codexSessionFor(opts.cwd, started);
   let lastMsgContent = "";
   try { lastMsgContent = fs.readFileSync(lastMsg, "utf8"); } catch { /* ignore */ }
   try { fs.rmSync(lastMsg, { force: true }); } catch { /* ignore */ }
@@ -1991,7 +2009,7 @@ function runCodex(opts: RunHeadlessOpts): RunHeadlessResult {
 }
 
 /** Prefix of a session id the engine made up because agy returned none. */
-const SYNTHETIC_AGY_SID = "nrv-agy-";
+export const SYNTHETIC_AGY_SID = "nrv-agy-";
 
 /**
  * agy's stdin transport (verified live on agy 1.3.3, 2026-10-13). Both formats
@@ -2023,6 +2041,23 @@ export function agyStreamResult(stdout: string): Record<string, any> | null {
     try {
       const ev = JSON.parse(t);
       if (ev?.event === "result" && ev.result && typeof ev.result === "object") return ev.result;
+    } catch { /* not an event line */ }
+  }
+  return null;
+}
+
+/** The conversation id any stream-json event of an agy run named (the `init`
+ *  event carries it before the turn starts), or null. */
+export function agyStreamConversationId(stdout: string): string | null {
+  for (const line of (stdout || "").split("\n")) {
+    const t = line.trim();
+    if (!t.startsWith("{")) continue;
+    try {
+      const ev = JSON.parse(t);
+      for (const o of [ev, ev?.result, ev?.data]) {
+        const id = o?.conversation_id || o?.conversationId || o?.session_id || o?.sessionId;
+        if (typeof id === "string" && id) return id;
+      }
     } catch { /* not an event line */ }
   }
   return null;
@@ -2134,8 +2169,12 @@ function runAntigravity(opts: RunHeadlessOpts): RunHeadlessResult {
   const j = agyStreamResult(r.stdout || "");
   // No result event: the turn did not finish (or never started), whatever the
   // exit code says. stderr carries the reason.
-  if (!j) envelopeError = salientError(stderr, `agy printed no result event (exit ${exitCode})`);
-  else {
+  if (!j) {
+    envelopeError = salientError(stderr, `agy printed no result event (exit ${exitCode})`);
+    // Killed, timed out or failed mid-turn: the conversation still exists, and
+    // the stream's first event already named it.
+    sessionId = agyStreamConversationId(r.stdout || "") ?? sid;
+  } else {
     sessionId = j.session_id || j.sessionId || j.conversation_id || sid;
     // Token counts (`agy -p --output-format json`, 1.2.13: `usage` carries
     // input_tokens, output_tokens, thinking_tokens, cache_read_tokens and
@@ -2262,9 +2301,13 @@ export function argvRejectedFlag(
 // MAX_ARGV_PROMPT_BYTES.
 function runKimi(opts: RunHeadlessOpts): RunHeadlessResult {
   const started = Date.now();
-  const sid = opts.sessionId || randomUUID();
+  let sid: string | null = opts.sessionId || randomUUID();
   const delivery = argvOrPromptFile(withPreamble(opts), (p) => ["-p", p]);
-  const args = [...delivery.args, "--output-format", "stream-json"];
+  // `--session <id>` resumes that session, and "if the specified session ID
+  // does not exist, a new session is created automatically"
+  // (moonshotai.github.io/kimi-cli/en/guides/sessions.html, read 2026-10-15):
+  // the same flag continues a run and gives a fresh one the id the engine chose.
+  const args = [...delivery.args, "--output-format", "stream-json", "--session", sid];
   const kmModel = opts.model ?? resolveSystemModel("kimi-cli");
   if (kmModel) args.push("-m", kmModel);
   for (const d of opts.addDirs ?? []) args.push("--add-dir", d);
@@ -2287,6 +2330,14 @@ function runKimi(opts: RunHeadlessOpts): RunHeadlessResult {
     if (args.includes("--add-dir") && argvRejectedFlag(r, "--add-dir")) {
       for (let i = args.indexOf("--add-dir"); i >= 0; i = args.indexOf("--add-dir")) args.splice(i, 2);
       warnings.push(`kimi-cli: this version does not know --add-dir; retried without it (not granted by the CLI: ${(opts.addDirs ?? []).join(", ")})`);
+      r = driverSpawnSync("kimi", args, spawnOpts);
+    }
+    // A build without `--session`, on the same proof: the run goes on, and
+    // its id is only what its own output names.
+    if (argvRejectedFlag(r, "--session")) {
+      args.splice(args.indexOf("--session"), 2);
+      warnings.push("kimi-cli: this version does not know --session; retried without it (the session id is only what kimi reports)");
+      sid = null;
       r = driverSpawnSync("kimi", args, spawnOpts);
     }
     // A build without stream-json output, on the same proof.
@@ -2414,13 +2465,17 @@ const GROK_USAGE_EXIT = 2;
 
 function runGrok(opts: RunHeadlessOpts): RunHeadlessResult {
   const started = Date.now();
-  const sid = opts.sessionId || randomUUID();
+  let sid: string | null = opts.sessionId || randomUUID();
   const merged = withPreamble(opts);
   const promptFile = writePromptFile(merged);
   let withTrust = opts.yolo !== false;
+  // A fresh run takes the id the engine chose: `-s, --session-id <uuid>` "Use
+  // a specific session UUID for a new conversation" (`grok --help`, 1.0.52).
+  let withSessionId = !opts.sessionId;
   const buildArgs = (delivery: string[], withFormat: boolean): string[] => {
     const a = [...delivery, ...(withFormat ? ["--output-format", "json"] : []), "--cwd", opts.cwd];
     if (opts.sessionId) a.push("-r", opts.sessionId);
+    else if (withSessionId) a.push("--session-id", sid!);
     if (opts.yolo !== false) a.push("--always-approve");
     if (withTrust) a.push("--trust");
     const gkModel = opts.model ?? resolveSystemModel("grok-cli");
@@ -2446,6 +2501,11 @@ function runGrok(opts: RunHeadlessOpts): RunHeadlessResult {
     r = driverSpawnSync("grok", buildArgs(delivery, true), spawnOpts);
     if (withTrust && rejected(r, "--trust")) {
       withTrust = false;
+      r = driverSpawnSync("grok", buildArgs(delivery, true), spawnOpts);
+    }
+    if (withSessionId && rejected(r, "--session-id")) {
+      withSessionId = false;
+      sid = null;
       r = driverSpawnSync("grok", buildArgs(delivery, true), spawnOpts);
     }
     if (rejected(r, "--prompt-file")) {
@@ -2808,7 +2868,77 @@ function dispatchToRunner(opts: RunHeadlessOpts): RunHeadlessResult {
   }
 }
 
+// ── session homes and continuation ────────────────────────────────────────
+//
+// A runtime keeps a session under the folder it was started in (claude under
+// `projects/<cwd>`, pi and kimi per project), and resumes it only from there.
+// Every resume in this process therefore runs where its session was made,
+// whatever folder the caller computed for it: a correction round of a run
+// that continued an earlier project's session must not move to the new run's
+// folder and lose it.
+
+/** Session id → the folder it was started in, for the sessions of this process. */
+const sessionHomes = new Map<string, string>();
+
+/** The folder a session of this process was started in, or null. */
+export function sessionHome(sessionId: string | null | undefined): string | null {
+  return sessionId ? sessionHomes.get(sessionId) ?? null : null;
+}
+
+/** An earlier project's session the next worker of this dispatch continues
+ *  (`nrv dispatch --continue-from <project>`). */
+export interface SessionContinuation {
+  sessionId: string;
+  /** The runtime that owns the session: only a worker on it can continue it. */
+  runtime: Runtime;
+  /** The folder the session was started in. */
+  workspace: string | null;
+  /** The project the session belongs to, for the audit. */
+  fromProject: string;
+}
+
+let pendingContinuation: SessionContinuation | null = null;
+const WORKER_ROLES = new Set<string>(["solo", "squad", "agent-x"]);
+
+/** Hands an earlier session to the next worker this process runs (a business's
+ *  solo worker, a squad, agent-x) on the same runtime. Consumed once; null
+ *  clears it. A judge, a router or a reviewer never takes it. */
+export function continueSessionOnNextWorker(c: SessionContinuation | null): void {
+  pendingContinuation = c;
+}
+
 function dispatchToRunnerInner(requested: RunHeadlessOpts): RunHeadlessResult {
+  let req = requested;
+  let continuation: SessionContinuation | null = null;
+  if (pendingContinuation && !req.sessionId && !req.noTools && req.runtime === pendingContinuation.runtime
+      && req.dispatchRole && WORKER_ROLES.has(req.dispatchRole)) {
+    continuation = pendingContinuation;
+    pendingContinuation = null;
+    if (continuation.workspace) sessionHomes.set(continuation.sessionId, continuation.workspace);
+    req = { ...req, sessionId: continuation.sessionId };
+  }
+  const home = sessionHome(req.sessionId);
+  if (home && req.workspace !== home) req = { ...req, workspace: home };
+  let result = runInWorkspace(req);
+  if (continuation) {
+    const missing = !result.ok && looksLikeMissingSession([result.error, result.stderr].filter(Boolean).join("\n"));
+    try {
+      loadAudit()?.emit?.(missing ? "x_continue_fresh_session" : "x_session_continued", {
+        from_project: continuation.fromProject, runtime: req.runtime, session_id: continuation.sessionId,
+        ...(missing ? { reason: "resume_failed", error: String(result.error || result.stderr || "").slice(0, 300) } : { result_session_id: result.sessionId }),
+      });
+    } catch { /* audit never decides a run */ }
+    // The session is gone (pruned, deleted): the worker runs fresh, in its own
+    // run folder, with the brief it was given. Said in the warnings and the audit.
+    if (missing) {
+      result = runInWorkspace(requested);
+      result = { ...result, warnings: [...(result.warnings ?? []), `continue-from ${continuation.fromProject}: session ${continuation.sessionId} could not be resumed; this run started a fresh session`] };
+    }
+  }
+  return result;
+}
+
+function runInWorkspace(requested: RunHeadlessOpts): RunHeadlessResult {
   // A worker with a workspace starts in its own run folder, fenced off from
   // the runs beside it (run-workspace.ts). Done here, once, so every runtime
   // and the Orca transport below get the same cwd and the same fence.
@@ -2816,7 +2946,10 @@ function dispatchToRunnerInner(requested: RunHeadlessOpts): RunHeadlessResult {
   const previousWorkspace = spawnInWorkspace;
   spawnInWorkspace = opts.workspace ? opts.cwd : null;
   try {
-    return runConfined(opts);
+    const result = runConfined(opts);
+    // Where this session lives: a later resume in this process runs there.
+    if (result.sessionId && opts.workspace && !sessionHomes.has(result.sessionId)) sessionHomes.set(result.sessionId, opts.cwd);
+    return result;
   } finally {
     spawnInWorkspace = previousWorkspace;
     cleanup();

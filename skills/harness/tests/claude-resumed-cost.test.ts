@@ -123,10 +123,11 @@ describe("the runners record the run's own spend on resume", () => {
     try {
       const first = runHeadless({ runtime: "claude-code", prompt: "do", cwd: TMP, timeoutMs: 20_000 });
       expect(first.ok, first.error ?? first.stderr).toBe(true);
-      expect(first.sessionId).toBe("cum-session");
+      // The engine names a fresh session itself (`--session-id <uuid>`).
+      expect(first.sessionId).toMatch(/^[0-9a-f-]{36}$/);
       expect(first.costUsd).toBeCloseTo(0.1, 9);
       for (let round = 0; round < 2; round++) {
-        const again = runHeadless({ runtime: "claude-code", prompt: "fix", cwd: TMP, timeoutMs: 20_000, sessionId: "cum-session" });
+        const again = runHeadless({ runtime: "claude-code", prompt: "fix", cwd: TMP, timeoutMs: 20_000, sessionId: first.sessionId! });
         expect(again.ok, again.error ?? again.stderr).toBe(true);
         expect(again.costUsd).toBeCloseTo(0.1, 9);
       }

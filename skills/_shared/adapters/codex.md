@@ -203,7 +203,7 @@ codex exec -C <cwd>
 
 - `-C`, `--add-dir`, `-s` and `--approve-for-me` exist only on the `exec` parent, so they come before `resume`. After it they are a parse error (exit 2).
 - The directive (`appendSystemPrompt`) has no flag; it is folded into the stdin prompt as a preamble followed by `---`.
-- The session id is `thread.started.thread_id` from the `--json` stream. The final answer is read from the `-o` file.
+- The session id is `thread.started.thread_id` from the `--json` stream, read whatever the exit code (a failed, killed or timed-out run that started has it). When the stream names none, the driver reads the newest `$CODEX_HOME/sessions/YYYY/MM/DD/rollout-*.jsonl` whose `session_meta` names the run's folder and a start after the run's. The final answer is read from the `-o` file.
 - If an older Codex rejects a flag (`unexpected argument`), the driver drops it and retries, up to four times, for `--add-dir`, `--approve-for-me` (replaced by `-s workspace-write`), `--ephemeral`, `--output-schema`, `-i`, `-c` and `--model`.
 
 Concrete run (trust mode, project outside git):

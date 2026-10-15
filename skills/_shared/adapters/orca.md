@@ -59,7 +59,7 @@ An Orca terminal exports `TERM_PROGRAM=Orca`, `ORCA_WORKTREE_ID` (`<repoId>::<pa
 8. `orchestration worker-read --dispatch <D>` — the provider transcript, archived beside the brief.
 9. `terminal close` on success; the tab stays open on failure (and with `NIRVANA_ORCA_KEEP_WORKERS=1`).
 
-Audit: `x_orca_worker_started`, `x_orca_worker_done`, `x_orca_transport_fallback` (with the stage and Orca's error code). The result is a `RunHeadlessResult` like any other: `ok` from the outcome, `result` from the worker's summary and report path, `costUsd: null` (Orca reports no cost), `sessionId: null` (§6), `warnings` naming the terminal, the dispatch and the transcript.
+Audit: `x_orca_worker_started`, `x_orca_worker_done`, `x_orca_transport_fallback` (with the stage and Orca's error code). The result is a `RunHeadlessResult` like any other: `ok` from the outcome, `result` from the worker's summary and report path, `costUsd` from the worker's own transcript when it is claude and the model has a price (an estimate: `costEstimated: true`), else `null`; `sessionId` as §5 says; `warnings` naming the terminal, the dispatch and the transcript. `x_orca_worker_done` carries the `session_id`.
 
 **Fallbacks that keep the headless child** (returned as `null` before injection): host inactive, `host.orca_workers` off, a runtime without an Orca agent id (`qwen-code`), `run-create` refused (orchestration off: `run_required`), `task-create` or `dispatch` refused (`nested_worker_depth_exceeded`, `inject_rejected`), the terminal not created, the agent not reaching its prompt, a trust dialog still on screen. A task or terminal already created is failed or closed first.
 
@@ -78,14 +78,28 @@ Orca reports an operator-started worker as `unsupervised`, which is exact: the e
 | `opencode` | `opencode` | `opencode` |
 | `qwen-code` | none | headless child |
 
+**The worker's session.** Every worker records a session `nrv revise` and the gate's corrections can continue, as a headless run does:
+
+| Runtime | New worker | Resume (revise, corrections) | Where the id comes from |
+|---|---|---|---|
+| `claude-code` | `--session-id <uuid>` | `--resume <id>` | chosen by the engine |
+| `grok-cli` | `--session-id <uuid>` | `-r <id>` | chosen by the engine |
+| `kimi-cli` | `--session <uuid>` | `--session <id>` | chosen by the engine |
+| `pi` | `--session-id <uuid>` | `--session-id <id>` | chosen by the engine |
+| `codex` | (codex chooses) | `codex resume <id> …` | `$CODEX_HOME/sessions/…/rollout-*.jsonl` whose `session_meta` names the worker's folder and a start after the worker's |
+| `antigravity-cli` | (agy chooses) | `--conversation <id>` | the last `~/.gemini/antigravity-cli/history.jsonl` entry for the worker's folder since it started |
+| `opencode` | none | headless child | none: a revise there runs fresh and seeded |
+
+A worker runs in its own run folder, so "this folder, since this moment" is one session. The readers live in `_shared/lib/session-capture.ts`.
+
 Hermes and OpenClaw are not Orca agents; they run as plain commands in an Orca terminal and keep their own adapters.
 
 ## 6. Known limits
 
-- **No session id.** Orca does not expose the worker's provider session id through the CLI, so `nrv revise` on an Orca-run seat starts a fresh session with the handoff context instead of resuming the conversation.
+- **Session ids read back.** codex and agy pick their own ids, so the engine reads them from their session files after the worker ends (§5). A worker whose CLI wrote nothing there records no id, and `nrv revise` then runs a fresh session seeded with the brief, the delivery and the gate findings (`x_revise_fresh_session`).
 - **Depth.** Orca's nested-worker depth defaults to one generation. A seat that sub-dispatches a squad runs that squad as a headless child (`nested_worker_depth_exceeded` → fallback) unless the user raises the depth in Orca's settings.
 - **Experimental toggle.** The orchestration layer is off until a human enables it in Orca's Settings. Off, every dispatch keeps the headless child; the card, the audit block, the doctor line and the browser tab still work.
-- **Cost.** A worker's cost is not reported; the spend tracker reads `costUnavailable`.
+- **Cost.** Orca reports none. A claude worker's tokens are read from its transcript and priced when the model is in the estimator's table; otherwise the cost stays unknown (`costUnavailable`).
 - **Windows shell.** The worker command is PowerShell; an Orca terminal configured for cmd.exe would not run it (the agent then never reaches its prompt and the dispatch falls back).
 - **Trust records.** Pre-accepting trust is known for Claude Code, Codex and Qwen; Antigravity, Grok, Kimi, Pi and OpenCode rely on the screen check and fall back if they ask.
 - **Attribution of plain children.** Orca's hooks attribute a `claude -p` that inherits the pane variables to that pane. The engine strips them; a script that spawns an agent by itself inside an Orca terminal does not get that courtesy.

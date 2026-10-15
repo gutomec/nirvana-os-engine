@@ -99,8 +99,8 @@ nrv validate <kind> <slug>                                 # admission gate for 
 A delivery is real when the audit shows it: `dispatch_business` (or
 `dispatch_squad`) with the trace, the gate passed, and the files on disk. A
 "done" without that chain is fiction. To change a delivery, ask the harness for
-a revision (`nrv revise <project> "<change>"`); never patch it with your own
-model.
+a revision (`nrv revise <project> "<change>"`), which continues the worker's own
+session; never a new dispatch, and never a patch with your own model.
 
 ## 4. Working rules
 

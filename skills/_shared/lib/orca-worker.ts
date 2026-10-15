@@ -32,7 +32,10 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { createRequire } from "node:module";
-import { contextWindowSetting, headlessClaudeEnv, type RunHeadlessOpts, type RunHeadlessResult, type Runtime } from "./host-agent-driver.ts"; // cycle is safe: used at call time only
+import { randomUUID } from "node:crypto";
+import { contextWindowSetting, headlessClaudeEnv, SYNTHETIC_AGY_SID, type RunHeadlessOpts, type RunHeadlessResult, type Runtime } from "./host-agent-driver.ts"; // cycle is safe: used at call time only
+import { agyConversationFor, claudeTranscriptUsage, codexSessionFor, findClaudeTranscript } from "./session-capture.ts";
+import { estimateCostUsd } from "../../harness/lib/cost-estimator.ts";
 import { childDepth, DEPTH_ENV, ROLE_ENV } from "./dispatch-depth.ts";
 import { orcaJson, orcaFire, orcaWorkersActive, orcaWorkspaceSelector } from "./orca.ts";
 import { isEffortLevel, resolvePinnedEffort, resolveSystemModel } from "./system-model.ts";
@@ -135,7 +138,58 @@ export interface OrcaWorkerHooks {
   orcaFireImpl?: typeof orcaFire;
   activeImpl?: () => boolean;
   now?: () => number;
+  /** Test seam: where the CLIs keep their sessions (HOME, CODEX_HOME, CLAUDE_CONFIG_DIR). */
+  sessionEnv?: Record<string, string | undefined>;
 }
+
+/**
+ * The session id of a finished worker. The resumed or assigned one when the
+ * engine gave it; for codex and agy, which choose their own, what their files
+ * say (session-capture.ts): codex's session filed for the worker's folder since
+ * it started, agy's last prompt from that folder. Null when nothing says.
+ */
+export function workerSessionId(runtime: Runtime, session: WorkerSession, cwd: string, sinceMs: number, hooks: Pick<OrcaWorkerHooks, "sessionEnv"> = {}): string | null {
+  if (session.resume) return session.resume;
+  if (session.assign) return session.assign;
+  const env = hooks.sessionEnv ?? process.env;
+  if (runtime === "codex") return codexSessionFor(cwd, sinceMs, env);
+  if (runtime === "antigravity-cli") return agyConversationFor(cwd, sinceMs, env);
+  return null;
+}
+
+/** What an interactive claude worker spent, from its own transcript: the
+ *  tokens of the turns written since it started, priced when the model has a
+ *  price (cost-estimator.ts). The worker reports no cost of its own. */
+function claudeWorkerCost(sessionId: string, sinceMs: number, hooks: Pick<OrcaWorkerHooks, "sessionEnv">): { costUsd: number | null; usage?: RunHeadlessResult["usage"]; model?: string } | null {
+  try {
+    const file = findClaudeTranscript(sessionId, hooks.sessionEnv ?? process.env);
+    const read = file ? claudeTranscriptUsage(file, sinceMs) : null;
+    if (!read) return null;
+    const costUsd = estimateCostUsd("claude-code", read.model, { costUsd: null, usage: read.usage } as RunHeadlessResult);
+    return { costUsd, usage: read.usage, ...(read.model ? { model: read.model } : {}) };
+  } catch { return null; }
+}
+
+/** The session a worker continues (`resume`) or starts under an id the engine
+ *  chose (`assign`). */
+export interface WorkerSession { resume?: string; assign?: string }
+
+/**
+ * How each interactive CLI continues a session or starts one under a given id
+ * (each `--help` read 2026-10-15: claude 2.1.301, codex 0.162.1, agy 1.3.5,
+ * grok 1.0.52, pi 0.84.3; kimi from its sessions guide). `assign` is false
+ * where the CLI picks its own id: the engine reads it back after the worker
+ * finishes (session-capture.ts). opencode has neither, so a resume there runs
+ * as the headless child.
+ */
+export const INTERACTIVE_SESSION: Partial<Record<Runtime, { resume: boolean; assign: boolean }>> = {
+  "claude-code": { resume: true, assign: true },
+  codex: { resume: true, assign: false },
+  "antigravity-cli": { resume: true, assign: false },
+  "grok-cli": { resume: true, assign: true },
+  "kimi-cli": { resume: true, assign: true },
+  pi: { resume: true, assign: true },
+};
 
 /**
  * The interactive command for a runtime, as argv. Autonomy flags match the
@@ -145,8 +199,9 @@ export interface OrcaWorkerHooks {
  * (yolo false) drops them, and claude takes `--permission-mode acceptEdits`
  * like its headless twin. Null for a runtime Orca has no agent id for.
  */
-export function interactiveArgv(opts: Pick<RunHeadlessOpts, "runtime" | "yolo" | "model" | "effort" | "addDirs" | "claudeSettings"> & Partial<Pick<RunHeadlessOpts, "allowSubagents">>): string[] | null {
+export function interactiveArgv(opts: Pick<RunHeadlessOpts, "runtime" | "yolo" | "model" | "effort" | "addDirs" | "claudeSettings"> & Partial<Pick<RunHeadlessOpts, "allowSubagents">>, session: WorkerSession = {}): string[] | null {
   if (!ORCA_AGENT_ID[opts.runtime]) return null;
+  const { resume, assign } = session;
   const yolo = opts.yolo !== false;
   // The caller's value, else the user's pin, else nothing — a bare CLI uses the
   // model its own configuration names. `resolveSystemModel` answers a pin for
@@ -166,6 +221,8 @@ export function interactiveArgv(opts: Pick<RunHeadlessOpts, "runtime" | "yolo" |
   switch (opts.runtime) {
     case "claude-code": {
       const a = ["claude", ...(yolo ? ["--dangerously-skip-permissions"] : ["--permission-mode", "acceptEdits"])];
+      if (resume) a.push("--resume", resume);
+      else if (assign) a.push("--session-id", assign);
       if (model) a.push("--model", model);
       if (effort) a.push("--effort", effort);
       // The run's deny rules (run-workspace.ts): the same fence as headless.
@@ -179,7 +236,8 @@ export function interactiveArgv(opts: Pick<RunHeadlessOpts, "runtime" | "yolo" |
       return a;
     }
     case "codex": {
-      const a = ["codex", ...(yolo ? ["--dangerously-bypass-approvals-and-sandbox"] : [])];
+      // `codex resume <id>` takes the same options as `codex` itself.
+      const a = ["codex", ...(resume ? ["resume", resume] : []), ...(yolo ? ["--dangerously-bypass-approvals-and-sandbox"] : [])];
       if (model) a.push("-m", model);
       if (effort) a.push("-c", `model_reasoning_effort=${JSON.stringify(effort)}`);
       // The context ceiling, as the headless runner passes it.
@@ -190,16 +248,21 @@ export function interactiveArgv(opts: Pick<RunHeadlessOpts, "runtime" | "yolo" |
       for (const d of dirs) a.push("--add-dir", d);
       return a;
     }
-    case "antigravity-cli":
-      return ["agy", ...(yolo ? ["--dangerously-skip-permissions"] : []), ...(model ? ["--model", model] : [])];
+    case "antigravity-cli": {
+      // A placeholder id names no agy conversation: the most recent one of the
+      // folder is the run's, as the headless runner resumes it.
+      const cont = resume ? (resume.startsWith(SYNTHETIC_AGY_SID) ? ["--continue"] : ["--conversation", resume]) : [];
+      return ["agy", ...(yolo ? ["--dangerously-skip-permissions"] : []), ...cont, ...(model ? ["--model", model] : [])];
+    }
     case "grok-cli":
-      return ["grok", ...(yolo ? ["--always-approve"] : []), ...(model ? ["-m", model] : [])];
+      return ["grok", ...(yolo ? ["--always-approve"] : []), ...(resume ? ["-r", resume] : assign ? ["--session-id", assign] : []), ...(model ? ["-m", model] : [])];
     case "kimi-cli":
-      return ["kimi", ...(model ? ["-m", model] : [])];
+      return ["kimi", ...((resume ?? assign) ? ["--session", (resume ?? assign)!] : []), ...(model ? ["-m", model] : [])];
     case "pi":
-      return ["pi", ...(model ? ["--model", model] : [])];
+      // `--session-id` continues the session when it exists and creates it otherwise.
+      return ["pi", ...((resume ?? assign) ? ["--session-id", (resume ?? assign)!] : []), ...(model ? ["--model", model] : [])];
     case "opencode":
-      return ["opencode"];
+      return resume ? null : ["opencode"];
     default:
       return null;
   }
@@ -310,7 +373,17 @@ function parsePayload(m: Message): Record<string, unknown> {
 export function runOrcaWorker(opts: RunHeadlessOpts, hooks: OrcaWorkerHooks = {}): RunHeadlessResult | null {
   const active = hooks.activeImpl ?? orcaWorkersActive;
   if (!active()) return null;
-  const argv = interactiveArgv(opts);
+  if (!ORCA_AGENT_ID[opts.runtime]) return null;
+  // The worker continues the session it was given, or starts one under an id
+  // the engine chose, so `nrv revise` can continue it later. A runtime that can
+  // do neither interactively runs a resume as the headless child.
+  const caps = INTERACTIVE_SESSION[opts.runtime];
+  if (opts.sessionId && !caps?.resume) {
+    emit("x_orca_transport_fallback", { stage: "resume", reason: `${opts.runtime} cannot resume a session in an interactive worker`, runtime: opts.runtime, label: opts.label ?? null }, opts.cwd);
+    return null;
+  }
+  const session: WorkerSession = opts.sessionId ? { resume: opts.sessionId } : caps?.assign ? { assign: randomUUID() } : {};
+  const argv = interactiveArgv(opts, session);
   if (!argv) return null;
   // An interactive worker cannot honour an answer-only call (it needs its tools
   // to report worker_done) nor an explicit tool allowlist. Running those as a
@@ -324,6 +397,8 @@ export function runOrcaWorker(opts: RunHeadlessOpts, hooks: OrcaWorkerHooks = {}
   const fire = hooks.orcaFireImpl ?? orcaFire;
   const now = hooks.now ?? Date.now;
   const started = now();
+  // The wall clock, for the files a CLI writes (`now` is a test seam).
+  const wallStarted = Date.now();
   const deadline = typeof opts.timeoutMs === "number" ? started + opts.timeoutMs : null;
   const label = (opts.label ?? `${opts.runtime} worker`).slice(0, 80);
   const agent = ORCA_AGENT_ID[opts.runtime]!;
@@ -473,7 +548,11 @@ export function runOrcaWorker(opts: RunHeadlessOpts, hooks: OrcaWorkerHooks = {}
   }
   const durationMs = now() - started;
   const ok = outcome === "succeeded";
-  emit("x_orca_worker_done", { run_id: runId, task_id: taskId, dispatch_id: dispatchId, outcome, duration_ms: durationMs, files_modified: filesModified, report_path: reportPath, transcript: transcriptFile, error: error ?? null }, cwd);
+  // The worker's session: the one it continued, the id it was started with,
+  // or the one its CLI filed for this folder since it started.
+  const sessionId = workerSessionId(opts.runtime, session, cwd, wallStarted, hooks);
+  const cost = opts.runtime === "claude-code" && sessionId ? claudeWorkerCost(sessionId, wallStarted, hooks) : null;
+  emit("x_orca_worker_done", { run_id: runId, task_id: taskId, dispatch_id: dispatchId, outcome, duration_ms: durationMs, files_modified: filesModified, report_path: reportPath, transcript: transcriptFile, session_id: sessionId, error: error ?? null }, cwd);
 
   // 9. A finished worker's tab is closed; a failed one stays for inspection.
   // A worker that timed out is closed whatever else is set: left open, the
@@ -490,7 +569,10 @@ export function runOrcaWorker(opts: RunHeadlessOpts, hooks: OrcaWorkerHooks = {}
 
   const result = [subject && `${subject}`, body, reportPath && `Report: ${reportPath}`].filter(Boolean).join("\n");
   return {
-    ok, runtime: opts.runtime, sessionId: null, result, costUsd: null, costUnavailable: true,
+    ok, runtime: opts.runtime, sessionId, result, costUsd: cost?.costUsd ?? null, costUnavailable: true,
+    ...(cost?.costUsd != null ? { costEstimated: true } : {}),
+    ...(cost?.usage ? { usage: cost.usage } : {}),
+    ...(cost?.model ? { model: cost.model } : {}),
     exitCode: ok ? 0 : 1, stderr: "", durationMs, warnings,
     ...(ok ? {} : { error: error ?? (body ? `worker reported failure: ${body.slice(0, 300)}` : "worker reported failure") }),
   };

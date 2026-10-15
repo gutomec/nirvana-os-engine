@@ -158,7 +158,7 @@ Fallbacks, in order, each only on proof that argv parsing refused the flag befor
 
 **Failure contract.** The driver still honours an `error` event and a `result` event with `is_error`, but the Kimi docs document neither, nor any cost field. In practice failure rests on the exit code, and cost is reported as unavailable (`costUsd: null`).
 
-**Resume.** `runKimi` generates or reuses a session id as a label only and does **not** pass `--session` yet, although Kimi has `-S/--session <id>`. `nrv revise` therefore starts a fresh Kimi session; continuity comes from `HANDOFF.json` and the files on disk.
+**Resume.** `runKimi` passes `--session <id>` on every run: the id the engine chose on a fresh run (Kimi creates a session it does not know), the recorded one on `nrv revise`. A build that rejects `--session` is retried without it, with a warning, and records only the id Kimi's output names.
 
 **For a mention `@x`:** the adapter detects it in the returned handoff and opens a new sub-process for `x`.
 
@@ -260,7 +260,7 @@ echo '{"type":"human_escalation_required","trigger_id":"budget","severity":"high
 
 ## 13. Known Limitations
 
-1. **No session resume from the engine**: `--session <id>` exists but `runKimi` does not pass it; `nrv revise` starts fresh.
+1. **Session ids are unverified on a live run**: `--session <id>` follows the sessions guide (an unknown id creates the session); no installed Kimi was available to run it.
 2. **Failure and cost contract unverified**: the docs show no `result`/`error` event and no cost field, so failure detection is the exit code and cost is unavailable. Pin the real event fields with one `kimi -p ... --output-format stream-json` run once the CLI is installed.
 3. **Stream field names inferred**: the driver reads `role` (top level or under `message`), `content` and `tool_calls`; the docs describe the sequence, not the JSON keys.
 4. **No tool whitelist from the engine**: `-p` runs under `auto` permission with every tool; config `[tools]`/permission rules or an agent file would enforce one.

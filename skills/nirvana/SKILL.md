@@ -119,6 +119,11 @@ engine, and this file is the door to it.
 | Any runtime that can read a file (Claude Code, Codex, Antigravity, Pi, OpenClaw, Cursor…) | read `~/.nirvana/skills/harness/SKILL.md` and follow it as your operating instructions for this brief; its `../_shared/…` references resolve against `~/.nirvana/skills/harness/` |
 | Shell-only and sub-process runtimes (Hermes, headless) | `nrv dispatch --auto --exec "<the user's brief, verbatim>"` (`--exec=<runtime>` pins one; without `--exec` the command only scaffolds and delivers nothing) |
 
+A correction, a new version or a follow-up on work already dispatched in this
+project goes back to the same worker, never a new dispatch: `nrv revise
+<project> "<change>"` (`nrv revise --last [<business|squad>] "<change>"` for the
+newest run). It continues the worker's own session.
+
 Dispatch needs one agent CLI on PATH (`claude`, `codex`, `agy`, `pi`,
 `kimi`, `grok`, `qwen`, `opencode`). With none, Nirvana still answers discovery
 but cannot dispatch production: say so rather than producing inline. Every

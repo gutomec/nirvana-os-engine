@@ -45,7 +45,7 @@ import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { runHeadless, runtimeAvailable, AUTONOMOUS_DIRECTIVE, LEDGER_DEFAULT_TIMEOUT_MS, type Runtime } from "../lib/host-agent-driver.ts";
-import { listRuntimes, retiredRuntimeMessage } from "../../_shared/lib/host-agent-driver.ts";
+import { continueSessionOnNextWorker, listRuntimes, retiredRuntimeMessage } from "../../_shared/lib/host-agent-driver.ts";
 import { amplify } from "../lib/amplifier.ts";
 import { proxyEnrichBrief } from "../lib/brief-proxy.ts";
 import { resolveRoutingMode } from "../../_shared/lib/routing-mode.ts";
@@ -79,7 +79,8 @@ import { runSquadHeadless } from "../lib/squad-exec.ts";
 import { partsToPlan } from "../lib/auto-parts-plan.ts";
 import { engineGate } from "./multi-target.ts";
 import { prepareSquadEnvs, squadRunEnv } from "../../_shared/lib/squad-env.ts";
-import { writeWorkerSession } from "../lib/run-session.ts";
+import { readRunSession, sessionTarget, writeWorkerSession } from "../lib/run-session.ts";
+import { sessionHome } from "../../_shared/lib/host-agent-driver.ts";
 import { parseSquadTarget, resolveSquadCapability } from "../lib/capability-resolver.ts";
 import { parseMessageTargetSpec } from "../lib/control-plane/agent-x-canary-queue.ts";
 import { runDelivery, deliverAfterRuntimeError, gateableFiles, producesForRubric, runGateOnce, QUOTA_WAIT_EXIT, type DeliveryArgs, type DeliveryResult, type RuntimeErrorOutcome } from "../lib/delivery-pipeline.ts";
@@ -133,7 +134,7 @@ function arg(name: string, fallback?: string): string | undefined {
 // filter(!startsWith("--")) treats the "X" in "--project X" as a positional,
 // which made "--project caso-bruno" leak its value as the inline brief and
 // override --brief-file. Skip the token after each known value-flag.
-const VALUE_FLAGS = new Set(["--project", "--runtime", "--manifest", "--brief-file", "--outputs-root", "--max-budget", "--timeout", "--max-revisions", "--execution-mode", "--gauntlet-intensity", "--business", "--squad", "--run-id", "--mode", "--scope", "-s"]);
+const VALUE_FLAGS = new Set(["--project", "--runtime", "--manifest", "--brief-file", "--outputs-root", "--max-budget", "--timeout", "--max-revisions", "--execution-mode", "--gauntlet-intensity", "--business", "--squad", "--run-id", "--mode", "--scope", "-s", "--continue-from"]);
 /** Flags that take no value. With VALUE_FLAGS, everything this command reads
  *  (`--scope`/`-s` is read by the scope resolver). */
 const BOOLEAN_FLAGS = new Set(["--auto", "--agent-x", "--judge-x", "--exec", "--run", "--claude-code", "--scaffold-only", "--zip", "--pdf", "--html",
@@ -538,6 +539,7 @@ function printUsage(write: (line: string) => void): void {
     "    --execution-mode=<mode> standard|gauntlet|auto (default: standard)",
     "    --gauntlet-intensity=<profile> light|balanced|exhaustive",
     "    --run-id=<runId>        the Run's id in the project kernel: adopted when prepared (Glance), created otherwise (multi-target nodes); default run_<project>",
+    "    --continue-from=<project>  the same business, squad or agent-x as that project: its worker continues that project's session with this brief",
     "    --max-budget=<usd>      cost ceiling for the run (claude --max-budget-usd)",
     "    --timeout=<min>         wall-clock ceiling for the run (default 24h; a real hang is caught by ~5 min of inactivity)",
     "    --max-revisions=<n>     automatic revisions after a failed gate (default: quality_gate.max_revisions)",
@@ -625,6 +627,25 @@ for (const [flag, value, valid, expects] of [
 if (projectId !== undefined && !isSafeId(projectId)) {
   refuse(`--project must be a plain id (letters, digits, '.', '_', '-'), never a path: '${projectId}'`);
 }
+// --continue-from <project>: a new brief for the same worker, in the session
+// that produced the earlier delivery. The target must be named and must be that
+// project's worker; anything else is an input error and nothing runs.
+const continueFromId = arg("--continue-from");
+const continueFrom = (() => {
+  if (continueFromId === undefined) return null;
+  if (!isSafeId(continueFromId)) refuse(`--continue-from must be a project id, never a path: '${continueFromId}'`);
+  const found = readRunSession(continueFromId);
+  if (!found.ok) refuse(`--continue-from: ${found.reason}`);
+  const target = sessionTarget(found, found.data);
+  const wanted = explicitTarget?.kind === "squad" ? { kind: "squad", slug: explicitTarget.slug }
+    : explicitTarget?.kind === "agent-x" ? { kind: "agent-x", slug: "agent-x" }
+    : (!autoMode && slug && !explicitTarget) ? { kind: "business", slug } : null;
+  if (!wanted) refuse("--continue-from needs the target named (the business, --squad=<slug> or --agent-x), not --auto");
+  if (wanted.kind !== found.kind || wanted.slug !== target) {
+    refuse(`--continue-from ${continueFromId} is a ${found.kind === "agent-x" ? "agent-x" : `${found.kind} ${target}`} run; this dispatch names ${wanted.kind === "agent-x" ? "agent-x" : `${wanted.kind} ${wanted.slug}`}. A session continues only with its own worker.`);
+  }
+  return { projectId: continueFromId, kind: found.kind, slug: target, data: found.data };
+})();
 if (manifest) {
   let isFile = false;
   try { isFile = fs.statSync(manifest).isFile(); } catch { isFile = false; }
@@ -704,6 +725,10 @@ const explicitRuntime: Runtime | null = (() => {
   if (execEq) return normRuntime(execEq);
   if (process.argv.includes("--claude-code")) return "claude-code";
   if (runtimeFlagGiven && runtime) return normRuntime(runtime);
+  // A continued session lives in its own runtime: that runtime runs the work
+  // unless the owner named another one (then the work starts fresh there).
+  const continued = typeof continueFrom?.data.runtime === "string" ? normRuntime(continueFrom.data.runtime) : null;
+  if (continued && continueFrom?.data.session_id && runtimeAvailable(continued)) return continued;
   return null;
 })();
 // An unidentified host is a STATE THE SYSTEM DECLARES, never a silent
@@ -1232,6 +1257,32 @@ if (briefTarget) {
   } else {
     console.log(c("lime", "▶") + c("bold", " Explicit target — agent-x") + c("dim", " (no router)"));
     pendingCascade = { kind: "agent-x", reason: step.reason, plan };
+  }
+}
+
+// --continue-from: the brief says what this run continues, and the worker gets
+// the earlier session when there is one to continue (host-agent-driver.ts
+// continueSessionOnNextWorker: the first worker of this dispatch on that
+// runtime resumes it, from the folder it was started in). With no id, or on
+// another runtime, the worker starts fresh with the earlier delivery as input.
+if (continueFrom) {
+  const prevOut = typeof continueFrom.data.outputs_root === "string" ? continueFrom.data.outputs_root : null;
+  const prevSid = typeof continueFrom.data.session_id === "string" && continueFrom.data.session_id ? continueFrom.data.session_id : null;
+  const prevRt = typeof continueFrom.data.runtime === "string" ? normRuntime(continueFrom.data.runtime) : null;
+  const resumable = !!prevSid && prevRt === runtimeDecision.runtime;
+  brief = [brief, "", "## Continues",
+    `This brief continues project ${continueFrom.projectId}${resumable ? ", in the same session" : ""}.`
+    + (prevOut ? ` Its delivery is in ${prevOut}: read it as input and leave it as it is.` : "")
+    + " Write this run's deliverables where your prompt says.",
+  ].join("\n");
+  if (resumable) {
+    continueSessionOnNextWorker({ sessionId: prevSid!, runtime: prevRt!, fromProject: continueFrom.projectId,
+      workspace: typeof continueFrom.data.workspace === "string" && continueFrom.data.workspace ? continueFrom.data.workspace : null });
+    console.log(c("dim", `  continue-from ${continueFrom.projectId}: session ${prevSid} (${prevRt})`));
+  } else {
+    const reason = !prevSid ? "no_session_id" : "runtime_changed";
+    console.error(c("yellow", `⚠ continue-from ${continueFrom.projectId}: ${!prevSid ? "that run recorded no session id" : `its session is ${prevRt}'s and this run uses ${runtimeDecision.runtime}`}; the worker starts a FRESH session with that delivery as input.`));
+    emit("x_continue_fresh_session", { from_project: continueFrom.projectId, reason, runtime: runtimeDecision.runtime, previous_runtime: prevRt, previous_session_id: prevSid });
   }
 }
 
@@ -2329,7 +2380,7 @@ if (wantExec) {
             const sessionFile = path.join(projDir, "session.json");
             const sessionData: Record<string, any> = { project_id: pid, business_slug: slug, runtime: rt,
               session_id: sessionId, project_dir: projDir, project_root: projectRoot, outputs_root: oroot,
-              workspace: runWorkspace ?? null,
+              workspace: sessionHome(sessionId) ?? runWorkspace ?? null,
               zip_path: null, created_at: new Date().toISOString(), manifest: manifest ?? null };
             fs.writeFileSync(sessionFile, JSON.stringify(sessionData, null, 2));
             const afterGate = () => runBusinessPostGate({ projectId: pid, businessSlug: slug, runtime: rt,
@@ -2454,7 +2505,7 @@ if (wantExec) {
     outputs_root: oroot, zip_path: null, created_at: new Date().toISOString(),
     // Where the session was started: `nrv revise` resumes from the same folder,
     // since claude keeps a session under its working directory.
-    workspace: runWorkspace ?? null,
+    workspace: sessionHome(res.sessionId) ?? runWorkspace ?? null,
     // The manifest travels with the session: without it `nrv revise` loses the
     // one completeness proof the system has (promised paths vs disk truth) and
     // silently downgrades to the scan fallback on every revision.

@@ -188,3 +188,60 @@ describe("a squad run leaves its session, and nrv revise continues it", () => {
     expect(attempt.meta.revision_of).toBeTruthy();
   }, spawnBudgetMs(2));
 });
+
+describe("--continue-from: a new brief continues an earlier project's session", () => {
+  /** Every audit line of the fixture's logs, raw. */
+  const auditText = (root: string): string => {
+    const dir = path.join(root, "logs");
+    if (!fs.existsSync(dir)) return "";
+    return fs.readdirSync(dir).map(day => path.join(dir, day, "audit.jsonl")).filter(f => fs.existsSync(f)).map(f => fs.readFileSync(f, "utf8")).join("\n");
+  };
+
+  test("the same squad resumes the earlier session, from the earlier run's folder, and records it there for revise", () => {
+    const fx = fixture();
+    expect(fx.dispatch(["--squad", "fixture-squad"], "proj-first").status).toBe(0);
+    // The first run was started under an id the engine chose, and the session it
+    // reported reached the session store `nrv revise` and later dispatches read.
+    const firstArgv = fx.calls()[0].argv;
+    expect(firstArgv[firstArgv.indexOf("--session-id") + 1]).toMatch(/^[0-9a-f-]{36}$/);
+    const store = JSON.parse(fs.readFileSync(path.join(fx.projectRoot, "outputs", "proj-first", "squads", "fixture-squad", "sessions.json"), "utf8"));
+    expect(store["claude-code:squad:fixture-squad"].session_id).toBe("sess-fake");
+    const r = fx.dispatch(["--squad", "fixture-squad"], "proj-second", ["--continue-from", "proj-first"]);
+    expect(r.status, r.stdout + r.stderr).toBe(0);
+    const second = fx.calls()[1];
+    expect(second.role).toBe("squad");
+    expect(second.argv[second.argv.indexOf("--resume") + 1]).toBe("sess-fake");
+    expect(r.stdout).toContain("continue-from proj-first: session sess-fake (claude-code)");
+    expect(auditText(fx.root)).toContain("x_session_continued");
+    const first = JSON.parse(fs.readFileSync(path.join(fx.projectRoot, "outputs", "proj-first", "squads", "fixture-squad", "session.json"), "utf8"));
+    const next = JSON.parse(fs.readFileSync(path.join(fx.projectRoot, "outputs", "proj-second", "squads", "fixture-squad", "session.json"), "utf8"));
+    // The session lives in the first run's folder: the second run resumes it, and revise does too, from there.
+    expect(next.session_id).toBe("sess-fake");
+    expect(next.workspace).toBe(first.workspace);
+    expect(next.outputs_root).toBe(fx.outputsFor("proj-second"));
+  }, spawnBudgetMs(2));
+
+  test("another worker than the earlier project's is refused (exit 4) before anything runs", () => {
+    const fx = fixture();
+    expect(fx.dispatch(["--squad", "fixture-squad"], "proj-sq").status).toBe(0);
+    const r = fx.dispatch(["--agent-x"], "proj-ax", ["--continue-from", "proj-sq"]);
+    expect(r.status).toBe(4);
+    expect(r.stderr).toContain("A session continues only with its own worker");
+    expect(fx.calls()).toHaveLength(1);
+    const missing = fx.dispatch(["--agent-x"], "proj-ax", ["--continue-from", "proj-none"]);
+    expect(missing.status).toBe(4);
+    expect(missing.stderr).toContain("no session.json for project 'proj-none'");
+  }, spawnBudgetMs(3));
+
+  test("an earlier run with no session id: the worker starts fresh with that delivery as input, said and audited", () => {
+    const fx = fixture();
+    expect(fx.dispatch(["--agent-x"], "proj-old").status).toBe(0);
+    const file = path.join(fx.projectRoot, "outputs", "proj-old", "agent-x", "session.json");
+    fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(file, "utf8")), session_id: null }));
+    const r = fx.dispatch(["--agent-x"], "proj-new", ["--continue-from", "proj-old"]);
+    expect(r.status, r.stdout + r.stderr).toBe(0);
+    expect(r.stderr).toContain("starts a FRESH session");
+    expect(fx.calls()[1].argv).not.toContain("--resume");
+    expect(auditText(fx.root)).toContain("x_continue_fresh_session");
+  }, spawnBudgetMs(2));
+});

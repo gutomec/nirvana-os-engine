@@ -147,7 +147,8 @@ describe("with canned Orca answers", () => {
     expect(r.ok).toBe(true);
     expect(r.exitCode).toBe(0);
     expect(r.runtime).toBe("claude-code");
-    expect(r.sessionId).toBeNull();
+    // The worker was started under an id the engine chose, so revise can continue it.
+    expect(r.sessionId).toMatch(/^[0-9a-f-]{36}$/);
     expect(r.costUnavailable).toBe(true);
     expect(r.result).toContain("finished");
     expect(r.result).toContain("Did the thing.");
@@ -295,6 +296,129 @@ describe("with canned Orca answers", () => {
   });
 });
 
+describe("the worker's session: assigned, resumed or read back", () => {
+  const commandOf = (c: ReturnType<typeof canned>) => { const t = c.calls.find((a) => a[0] === "terminal" && a[1] === "create")!; return t[t.indexOf("--command") + 1]; };
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+  test("each CLI's own spelling for continuing a session or naming a new one", () => {
+    expect(interactiveArgv({ runtime: "claude-code", yolo: true, allowSubagents: true }, { assign: "u1" })).toEqual(["claude", "--dangerously-skip-permissions", "--session-id", "u1"]);
+    expect(interactiveArgv({ runtime: "claude-code", yolo: true, allowSubagents: true }, { resume: "s1" })).toEqual(["claude", "--dangerously-skip-permissions", "--resume", "s1"]);
+    expect(interactiveArgv({ runtime: "codex", yolo: true, allowSubagents: true }, { resume: "t1" })).toEqual(["codex", "resume", "t1", "--dangerously-bypass-approvals-and-sandbox"]);
+    expect(interactiveArgv({ runtime: "antigravity-cli", yolo: true }, { resume: "c1" })).toEqual(["agy", "--dangerously-skip-permissions", "--conversation", "c1"]);
+    expect(interactiveArgv({ runtime: "antigravity-cli", yolo: true }, { resume: "nrv-agy-x" })).toEqual(["agy", "--dangerously-skip-permissions", "--continue"]);
+    expect(interactiveArgv({ runtime: "grok-cli", yolo: true }, { assign: "g1" })).toEqual(["grok", "--always-approve", "--session-id", "g1"]);
+    expect(interactiveArgv({ runtime: "grok-cli", yolo: true }, { resume: "g1" })).toEqual(["grok", "--always-approve", "-r", "g1"]);
+    expect(interactiveArgv({ runtime: "kimi-cli", yolo: true }, { assign: "k1" })).toEqual(["kimi", "--session", "k1"]);
+    expect(interactiveArgv({ runtime: "pi", yolo: true }, { resume: "p1" })).toEqual(["pi", "--session-id", "p1"]);
+    expect(interactiveArgv({ runtime: "opencode", yolo: true }, { resume: "o1" })).toBeNull();
+  });
+
+  test("a fresh claude worker starts under an id the engine chose, returns it and audits it", () => {
+    const c = canned(HAPPY);
+    const r = runOrcaWorker(base(), c.hooks)!;
+    expect(r.sessionId).toMatch(UUID);
+    expect(commandOf(c)).toContain(`'--session-id' '${r.sessionId}'`);
+  });
+
+  test("a revision in Orca resumes the worker's session in the terminal", () => {
+    const c = canned(HAPPY);
+    const r = runOrcaWorker(base({ sessionId: "sess-before" }), c.hooks)!;
+    expect(r.ok).toBe(true);
+    expect(r.sessionId).toBe("sess-before");
+    expect(commandOf(c)).toContain("'--resume' 'sess-before'");
+    expect(commandOf(c)).not.toContain("--session-id");
+  });
+
+  test("a runtime that cannot resume interactively hands the resume to the headless child", () => {
+    const c = canned(HAPPY);
+    expect(runOrcaWorker(base({ runtime: "opencode", sessionId: "o1" }), c.hooks)).toBeNull();
+    expect(c.calls).toEqual([]);
+  });
+
+  test("a codex worker's id is read from the session codex filed for its folder since it started", () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-orca-codex-"));
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-orca-codex-cwd-"));
+    try {
+      const d = new Date();
+      const day = path.join(home, "sessions", String(d.getFullYear()), String(d.getMonth() + 1).padStart(2, "0"), String(d.getDate()).padStart(2, "0"));
+      fs.mkdirSync(day, { recursive: true });
+      const meta = (id: string, dir: string, ts: string) => JSON.stringify({ timestamp: ts, type: "session_meta", payload: { id, cwd: dir, timestamp: ts } }) + "\n";
+      // Another folder, and an older session of this folder: neither is the worker's.
+      fs.writeFileSync(path.join(day, "rollout-a.jsonl"), meta("other-folder", os.tmpdir(), new Date(Date.now() + 1000).toISOString()));
+      fs.writeFileSync(path.join(day, "rollout-b.jsonl"), meta("too-old", cwd, new Date(Date.now() - 3_600_000).toISOString()));
+      const c = canned({
+        ...HAPPY,
+        // The worker's session appears while it works.
+        "orchestration dispatch": () => {
+          fs.writeFileSync(path.join(day, "rollout-c.jsonl"), meta("thread-of-the-worker", cwd, new Date().toISOString()));
+          return ok({ dispatch: { id: "ctx_1" } });
+        },
+      });
+      const r = runOrcaWorker(base({ runtime: "codex", cwd }), { ...c.hooks, sessionEnv: { HOME: home, CODEX_HOME: home } })!;
+      expect(r.sessionId).toBe("thread-of-the-worker");
+      expect(commandOf(c)).not.toContain("--session-id");
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("an agy worker's id is the conversation its prompt from this folder went to", () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-orca-agy-"));
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-orca-agy-cwd-"));
+    try {
+      const hist = path.join(home, ".gemini", "antigravity-cli", "history.jsonl");
+      fs.mkdirSync(path.dirname(hist), { recursive: true });
+      fs.writeFileSync(hist, JSON.stringify({ display: "old", timestamp: Date.now() - 3_600_000, workspace: cwd, conversationId: "conv-old" }) + "\n"
+        + JSON.stringify({ display: "elsewhere", timestamp: Date.now() + 1000, workspace: os.tmpdir(), conversationId: "conv-other" }) + "\n");
+      const c = canned({
+        ...HAPPY,
+        "orchestration dispatch": () => {
+          fs.appendFileSync(hist, JSON.stringify({ display: "Read the file", timestamp: Date.now(), workspace: cwd, conversationId: "conv-worker" }) + "\n");
+          return ok({ dispatch: { id: "ctx_1" } });
+        },
+      });
+      const r = runOrcaWorker(base({ runtime: "antigravity-cli", cwd }), { ...c.hooks, sessionEnv: { HOME: home } })!;
+      expect(r.sessionId).toBe("conv-worker");
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("a claude worker's tokens are read from its own transcript, the turns since it started only", () => {
+    const cfg = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-orca-claude-"));
+    try {
+      let file = "";
+      const turn = (id: string, at: number, model: string) => JSON.stringify({ type: "assistant", timestamp: new Date(at).toISOString(),
+        message: { id, model, usage: { input_tokens: 10, cache_creation_input_tokens: 100, cache_read_input_tokens: 1000, output_tokens: 50 } } }) + "\n";
+      const c = canned({
+        ...HAPPY,
+        "orchestration dispatch": (args) => {
+          // The worker writes its transcript under the id it was started with.
+          const cmd = c.calls.find((a) => a[1] === "create" && a[0] === "terminal")!;
+          const sid = cmd[cmd.indexOf("--command") + 1].match(/'--session-id' '([0-9a-f-]+)'/)![1];
+          file = path.join(cfg, "projects", "-w", `${sid}.jsonl`);
+          fs.mkdirSync(path.dirname(file), { recursive: true });
+          // An earlier turn (before the worker) and one message written on two lines.
+          fs.writeFileSync(file, turn("m0", Date.now() - 3_600_000, "sonnet") + turn("m1", Date.now(), "sonnet") + turn("m1", Date.now(), "sonnet"));
+          void args;
+          return ok({ dispatch: { id: "ctx_1" } });
+        },
+      });
+      const r = runOrcaWorker(base(), { ...c.hooks, sessionEnv: { HOME: cfg, CLAUDE_CONFIG_DIR: cfg } })!;
+      expect(file).not.toBe("");
+      expect(r.usage).toEqual({ inputTokens: 1110, cachedInputTokens: 1000, cacheWriteInputTokens: 100, outputTokens: 50, reasoningOutputTokens: 0 });
+      expect(r.model).toBe("sonnet");
+      // Priced by the estimator's table (sonnet: $3 in, $15 out per million), an estimate.
+      expect(r.costUsd).toBeCloseTo((110 * 3 + 1000 * 3 + 50 * 15) / 1_000_000, 9);
+      expect(r.costEstimated).toBe(true);
+    } finally {
+      fs.rmSync(cfg, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("the workspace trust record", () => {
   test("the dialogs of the three CLIs are recognized on screen; a prompt is not", () => {
     expect(screenShowsTrustPrompt(["Accessing workspace:", "/w"])).toBe(true);
@@ -415,7 +539,7 @@ describe("through the driver, with real fakes on PATH", () => {
     const r = runHeadless({ runtime: "claude-code", prompt: "hello", cwd: root, timeoutMs: 60_000, label: "squad demo" });
     expect(r.ok).toBe(true);
     expect(r.result).toContain("Wrote the file.");
-    expect(r.sessionId).toBeNull();
+    expect(r.sessionId).toMatch(/^[0-9a-f-]{36}$/);
     expect(fs.existsSync(path.join(capture, "claude-args.json"))).toBe(false);
     // `terminal close` is fire-and-forget: give the detached child a moment to record itself.
     Bun.sleepSync(500);

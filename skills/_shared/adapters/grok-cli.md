@@ -158,7 +158,8 @@ grok --prompt-file <tmp-file> --output-format json --cwd <cwd> \
 - `--prompt-file <PATH>`: single-turn prompt from a file, lossless at any size. The temp file is deleted after the run.
 - `--output-format json`: one object on stdout after the run.
 - `--cwd <dir>`: working directory (the child's process cwd is the same dir).
-- `-r <id>`: resume the session `opts.sessionId`. Without it every call is a new conversation.
+- `-r <id>`: resume the session `opts.sessionId`.
+- `--session-id <uuid>`: a fresh run is started under an id the engine chose, so a run that dies before printing its envelope still has one. A build that rejects the flag is retried without it.
 - `--always-approve`: auto-approve every tool call. Without it a headless run waits for approvals it cannot get. `--yolo` is a documented alias in the headless guide but absent from `--help`; the engine uses the documented flag.
 - `--trust`: hidden flag (not in `--help`; `grok --trust --version` parses on 1.0.44). It grants folder trust, so project `AGENTS.md`, project skills under `.agents/skills`, project hooks, project MCP/LSP and project permission rules load. Without it, "headless startup with these sources requires `--trust` or a prior grant", and a fresh run folder has no prior grant.
 - `-m <model>`: from `opts.model` or `resolveSystemModel("grok-cli")`; never hardcoded.
@@ -168,7 +169,7 @@ Retries, in order, each only on proof that argv parsing refused the flag before 
 2. `--prompt-file` refused → rerun with `-p <prompt>` on argv (ARG_MAX-unsafe for large prompts; only for very old builds).
 3. `--output-format` refused → rerun without `--output-format` (plain text on stdout).
 
-Not passed today: `-s/--session-id`, `--effort`, `--no-subagents`, `--max-turns`, `--rules`, `--tools`, `--disallowed-tools`, `--permission-mode`, `--sandbox`, `--json-schema`. Grok is not in `EFFORT_CAPABLE`, so a requested effort is warned about once and dropped. There is no directory-grant flag (`--add-dir` equivalent): extra `addDirs` produce a warning.
+Not passed today: `--effort`, `--no-subagents`, `--max-turns`, `--rules`, `--tools`, `--disallowed-tools`, `--permission-mode`, `--sandbox`, `--json-schema`. Grok is not in `EFFORT_CAPABLE`, so a requested effort is warned about once and dropped. There is no directory-grant flag (`--add-dir` equivalent): extra `addDirs` produce a warning.
 
 ### Light layer (`RUNTIMES` entry `grok-cli`)
 
