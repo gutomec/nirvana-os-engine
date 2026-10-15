@@ -8,7 +8,7 @@
   /* The current beta, in ONE place. Each page also writes it as the fallback
      text of its .beta-tag spans, so a release means: change this constant and
      find-and-replace the old tag in docs/install.html and docs/beta.html. */
-  var BETA_TAG = "v0.15.0-beta.8";
+  var BETA_TAG = "v0.15.0-beta.9";
 
   var root = document.documentElement;
   root.classList.add("js");

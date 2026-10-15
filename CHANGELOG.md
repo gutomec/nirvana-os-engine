@@ -6,7 +6,7 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that the
 one-line installers and pack setups consume.
 
-## Unreleased
+## 0.15.0-beta.9 — 2026-10-15
 
 - Sessions: every run records a session it can be resumed from, headless or as an Orca worker, and a revision continues it. A fresh claude run is started under an id the engine chose (`--session-id <uuid>`), as are grok (`--session-id`), pi (`--session-id`, as before) and kimi (`--session`, which the adapter never passed); codex's id is read from its `--json` stream whatever the exit code, else from its `sessions/` file for the run's folder; agy's from the stream's first event when no result arrives. A run that failed, was killed or timed out keeps its id once the runtime created the session; a claude run that died before its first turn invents none. qwen and opencode still return none.
 - Orca workers record their session too (they all recorded `null`, so every `nrv revise` failed and the orchestrator re-dispatched from scratch, 10 to 15 minutes of context per round). claude, grok, kimi and pi workers start under an engine-chosen id; codex and agy ids are read back after the worker ends from `$CODEX_HOME/sessions` and `~/.gemini/antigravity-cli/history.jsonl`, by the worker's folder and start time. A revision or correction in Orca resumes the worker's session in the terminal (`claude --resume`, `codex resume`, `agy --conversation`, `grok -r`, `kimi --session`, `pi --session-id`); opencode resumes headless. `x_orca_worker_done` carries `session_id`. A claude worker's tokens are read from its own transcript and priced when the model is in the estimator's table, as an estimate.

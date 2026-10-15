@@ -51,7 +51,7 @@ Nirvana-OS 是一个 Bun 原生、与运行时无关的多 agent 系统。它运
 
 ## 安装
 
-本 README 描述的是 0.15 beta，`v0.15.0-beta.8`。本页顶部的一行命令安装的是最新的**稳定版**（0.14.11）；要安装这个 beta，请使用 [Beta 版](#beta-版)一节中的命令。不需要 Node。如果缺少 [Bun](https://bun.sh)，两个安装器都会在不使用 sudo、也不需要管理员权限的情况下把它装进你的用户目录（`~/.bun`），然后继续。
+本 README 描述的是 0.15 beta，`v0.15.0-beta.9`。本页顶部的一行命令安装的是最新的**稳定版**（0.14.11）；要安装这个 beta，请使用 [Beta 版](#beta-版)一节中的命令。不需要 Node。如果缺少 [Bun](https://bun.sh)，两个安装器都会在不使用 sudo、也不需要管理员权限的情况下把它装进你的用户目录（`~/.bun`），然后继续。
 
 运行之前：
 
@@ -68,7 +68,7 @@ Nirvana-OS 是一个 Bun 原生、与运行时无关的多 agent 系统。它运
 - Claude Code、Antigravity 和 Codex 中的审计 hook；
 - 空的内容文件夹 `~/squads`、`~/businesses` 和 `~/businesses/_library/dna`。
 
-再次运行是安全的。**关闭终端并打开一个新终端**，让 `nrv` 出现在你的 PATH 上，然后用 `nrv --version` 检查；这个 beta 会显示 `0.15.0-beta.8`。接着对你的 agent 说：*“检查 Nirvana-OS 是否安装正确。”* 它会运行 `nrv doctor`。退出码 1 表示只有警告；退出码 2 会列出失败的项目。
+再次运行是安全的。**关闭终端并打开一个新终端**，让 `nrv` 出现在你的 PATH 上，然后用 `nrv --version` 检查；这个 beta 会显示 `0.15.0-beta.9`。接着对你的 agent 说：*“检查 Nirvana-OS 是否安装正确。”* 它会运行 `nrv doctor`。退出码 1 表示只有警告；退出码 2 会列出失败的项目。
 
 通过 `curl | bash` 运行时，安装器不会提问。要在安装时选择性能档位，把它传进去：把末尾的 `bash` 换成 `bash -s -- --profile=balanced`。你也可以之后让你的 agent 来设置（见[设置](#设置)）。
 
@@ -153,18 +153,18 @@ Pack 是在 [squads.sh](https://squads.sh/pt/packs) 上出售的精选公司、s
 
 ## Beta 版
 
-Beta 版是 GitHub 上的预发布版本，而本 README 就是 beta 版的：`v0.15.0-beta.8`。顶部的一行命令安装的是最新稳定版，所以 beta 需要固定它的 tarball 来安装。标签以 `v` 开头；少了它，下载会返回 404。要安装更新的 beta，把这个标签换成[发布列表](https://github.com/gutomec/nirvana-os-engine/releases)中的标签。
+Beta 版是 GitHub 上的预发布版本，而本 README 就是 beta 版的：`v0.15.0-beta.9`。顶部的一行命令安装的是最新稳定版，所以 beta 需要固定它的 tarball 来安装。标签以 `v` 开头；少了它，下载会返回 404。要安装更新的 beta，把这个标签换成[发布列表](https://github.com/gutomec/nirvana-os-engine/releases)中的标签。
 
 macOS、Linux 和 WSL：
 
 ```bash
-curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.8/nirvana-os-engine.tar.gz bash
+curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.9/nirvana-os-engine.tar.gz bash
 ```
 
 Windows（PowerShell），写成一行：
 
 ```powershell
-$env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.8/nirvana-os-engine.tar.gz'; irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
+$env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.9/nirvana-os-engine.tar.gz'; irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
 ```
 
 之后，如果窗口还开着，运行 `Remove-Item Env:NIRVANA_ENGINE_URL`：只要这个变量还在，`nrv update` 就会重新安装固定的 tarball。Windows 命令使用单引号，是因为粘贴时丢失的双引号会让 PowerShell 停在 `>>` 提示符上等待。
@@ -246,4 +246,4 @@ $env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/d
 
 许可：Nirvana-OS Sustainable Use License (SUL) v1.0。源码公开发布、可公开阅读，引擎可免费使用。它是 source-available，而非 OSI 批准的开源许可，某些商业用途需要单独的商业许可。在依赖任何摘要（包括这一段）之前，请先阅读 [LICENSE](./LICENSE)。
 
-状态：beta（0.x，当前为 0.15.0-beta.8）。引擎今天就能用，几分钟内即可安装。在 1.0 之前，预计接口表面会持续变动。
+状态：beta（0.x，当前为 0.15.0-beta.9）。引擎今天就能用，几分钟内即可安装。在 1.0 之前，预计接口表面会持续变动。
