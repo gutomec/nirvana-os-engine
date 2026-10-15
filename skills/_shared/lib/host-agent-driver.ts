@@ -1262,7 +1262,10 @@ export interface RunHeadlessOpts {
    * SUPERVISED: a detached sidecar renews the run's lease while the child shows
    * activity, and the wall clock falls back to LEDGER_DEFAULT_TIMEOUT_MS — a
    * backstop above any real run, not a hang detector. What ends a hung run is
-   * the lease expiring DEFAULT_LEASE_SEC after the last sign of life. */
+   * the sidecar's stall guard (harness/lib/stall-guard.ts: no sign of life for
+   * execution.stall_timeout_min, or none since the start for
+   * execution.stall_no_start_min), which ends the worker; the result then
+   * carries `stalled`. */
   ledger?: LedgerHeartbeatOpts;
   /** Max ms without observed activity before the sidecar RECORDS the gap
    * (`x_ledger_stall_observed`, the supervisor.stall_threshold_ms setting,
@@ -1408,6 +1411,10 @@ export interface RunHeadlessResult {
   stderr: string;
   durationMs: number;
   error?: string;
+  /** The run's heartbeat sidecar (or the Orca wait loop) confirmed a stall and
+   *  ended the worker (harness/lib/stall-guard.ts): `ok` is false, and this is
+   *  the evidence recorded on the ledger row. */
+  stalled?: Record<string, unknown> & { rule: string; silent_ms: number; threshold_ms: number; confirmed_at: string };
 }
 
 /**
@@ -1575,11 +1582,52 @@ function driverSpawnSync(cmd: string, args: string[], options: SpawnSyncOptions 
   }
 }
 
+/** What the process does when a ledgered run comes back stalled. */
+export type LedgerStallHandler = (stall: NonNullable<RunHeadlessResult["stalled"]>, result: RunHeadlessResult, opts: RunHeadlessOpts) => void;
+let ledgerStallHandler: LedgerStallHandler | null = null;
+
+/**
+ * Register what this process does when a ledgered run comes back stalled.
+ * `nrv dispatch` and `nrv revise` register a handler that reports and exits 76,
+ * so a stall ends the whole dispatch at once, whichever worker it hit (the
+ * producer, a seat, a correction round), with no gate and no cascade retry.
+ * Without one, the caller gets the result with `stalled` set and `ok` false.
+ */
+export function onLedgerStall(handler: LedgerStallHandler | null): void {
+  ledgerStallHandler = handler;
+}
+
+type StallGuardModule = typeof import("../../harness/lib/stall-guard.ts");
+let _stallGuard: StallGuardModule | null | false = null;
+function stallGuard(): StallGuardModule | null {
+  if (_stallGuard === null) {
+    try { _stallGuard = require(path.join(import.meta.dir, "..", "..", "harness", "lib", "stall-guard.ts")) as StallGuardModule; }
+    catch { _stallGuard = false; }
+  }
+  return _stallGuard || null;
+}
+
+/** The stall the ledger confirmed for this run since `sinceMs`, if any. */
+function ledgerStallSince(led: LedgerHeartbeatOpts, sinceMs: number): RunHeadlessResult["stalled"] | null {
+  try {
+    const guard = stallGuard();
+    if (!guard) return null;
+    const { openLedger, getRun } = require(path.join(import.meta.dir, "..", "..", "harness", "lib", "run-ledger.ts"));
+    const stall = guard.confirmedStallOf(getRun(openLedger(led.dbPath), led.runId), sinceMs - 1_000);
+    return stall ? (stall as unknown as RunHeadlessResult["stalled"]) : null;
+  } catch { return null; }
+}
+
 /** Wraps a runner call with the heartbeat sidecar + capture files. EVERY exit
  * path (return or throw) stops the sidecar and removes the temp dir — the
- * managed equivalent of "clear all timers". */
+ * managed equivalent of "clear all timers". The sidecar also carries the stall
+ * guard (execution.stall_timeout_min, execution.stall_no_start_min): on a
+ * confirmed stall it ends the worker, the call below returns, and the result
+ * says `stalled`. */
 function runWithLedgerHeartbeat(opts: RunHeadlessOpts, runner: (o: RunHeadlessOpts) => RunHeadlessResult): RunHeadlessResult {
   const led = opts.ledger!;
+  const startedMs = Date.now();
+  const thresholds = stallGuard()?.resolveStallThresholds() ?? { silenceMs: 0, noStartMs: 0 };
   const effective: RunHeadlessOpts = { ...opts, timeoutMs: resolveLedgerTimeoutMs(opts) };
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-hb-"));
   const outFile = path.join(tmpDir, "child-stdout.log");
@@ -1595,10 +1643,13 @@ function runWithLedgerHeartbeat(opts: RunHeadlessOpts, runner: (o: RunHeadlessOp
     runLedgerPath, "heartbeat",
     "--run-id", led.runId,
     "--out", outFile, "--err", errFile, "--done", doneFile,
-    "--interval", String(led.intervalMs ?? 15_000),
+    // NIRVANA_HEARTBEAT_INTERVAL_MS: tests shorten the tick for a whole dispatch.
+    "--interval", String(led.intervalMs ?? (Number(process.env.NIRVANA_HEARTBEAT_INTERVAL_MS) || 15_000)),
     "--stall", String(opts.stallBudgetMs ?? resolveSetting("supervisor.stall_threshold_ms").value),
     "--lease", String(led.leaseSec ?? DEFAULT_LEASE_SEC),
     "--parent", String(process.pid),
+    "--stall-kill-ms", String(thresholds.silenceMs),
+    "--no-start-ms", String(thresholds.noStartMs),
   ];
   if (led.watchDir) {
     sidecarArgs.push("--watch", led.watchDir);
@@ -1618,8 +1669,9 @@ function runWithLedgerHeartbeat(opts: RunHeadlessOpts, runner: (o: RunHeadlessOp
   }
 
   managedCtx = { outFile, errFile };
+  let result: RunHeadlessResult;
   try {
-    return runner(effective);
+    result = runner(effective);
   } finally {
     managedCtx = null;
     // Belt and suspenders: sentinel (sidecar polls it) + SIGTERM + cleanup.
@@ -1627,6 +1679,13 @@ function runWithLedgerHeartbeat(opts: RunHeadlessOpts, runner: (o: RunHeadlessOp
     if (sidecarPid) { try { process.kill(sidecarPid, "SIGTERM"); } catch { /* already gone */ } }
     try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* best-effort */ }
   }
+  const stall = result.stalled ?? ((thresholds.silenceMs > 0 || thresholds.noStartMs > 0) ? ledgerStallSince(led, startedMs) : null);
+  if (stall) {
+    const reason = stallGuard()?.stallReason(stall as never) ?? `stalled (${stall.rule})`;
+    result = { ...result, ok: false, stalled: stall, error: `stalled: ${reason}`, warnings: [...(result.warnings ?? []), `stalled: ${reason}`] };
+    if (ledgerStallHandler) ledgerStallHandler(stall, result, opts);
+  }
+  return result;
 }
 
 // ── per-runtime headless runners ──────────────────────────────────────────

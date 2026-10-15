@@ -65,6 +65,9 @@ describe("the table", () => {
       "routing.on_router_failure": null,
       "supervisor.progress_ping_sec": "NIRVANA_PROGRESS_PING_SEC",
       "supervisor.stall_threshold_ms": "NIRVANA_STALL_THRESHOLD_MS",
+      "execution.stall_timeout_min": "NIRVANA_STALL_TIMEOUT_MIN",
+      "execution.stall_no_start_min": "NIRVANA_STALL_NO_START_MIN",
+      "execution.orca_workers": "NIRVANA_ORCA_WORKERS",
       "updates.check": "NIRVANA_NO_UPDATE_CHECK",
       "budget.default_max_cost_usd": null,
       "quality_gate.judge_enabled": "NIRVANA_JUDGE_ENABLED",
@@ -201,6 +204,24 @@ describe("legacy variables", () => {
     expect(read(spec, { NIRVANA_ROUTER_DENSE: "0" })?.value).toBe("off");
     expect(read(spec, { NIRVANA_ROUTER_DENSE: "fallback" })?.value).toBe("fallback");
     expect(() => read(spec, { NIRVANA_ROUTER_DENSE: "2" })).toThrow(/NIRVANA_ROUTER_DENSE=2 is invalid for routing\.dense; expected off \| fallback/);
+  });
+
+  test("NIRVANA_ORCA_WORKERS keeps its boolean spellings; the default is off", () => {
+    const spec = SETTINGS["execution.orca_workers"];
+    expect(spec.default).toBe("off");
+    expect(read(spec, { NIRVANA_ORCA_WORKERS: "1" })?.value).toBe("on");
+    expect(read(spec, { NIRVANA_ORCA_WORKERS: "false" })?.value).toBe("off");
+    expect(read(spec, { NIRVANA_ORCA_WORKERS: "on" })?.value).toBe("on");
+    expect(getSettingSpec("host.orca_workers")).toBeUndefined();
+  });
+
+  test("the stall guard: 90 and 45 minutes by default, fractions allowed, 0 = off, never negative", () => {
+    expect(SETTINGS["execution.stall_timeout_min"].default).toBe(90);
+    expect(SETTINGS["execution.stall_no_start_min"].default).toBe(45);
+    expect(read(SETTINGS["execution.stall_timeout_min"], { NIRVANA_STALL_TIMEOUT_MIN: "0.5" })?.value).toBe(0.5);
+    expect(read(SETTINGS["execution.stall_no_start_min"], { NIRVANA_STALL_NO_START_MIN: "0" })?.value).toBe(0);
+    expect(() => read(SETTINGS["execution.stall_timeout_min"], { NIRVANA_STALL_TIMEOUT_MIN: "-1" })).toThrow(/NIRVANA_STALL_TIMEOUT_MIN/);
+    expect(SETTINGS["execution.stall_timeout_min"].description).toMatch(/not a spend or time ceiling/);
   });
 
   test("a number variable must be a number, an enum variable one of its choices", () => {

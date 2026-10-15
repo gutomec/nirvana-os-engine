@@ -45,7 +45,8 @@ import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { runHeadless, runtimeAvailable, AUTONOMOUS_DIRECTIVE, LEDGER_DEFAULT_TIMEOUT_MS, type Runtime } from "../lib/host-agent-driver.ts";
-import { continueSessionOnNextWorker, listRuntimes, retiredRuntimeMessage } from "../../_shared/lib/host-agent-driver.ts";
+import { continueSessionOnNextWorker, listRuntimes, onLedgerStall, retiredRuntimeMessage } from "../../_shared/lib/host-agent-driver.ts";
+import { reportStall, STALLED_EXIT } from "../lib/stall-guard.ts";
 import { amplify } from "../lib/amplifier.ts";
 import { proxyEnrichBrief } from "../lib/brief-proxy.ts";
 import { resolveRoutingMode } from "../../_shared/lib/routing-mode.ts";
@@ -541,7 +542,7 @@ function printUsage(write: (line: string) => void): void {
     "    --run-id=<runId>        the Run's id in the project kernel: adopted when prepared (Glance), created otherwise (multi-target nodes); default run_<project>",
     "    --continue-from=<project>  the same business, squad or agent-x as that project: its worker continues that project's session with this brief",
     "    --max-budget=<usd>      cost ceiling for the run (claude --max-budget-usd)",
-    "    --timeout=<min>         wall-clock ceiling for the run (default 24h; a real hang is caught by ~5 min of inactivity)",
+    "    --timeout=<min>         wall-clock ceiling for the run (default none; a hang is caught by the stall guard, exit 76)",
     "    --max-revisions=<n>     automatic revisions after a failed gate (default: quality_gate.max_revisions)",
     "    --safe                  opt in to restricted mode (limited tools + sandbox); default = full trust",
     "    --no-judge              skip the LLM judge for this run; the offline heuristic gate still runs",
@@ -555,6 +556,9 @@ function printUsage(write: (line: string) => void): void {
     "    2  delivery WITHHELD: the gate failed after the revisions",
     "    3  INDETERMINATE: nothing was judged (zero gateable artifacts, or --scaffold-only)",
     "    4  invalid input, or refused before anything ran (no --exec, role, depth)",
+    "   75  waiting on quota: nothing more ran; _STATUS.json names the reset",
+    "   76  STALLED: the worker showed no activity for execution.stall_timeout_min (or never",
+    "       started within execution.stall_no_start_min); it was ended, nothing was judged",
     "",
     "Examples:",
     "  nrv dispatch brand-creative-studio \"Brand manifesto for product X\" --exec",
@@ -876,6 +880,25 @@ let ledgerRunId: string | null = null;
 function ledgerTry<T>(fn: () => T): T | null {
   try { return fn(); } catch (e) { console.error(`[run-ledger] ${(e as Error)?.message ?? e}`); return null; }
 }
+
+// A confirmed stall ends the whole dispatch, whichever worker it hit (the
+// producer, a seat, a correction round): the heartbeat sidecar already ended
+// the worker and marked the row; here the gate is skipped, _STATUS.json says
+// why and what next, the kernel Run is closed as failed, and the exit is 76.
+// Without this the notice the orchestrating agent waits on would never come.
+let stallPublication: { finish: (verdict: { exitCode: 0 | 1 | 2 | 3; gateOutcome: any; error?: string }, outputsRoot: string) => void } | null = null;
+onLedgerStall((stall, result, opts) => {
+  let row: runLedger.RunRow | null = null;
+  try { row = runLedger.getRun(runLedger.openLedger(opts.ledger?.dbPath), opts.ledger!.runId); } catch { row = null; }
+  if (row) {
+    reportStall(row, stall as never, { audit: emit });
+    const oroot = typeof row.meta?.outputs_root === "string" ? row.meta.outputs_root as string : "";
+    try { stallPublication?.finish({ exitCode: 1, gateOutcome: "indeterminate", error: String(row.last_error ?? "stalled") }, oroot); } catch { /* the ledger has it */ }
+  } else {
+    console.error(c("red", `■ STALLED (exit ${STALLED_EXIT}): ${String(result.error ?? "the worker stalled")}`));
+  }
+  process.exit(STALLED_EXIT);
+});
 
 // Harness config (quality_gate.*, routing.on_router_failure) — Phase 4.
 const harnessConfig = loadHarnessConfig();
@@ -1849,6 +1872,7 @@ if (pendingCascade?.kind === "squad-only") {
   const publication = openStandardPublication({ kernelPath: KERNEL_PATH, projectId: pid, runId: canonicalRunIdFor(pid, runIdFlag),
     traceId: pid, target: { kind: "squad", slug: squads[0], capabilityId }, snapshot: frozenExecutionSnapshot(pid, rt, "squad"),
     audit: emit, warn: line => console.error(c("yellow", line)) });
+  stallPublication = publication;
   if (publication.incompatible || publication.collided) process.exit(1);
   ledgerTry(() => {
     ledgerHandle = runLedger.openLedger();
@@ -1978,6 +2002,7 @@ if (pendingCascade?.kind === "judge-x") {
   const publication = openStandardPublication({ kernelPath: KERNEL_PATH, projectId: pid, runId: canonicalRunIdFor(pid, runIdFlag),
     traceId: pid, target: JUDGE_X_TARGET, snapshot: frozenExecutionSnapshot(pid, rt, "agent-x"),
     audit: emit, warn: line => console.error(c("yellow", line)) });
+  stallPublication = publication;
   if (publication.incompatible) process.exit(1);
 
   console.log(c("lime", "▶") + c("bold", ` Judge-x — exec headless (${rt})`));
@@ -2092,6 +2117,7 @@ if (pendingCascade?.kind === "agent-x") {
   const publication = openStandardPublication({ kernelPath: KERNEL_PATH, projectId: pid, runId: canonicalRunIdFor(pid, runIdFlag),
     traceId: pid, target: { kind: "agent-x", slug: "agent-x" }, snapshot: frozenExecutionSnapshot(pid, rt, "agent-x"),
     audit: emit, warn: line => console.error(c("yellow", line)) });
+  stallPublication = publication;
   if (publication.incompatible || publication.collided) process.exit(1);
   ledgerTry(() => {
     ledgerHandle = runLedger.openLedger();
@@ -2436,6 +2462,7 @@ if (wantExec) {
   const publication = businessCanaryDecision.enabled ? inertStandardPublication(canonicalRunIdFor(pid, runIdFlag))
     : openStandardPublication({ kernelPath: KERNEL_PATH, projectId: pid, runId: canonicalRunIdFor(pid, runIdFlag), traceId: pid,
       target: { kind: "business", slug }, snapshot: frozenExecutionSnapshot(pid, rt, "business"), audit: emit, warn: line => console.error(c("yellow", line)) });
+  stallPublication = publication;
   if (publication.incompatible || publication.collided) {
     const error = publication.collided ? `run ${publication.runId} is already terminal` : "runtime incompatible with the provider catalog";
     if (ledgerRunId) ledgerTry(() => runLedger.markState(ledgerHandle!, ledgerRunId!, "failed", { error }));

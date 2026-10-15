@@ -152,6 +152,7 @@ import { acquireLockSync } from "../../_shared/lib/file-lock.ts";
 import { quotaStop } from "../lib/quota-detector.ts";
 import type { DeliveryArgs, DeliveryResult, GateOutcome } from "../lib/delivery-pipeline.ts";
 import { resolveSetting } from "../../_shared/lib/settings.ts";
+import { dispatcherOwnsStall, STALLED_EXIT } from "../lib/stall-guard.ts";
 
 const requireCjs = createRequire(import.meta.url);
 const SUPERVISOR_PATH = fileURLToPath(import.meta.url);
@@ -208,8 +209,9 @@ function emitAudit(event: string, payload: Record<string, unknown>, row?: RunRow
 
 export interface RecoveryResult {
   ok: boolean;
-  /** Terminal-ish outcome the sweep should record: delivered | withheld | failed. */
-  finalState?: Extract<RunState, "delivered" | "withheld" | "failed">;
+  /** Terminal-ish outcome the sweep should record: delivered | withheld | failed,
+   *  or stalled when the run's own stall guard ended it again. */
+  finalState?: Extract<RunState, "delivered" | "withheld" | "failed" | "stalled">;
   detail?: string;
 }
 
@@ -480,6 +482,9 @@ export function resumeOutcome(status: number | null): RecoveryResult {
     // The revision met a spent quota again and recorded the reset on the row:
     // the next sweep waits for it instead of resuming.
     case 75: return { ok: false, finalState: "failed", detail: "resumed, but it stopped on a spent quota again (revise exit 75); it waits for the reset" };
+    // The revision's worker stalled: the row is `stalled`, stamped for the
+    // orchestrating agent, and stays that way.
+    case STALLED_EXIT: return { ok: false, finalState: "stalled", detail: `resumed, but the worker stalled again (revise exit ${STALLED_EXIT}); left to the agent` };
     default: return { ok: false, finalState: "failed", detail: `revise exit ${status ?? "?"}` };
   }
 }
@@ -487,7 +492,7 @@ export function resumeOutcome(status: number | null): RecoveryResult {
 export interface RedispatchOverrides extends Partial<DeliveryArgs> {
   /** Test seam standing in for cascade-runner's runWithCascade — the fresh run
    *  the supervisor starts. Everything else here is a DeliveryArgs override. */
-  runCascadeImpl?: (args: any) => { ok: boolean; error?: string; stderr?: string; sessionId?: string | null; finalRuntime?: string };
+  runCascadeImpl?: (args: any) => { ok: boolean; error?: string; stderr?: string; sessionId?: string | null; finalRuntime?: string; stalled?: unknown };
 }
 
 /** The pipeline's verdict, restated in the ledger/sweep vocabulary. The
@@ -590,6 +595,9 @@ export function redispatchRun(h: LedgerHandle, row: RunRow, overrides: Redispatc
     taskHint: `supervisor auto-redispatch · ${row.target_slug ?? "?"}`,
     ledger: { runId: row.run_id, watchDir: outputsRoot },
   });
+  // The fresh run stalled: its sidecar ended it and stamped the row. Nothing
+  // to judge, and nothing for the sweep to retry.
+  if (res.stalled) return { ok: false, finalState: "stalled", detail: `redispatch stalled: ${res.error ?? "no activity"}` };
   if (!res.ok) {
     const error = res.error || res.stderr || "unknown";
     // A spent quota: the row records its reset, and the next sweep waits for it.
@@ -895,6 +903,22 @@ function sweepOne(h: LedgerHandle, row: RunRow, now: number, deps: SweepDeps, su
   const lease = row.lease_expires_at ? Date.parse(row.lease_expires_at) : 0;
   if (lease > now) { maybePing(h, row, now, deps); summary.skipped++; return; }
 
+  // One owner per phase: while its dispatcher is alive, the dispatcher's own
+  // stall guard (stall-guard.ts) decides whether the run is stuck, with every
+  // signal the run has, and ends it with exit 76 when it is. The lease alone
+  // would have killed healthy runs that were silent 47 to 72 minutes. The
+  // supervisor steps in only when the run has shown no sign of life for longer
+  // than the stall threshold plus a grace: a wedged dispatcher or sidecar.
+  if (dispatcherOwnsStall(row, now)) {
+    if (row.meta?.dispatcher_owned_noted !== row.lease_expires_at) {
+      patchMeta(h, row.run_id, { dispatcher_owned_noted: row.lease_expires_at });
+      emitAudit("x_ledger_dispatcher_owns_stall", { run_id: row.run_id, dispatcher_pid: row.meta?.dispatcher_pid ?? null, heartbeat_at: row.heartbeat_at }, row);
+    }
+    maybePing(h, row, now, deps);
+    summary.skipped++;
+    return;
+  }
+
   const pid = row.child_pid ?? 0;
   // NEVER touch ourselves or our parent, no matter what the ledger says.
   if (pid && (pid === process.pid || pid === process.ppid)) {
@@ -1015,6 +1039,12 @@ function finalize(h: LedgerHandle, runId: string, res: RecoveryResult, summary: 
   const target = res.finalState ?? (res.ok ? "delivered" : "failed");
   const row = getRun(h, runId);
   if (!row) return;
+  // A stall the run's own guard confirmed stays a stall: it is the
+  // orchestrating agent's to act on (meta.salvaged), never a retry.
+  if (row.state === "stalled" && row.meta?.stall) {
+    emitAudit("x_ledger_recovery_result", { run_id: runId, ok: false, final_state: row.state, detail: res.detail ?? null }, row);
+    return;
+  }
   // A recovery that walked the delivery pipeline (redispatchRun) has ALREADY
   // driven the row to its terminal state. Record what the ledger says instead
   // of re-transitioning it — but still emit the recovery result and count it,

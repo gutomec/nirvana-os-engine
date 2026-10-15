@@ -22,8 +22,15 @@ import type { Runtime, RunHeadlessResult } from "./host-agent-driver.ts";
  * developers.openai.com/api/docs/pricing — cached input is the third number. */
 type Price = [number, number] | [number, number, number];
 const PRICE_TABLE: Record<string, Price> = {
-  // Anthropic
-  "claude-opus-4-7":       [15.00, 75.00],
+  // Anthropic, 2026-10-15, from claude.com/pricing (anthropic.com/pricing
+  // redirects there); cached input is the 5-minute cache read. Haiku 5.5 has
+  // two tiers by prompt length; a run's token total cannot tell them apart, so
+  // its row is the prompts <= 100K tier ($0.50 / $2.50 / $0.05 above it).
+  "claude-fable-5-1":      [10.00, 50.00, 0.25],
+  "claude-opus-5-5":       [ 4.00, 20.00, 0.20],
+  "claude-sonnet-5-5":     [ 2.00, 10.00, 0.10],
+  "claude-haiku-5-5":      [ 0.10,  0.50, 0.01],
+  "claude-opus-4-7":      [15.00, 75.00],
   "claude-sonnet-4-6":     [ 3.00, 15.00],
   "claude-haiku-4-5":      [ 0.80,  4.00],
   "opus":                  [15.00, 75.00],

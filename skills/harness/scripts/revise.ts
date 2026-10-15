@@ -47,6 +47,8 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { spawnSync } from "node:child_process";
 import { runtimeAvailable, AUTONOMOUS_DIRECTIVE, type Runtime } from "../lib/host-agent-driver.ts";
+import { onLedgerStall } from "../../_shared/lib/host-agent-driver.ts";
+import { reportStall, STALLED_EXIT } from "../lib/stall-guard.ts";
 import { findRunSessions, latestRunSession, runRoots as projectRunRoots, type RunSessionFile } from "../lib/run-session.ts";
 import { looksLikeMissingSession } from "../../_shared/lib/session-capture.ts";
 import { detectExecutionRuntime } from "../lib/control-plane/execution-runner.ts";
@@ -349,6 +351,16 @@ const ledgerRun: { handle: runLedger.LedgerHandle; runId: string } | null = (() 
     return null;
   }
 })();
+
+// A revision whose worker stalls ends like a dispatch that stalls: the sidecar
+// ended the worker; nothing is judged, _STATUS.json says why, exit 76.
+onLedgerStall((stall, result, opts) => {
+  let row: runLedger.RunRow | null = null;
+  try { row = runLedger.getRun(ledgerRun?.handle ?? runLedger.openLedger(opts.ledger?.dbPath), opts.ledger!.runId); } catch { row = null; }
+  if (row) reportStall(row, stall as never, { audit: (event, payload) => appendAudit({ event, ...payload, revision: true }, projectRoot) });
+  else console.error(c("red", `■ STALLED (exit ${STALLED_EXIT}): ${String(result.error ?? "the worker stalled")}`));
+  process.exit(STALLED_EXIT);
+});
 
 const solo = role === "solo";
 // The user's USE_* rules, as the dispatch handed them to the worker.

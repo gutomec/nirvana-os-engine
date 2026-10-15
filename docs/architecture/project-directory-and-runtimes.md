@@ -171,10 +171,12 @@ Inside an Orca terminal: every audit event carries an `orca` block naming the
 workspace and pane; `nrv init` registers the new project as a workspace;
 each ledger transition updates the workspace card (comment and board column);
 desktop notifications land on the card; `nrv glance` opens in Orca's embedded
-browser; and, with `host.orca_workers` on (its default) and Orca's
-orchestration enabled, every headless dispatch runs as a worker terminal
-titled `<business>/<employee> · claude` (or `squad <slug>`, `agent-x`), the
-engine waiting for its `worker_done` before verifying and gating as always.
+browser. Workers stay headless children by default, inside Orca too; with
+`execution.orca_workers: on` and Orca's orchestration enabled, every headless
+dispatch runs as a worker terminal titled `<business>/<employee> · claude` (or
+`squad <slug>`, `agent-x`), the engine waiting for its `worker_done` before
+verifying and gating as always, and falling back to the headless child when
+the agent stops on a trust, permission or plan dialog.
 Children the engine spawns lose Orca's pane variables, so a `claude -p` is not
 reported as the coordinator pane's agent. The whole contract, the fallbacks
 and the measured behaviour are in `skills/_shared/adapters/orca.md` and

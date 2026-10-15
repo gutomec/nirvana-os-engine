@@ -15,8 +15,9 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { writeFakeCli, readCapturedArgs } from "./helpers/fake-cli.ts";
 import {
-  ORCA_AGENT_ID, briefFileContent, forwardedEnv, interactiveArgv, preTrustWorkspace, runOrcaWorker, screenShowsTrustPrompt, workerCommand, workerRoleEnv,
+  ORCA_AGENT_ID, briefFileContent, forwardedEnv, interactiveArgv, preTrustWorkspace, runOrcaWorker, screenDialog, screenShowsTrustPrompt, workerCommand, workerRoleEnv,
 } from "../../_shared/lib/orca-worker.ts";
+import { getRun, markState, openLedger, openRun } from "../lib/run-ledger.ts";
 import type { OrcaCall } from "../../_shared/lib/orca.ts";
 
 // ── canned Orca ───────────────────────────────────────────────────────────
@@ -35,7 +36,8 @@ function canned(script: Record<string, Answer | Partial<OrcaCall>>, opts: { acti
     return { ...base, ...(a ?? {}) };
   };
   const orcaFireImpl = (args: string[]) => { fired.push(args); };
-  const hooks = { orcaJsonImpl: orcaJsonImpl as any, orcaFireImpl, activeImpl: () => opts.active ?? true };
+  // The post-inject screen reads pause between reads; here they do not.
+  const hooks: Record<string, any> = { orcaJsonImpl: orcaJsonImpl as any, orcaFireImpl, activeImpl: () => opts.active ?? true, sleep: () => {} };
   return { calls, fired, hooks };
 }
 
@@ -157,9 +159,13 @@ describe("with canned Orca answers", () => {
     expect(r.warnings?.some((w) => w.includes("transcript at"))).toBe(true);
 
     const keys = c.calls.map((a) => a.slice(0, 2).join(" "));
+    // After the inject the screen is read again for a few seconds: the worker
+    // must have taken its task, not be parked on a dialog.
+    const postInject = keys.slice(6).filter((k) => k === "terminal read").length;
+    expect(postInject).toBeGreaterThanOrEqual(2);
     expect(keys).toEqual([
       "orchestration run-create", "orchestration task-create", "terminal create", "terminal wait", "terminal read",
-      "orchestration dispatch", "orchestration check", "orchestration worker-read",
+      "orchestration dispatch", ...Array(postInject).fill("terminal read"), "orchestration check", "orchestration worker-read",
     ]);
     const runCreate = c.calls[0];
     expect(runCreate).toEqual(["orchestration", "run-create", "--objective", "nirvana · brandcraft/writer"]);
@@ -176,7 +182,7 @@ describe("with canned Orca answers", () => {
     expect(c.calls[3]).toEqual(["terminal", "wait", "--terminal", "term_1", "--for", "tui-idle", "--timeout-ms", "120000"]);
     expect(c.calls[4]).toEqual(["terminal", "read", "--terminal", "term_1", "--limit", "80"]);
     expect(c.calls[5]).toEqual(["orchestration", "dispatch", "--run", "run_1", "--task", "task_1", "--to", "term_1", "--inject"]);
-    expect(c.calls[6].slice(0, 6)).toEqual(["orchestration", "check", "--run", "run_1", "--wait", "--types"]);
+    expect(c.calls[6 + postInject].slice(0, 6)).toEqual(["orchestration", "check", "--run", "run_1", "--wait", "--types"]);
     // The delivery is acknowledged and the finished worker's tab is closed.
     expect(c.fired).toContainEqual(["orchestration", "check", "--run", "run_1", "--ack", "d1"]);
     expect(c.fired).toContainEqual(["terminal", "close", "--terminal", "term_1"]);
@@ -293,6 +299,117 @@ describe("with canned Orca answers", () => {
     expect(runOrcaWorker(base(), c.hooks)).toBeNull();
     expect(c.calls.map((a) => a.slice(0, 2).join(" "))).not.toContain("orchestration dispatch");
     expect(c.fired).toContainEqual(["terminal", "close", "--terminal", "term_1"]);
+  });
+});
+
+describe("after the inject: did the worker take its task?", () => {
+  const AGY_TRUST = ["Accessing workspace:", "/w/outputs/run", "Do you trust the contents of this project?", "Antigravity CLI requires permission to read, edit, and execute files here.", "> Yes, I trust this folder", "  No, exit", "↑/↓ Navigate · enter Confirm"];
+
+  test("the dialogs are told apart from a transcript that only mentions them", () => {
+    expect(screenDialog(AGY_TRUST)).toBe("trust-prompt");
+    expect(screenDialog(["Bash command: rm -rf build", "Do you want to proceed?", "❯ 1. Yes", "  2. No"])).toBe("permission-prompt");
+    expect(screenDialog(["Here is the plan.", "Would you like to proceed?", "❯ 1. Yes, and auto-accept edits", "  2. No, keep planning"])).toBe("plan-review");
+    expect(screenDialog(["I will write the plan and then proceed.", "> "])).toBeNull();
+    expect(screenDialog(["", "> ", ""])).toBeNull();
+  });
+
+  test("agy draws its trust dialog after the inject (2026-10-15): the terminal is closed, the task failed, and the run goes headless", () => {
+    let reads = 0;
+    const c = canned({ ...HAPPY, "terminal read": () => (++reads === 1 ? ok({ terminal: { tail: ["> "] } }) : ok({ terminal: { tail: AGY_TRUST } })) });
+    expect(runOrcaWorker(base({ runtime: "antigravity-cli" }), c.hooks)).toBeNull();
+    const keys = c.calls.map((a) => a.slice(0, 2).join(" "));
+    expect(keys).toContain("orchestration dispatch");
+    expect(keys).not.toContain("orchestration check");
+    expect(c.fired).toContainEqual(["terminal", "close", "--terminal", "term_1"]);
+    expect(c.fired.some((f) => f[1] === "task-update" && f.includes("failed"))).toBe(true);
+  });
+
+  test("a task left unsent on a screen that never moves goes headless too", () => {
+    let spec = "";
+    const c = canned({
+      ...HAPPY,
+      "orchestration task-create": (args) => { spec = args[args.indexOf("--spec") + 1]; return ok({ task: { id: "task_1" } }); },
+      "terminal read": () => ok({ terminal: { tail: ["$ agy --dangerously-skip-permissions", spec] } }),
+    });
+    expect(runOrcaWorker(base({ runtime: "antigravity-cli" }), c.hooks)).toBeNull();
+    expect(c.fired).toContainEqual(["terminal", "close", "--terminal", "term_1"]);
+  });
+
+  test("a screen that moves after the inject is a worker at work", () => {
+    let reads = 0;
+    const c = canned({ ...HAPPY, "terminal read": () => ok({ terminal: { tail: ["> Read the file…", `✻ Working… (${reads++}s)`] } }) });
+    const r = runOrcaWorker(base(), c.hooks)!;
+    expect(r.ok).toBe(true);
+  });
+});
+
+describe("the silence budget replaces the 7-day deadline", () => {
+  const quiet = (t: { now: number }, step = 60_000) => ({
+    ...HAPPY,
+    "orchestration check": (args: string[]) => { t.now += Math.min(step, Number(args[args.indexOf("--timeout-ms") + 1])); return ok({ deliveryId: null, messages: [] }); },
+    "orchestration worker-show": ok({ dispatch: { status: "dispatched", lastHeartbeatAt: null }, terminal: { connected: true } }),
+  });
+
+  test("a worker silent since the inject is ended as stalled, its terminal closed, long before a week", () => {
+    const t = { now: 1_000_000 };
+    const c = canned(quiet(t));
+    c.hooks.now = () => t.now;
+    c.hooks.stallThresholds = { silenceMs: 0, noStartMs: 5 * 60_000 };
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-orca-quiet-"));
+    const r = runOrcaWorker(base({ cwd, timeoutMs: 7 * 24 * 60 * 60_000 }), c.hooks)!;
+    expect(r.ok).toBe(false);
+    expect(r.stalled?.rule).toBe("never_started");
+    expect(r.error).toMatch(/^stalled: the worker never started/);
+    expect(t.now - 1_000_000).toBeLessThanOrEqual(6 * 60_000);
+    expect(c.fired).toContainEqual(["terminal", "close", "--terminal", "term_1"]);
+    for (const call of c.calls.filter((a) => a[1] === "check")) expect(Number(call[call.indexOf("--timeout-ms") + 1])).toBeLessThanOrEqual(5 * 60_000);
+    fs.rmSync(cwd, { recursive: true, force: true });
+  });
+
+  test("Orca's own check-ins keep a quiet worker alive until it reports", () => {
+    const t = { now: 1_000_000 };
+    let checks = 0;
+    const c = canned({
+      ...quiet(t),
+      "orchestration check": () => { t.now += 4 * 60_000; return ++checks < 4 ? ok({ deliveryId: null, messages: [] }) : ok({ deliveryId: "d", messages: [done("succeeded")] }); },
+      "orchestration worker-show": () => ok({ dispatch: { status: "dispatched", lastHeartbeatAt: new Date(t.now).toISOString() }, terminal: { connected: true } }),
+    });
+    c.hooks.now = () => t.now;
+    c.hooks.stallThresholds = { silenceMs: 5 * 60_000, noStartMs: 5 * 60_000 };
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-orca-beat-"));
+    const r = runOrcaWorker(base({ cwd }), c.hooks)!;
+    expect(r.ok).toBe(true);
+    expect(r.stalled).toBeUndefined();
+    fs.rmSync(cwd, { recursive: true, force: true });
+  });
+
+  test("with a ledger: the terminal is recorded on the row, and a stall marks the row for the agent", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-orca-ledger-"));
+    const db = path.join(tmp, "ledger.sqlite");
+    const h = openLedger(db);
+    const row = openRun(h, { targetSlug: "s", targetKind: "squad", runtime: "claude-code", projectId: "p", traceId: "p", projectRoot: tmp });
+    markState(h, row.run_id, "running");
+    const t = { now: 1_000_000 };
+    let recordedDuringWait: unknown = null;
+    const c = canned({
+      ...quiet(t),
+      "orchestration check": (args: string[]) => {
+        recordedDuringWait ??= getRun(h, row.run_id)!.meta.orca_worker;
+        t.now += Number(args[args.indexOf("--timeout-ms") + 1]);
+        return ok({ deliveryId: null, messages: [] });
+      },
+    });
+    c.hooks.now = () => t.now;
+    c.hooks.stallThresholds = { silenceMs: 3 * 60_000, noStartMs: 0 };
+    const r = runOrcaWorker(base({ cwd: tmp, ledger: { runId: row.run_id, dbPath: db } }), c.hooks)!;
+    expect(recordedDuringWait).toMatchObject({ terminal: "term_1", run_id: "run_1", task_id: "task_1", dispatch_id: "ctx_1" });
+    expect(r.stalled?.rule).toBe("silence");
+    const after = getRun(h, row.run_id)!;
+    expect(after.state).toBe("stalled");
+    expect((after.meta.stall as any).decided_by).toBe("orca-wait");
+    expect(after.meta.salvaged).toBe(true);
+    expect((after.meta.orca_worker as any).closed_at).toBeTruthy();
+    fs.rmSync(tmp, { recursive: true, force: true });
   });
 });
 
@@ -469,7 +586,8 @@ describe("through the driver, with real fakes on PATH", () => {
   const capture = path.join(root, "capture");
   const orcaCalls = path.join(root, "orca-calls.jsonl");
   const saved: Record<string, string | undefined> = {};
-  const KEYS = ["PATH", "NIRVANA_ORCA_HOST", "NIRVANA_ORCA_WORKERS", "TERM_PROGRAM", "ORCA_WORKTREE_ID", "ORCA_TERMINAL_HANDLE", "ORCA_PANE_KEY", "ORCA_CLI_COMMAND", "ORCA_DEV_REPO_ROOT", "NIRVANA_ORCA_KEEP_WORKERS"];
+  const KEYS = ["PATH", "NIRVANA_ORCA_HOST", "NIRVANA_ORCA_WORKERS", "TERM_PROGRAM", "ORCA_WORKTREE_ID", "ORCA_TERMINAL_HANDLE", "ORCA_PANE_KEY", "ORCA_CLI_COMMAND", "ORCA_DEV_REPO_ROOT", "NIRVANA_ORCA_KEEP_WORKERS", "NIRVANA_ORCA_POST_INJECT_MS", "FAKE_ORCA_DIALOG"];
+  const reads = path.join(root, "orca-reads");
   let runHeadless: typeof import("../lib/host-agent-driver.ts").runHeadless;
 
   beforeAll(async () => {
@@ -485,7 +603,14 @@ describe("through the driver, with real fakes on PATH", () => {
         "orchestration task-create": { task: { id: "task_9" } },
         "terminal create": { terminal: { handle: "term_9" } },
         "terminal wait": { wait: { satisfied: true } },
-        "terminal read": { terminal: { tail: ["> "] } },
+        // FAKE_ORCA_DIALOG: the TUI draws agy's trust dialog after the first read.
+        "terminal read": sub !== "terminal read" ? null : (() => {
+          const n = (fs.existsSync(${JSON.stringify(reads)}) ? Number(fs.readFileSync(${JSON.stringify(reads)}, "utf8")) : 0) + 1;
+          fs.writeFileSync(${JSON.stringify(reads)}, String(n));
+          return process.env.FAKE_ORCA_DIALOG && n > 1
+            ? { terminal: { tail: ["Accessing workspace:", "Do you trust the contents of this project?", "> Yes, I trust this folder", "  No, exit"] } }
+            : { terminal: { tail: ["> "] } };
+        })(),
         "orchestration dispatch": { dispatch: { id: "ctx_9" } },
         "orchestration check": { deliveryId: "d9", messages: [{ id: "m9", type: "worker_done", subject: "ok", body: "Wrote the file.", payload: JSON.stringify({ taskId: "task_9", dispatchId: "ctx_9", outcome: "succeeded", filesModified: [], reportPath: null }) }] },
         "orchestration worker-read": { transcript: { messages: [] } },
@@ -509,6 +634,9 @@ describe("through the driver, with real fakes on PATH", () => {
     delete process.env.ORCA_DEV_REPO_ROOT;
     delete process.env.NIRVANA_ORCA_WORKERS;
     delete process.env.NIRVANA_ORCA_KEEP_WORKERS;
+    delete process.env.FAKE_ORCA_DIALOG;
+    // One post-inject read, no pause: the fakes answer at once.
+    process.env.NIRVANA_ORCA_POST_INJECT_MS = "0";
     process.env.PATH = `${bin}${path.delimiter}${saved.PATH ?? ""}`;
     ({ runHeadless } = await import("../lib/host-agent-driver.ts"));
   });
@@ -532,8 +660,43 @@ describe("through the driver, with real fakes on PATH", () => {
     expect(fs.existsSync(orcaCalls)).toBe(false);
   });
 
+  test("inside Orca, execution.orca_workers is off by default: the headless child runs", () => {
+    process.env.NIRVANA_ORCA_HOST = "on";
+    delete process.env.NIRVANA_ORCA_WORKERS;
+    fs.rmSync(orcaCalls, { force: true });
+    fs.rmSync(path.join(capture, "claude-args.json"), { force: true });
+    const r = runHeadless({ runtime: "claude-code", prompt: "hello", cwd: root, timeoutMs: 60_000 });
+    expect(r.ok).toBe(true);
+    expect(r.result).toBe("headless child ran");
+    expect(readCapturedArgs(capture, "claude")).toContain("-p");
+    expect(fs.existsSync(orcaCalls)).toBe(false);
+  });
+
+  test("a trust dialog drawn after the inject: the same run continues as the headless child", () => {
+    process.env.NIRVANA_ORCA_HOST = "on";
+    process.env.NIRVANA_ORCA_WORKERS = "on";
+    process.env.FAKE_ORCA_DIALOG = "1";
+    fs.rmSync(reads, { force: true });
+    fs.rmSync(orcaCalls, { force: true });
+    fs.rmSync(path.join(capture, "claude-args.json"), { force: true });
+    try {
+      const r = runHeadless({ runtime: "claude-code", prompt: "hello", cwd: root, timeoutMs: 60_000, label: "squad demo" });
+      expect(r.ok).toBe(true);
+      expect(r.result).toBe("headless child ran");
+      // The headless runner started its own session under an engine-chosen id.
+      const args = readCapturedArgs(capture, "claude");
+      expect(args).toContain("--session-id");
+      Bun.sleepSync(500);
+      const keys = fs.readFileSync(orcaCalls, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l).slice(0, 2).join(" "));
+      expect(keys).toContain("orchestration dispatch");
+      expect(keys).toContain("terminal close");
+      expect(keys).not.toContain("orchestration check");
+    } finally { delete process.env.FAKE_ORCA_DIALOG; }
+  });
+
   test("host on: the same call runs as an Orca worker, and claude is not spawned by the engine", () => {
     process.env.NIRVANA_ORCA_HOST = "on";
+    process.env.NIRVANA_ORCA_WORKERS = "on";
     fs.rmSync(orcaCalls, { force: true });
     fs.rmSync(path.join(capture, "claude-args.json"), { force: true });
     const r = runHeadless({ runtime: "claude-code", prompt: "hello", cwd: root, timeoutMs: 60_000, label: "squad demo" });

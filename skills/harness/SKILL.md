@@ -170,6 +170,11 @@ blocking leaves the user's messages queued unread the whole time. Never poll the
 completion, and never set a timeout on a dispatch: a file that exists is not a
 run that finished, and a run killed at an arbitrary deadline is work thrown away.
 
+**Wait on the dispatch itself, or on `nrv run-track wait <run>`.** Both always
+end: 0, 75 (quota), 76 (stalled) or a failure. On 76 the worker showed no sign
+of life for too long and was ended: run `nrv run-track status <run>` once, then
+`nrv revise <project> "<what to do>"` (it resumes the session), or tell the user.
+
 ## 5. While it runs
 
 A decision the user makes now reaches the worker without stopping it; the
@@ -215,6 +220,7 @@ you mistook for a result: the run is finished and nobody knows.
 | 3 | indeterminate: nothing was judged (or `--scaffold-only`) |
 | 4 | invalid input or refused: nothing ran |
 | 75 | waiting on quota: the runtime's quota is spent, nothing more ran, and `_STATUS.json` names the reset (`quota_reset_at`); the supervisor resumes it after that time, so do not re-dispatch before it |
+| 76 | stalled: the worker showed no activity for `execution.stall_timeout_min` (or none at all within `execution.stall_no_start_min`) and was ended; nothing was judged, `_STATUS.json` says why and `next`, and the supervisor leaves the run to you |
 
 An honest failure is the system working: a worker that reports it was blocked
 (a missing credential, a hard dependency) did its job by telling you. Surface

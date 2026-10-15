@@ -25,7 +25,9 @@
 //   nrv run-track list                               # what is open right now, IN THIS PROJECT
 //   nrv run-track status <run-id|trace-id> [--json]  # one-shot: is it done, and how did it end
 //   nrv run-track wait   <run-id|trace-id> [--timeout <sec>] [--json]
-//                                                     # block until it is, woken by the signal
+//                                                     # block until it is, woken by the signal;
+//                                                     # always ends: 0, 1, 2, 75 (quota),
+//                                                     # 76 (stalled)
 //
 // `status`/`wait` answer the question `close` exists to make answerable: a
 // caller that started a dispatch detached (`nohup … &`) and either walked away
@@ -59,6 +61,8 @@ import {
   AGENTIC_LEASE_SEC, type RunState, type RunRow,
 } from "../lib/run-ledger.ts";
 import { notifyDesktop } from "../lib/os-notify.ts";
+import { leaseLongExpired, stallNextSteps, STALLED_EXIT } from "../lib/stall-guard.ts";
+import { closeOrcaWorker, orcaWorkerOf } from "../../_shared/lib/orca.ts";
 
 const argv = process.argv.slice(2);
 const sub = argv[0];
@@ -167,6 +171,13 @@ function anyoneAlive(row: RunRow): boolean {
  */
 function interpretState(row: RunRow): string {
   if (isTerminal(row.state)) return row.state;
+  // Stalled: the dispatcher's stall guard ended the worker (or the supervisor
+  // escalated it). Nobody resumes it unasked: it is the agent's to act on.
+  if (row.state === "stalled") return "stalled";
+  // The safety net for a wedged sidecar: the dispatcher is alive, but nothing
+  // has renewed the lease for longer than the stall threshold plus the grace,
+  // so nothing will end it either. A waiter is told instead of left waiting.
+  if (dispatcherAlive(row) && leaseLongExpired(row)) return "stalled";
   // Only a RECORDED dispatcher can be found dead: in verifying and gated the
   // worker has ended by design, so its pid alone says nothing.
   const dead = Number(row.meta?.dispatcher_pid) > 0 && !anyoneAlive(row);
@@ -180,8 +191,11 @@ function interpretState(row: RunRow): string {
   return row.state;
 }
 
-const DONE_STATES = new Set(["delivered", "withheld", "abandoned", "failed", "killed", "stale", "quota_wait"]);
-const EXIT_BY_STATE: Record<string, number> = { delivered: 0, withheld: 2, failed: 1, abandoned: 1, killed: 1, stale: 1, quota_wait: 75 };
+/** The wait's slow DB recheck; tests shorten it. */
+const BACKSTOP_MS = Math.max(50, Number(process.env.NIRVANA_RUN_TRACK_BACKSTOP_MS) || 30_000);
+
+const DONE_STATES = new Set(["delivered", "withheld", "abandoned", "failed", "killed", "stale", "quota_wait", "stalled"]);
+const EXIT_BY_STATE: Record<string, number> = { delivered: 0, withheld: 2, failed: 1, abandoned: 1, killed: 1, stale: 1, quota_wait: 75, stalled: STALLED_EXIT };
 
 function findRowById(id: string): RunRow | null {
   return getRun(handle, id) ?? findByTraceId(handle, id);
@@ -204,6 +218,10 @@ function report(row: RunRow, state: string): never {
     updated_at: row.updated_at, lease_expires_at: row.lease_expires_at,
     dispatcher_alive: dispatcherAlive(row),
     ...(wait ? { retry_at: wait.resetAt } : {}),
+    ...(state === "stalled" ? {
+      stall: row.meta?.stall ?? { rule: "lease_expired", reason: "the dispatcher is alive but nothing has renewed the run's lease for longer than the stall threshold plus the grace" },
+      next: stallNextSteps(row.project_id ?? row.trace_id),
+    } : {}),
     error: row.last_error,
   };
   if (argv.includes("--json")) {
@@ -212,6 +230,7 @@ function report(row: RunRow, state: string): never {
     const why = row.last_error ? ` — ${row.last_error}` : "";
     const retry = wait ? ` (retry at ${wait.resetAt})` : "";
     process.stdout.write(`${row.run_id} → ${state}${retry}${why}\n`);
+    if (state === "stalled") for (const n of stallNextSteps(row.project_id ?? row.trace_id)) process.stdout.write(`  next: ${n}\n`);
   }
   process.exit(state in EXIT_BY_STATE ? EXIT_BY_STATE[state] : 75);
 }
@@ -326,9 +345,20 @@ try {
       deadline = Date.now() + 2_000;
       while (ended.some(pidAlive) && Date.now() < deadline) Bun.sleepSync(100);
       const survivors = ended.filter(pidAlive);
+      // A worker in an Orca terminal is not in the dispatcher's tree: closing
+      // its terminal is what ends that CLI (an agy left on a trust dialog
+      // outlived a stop by hours, 2026-10-15).
+      const fresh = getRun(handle, row.run_id) ?? row;
+      const orca = orcaWorkerOf(fresh.meta);
+      let orcaNote = "";
+      if (orca) {
+        const closed = closeOrcaWorker(orca);
+        orcaNote = closed ? ` · closed Orca terminal ${orca.terminal}` : ` · could not close Orca terminal ${orca.terminal}; close it in Orca`;
+        if (!closed) stopFailed = true;
+      }
       // The dispatcher may have closed the run itself on the way out.
       if (!isTerminal(getRun(handle, row.run_id)?.state ?? "abandoned")) abandon(handle, row.run_id, "stopped by the user");
-      process.stdout.write(`${row.run_id} stopped${ended.length ? ` (ended ${ended.length} process(es): ${ended.join(", ")})` : " (no live process)"}\n`);
+      process.stdout.write(`${row.run_id} stopped${ended.length ? ` (ended ${ended.length} process(es): ${ended.join(", ")})` : " (no live process)"}${orcaNote}\n`);
       if (survivors.length) { warn(`pid ${survivors.join(", ")} still alive after SIGKILL; end it from the task manager`); stopFailed = true; }
     }
     process.exit(stopFailed ? 1 : 0);
@@ -414,19 +444,19 @@ try {
         if (timer) clearTimeout(timer);
         resolve();
       };
-      if (fs.existsSync(sigPath)) { settle(); return; }
+      // A signal file left by an earlier attempt of the same run (a resumed
+      // stall, a revised failure) is not this attempt's end: the row decides.
+      const decided = () => { const fresh = getRun(handle, runId); return !!fresh && DONE_STATES.has(interpretState(fresh)); };
+      if (fs.existsSync(sigPath) && decided()) { settle(); return; }
       try {
         watcher = fs.watch(dir, (_event, filename) => {
-          if (filename === sigFile && fs.existsSync(sigPath)) settle();
+          if (filename === sigFile && fs.existsSync(sigPath) && decided()) settle();
         });
       } catch { /* fs.watch unsupported here: the backstop below still gets there */ }
       // Backstop, never the mechanism: a resumed run whose decision this
       // process never saw as an fs event, or a platform where fs.watch drops
       // one, is still found — just on a slow clock, and only as a fallback.
-      backstop = setInterval(() => {
-        const fresh = getRun(handle, runId);
-        if (fresh && DONE_STATES.has(interpretState(fresh))) settle();
-      }, 30_000);
+      backstop = setInterval(() => { if (decided()) settle(); }, BACKSTOP_MS);
       if (timeoutSec > 0) timer = setTimeout(settle, timeoutSec * 1000);
     });
 

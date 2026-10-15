@@ -28,7 +28,9 @@ An Orca terminal exports `TERM_PROGRAM=Orca`, `ORCA_WORKTREE_ID` (`<repoId>::<pa
 | Setting | Variable | Default | Meaning |
 |---|---|---|---|
 | `host.orca` | `NIRVANA_ORCA_HOST` | `auto` | `auto`: only inside an Orca terminal. `on`: from any terminal, if the app answers (the workspace is then selected by the project path). `off`: never call Orca. |
-| `host.orca_workers` | `NIRVANA_ORCA_WORKERS` | `true` | With the host active, a headless dispatch runs as a worker terminal. `false` keeps the invisible child process. |
+| `execution.orca_workers` | `NIRVANA_ORCA_WORKERS` | `off` | `off`: dispatched workers run as the invisible headless child, also inside an Orca terminal. `on`: with the host active, each headless dispatch runs as a worker terminal (§4), for an owner who wants to watch workers in Orca. The variable also takes `1`/`0`. Replaces `host.orca_workers` (default `true`), retired in 0.15. |
+
+Being inside an Orca terminal no longer moves workers into Orca tabs by itself. On 2026-10-15 an agy worker opened in a fresh run folder drew its "Do you trust the contents of this project?" dialog 0.3 s after the task was injected and waited 94 minutes for an Enter nobody pressed; four earlier Orca workers (grok, codex, agy) never reported back either. The headless child never asks.
 
 `nrv config set host.orca off` is honored everywhere the settings core is read; the variable is honored by the CJS audit emitter too. The ledger's card projection gates on the variable and the terminal markers first (its module is the heartbeat sidecar's entry point and must not pay for the settings core on every start); a config-file `on` outside an Orca terminal reaches it through the variable the spawners pin on their children.
 
@@ -42,12 +44,12 @@ An Orca terminal exports `TERM_PROGRAM=Orca`, `ORCA_WORKTREE_ID` (`<repoId>::<pa
 | Ledger transitions (`openRun`, `markState`) | unchanged | the workspace card shows `nirvana · <kind>/<slug> · <state>` and moves between `in-progress`, `in-review`, `completed` |
 | Desktop notifications (`os-notify`) | unchanged | the same text lands on the card |
 | `nrv glance` | system browser | a tab in Orca's embedded browser, scoped to the workspace |
-| `runHeadless` (every `--exec` seat, squad, agent-x) | invisible child process | a worker terminal (§4), falling back to the child on any pre-injection failure |
+| `runHeadless` (every `--exec` seat, squad, agent-x) | invisible child process | the same child by default; with `execution.orca_workers: on`, a worker terminal (§4), falling back to the child when it cannot start or stops on a dialog |
 | Children the engine spawns | inherit the environment | inherit it **minus** the pane identity, so a `claude -p` is not reported as the coordinator pane's agent |
 
 ## 4. The worker transport
 
-`_shared/lib/orca-worker.ts`, called first by the driver's runner switch. The sequence, each step through `orca … --json`:
+`_shared/lib/orca-worker.ts`, called first by the driver's runner switch when `execution.orca_workers` is `on`. The sequence, each step through `orca … --json`:
 
 1. Write the brief file: the autonomous directive, the prompt the headless runner would have sent, and one reporting paragraph. The prompt travels **by reference** — Orca's inject types the task spec into the TUI, and a seat prompt is tens of kilobytes.
 2. `orchestration run-create --objective "nirvana · <label>"` — one Run per dispatch, so its mailbox is this dispatch's alone.
@@ -55,13 +57,15 @@ An Orca terminal exports `TERM_PROGRAM=Orca`, `ORCA_WORKTREE_ID` (`<repoId>::<pa
 4. Record workspace trust for `<cwd>` the way the runtime itself does (`~/.claude.json` `projects[cwd].hasTrustDialogAccepted`, `~/.codex/config.toml` `[projects."cwd"] trust_level = "trusted"`, `~/.qwen/trustedFolders.json`), then `terminal create --worktree <selector> --title "<label> · <agent>" --command "cd <cwd> && env NIRVANA_… <agent argv>"` — operator-started, with the engine's own autonomy flags (`claude --dangerously-skip-permissions`, `codex --dangerously-bypass-approvals-and-sandbox`, `agy --dangerously-skip-permissions`, `grok --always-approve`; `--safe` drops them). PowerShell syntax on Windows. The headless runner already runs the agent there with every permission bypassed and no dialog; the record makes the same decision visible in the runtime's own file.
 5. `terminal wait --for tui-idle --timeout-ms 120000`, then `terminal read`: a TUI parked on a first-run trust dialog is idle too, and deaf to the preamble (measured: the inject call sat until its timeout). A screen that still shows one is a fallback, not a hang.
 6. `orchestration dispatch --run <R> --task <T> --to <handle> --inject` — Orca types its preamble plus the spec; the worker learns its task and dispatch ids and how to report.
-7. `orchestration check --run <R> --wait --types worker_done,escalation,question --timeout-ms <window>` in a loop, acknowledging each delivery; a `question` is answered with `orchestration reply` and the zero-human policy; silence past the caller's deadline, a failed dispatch or a vanished terminal ends the wait as a failure.
-8. `orchestration worker-read --dispatch <D>` — the provider transcript, archived beside the brief.
-9. `terminal close` on success; the tab stays open on failure (and with `NIRVANA_ORCA_KEEP_WORKERS=1`).
+7. **Did it take the task?** For about six seconds after the inject (`NIRVANA_ORCA_POST_INJECT_MS`), `terminal read` every 1.5 s. A trust, permission or plan-review dialog on screen, or the task spec left sitting unsent on a screen that never moves, closes the terminal, fails the task and returns `null`: the same run goes to the headless child, under the session rules the headless runner always applies (`x_orca_transport_fallback` with `after_inject: true`). The `tui-idle` wait answers before a slow TUI has drawn its dialog, so the check before the inject alone missed it.
+8. The terminal, Run, task and dispatch ids are recorded on the run's ledger row (`meta.orca_worker`), so `nrv run-track stop` and the stall guard can close the terminal: a worker in an Orca tab is not in the dispatcher's process tree.
+9. `orchestration check --run <R> --wait --types worker_done,escalation,question --timeout-ms <window>` in a loop, acknowledging each delivery; a `question` is answered with `orchestration reply` and the zero-human policy. The wait ends on the report, a failed dispatch, a vanished terminal, an explicit `--timeout`, or the **silence budget**: no message, no Orca check-in (`worker-show`'s heartbeat), no file written under the run's folders, no hook-recorded tool activity and no live child run since the inject for `execution.stall_timeout_min` (90), or nothing at all for `execution.stall_no_start_min` (45). A window never outlasts the budget. A stall marks the ledger row `stalled` and the dispatch exits 76, as the heartbeat sidecar's stall guard does for a headless child (`harness/lib/stall-guard.ts`). The 7-day ledger backstop no longer applies to a worker.
+10. `orchestration worker-read --dispatch <D>` — the provider transcript, archived beside the brief.
+11. `terminal close` on success, on a timeout and on a stall; the tab stays open on another failure (and with `NIRVANA_ORCA_KEEP_WORKERS=1`).
 
 Audit: `x_orca_worker_started`, `x_orca_worker_done`, `x_orca_transport_fallback` (with the stage and Orca's error code). The result is a `RunHeadlessResult` like any other: `ok` from the outcome, `result` from the worker's summary and report path, `costUsd` from the worker's own transcript when it is claude and the model has a price (an estimate: `costEstimated: true`), else `null`; `sessionId` as §5 says; `warnings` naming the terminal, the dispatch and the transcript. `x_orca_worker_done` carries the `session_id`.
 
-**Fallbacks that keep the headless child** (returned as `null` before injection): host inactive, `host.orca_workers` off, a runtime without an Orca agent id (`qwen-code`), `run-create` refused (orchestration off: `run_required`), `task-create` or `dispatch` refused (`nested_worker_depth_exceeded`, `inject_rejected`), the terminal not created, the agent not reaching its prompt, a trust dialog still on screen. A task or terminal already created is failed or closed first.
+**Fallbacks that keep the headless child** (returned as `null`): host inactive, `execution.orca_workers` off, a runtime without an Orca agent id (`qwen-code`), `run-create` refused (orchestration off: `run_required`), `task-create` or `dispatch` refused (`nested_worker_depth_exceeded`, `inject_rejected`), the terminal not created, the agent not reaching its prompt, a trust dialog still on screen before the inject, and, after it, a dialog or an unsent task (step 7). A task or terminal already created is failed or closed first.
 
 Orca reports an operator-started worker as `unsupervised`, which is exact: the engine owns the terminal's lifecycle as it owns a child pid. `worker-release` would report `retained` with no action; the engine closes the tab itself.
 
@@ -101,7 +105,9 @@ Hermes and OpenClaw are not Orca agents; they run as plain commands in an Orca t
 - **Experimental toggle.** The orchestration layer is off until a human enables it in Orca's Settings. Off, every dispatch keeps the headless child; the card, the audit block, the doctor line and the browser tab still work.
 - **Cost.** Orca reports none. A claude worker's tokens are read from its transcript and priced when the model is in the estimator's table; otherwise the cost stays unknown (`costUnavailable`).
 - **Windows shell.** The worker command is PowerShell; an Orca terminal configured for cmd.exe would not run it (the agent then never reaches its prompt and the dispatch falls back).
-- **Trust records.** Pre-accepting trust is known for Claude Code, Codex and Qwen; Antigravity, Grok, Kimi, Pi and OpenCode rely on the screen check and fall back if they ask.
+- **Trust records.** Pre-accepting trust is known for Claude Code, Codex and Qwen; Antigravity, Grok, Kimi, Pi and OpenCode rely on the screen checks before and after the inject and fall back if they ask.
+- **Unsent prompt.** "Not accepted" is read from the screen alone: a dialog, or the spec still on the last lines of a screen that did not change across the reads. A TUI that takes the task without redrawing anything for six seconds would be sent to the headless child; none measured so far does (claude, codex and agy animate a timer while they work).
+- **Orca's heartbeat field.** The silence budget reads `lastHeartbeatAt` (or `last_heartbeat_at`) from `worker-show`; on 2026-10-15 it stayed NULL for a hung worker. Its spelling on a live check-in is not yet confirmed against Orca; the file, hook and child-run signals do not depend on it.
 - **Attribution of plain children.** Orca's hooks attribute a `claude -p` that inherits the pane variables to that pane. The engine strips them; a script that spawns an agent by itself inside an Orca terminal does not get that courtesy.
 
 ## 7. Measured

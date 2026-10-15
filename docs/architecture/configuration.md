@@ -71,7 +71,9 @@ Gerada a partir do schema. `nrv config explain <chave>` mostra a descrição de 
 | `routing.timeout_ms` | `NIRVANA_ROUTING_TIMEOUT_MS` | `300000` (5 min) | global, projeto | inteiro > 0 (ms) |
 | `routing.digest_token_budget` | nenhuma | `0` (sem teto) | global, projeto | inteiro >= 0 (tokens); 0 = sem teto |
 | `host.orca` | `NIRVANA_ORCA_HOST` | `auto` | global, projeto | auto (só dentro de um terminal do Orca) / on / off |
-| `host.orca_workers` | `NIRVANA_ORCA_WORKERS` | `true` | global, projeto | true / false |
+| `execution.orca_workers` | `NIRVANA_ORCA_WORKERS` (aceita também `1` / `0`) | `off` | global, projeto | off / on. `off`: os workers rodam como o filho headless invisível, inclusive dentro de um terminal do Orca. `on`: cada despacho vira um terminal de worker no Orca. Substitui `host.orca_workers` (padrão `true`), aposentado na 0.15 |
+| `execution.stall_timeout_min` | `NIRVANA_STALL_TIMEOUT_MIN` | `90` | global, projeto | número >= 0 (minutos, aceita frações); 0 = desligado. Minutos de silêncio total (sem saída do worker, sem escrita de arquivo na pasta do run, sem atividade de ferramenta registrada pelos hooks, sem run filho vivo) até o despacho encerrar o worker e sair com 76. Detector de travamento, não teto de gasto nem de tempo |
+| `execution.stall_no_start_min` | `NIRVANA_STALL_NO_START_MIN` | `45` | global, projeto | número >= 0 (minutos, aceita frações); 0 = desligado. Minutos sem nenhum sinal de vida desde o início até o despacho encerrar o worker e sair com 76. Detector de travamento, não teto de gasto nem de tempo |
 | `supervisor.progress_ping_sec` | `NIRVANA_PROGRESS_PING_SEC` | `1800` | global, projeto | inteiro >= 0 (segundos) |
 | `supervisor.stall_threshold_ms` | `NIRVANA_STALL_THRESHOLD_MS` | `300000` | global, projeto | inteiro > 0 (milissegundos) |
 | `supervisor.touch_events_max` | `NIRVANA_TOUCH_EVENTS_MAX` | `500` | global, projeto | inteiro >= 0 (eventos); 0 = não relata arquivos |

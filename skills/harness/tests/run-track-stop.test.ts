@@ -10,6 +10,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { abandon, getRun, markState, openLedger, openRun, patchMeta, pidAlive, processStartedAt, recordChildPid, runProcesses } from "../lib/run-ledger.ts";
+import { IS_WINDOWS, writeFakeCli } from "./helpers/fake-cli.ts";
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-run-stop-"));
 const PROJECT = path.join(TMP, "project");
@@ -220,4 +221,66 @@ describe("run-track stop reaches a run's processes when its pids are stale", () 
     patchMeta(h, row.run_id, { recovering: true, recovered_by_pid: 2_147_483_000 });
     expect(runProcesses(getRun(h, row.run_id)!, [])).toEqual([]);
   });
+});
+
+describe("run-track and a worker in an Orca terminal", () => {
+  // A fake `orca` that records its calls. The worker in an Orca terminal is not
+  // in the dispatcher's tree: on 2026-10-15 a stop ended the dispatcher and
+  // left agy on its trust dialog for hours. Closing the recorded terminal is
+  // what ends that CLI.
+  const bin = path.join(TMP, "orca-bin");
+  const calls = path.join(TMP, "orca-calls.jsonl");
+  writeFakeCli(bin, "orca", `
+    import * as fs from "node:fs";
+    const argv = Bun.argv.slice(2);
+    fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify(argv) + "\\n");
+    process.stdout.write(JSON.stringify({ ok: true, result: {} }) + "\\n");
+  `);
+  const orcaCli = path.join(bin, IS_WINDOWS ? "orca.cmd" : "orca");
+
+  test("stop closes the recorded Orca terminal and fails its task", async () => {
+    const dispatcher = sleeper();
+    const { h, runId } = openWith("orca-stop", dispatcher, sleeper());
+    patchMeta(h, runId, { orca_worker: { terminal: "term_21606efb", run_id: "run_e176", task_id: "task_6a5e", dispatch_id: "ctx_d3cb" } });
+    fs.rmSync(calls, { force: true });
+    const r = spawnSync(process.execPath, [RUN_TRACK, "stop", runId], {
+      cwd: PROJECT, encoding: "utf8",
+      env: { ...process.env, NIRVANA_RUN_LEDGER_DB: DB, NIRVANA_PROJECT_ROOT: PROJECT, NIRVANA_NO_DESKTOP_NOTIFY: "1", ORCA_CLI_COMMAND: orcaCli },
+    });
+    expect(r.status, r.stdout + r.stderr).toBe(0);
+    expect(r.stdout).toContain("closed Orca terminal term_21606efb");
+    const made: string[][] = fs.readFileSync(calls, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
+    expect(made).toContainEqual(["terminal", "close", "--terminal", "term_21606efb", "--json"]);
+    expect(made.some((a) => a[1] === "task-update" && a.includes("task_6a5e") && a.includes("failed"))).toBe(true);
+    expect(await gone(dispatcher)).toBe(true);
+    expect(getRun(h, runId)!.state).toBe("abandoned");
+  }, 30_000);
+
+  test("wait and status answer 76 for a stalled run, with the next steps", () => {
+    const h = openLedger(DB);
+    const row = openRun(h, { projectId: "stalled-p", traceId: "stalled-p", projectRoot: PROJECT, targetKind: "squad", runtime: "antigravity-cli" });
+    markState(h, row.run_id, "running");
+    markState(h, row.run_id, "stalled", { error: "stalled: the worker never started", metaPatch: { stall: { rule: "never_started", confirmed_at: new Date().toISOString() }, salvaged: true } });
+    const env = { ...process.env, NIRVANA_RUN_LEDGER_DB: DB, NIRVANA_PROJECT_ROOT: PROJECT, NIRVANA_NO_DESKTOP_NOTIFY: "1" };
+    const waited = spawnSync(process.execPath, [RUN_TRACK, "wait", "stalled-p", "--json", "--timeout", "20"], { cwd: PROJECT, encoding: "utf8", env });
+    expect(waited.status, waited.stdout + waited.stderr).toBe(76);
+    const answer = JSON.parse(waited.stdout.trim());
+    expect(answer.state).toBe("stalled");
+    expect(answer.next).toEqual(["nrv run-track status stalled-p", `nrv revise stalled-p "<what to do>"   # resumes the worker's session`]);
+    const status = spawnSync(process.execPath, [RUN_TRACK, "status", row.run_id], { cwd: PROJECT, encoding: "utf8", env });
+    expect(status.status).toBe(76);
+    expect(status.stdout).toContain("next: nrv revise stalled-p");
+  }, 30_000);
+
+  test("wait returns 76 when the dispatcher is alive but its lease expired past the stall threshold and the grace", () => {
+    const h = openLedger(DB);
+    const dispatcher = sleeper();
+    const row = openRun(h, { projectId: "wedged-p", traceId: "wedged-p", projectRoot: PROJECT, targetKind: "squad", runtime: "codex",
+      initialLeaseSec: -(3 * 60 * 60), meta: { dispatcher_pid: dispatcher, stall_guard: { silence_ms: 90 * 60_000, no_start_ms: 45 * 60_000 } } });
+    markState(h, row.run_id, "running");
+    const env = { ...process.env, NIRVANA_RUN_LEDGER_DB: DB, NIRVANA_PROJECT_ROOT: PROJECT, NIRVANA_NO_DESKTOP_NOTIFY: "1" };
+    const waited = spawnSync(process.execPath, [RUN_TRACK, "wait", row.run_id, "--json", "--timeout", "20"], { cwd: PROJECT, encoding: "utf8", env });
+    expect(waited.status, waited.stdout + waited.stderr).toBe(76);
+    expect(JSON.parse(waited.stdout.trim()).stall.rule).toBe("lease_expired");
+  }, 30_000);
 });
