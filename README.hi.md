@@ -188,7 +188,7 @@ Beta पर आने के बाद, `nrv update` और हर pack setup �
 
 प्रोफ़ाइल कभी मॉडल नहीं चुनती; मॉडल आपके रनटाइम की अपनी कॉन्फ़िगरेशन से तय होता है। जो सेटिंग आप स्पष्ट रूप से बदलते हैं, वह प्रोफ़ाइल से ऊपर रहती है। `nrv config list` हर सेटिंग, उसका मान और वह कहाँ से आई, यह दिखाता है। पूरा संदर्भ [docs/configuration.md](./docs/configuration.md) है। प्रोफ़ाइल सिर्फ़ 0.15 से मौजूद हैं।
 
-**प्रति प्रोजेक्ट।** `nrv config set briefing.altitude <outcome|guided|prescriptive> --project` तय करता है कि एक brief कितना कुछ ले जाता है: डिफ़ॉल्ट `outcome` परिणाम, सीमाएँ और पूरा होने की परिभाषा बताता है; `guided` लेखक की सुझाई संरचना जोड़ता है; `prescriptive` हर आइटम के मानदंड, artifacts की सूची और तरीका जोड़ता है। `nrv config get briefing.altitude` लागू मान दिखाता है। मुक्त-पाठ वाले नियम प्रोजेक्ट की `CLAUDE.md`, `AGENTS.md` या `GEMINI.md` में जाते हैं, उस Nirvana ब्लॉक के ऊपर जिसे `nrv init` दोबारा लिखता है; आपका एजेंट उन्हें पढ़ता है और अपने लिखे briefs में ले जाता है। कह देना काफ़ी है: *"इस प्रोजेक्ट में guided briefs इस्तेमाल करो"*, *"इस प्रोजेक्ट की CLAUDE.md में जोड़ो: हर डिलिवरेबल ब्राज़ीलियाई पुर्तगाली में"*।
+**प्रति प्रोजेक्ट।** ऑर्केस्ट्रेटर हर brief एक brief टेम्पलेट से लिखता है। इंजन चार देता है: `slim` (डिफ़ॉल्ट: लेबल वाली छोटी पंक्तियाँ, उपयोगकर्ता के शब्द एक फ़ाइल में), `standard` (छह खंड), `detailed` (छह खंड, साथ में सुझाई संरचना, तरीका और हर आइटम का एक मानदंड) और `karpathy`, जो Andrej Karpathy की [X पोस्ट](https://x.com/karpathy/status/2105819303471976479) और उनके [2025 Year in Review](https://karpathy.bearblog.dev/year-in-review-2025/) से प्रेरित है: slim के साथ सरल भाषा का सारांश, एक डायग्राम और, जब मदद करे, एक HTML व्याख्या पेज, हर डिलिवरी पर ज़्यादा tokens के साथ। `nrv config set briefing.template detailed --project` प्रोजेक्ट के लिए एक चुनता है, और `nrv brief templates` सबकी सूची देता है। किसी को बदलने या अपना बनाने के लिए, जैसे `juridico`, `nrv brief init juridico --from standard --project` चलाएँ: `.nirvana/brief-templates/` की कॉपी `~/.nirvana/brief-templates/` और इंजन वाली पर भारी पड़ती है। `briefing.altitude` अब भी पुराने उपनाम के रूप में काम करता है। मुक्त-पाठ वाले नियम प्रोजेक्ट की `CLAUDE.md`, `AGENTS.md` या `GEMINI.md` में जाते हैं, उस Nirvana ब्लॉक के ऊपर जिसे `nrv init` दोबारा लिखता है; आपका एजेंट उन्हें पढ़ता है और अपने लिखे briefs में ले जाता है। कह देना काफ़ी है: *"इस प्रोजेक्ट में detailed briefs इस्तेमाल करो"*, *"इस प्रोजेक्ट की CLAUDE.md में जोड़ो: हर डिलिवरेबल ब्राज़ीलियाई पुर्तगाली में"*।
 
 ## यहाँ "काम हो गया" का मतलब कुछ क्यों है
 
@@ -209,7 +209,7 @@ Beta पर आने के बाद, `nrv update` और हर pack setup �
 | `nrv init <dir>` | किसी फ़ोल्डर को Nirvana प्रोजेक्ट बनाता है (`--orchestrators=always`, `--scope=project\|merge\|global`) |
 | `nrv list-businesses` / `list-squads` / `list-clones` | तीनों रजिस्ट्रियाँ ब्राउज़ करता है |
 | `nrv find "<need>"` / `nrv search "<topic>"` | किसी अनुरोध के लिए रैंक किए गए उम्मीदवार / लाइब्रेरियों में कीवर्ड खोज |
-| `nrv brief template\|check\|decide` | वह छह खंडों वाला ब्रीफ़ जो ऑर्केस्ट्रेटर एक कंपनी के लिए लिखता है |
+| `nrv brief template\|templates\|check\|decide\|init` | वह ब्रीफ़ जो ऑर्केस्ट्रेटर एक brief टेम्पलेट से एक कंपनी के लिए लिखता है |
 | `nrv dispatch <business> --brief-file <file> --exec` | एक ब्रीफ़ पर एक कंपनी चलाता है; `--squad <slug>[:<capability>]`, `--agent-x` या `--auto` दूसरे लक्ष्य बताते हैं। `--exec` के बिना इनकार करता है |
 | `nrv run-track status\|stop <run>` | किसी रन की स्थिति पढ़ता है, या उसे साफ़ तरीके से रोकता है |
 | `nrv revise <project> "<change>"` | उसी रनटाइम सत्र में एक डिलिवरी बदलता है |

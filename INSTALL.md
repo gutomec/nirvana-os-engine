@@ -207,20 +207,30 @@ A first `--all` on a big pack takes several minutes; later runs only re-check. I
 
 Two things shape what your agent hands to the businesses it dispatches.
 
-**Brief altitude.** One setting, per project:
+**Brief template.** The orchestrator writes each brief with a template, one markdown file holding the instruction and the skeleton. The engine ships four:
+
+| Template | What the brief carries |
+|---|---|
+| `slim` (default) | short labelled lines: Goal, Request (the path of a file with the user's words, verbatim), Decisions, Inputs, Deliver, Done when, Session |
+| `standard` | the six sections: Request verbatim, Decisions, Your part, Inputs, Done when, Output |
+| `detailed` | the six sections plus a suggested structure and the method, one criterion per item and every artifact named |
+| `karpathy` | slim plus an explain-back: a plain-language summary, a diagram and, when it helps, an HTML explainer. After Andrej Karpathy's [post on X](https://x.com/karpathy/status/2105819303471976479) and his [2025 Year in Review](https://karpathy.bearblog.dev/year-in-review-2025/). It costs more tokens per delivery, so it is never the default |
+
+Pick one per project (run it inside a project that `nrv init` set up; `--project` writes `.nirvana/config.yaml`):
 
 ```bash
-nrv config set briefing.altitude guided --project
-nrv config get briefing.altitude
+nrv config set briefing.template detailed --project
+nrv brief templates
 ```
 
-| Value | What the brief carries |
-|---|---|
-| `outcome` (default) | the result, the guardrails and the definition of done |
-| `guided` | the above plus the structure the author suggests |
-| `prescriptive` | per-item criteria, the artifact list and the method (the brief's form up to 0.13.9) |
+To change a template or add your own, copy one and edit the copy:
 
-Run it inside a project that `nrv init` set up; `--project` writes `.nirvana/config.yaml` there. On 0.14.11 a request that says "brief detalhado" raises the altitude for that run, and "brief simples" lowers it.
+```bash
+nrv brief init juridico --from standard --project   # .nirvana/brief-templates/juridico.md
+nrv brief init slim --global                        # ~/.nirvana/brief-templates/slim.md, for every project
+```
+
+A name is looked up in the project's `.nirvana/brief-templates/`, then in `~/.nirvana/brief-templates/`, then in the engine. Keep the labels the file's `required` list names (Request and Done when at least): the engine reads them. `briefing.altitude` still works as a deprecated alias while `briefing.template` is unset (`outcome` is `standard`, `prescriptive` is `detailed`).
 
 **Project rules in free text.** Write them in the project's `CLAUDE.md`, `AGENTS.md` or `GEMINI.md` (the one your agent reads), **above** the first line that starts with `<!-- nirvana-os:`. Everything from that marker down is the Nirvana block, and `nrv init` rewrites it when the engine's text changes. Your agent reads these files when the session starts and carries your rules into the briefs it writes.
 

@@ -6,6 +6,29 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que os instaladores de uma linha e os setups de pack consomem.
 
+## Não lançado
+
+### Templates de brief
+
+O jeito de o orquestrador escrever um brief agora é um template: um arquivo markdown com uma instrução curta e o esqueleto, que o `nrv brief template` imprime. O engine traz quatro em `skills/harness/references/brief-templates/`:
+
+| Template | O brief |
+|---|---|
+| `slim` (padrão) | Linhas com rótulo: Goal, Request, Decisions, Inputs, Deliver, Done when, Session. No máximo umas 150 palavras além dos caminhos; uma linha sem nada a dizer fica de fora. O objetivo em vez de uma lista de regras, ponteiros em vez de conteúdo colado, as verificações que decidem por referência. |
+| `standard` | As seis seções do brief até aqui (Request verbatim, Decisions, Your part, Inputs, Done when, Output), reescritas no mesmo estilo. |
+| `detailed` | As seis seções, mais Suggested structure e Method, um critério por item e cada artefato nomeado em Output. |
+| `karpathy` | O slim em linguagem controlada simples, mais um bloco Explain back: `_SUMMARY.md` a uns 80% do caminho do ASD-STE100, com cada número, nome e caminho exatos, um diagrama, uma página HTML interativa quando o trabalho tem dados ou estrutura que valem explorar, e vídeo só quando pedido. Inspirado no [post de Andrej Karpathy no X](https://x.com/karpathy/status/2105819303471976479) (2026-10-02) e no [2025 Year in Review](https://karpathy.bearblog.dev/year-in-review-2025/) dele. Gasta mais tokens por entrega e nunca é o padrão: `nrv config set briefing.template karpathy --project`. As verificações da explicação são `(non-blocking)`, e os arquivos ficam em `_SUMMARY.md` e `_explain/`, que o gate não julga como entregáveis. |
+
+- `briefing.template` (`NIRVANA_BRIEF_TEMPLATE`) dá o nome do template; qualquer nome vale. O nome é procurado em `<projeto>/.nirvana/brief-templates/<nome>.md`, depois em `~/.nirvana/brief-templates/<nome>.md` (dentro de `NIRVANA_HOME`, quando definido) e por último no engine. Um nome que não existe faz `nrv brief template` e `nrv brief check` falharem com a lista dos nomes disponíveis.
+- Comandos novos: `nrv brief templates` lista os nomes e de onde vêm; `nrv brief init <nome> [--from <nome>] (--project|--global) [--force]` copia um template para edição e não sobrescreve sem `--force`; `nrv brief request <nome>` grava as palavras do usuário, sem edição, em `.nirvana/briefs/<nome>.request.md` e imprime o caminho; `nrv brief template --template <nome>` usa outro template num brief só, `--for <nome>` preenche a linha Request e `--full` imprime o arquivo inteiro. O `nrv doctor` mostra o template ativo e a origem.
+- As palavras do usuário vão por caminho: o `Request` de um brief slim nomeia o arquivo, o worker e o revisor recebem esse caminho, e o juiz do gate, o prompt de um squad, o agent-x e uma sessão nova do `nrv revise` recebem as palavras anexadas. O `nrv brief check` recusa um Request slim com as palavras no lugar do caminho.
+- `Session: continue <projeto>` num brief equivale a `--continue-from <projeto>`; uma flag que nomeia outro projeto é recusada.
+- Cada dispatch copia o template e as palavras do usuário para a pasta da execução (`brief-template.md`, `request.md`) e registra nome, origem, caminho e sha256 do template, e o sha256 do pedido, em `x_brief_template`.
+- A leitura junta todos os formatos nos mesmos rótulos (`Your part` é Goal, `Output` é Deliver), então os briefs escritos antes, pela 0.14 ou no meio de uma execução, continuam funcionando, e o "Done when" segue `d1..dn` nos dois. O frontmatter de cada template nomeia os rótulos que o engine precisa (no mínimo Request e Done when); o `nrv brief check` confere um brief contra os rótulos do template dele, ou contra o template do engine do formato que reconhece.
+- `briefing.altitude` virou apelido obsoleto, lido só com `briefing.template` vazio: `outcome` escolhe `standard`, `guided` escolhe `standard` com estrutura sugerida e `prescriptive` escolhe `detailed`, com uma nota de uma linha que nomeia a substituta. O valor padrão dela não vai mais como variável para os processos filhos.
+- `--auto-brief=proxy` escreve o brief enriquecido no template ativo, com as palavras do cliente guardadas num arquivo de pedido.
+- A seção de briefs do `SKILL.md` do harness encolheu para os comandos e as regras que não são de estilo; o template leva o resto.
+
 ## 0.15.0-beta.10 — 2026-10-15
 
 ### Windows: a execução não perde mais o worker do CLI

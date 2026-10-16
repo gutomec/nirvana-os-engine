@@ -6,6 +6,29 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that the
 one-line installers and pack setups consume.
 
+## Unreleased
+
+### Brief templates
+
+How the orchestrator writes a brief is now a template: one markdown file with a short instruction and the skeleton, which `nrv brief template` prints. The engine ships four in `skills/harness/references/brief-templates/`:
+
+| Template | The brief |
+|---|---|
+| `slim` (default) | Labelled lines: Goal, Request, Decisions, Inputs, Deliver, Done when, Session. At most about 150 words besides the paths; a line with nothing to say is left out. The goal instead of a rule list, pointers instead of pasted content, the checks that decide by reference. |
+| `standard` | The six sections of the brief up to now (Request verbatim, Decisions, Your part, Inputs, Done when, Output), rewritten in the same style. |
+| `detailed` | The six sections plus Suggested structure and Method, one criterion per item and every artifact named in Output. |
+| `karpathy` | Slim in plain controlled language plus an Explain back block: `_SUMMARY.md` about 80% of the way to ASD-STE100 with every number, name and path exact, one diagram, an interactive HTML explainer when the work has data or structure worth exploring, a video only when asked. After Andrej Karpathy's [post on X](https://x.com/karpathy/status/2105819303471976479) (2026-10-02) and his [2025 Year in Review](https://karpathy.bearblog.dev/year-in-review-2025/). It costs more tokens per delivery and is never the default: `nrv config set briefing.template karpathy --project`. Its explain-back checks are `(non-blocking)`, and the files live in `_SUMMARY.md` and `_explain/`, which the gate does not judge as deliverables. |
+
+- `briefing.template` (`NIRVANA_BRIEF_TEMPLATE`) names the template; any name is allowed. A name is looked up in `<project>/.nirvana/brief-templates/<name>.md`, then `~/.nirvana/brief-templates/<name>.md` (under `NIRVANA_HOME` when set), then the engine. An unknown name fails `nrv brief template` and `nrv brief check` with the list of available names.
+- New commands: `nrv brief templates` lists the names and their origin; `nrv brief init <name> [--from <name>] (--project|--global) [--force]` copies a template for editing and refuses to overwrite without `--force`; `nrv brief request <name>` writes the user's words, verbatim, to `.nirvana/briefs/<name>.request.md` and prints the path; `nrv brief template --template <name>` picks another template for one brief, `--for <name>` fills the Request line, `--full` prints the whole file. `nrv doctor` shows the active template and its origin.
+- The user's words travel by path: a slim brief's `Request` names the file, the worker and the reviewer are pointed at it, and the gate's judge, a squad prompt, agent-x and a fresh `nrv revise` session get the words appended. `nrv brief check` refuses a slim Request that holds the words instead of a path.
+- `Session: continue <project>` in a brief is `--continue-from <project>`; a flag naming another project is refused.
+- Each dispatch copies the template and the user's words into its run folder (`brief-template.md`, `request.md`) and records the template's name, origin, path and sha256, and the request's sha256, in `x_brief_template`.
+- Parsing reads every format into the same labels (`Your part` is Goal, `Output` is Deliver), so briefs written before this, by 0.14 or mid-run, keep working, and "Done when" stays `d1..dn` in both. Each template's frontmatter names the labels the engine needs (Request and Done when at least); `nrv brief check` checks a brief against its template's labels, or against the engine template of the format it recognises.
+- `briefing.altitude` is a deprecated alias, read only while `briefing.template` is unset: `outcome` selects `standard`, `guided` selects `standard` with a suggested structure, `prescriptive` selects `detailed`, with a one-line note naming the replacement. Its default is no longer handed to child processes as a variable.
+- `--auto-brief=proxy` writes the enriched brief in the active template, with the client's words kept in a request file.
+- The harness `SKILL.md` section on briefs shrank to the commands and the rules that are not about style; the template carries the rest.
+
 ## 0.15.0-beta.10 — 2026-10-15
 
 ### Windows: the run keeps track of its CLI worker

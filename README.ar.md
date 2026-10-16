@@ -188,7 +188,7 @@ $env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/d
 
 لا يختار ملف الأداء النموذج أبداً؛ فالنموذج تحدده إعدادات بيئة التشغيل لديك. الإعداد الذي تغيّره صراحةً يتقدّم على ملف الأداء. يعرض `nrv config list` كل إعداد وقيمته ومصدره. المرجع الكامل في [docs/configuration.md](./docs/configuration.md). ملفات الأداء موجودة بدءاً من 0.15 فقط.
 
-**لكل مشروع.** يحدّد `nrv config set briefing.altitude <outcome|guided|prescriptive> --project` مقدار ما يحمله الموجز (brief): القيمة الافتراضية `outcome` تذكر النتيجة والقيود وتعريف الإنجاز؛ و`guided` تضيف البنية التي يقترحها المؤلف؛ و`prescriptive` تضيف معايير لكل بند وقائمة المخرجات والطريقة. يعرض `nrv config get briefing.altitude` القيمة السارية. القواعد المكتوبة بنص حر توضع في `CLAUDE.md` أو `AGENTS.md` أو `GEMINI.md` الخاص بالمشروع، فوق كتلة Nirvana التي يعيد `nrv init` كتابتها؛ يقرؤها وكيلك وينقلها إلى الموجزات التي يكتبها. يكفي أن تطلب: *"في هذا المشروع، استخدم موجزات guided"*، *"أضف إلى CLAUDE.md في هذا المشروع: كل مُخرَج بالبرتغالية البرازيلية"*.
+**لكل مشروع.** يكتب المنسّق كل موجز (brief) وفق قالب موجز. يأتي المحرّك بأربعة قوالب: `slim` (الافتراضي: أسطر قصيرة بعناوين، وكلمات المستخدم محفوظة في ملف)، و`standard` (الأقسام الستة)، و`detailed` (الأقسام الستة مع بنية مقترحة والطريقة ومعيار لكل بند)، و`karpathy` المستوحى من [منشور Andrej Karpathy على X](https://x.com/karpathy/status/2105819303471976479) ومن [2025 Year in Review](https://karpathy.bearblog.dev/year-in-review-2025/): قالب slim مع ملخص بلغة بسيطة ومخطط، وصفحة HTML شارحة حين تفيد، بتكلفة tokens أعلى لكل تسليم. يختار `nrv config set briefing.template detailed --project` قالبًا للمشروع، ويعرضها `nrv brief templates` كلها. لتعديل قالب أو إنشاء قالبك، مثل `juridico`، شغّل `nrv brief init juridico --from standard --project`: النسخة في `.nirvana/brief-templates/` تتقدّم على `~/.nirvana/brief-templates/` وعلى قالب المحرّك. ما زال `briefing.altitude` يعمل كاسم بديل مهجور. القواعد المكتوبة بنص حر توضع في `CLAUDE.md` أو `AGENTS.md` أو `GEMINI.md` الخاص بالمشروع، فوق كتلة Nirvana التي يعيد `nrv init` كتابتها؛ يقرؤها وكيلك وينقلها إلى الموجزات التي يكتبها. يكفي أن تطلب: *"في هذا المشروع، استخدم موجزات detailed"*، *"أضف إلى CLAUDE.md في هذا المشروع: كل مُخرَج بالبرتغالية البرازيلية"*.
 
 ## لماذا لعبارة "العمل منجز" معنى هنا
 
@@ -209,7 +209,7 @@ $env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/d
 | `nrv init <dir>` | يجعل مجلداً مشروع Nirvana (`--orchestrators=always`، `--scope=project\|merge\|global`) |
 | `nrv list-businesses` / `list-squads` / `list-clones` | تصفّح السجلات الثلاثة |
 | `nrv find "<need>"` / `nrv search "<topic>"` | مرشحون مرتّبون لطلب ما / بحث بالكلمات المفتاحية عبر المكتبات |
-| `nrv brief template\|check\|decide` | الموجز ذو الأقسام الستة الذي يكتبه المنسّق لشركة واحدة |
+| `nrv brief template\|templates\|check\|decide\|init` | الموجز الذي يكتبه المنسّق لشركة واحدة وفق قالب موجز |
 | `nrv dispatch <business> --brief-file <file> --exec` | تشغيل شركة على موجز؛ `--squad <slug>[:<capability>]` أو `--agent-x` أو `--auto` تسمّي أهدافاً أخرى. يرفض العمل دون `--exec` |
 | `nrv run-track status\|stop <run>` | قراءة حالة تشغيل، أو إيقافه بشكل نظيف |
 | `nrv revise <project> "<change>"` | تغيير تسليم في جلسة بيئة التشغيل نفسها |

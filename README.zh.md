@@ -187,7 +187,7 @@ $env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/d
 
 档位从不挑选模型；那由你的运行时自己的配置决定。你显式更改的设置优先于档位。`nrv config list` 会显示每一项设置、它的值以及它的来源。完整参考见 [docs/configuration.md](./docs/configuration.md)。档位只从 0.15 起才有。
 
-**按项目设置。** `nrv config set briefing.altitude <outcome|guided|prescriptive> --project` 决定一份 brief 承载多少内容：默认的 `outcome` 说明结果、约束和完成标准；`guided` 再加上作者建议的结构；`prescriptive` 再加上逐项标准、产物清单和方法。`nrv config get briefing.altitude` 显示当前生效的值。自由文本形式的规则写在项目的 `CLAUDE.md`、`AGENTS.md` 或 `GEMINI.md` 中，放在 `nrv init` 会重写的 Nirvana 区块之上；你的 agent 会读取它们，并把它们带进它写的 brief。直接提出即可：*“在这个项目里使用 guided brief”*、*“在这个项目的 CLAUDE.md 里加上：所有交付物都用巴西葡萄牙语”*。
+**按项目设置。** 编排器用 brief 模板来写每一份 brief。引擎自带四个：`slim`（默认：简短的带标签行，用户的原话保存在文件里）、`standard`（六个段落）、`detailed`（六个段落，加上建议结构、方法和逐项标准）以及 `karpathy`，灵感来自 Andrej Karpathy 的 [X 帖子](https://x.com/karpathy/status/2105819303471976479) 和他的 [2025 Year in Review](https://karpathy.bearblog.dev/year-in-review-2025/)：在 slim 之上加一份浅白语言的摘要、一张图，以及在有帮助时的一个 HTML 讲解页，每次交付消耗更多 token。`nrv config set briefing.template detailed --project` 为项目选一个模板，`nrv brief templates` 列出全部。要修改某个模板或新建自己的模板（例如 `juridico`），运行 `nrv brief init juridico --from standard --project`：`.nirvana/brief-templates/` 中的副本优先于 `~/.nirvana/brief-templates/` 和引擎自带的模板。`briefing.altitude` 仍可作为已弃用的别名使用。自由文本形式的规则写在项目的 `CLAUDE.md`、`AGENTS.md` 或 `GEMINI.md` 中，放在 `nrv init` 会重写的 Nirvana 区块之上；你的 agent 会读取它们，并把它们带进它写的 brief。直接提出即可：*“在这个项目里使用 detailed brief”*、*“在这个项目的 CLAUDE.md 里加上：所有交付物都用巴西葡萄牙语”*。
 
 ## 为什么“工作已完成”在这里有分量
 
@@ -208,7 +208,7 @@ $env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/d
 | `nrv init <dir>` | 把一个文件夹变成 Nirvana 项目（`--orchestrators=always`、`--scope=project\|merge\|global`） |
 | `nrv list-businesses` / `list-squads` / `list-clones` | 浏览三个注册表 |
 | `nrv find "<need>"` / `nrv search "<topic>"` | 针对一个请求的排序候选 / 跨库关键词搜索 |
-| `nrv brief template\|check\|decide` | 编排器为一家公司撰写的六段式简报 |
+| `nrv brief template\|templates\|check\|decide\|init` | 编排器依据 brief 模板为一家公司撰写的简报 |
 | `nrv dispatch <business> --brief-file <file> --exec` | 让一家公司按一份简报运行；`--squad <slug>[:<capability>]`、`--agent-x` 或 `--auto` 指定其他目标。没有 `--exec` 时拒绝执行 |
 | `nrv run-track status\|stop <run>` | 读取一次运行的状态，或干净地停止它 |
 | `nrv revise <project> "<change>"` | 在同一个运行时会话中修改一次交付 |

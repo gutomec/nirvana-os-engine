@@ -320,25 +320,31 @@
   <section class="blk" id="briefs" aria-labelledby="briefs-h">
     <h2 id="briefs-h">7. Configure os briefs do projeto</h2>
     <p>Duas coisas definem o que o seu agente entrega às empresas que ele despacha.</p>
-    <h3>A altitude do brief</h3>
-    <p>Uma configuração por projeto, gravada em <code>.nirvana/config.yaml</code> (rode dentro de um projeto preparado com <code>nrv init</code>):</p>
-    <div class="code"><pre><code>nrv config set briefing.altitude guided --project</code></pre></div>
-    <div class="code"><pre><code>nrv config get briefing.altitude</code></pre></div>
+    <h3>O template do brief</h3>
+    <p>O orquestrador escreve cada brief com um template: um arquivo markdown com a instrução e o esqueleto. O engine traz quatro:</p>
     <div class="table">
       <table>
-        <thead><tr><th scope="col">Valor</th><th scope="col">O que o brief leva</th></tr></thead>
+        <thead><tr><th scope="col">Template</th><th scope="col">O que o brief leva</th></tr></thead>
         <tbody>
-          <tr><td><code>outcome</code> (padrão)</td><td>o resultado, os limites e a definição de pronto</td></tr>
-          <tr><td><code>guided</code></td><td>o mesmo, mais a estrutura que o autor sugere</td></tr>
-          <tr><td><code>prescriptive</code></td><td>critérios por item, a lista de artefatos e o método (a forma do brief até a 0.13.9)</td></tr>
+          <tr><td><code>slim</code> (padrão)</td><td>linhas curtas com rótulo: Goal, Request (o caminho de um arquivo com as palavras do usuário, sem edição), Decisions, Inputs, Deliver, Done when e Session</td></tr>
+          <tr><td><code>standard</code></td><td>as seis seções: Request verbatim, Decisions, Your part, Inputs, Done when e Output</td></tr>
+          <tr><td><code>detailed</code></td><td>as seis seções, mais a estrutura sugerida e o método, um critério por item e cada artefato nomeado</td></tr>
+          <tr><td><code>karpathy</code></td><td>o slim mais uma explicação de volta: um resumo em linguagem simples, um diagrama e, quando ajuda, uma página HTML explicativa. Inspirado no <a href="https://x.com/karpathy/status/2105819303471976479">post de Andrej Karpathy no X</a> e no <a href="https://karpathy.bearblog.dev/year-in-review-2025/">2025 Year in Review</a> dele. Gasta mais tokens por entrega, por isso nunca é o padrão</td></tr>
         </tbody>
       </table>
     </div>
-    <p>Na 0.14.11, um pedido que diz "brief detalhado" sobe a altitude só naquela execução, e "brief simples" baixa.</p>
+    <p>Escolha um por projeto, gravado em <code>.nirvana/config.yaml</code> (rode dentro de um projeto preparado com <code>nrv init</code>):</p>
+    <div class="code"><pre><code>nrv config set briefing.template detailed --project</code></pre></div>
+    <div class="code"><pre><code>nrv brief templates</code></pre></div>
+    <h3>Um template seu</h3>
+    <p>Copie um template e edite a cópia. No projeto ela fica em <code>.nirvana/brief-templates/</code>; com <code>--global</code>, em <code>~/.nirvana/brief-templates/</code>, para todos os projetos:</p>
+    <div class="code"><pre><code>nrv brief init juridico --from standard --project</code></pre></div>
+    <div class="code"><pre><code>nrv config set briefing.template juridico --project</code></pre></div>
+    <p>Um nome é procurado primeiro no projeto, depois na pasta global e por último no engine, então dá para trocar o <code>slim</code> num projeto só. Mantenha os rótulos que a lista <code>required</code> do arquivo nomeia (no mínimo Request e Done when): o engine lê esses rótulos. A antiga <code>briefing.altitude</code> continua valendo como apelido obsoleto enquanto <code>briefing.template</code> estiver vazio: <code>outcome</code> vira <code>standard</code> e <code>prescriptive</code> vira <code>detailed</code>.</p>
     <h3>Regras do projeto em texto livre</h3>
     <p>Escreva no <code>CLAUDE.md</code>, <code>AGENTS.md</code> ou <code>GEMINI.md</code> do projeto (o que o seu agente lê), <strong>acima</strong> da primeira linha que começa com <code>&lt;!-- nirvana-os:</code>. Dali para baixo é o bloco do Nirvana, que o <code>nrv init</code> reescreve quando o texto do engine muda. O agente lê esses arquivos ao abrir a sessão e leva as suas regras para os briefs que escreve.</p>
     <p>Em linguagem natural:</p>
-    <p class="say">"Neste projeto, use briefs guiados."</p>
+    <p class="say">"Neste projeto, use briefs detalhados."</p>
     <p class="say">"Acrescente ao CLAUDE.md deste projeto, acima do bloco do Nirvana: todo entregável em português do Brasil, com fontes datadas."</p>
   </section>
 

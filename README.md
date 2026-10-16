@@ -188,7 +188,7 @@ A profile moves several settings at once:
 
 A profile never picks the model; your runtime's own configuration does. A setting you change explicitly wins over the profile. `nrv config list` shows every setting, its value and where it came from. The full reference is [docs/configuration.md](./docs/configuration.md). Profiles exist only from 0.15 on.
 
-**Per project.** `nrv config set briefing.altitude <outcome|guided|prescriptive> --project` sets how much a brief carries: `outcome`, the default, states the result, the guardrails and the definition of done; `guided` adds the structure the author suggests; `prescriptive` adds per-item criteria, the artifact list and the method. `nrv config get briefing.altitude` shows the value in effect. Rules in free text go in the project's `CLAUDE.md`, `AGENTS.md` or `GEMINI.md`, above the Nirvana block that `nrv init` rewrites; your agent reads them and carries them into the briefs it writes. Asking is enough: *"in this project, use guided briefs"*, *"add to this project's CLAUDE.md: every deliverable in Brazilian Portuguese"*.
+**Per project.** The orchestrator writes each brief with a brief template. The engine ships four: `slim` (the default: short labelled lines, the user's words kept in a file), `standard` (the six sections), `detailed` (the six plus a suggested structure, the method and one criterion per item) and `karpathy`, after Andrej Karpathy's [post on X](https://x.com/karpathy/status/2105819303471976479) and his [2025 Year in Review](https://karpathy.bearblog.dev/year-in-review-2025/): slim plus a plain-language summary, a diagram and, when it helps, an HTML explainer, at more tokens per delivery. `nrv config set briefing.template detailed --project` picks one for a project, and `nrv brief templates` lists them. To change one or add your own, say `juridico`, run `nrv brief init juridico --from standard --project`: the copy in `.nirvana/brief-templates/` wins over `~/.nirvana/brief-templates/` and over the engine's. `briefing.altitude` still works as a deprecated alias. Rules in free text go in the project's `CLAUDE.md`, `AGENTS.md` or `GEMINI.md`, above the Nirvana block that `nrv init` rewrites; your agent reads them and carries them into the briefs it writes. Asking is enough: *"in this project, use detailed briefs"*, *"add to this project's CLAUDE.md: every deliverable in Brazilian Portuguese"*.
 
 ## Why "the work is done" means something here
 
@@ -209,7 +209,7 @@ For agents and power users. `nrv help` lists everything; `nrv <command> --help` 
 | `nrv init <dir>` | Make a folder a Nirvana project (`--orchestrators=always`, `--scope=project\|merge\|global`) |
 | `nrv list-businesses` / `list-squads` / `list-clones` | Browse the three registries |
 | `nrv find "<need>"` / `nrv search "<topic>"` | Ranked candidates for a request / keyword search across the libraries |
-| `nrv brief template\|check\|decide` | The six-section brief the orchestrator writes for one business |
+| `nrv brief template\|templates\|check\|decide\|init` | The brief the orchestrator writes for one business, from a brief template |
 | `nrv dispatch <business> --brief-file <file> --exec` | Run a business on a brief; `--squad <slug>[:<capability>]`, `--agent-x` or `--auto` name other targets. Refuses without `--exec` |
 | `nrv run-track status\|stop <run>` | Read a run's state, or stop it cleanly |
 | `nrv revise <project> "<change>"` | Change a delivery in the same runtime session |

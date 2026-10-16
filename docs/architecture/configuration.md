@@ -56,7 +56,8 @@ Gerada a partir do schema. `nrv config explain <chave>` mostra a descrição de 
 | `execution.default_runtime` | `NIRVANA_DEFAULT_RUNTIME` | `""` | global, projeto | nome de runtime (claude-code, codex, antigravity-cli, ...) ou vazio |
 | `execution.model` | `NIRVANA_MODEL` | `""` | global, projeto | id ou alias de modelo (opus, sonnet, haiku, fable, ...) ou vazio |
 | `execution.dna_injection` | `NIRVANA_DNA_INJECTION` | `reference` | global, projeto | reference / fragments / full |
-| `briefing.altitude` | `NIRVANA_BRIEF_ALTITUDE` | `outcome` | global, projeto | outcome / guided / prescriptive |
+| `briefing.template` | `NIRVANA_BRIEF_TEMPLATE` | `""` (= `slim`) | global, projeto | nome de um template de brief: slim / standard / detailed / karpathy, ou um seu (ver "Templates de brief" abaixo) |
+| `briefing.altitude` | `NIRVANA_BRIEF_ALTITUDE` | `outcome` | global, projeto | obsoleto, use `briefing.template`; lido só com `briefing.template` vazio: outcome = standard, guided = standard com estrutura sugerida, prescriptive = detailed |
 | `execution.headless_skip_permissions` | `NIRVANA_HEADLESS_SKIP_PERMISSIONS` | `true` | global, projeto | true / false |
 | `execution.child_env` | `NIRVANA_CHILD_ENV` | `inherit` | global, projeto | inherit / declared (o `nrv serve` usa `declared` salvo `NIRVANA_SERVE_CHILD_ENV=inherit`) |
 | `execution.max_dispatch_depth` | `NIRVANA_MAX_DISPATCH_DEPTH` | `4` | global, projeto | inteiro >= 0; 0 = ilimitado. Cadeia de agentes despachando agentes. No terminal: empresa (1), assento (2), squad usado pelo assento (3). No Glance o maestro é ele mesmo um filho e tudo desce um nível, então 4 |
@@ -98,6 +99,20 @@ Formas legadas das variáveis, mantidas por compatibilidade: `NIRVANA_MULTI_TARG
 `updates.check` é a única chave só global: a verificação de release é da máquina, não do projeto. O `bin/nrv` em bash, que decide antes de qualquer Bun se imprime o aviso de release, continua lendo só a variável e o `CI`; com `updates.check: false` no arquivo global, o refresher em Bun grava um cache sem aviso e o bash não imprime nada nem o relança.
 
 Desligar o juiz LLM: `nrv config set quality_gate.judge_enabled false` (ou `off`) desliga na máquina ou no projeto, `NIRVANA_JUDGE_ENABLED=false` desliga no ambiente, e `nrv dispatch ... --no-judge` desliga numa execução só. Com o juiz desligado, o gate heurístico offline continua rodando e a execução ainda registra um veredito.
+
+## Templates de brief
+
+O brief que o orquestrador escreve para cada empresa segue um template, um arquivo markdown com a instrução e o esqueleto. `briefing.template` escolhe o nome, e o nome é procurado nesta ordem; o primeiro arquivo que existe vence:
+
+```
+<projeto>/.nirvana/brief-templates/<nome>.md
+<NIRVANA_HOME|~>/.nirvana/brief-templates/<nome>.md
+skills/harness/references/brief-templates/<nome>.md   (engine: slim, standard, detailed, karpathy)
+```
+
+Assim dá para trocar o `slim` num só projeto ou criar um template novo, por exemplo `juridico`, para todos. `nrv brief init <nome> --project|--global [--from <outro>]` copia um template como ponto de partida e não sobrescreve sem `--force`; `nrv brief templates` lista os nomes e de onde vêm. O frontmatter do arquivo diz o formato (`labels` ou `sections`) e os rótulos que o engine precisa (`required`, no mínimo Request e Done when); `nrv brief check` recusa um brief sem eles, e um nome que não existe em nenhuma das três pastas é erro em `nrv brief template` e `nrv brief check`, com a lista dos nomes disponíveis.
+
+`briefing.altitude` virou apelido: só é lido com `briefing.template` vazio, e então `outcome` escolhe `standard`, `guided` escolhe `standard` com a estrutura sugerida e `prescriptive` escolhe `detailed`, com uma nota de obsolescência em `nrv brief template` e no `nrv doctor`. A altitude padrão não vai para o ambiente dos processos filhos, para que um filho não a leia como valor gravado. Cada dispatch copia o template e as palavras do usuário para a pasta da execução (`brief-template.md`, `request.md`) e registra nome, origem, caminho e sha256 em `x_brief_template`.
 
 ## Leitores migrados
 
@@ -143,7 +158,7 @@ Um filho que só lê variáveis não veria o arquivo de projeto nem o global. Po
 
 ## O `nrv doctor`
 
-A seção `config` do doctor tem uma linha `config: files` com os três arquivos (projeto, global, engine) e se existem, e uma linha por chave, `config: <chave>`, com o valor efetivo e a origem (`env NIRVANA_X=...`, `project <arquivo>`, `global <arquivo>`, `engine <arquivo>`, `default`). Não há segredo no schema, então não há valor mascarado. Um arquivo que a resolução recusa é `config: files` em FAIL com a mesma mensagem que todo leitor daria; `nrv config list` mostra o mesmo erro.
+A seção `config` do doctor tem uma linha `config: files` com os três arquivos (projeto, global, engine) e se existem, e uma linha por chave, `config: <chave>`, com o valor efetivo e a origem (`env NIRVANA_X=...`, `project <arquivo>`, `global <arquivo>`, `engine <arquivo>`, `default`). Não há segredo no schema, então não há valor mascarado. A linha `brief: template` mostra o template ativo, o arquivo e a origem (projeto, global ou engine), e avisa quando ele vem de uma `briefing.altitude` obsoleta ou quando o nome não existe. Um arquivo que a resolução recusa é `config: files` em FAIL com a mesma mensagem que todo leitor daria; `nrv config list` mostra o mesmo erro.
 
 ## O que fica só no ambiente, e por quê
 

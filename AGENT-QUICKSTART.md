@@ -66,7 +66,8 @@ enter your runtime's plan mode while orchestrating.
 ```bash
 nrv find "<the request in a few words>"                 # ranked candidates, zero tokens
 nrv list-businesses                                     # the library, one line each
-nrv brief template > .nirvana/briefs/<business>.md      # six sections; fill them in the user's language
+nrv brief request <business> --text "<the user's words>"           # verbatim; prints the path
+nrv brief template --for <business> > .nirvana/briefs/<business>.md   # stderr names the template: read it, follow it
 nrv brief check .nirvana/briefs/<business>.md
 nrv dispatch <business> --brief-file .nirvana/briefs/<business>.md --exec \
   --project <YYYYMMDD>-<subject>-<part> [--runtime <rt>]

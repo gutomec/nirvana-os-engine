@@ -45,6 +45,21 @@ Precedence, always: environment variable > `<project>/.nirvana/config.yaml` > `~
 
 Useful flags on `run` / `auto`: `--single` / `--team` (how many seats of the business run the brief — by default a director reads the brief against the org chart and decides, answering "one seat" when one is enough; `--single` skips that call, `--team` asks for a chain of 3 to 6), `--zip` / `--pdf` (bundle deliverables), `--runtime=claude-code|codex|antigravity-cli|kimi-cli|grok-cli|pi`, `--max-budget=<usd>`, `--timeout=<min>`, `--mode=agentic|cards` (routing mode), `--execution-mode=standard|gauntlet|auto` (default `standard`), `--gauntlet-intensity=light|balanced|exhaustive` (a Business target needs `NIRVANA_BUSINESS_GAUNTLET_ALLOWLIST=<slug>`), `--run-id=<runId>` (adopt a Run already prepared in the project's kernel, the way Glance does).
 
+## Briefs
+
+The orchestrator writes one brief per business with a **brief template**. The engine ships four: `slim` (the default: labelled lines, the user's words by path), `standard` (the six sections: Request verbatim, Decisions, Your part, Inputs, Done when, Output), `detailed` (the six plus Suggested structure and Method, one criterion per item) and `karpathy` (slim plus an explain-back: a plain-language summary, a diagram and, when it helps, an HTML explainer; it costs more tokens per delivery). `briefing.template` picks one; a name resolves to `<project>/.nirvana/brief-templates/<name>.md`, then `~/.nirvana/brief-templates/<name>.md` (under `NIRVANA_HOME` when set), then the engine's.
+
+| Command | What it does |
+|---|---|
+| `nrv brief template [--template <name>] [--for <name>] [--full]` | Prints the active template's skeleton on stdout, and on stderr its name, origin (project, global, engine), path and what chose it. `--for <name>` puts `.nirvana/briefs/<name>.request.md` on the Request line; `--full` prints the whole file. An unknown name fails and lists the available ones. |
+| `nrv brief templates [--json]` | Every template name, its origin and what it overrides; `*` marks the active one. |
+| `nrv brief request <name> [--text "<words>"]` | Writes the user's words, verbatim, to `.nirvana/briefs/<name>.request.md` (stdin without `--text`) and prints the path. |
+| `nrv brief check <file> [--template <name>] [--json]` | Checks the labels the template requires (at least Request and Done when), that a slim Request names a file, the Session line, and what the settings forbid. A brief in the other format is checked against the engine's template of that format. Exit 1 on a problem. |
+| `nrv brief decide <file> "<decision>"` | Appends a decision to Decisions while the run works, in either format. |
+| `nrv brief init <name> [--from <name>] (--project\|--global) [--force]` | Copies a template where you can edit it: the engine's same-name one, or `--from` another. Refuses to overwrite without `--force`. |
+
+A brief's `Session: continue <project>` line is the same as `nrv dispatch --continue-from <project>`. Each dispatch copies the template and the user's words into its run folder (`brief-template.md`, `request.md`) and records both with their sha256 in `x_brief_template`. `briefing.altitude` is a legacy alias read only while `briefing.template` is unset: `outcome` selects `standard`, `guided` selects `standard` with a suggested structure, `prescriptive` selects `detailed`.
+
 ## See it happen
 
 | Command | What it does |
