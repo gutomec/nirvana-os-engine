@@ -144,18 +144,18 @@ Pack 是在 [squads.sh](https://squads.sh/pt/packs) 上出售的精选公司、s
 
 ## Beta 版
 
-Beta 版是 GitHub 上的预发布版本。一行安装命令安装的是最新稳定版，所以要安装 beta，需要固定它的 tarball。当前的 beta 是 `v0.15.0-beta.8`。标签以 `v` 开头；少了它，下载会返回 404。要安装更新的 beta，把这个标签换成[发布列表](https://github.com/gutomec/nirvana-os-engine/releases)中的标签。
+Beta 版是 GitHub 上的预发布版本。一行安装命令安装的是最新稳定版，所以要安装 beta，需要固定它的 tarball。当前的 beta 是 `v0.15.0-beta.10`。标签以 `v` 开头；少了它，下载会返回 404。要安装更新的 beta，把这个标签换成[发布列表](https://github.com/gutomec/nirvana-os-engine/releases)中的标签。
 
 macOS、Linux 和 WSL：
 
 ```bash
-curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.8/nirvana-os-engine.tar.gz bash
+curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.10/nirvana-os-engine.tar.gz bash
 ```
 
 Windows（PowerShell），写成一行：
 
 ```powershell
-$env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.8/nirvana-os-engine.tar.gz'; irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
+$env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.10/nirvana-os-engine.tar.gz'; irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
 ```
 
 之后，如果窗口还开着，运行 `Remove-Item Env:NIRVANA_ENGINE_URL`：只要这个变量还在，`nrv update` 就会重新安装固定的 tarball。Windows 命令使用单引号，是因为粘贴时丢失的双引号会让 PowerShell 停在 `>>` 提示符上等待。
