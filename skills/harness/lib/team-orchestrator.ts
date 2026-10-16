@@ -92,6 +92,10 @@ export interface TeamRunArgs {
   /** Test seam: canned director. Without it `pickChain` reaches a real runtime,
    *  which is why the chain could not be tested at all. */
   runHeadlessImpl?: typeof runHeadless;
+  /** The dispatch's ledger run. Each seat and each mandatory squad runs under
+   *  it, so the heartbeat sidecar renews the run while a seat works and its
+   *  stall guard ends a seat that hangs (stall-guard.ts). */
+  ledgerRunId?: string | null;
 }
 
 export interface ChainStep {
@@ -470,6 +474,7 @@ function runStep(step: ChainStep, idx: number, total: number, args: TeamRunArgs,
     taskHint: `team-step ${idx + 1}/${total} (${step.employee})`,
     label: `${args.slug}/${step.employee}`,
     projectId: args.projectId,
+    ...(args.ledgerRunId ? { ledger: { runId: args.ledgerRunId, watchDir: employeeOutDir } } : {}),
   });
 
   appendAudit({
@@ -533,6 +538,7 @@ function runMandatorySquad(squadSlug: string, args: TeamRunArgs): StepResult {
     timeoutMs: args.timeoutMs,
     rulesDirective: args.rulesDirective,
     autonomousDirective: AUTONOMOUS_DIRECTIVE,
+    ...(args.ledgerRunId ? { ledger: { runId: args.ledgerRunId, watchDir: outDir } } : {}),
     // The seam travels down: a mandatory squad dispatched from a chain must be
     // testable from the same fixture that tests the chain.
     ...(args.runWithCascadeImpl ? { runWithCascadeImpl: args.runWithCascadeImpl } : {}),

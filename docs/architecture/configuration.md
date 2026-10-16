@@ -58,6 +58,9 @@ Gerada a partir do schema. `nrv config explain <chave>` mostra a descrição de 
 | `execution.dna_injection` | `NIRVANA_DNA_INJECTION` | `reference` | global, projeto | reference / fragments / full |
 | `briefing.altitude` | `NIRVANA_BRIEF_ALTITUDE` | `outcome` | global, projeto | outcome / guided / prescriptive |
 | `execution.headless_skip_permissions` | `NIRVANA_HEADLESS_SKIP_PERMISSIONS` | `true` | global, projeto | true / false |
+| `execution.stall_timeout_min` | `NIRVANA_STALL_TIMEOUT_MIN` | `90` | global, projeto | número >= 0 (minutos); 0 = desligado. Silêncio total do worker (sem saída, sem arquivo escrito na pasta do run, sem atividade de ferramenta, sem run filho vivo) após o qual o despacho encerra o worker e sai com 76 |
+| `execution.stall_no_start_min` | `NIRVANA_STALL_NO_START_MIN` | `45` | global, projeto | número >= 0 (minutos); 0 = desligado. Nenhum sinal de vida desde o início do worker: o despacho o encerra e sai com 76 |
+| `execution.orca_workers` | `NIRVANA_ORCA_WORKERS` (`1`/`true` = on) | `off` | global, projeto | off / on. Dentro do Orca, `on` roda cada despacho num terminal de worker visível; substitui `host.orca_workers` |
 | `execution.child_env` | `NIRVANA_CHILD_ENV` | `inherit` | global, projeto | inherit / declared (o `nrv serve` usa `declared` salvo `NIRVANA_SERVE_CHILD_ENV=inherit`) |
 | `execution.max_dispatch_depth` | `NIRVANA_MAX_DISPATCH_DEPTH` | `4` | global, projeto | inteiro >= 0; 0 = ilimitado. Cadeia de agentes despachando agentes. No terminal: empresa (1), assento (2), squad usado pelo assento (3). No Glance o maestro é ele mesmo um filho e tudo desce um nível, então 4 |
 | `execution.business_mode` | `NIRVANA_BUSINESS_MODE` | `chain` | global, projeto | chain / session. Como uma empresa roda quando o pedido não traz `--team` nem `--single`: `chain` é o diretor e uma sessão por cargo, em série; `session` é uma sessão só, com os cargos como subagentes do runtime |
@@ -71,7 +74,6 @@ Gerada a partir do schema. `nrv config explain <chave>` mostra a descrição de 
 | `routing.timeout_ms` | `NIRVANA_ROUTING_TIMEOUT_MS` | `300000` (5 min) | global, projeto | inteiro > 0 (ms) |
 | `routing.digest_token_budget` | nenhuma | `0` (sem teto) | global, projeto | inteiro >= 0 (tokens); 0 = sem teto |
 | `host.orca` | `NIRVANA_ORCA_HOST` | `auto` | global, projeto | auto (só dentro de um terminal do Orca) / on / off |
-| `host.orca_workers` | `NIRVANA_ORCA_WORKERS` | `true` | global, projeto | true / false |
 | `supervisor.progress_ping_sec` | `NIRVANA_PROGRESS_PING_SEC` | `1800` | global, projeto | inteiro >= 0 (segundos) |
 | `supervisor.stall_threshold_ms` | `NIRVANA_STALL_THRESHOLD_MS` | `300000` | global, projeto | inteiro > 0 (milissegundos) |
 | `supervisor.touch_events_max` | `NIRVANA_TOUCH_EVENTS_MAX` | `500` | global, projeto | inteiro >= 0 (eventos); 0 = não relata arquivos |

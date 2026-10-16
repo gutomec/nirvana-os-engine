@@ -47,6 +47,7 @@ import { createRequire } from "node:module";
 import { spawnSync } from "node:child_process";
 import { ensureDir } from "../../_shared/lib/ensure-dir.ts";
 import { quotaStop } from "./quota-detector.ts";
+import { descendants, processTable, processTreeCpuMs } from "./process-cpu.ts";
 
 // ── states ──────────────────────────────────────────────────────────────
 
@@ -372,7 +373,7 @@ function auditLib(): AuditLib {
  *  sweep started outside any project used to file every `x_ledger_*` event of
  *  every project it touched in `~/.harness-logs`, where the project's own
  *  coordinator never looked (2026-10-14). */
-function emitLedgerAudit(event: string, payload: Record<string, unknown>, row?: (Pick<RunRow, "trace_id" | "project_id"> & { project_root?: string | null }) | null): void {
+export function emitLedgerAudit(event: string, payload: Record<string, unknown>, row?: (Pick<RunRow, "trace_id" | "project_id"> & { project_root?: string | null }) | null): void {
   try {
     auditLib().emit(event, payload, {
       trace_id: row?.trace_id ?? undefined,
@@ -494,19 +495,19 @@ function processStartedAtWindows(pid: number, timeoutMs = WINDOWS_PS_TIMEOUT_MS)
  *  comment above `WINDOWS_PS_TIMEOUT_MS`), filtered server-side so Windows
  *  does the search instead of shipping the whole process table over stdout
  *  for this process to re-filter, the way the POSIX branch does with `ps -A`. */
-function findChildPidWindows(parentPid: number, excludePid?: number, timeoutMs = WINDOWS_PS_TIMEOUT_MS): number | null {
+function lookupChildPidWindows(parentPid: number, excludePid?: number, timeoutMs = WINDOWS_PS_TIMEOUT_MS): ChildPidLookup {
   try {
     const r = spawnSync("powershell", [
       "-NoProfile", "-NonInteractive", "-Command",
       `(Get-CimInstance Win32_Process -Filter "ParentProcessId=${parentPid}" -ErrorAction SilentlyContinue).ProcessId`,
     ], { windowsHide: true, encoding: "utf8", timeout: timeoutMs });
-    if (r.status !== 0) return null;
+    if (r.status !== 0) return { pid: null, answered: false };
     for (const line of (r.stdout || "").trim().split(/\r?\n/)) {
       const pid = parseInt(line.trim(), 10);
-      if (Number.isFinite(pid) && pid !== excludePid) return pid;
+      if (Number.isFinite(pid) && pid !== excludePid) return { pid, answered: true };
     }
-    return null;
-  } catch { return null; }
+    return { pid: null, answered: true };
+  } catch { return { pid: null, answered: false }; }
 }
 
 /** The OS's own process-start timestamp for `pid` — `ps -o lstart=` on POSIX,
@@ -537,19 +538,61 @@ export function processStartedAt(pid: number, timeoutMs?: number): string | null
  *  ledgered dispatcher at a time. `timeoutMs` (Windows only), same purpose as
  *  `processStartedAt`'s. */
 export function findChildPid(parentPid: number, excludePid?: number, timeoutMs?: number): number | null {
-  if (!Number.isFinite(parentPid) || parentPid <= 0) return null;
-  if (process.platform === "win32") return findChildPidWindows(parentPid, excludePid, timeoutMs);
+  return lookupChildPid(parentPid, excludePid, timeoutMs).pid;
+}
+
+/** `findChildPid` that also says whether the process table answered at all:
+ *  `answered: false` is "could not ask" (PowerShell timed out or failed, no
+ *  `ps`), which the heartbeat retries; `answered: true` with no pid is "no
+ *  such child right now". */
+export interface ChildPidLookup { pid: number | null; answered: boolean }
+
+export function lookupChildPid(parentPid: number, excludePid?: number, timeoutMs?: number): ChildPidLookup {
+  if (!Number.isFinite(parentPid) || parentPid <= 0) return { pid: null, answered: true };
+  if (process.platform === "win32") return lookupChildPidWindows(parentPid, excludePid, timeoutMs);
   try {
     const r = spawnSync("ps", ["-A", "-o", "pid=,ppid="], { windowsHide: true, encoding: "utf8" });
-    if (r.status !== 0) return null;
+    if (r.status !== 0) return { pid: null, answered: false };
     for (const line of (r.stdout || "").trim().split("\n")) {
       const [pidStr, ppidStr] = line.trim().split(/\s+/);
       const pid = parseInt(pidStr, 10);
       const ppid = parseInt(ppidStr, 10);
-      if (ppid === parentPid && Number.isFinite(pid) && pid !== excludePid) return pid;
+      if (ppid === parentPid && Number.isFinite(pid) && pid !== excludePid) return { pid, answered: true };
     }
-    return null;
-  } catch { return null; }
+    return { pid: null, answered: true };
+  } catch { return { pid: null, answered: false }; }
+}
+
+/** Ends `pid` and what it started. Windows has no process groups: `process.kill`
+ *  ends only that pid and leaves the CLI's own children running, so taskkill /T
+ *  takes the tree. POSIX: every descendant is signalled by pid, from a snapshot
+ *  taken before the first signal, and the group too when the pid leads one.
+ *  Never pid 1, this process or its parent. */
+export function killProcessTree(pid: number, signal: NodeJS.Signals = "SIGTERM"): number[] {
+  if (!Number.isFinite(pid) || pid <= 1) return [];
+  if (pid === process.pid || pid === process.ppid) return [];
+  if (process.platform === "win32") {
+    const r = spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { windowsHide: true, encoding: "utf8" });
+    if (r.status !== 0) { try { process.kill(pid, signal); } catch { /* already gone */ } }
+    return [pid];
+  }
+  const rows = processTable();
+  const tree = [pid, ...(rows ? descendants(rows, pid) : [])].filter((p) => p !== process.pid && p !== process.ppid);
+  try { process.kill(-pid, signal); } catch { /* not a group leader */ }
+  for (const p of tree) { try { process.kill(p, signal); } catch { /* already gone */ } }
+  return tree;
+}
+
+/** The dispatcher that runs this row (meta.dispatcher_pid) is alive and is
+ *  still that dispatcher: the start time recorded beside its pid matches, or
+ *  cannot be read ("cannot prove recycling" is not "recycled"). */
+export function dispatcherAlive(row: RunRow): boolean {
+  const pid = Number(row.meta?.dispatcher_pid) || 0;
+  if (pid <= 0 || !pidAlive(pid)) return false;
+  const recorded = typeof row.meta?.dispatcher_started_at === "string" ? row.meta.dispatcher_started_at as string : null;
+  if (!recorded) return true;
+  const current = processStartedAt(pid);
+  return current === null || current === recorded;
 }
 
 /** One file the sweep found newer than the mark it was given. */
@@ -898,7 +941,10 @@ export function markState(handle: LedgerHandle, runId: string, next: RunState, e
     run_id: runId, from: row.state, to: next, error: extra.error ?? null, last_error: extra.error ?? row.last_error ?? null,
   }, row);
   const updated = getRun(handle, runId)!;
-  if (SENTINEL_STATES.has(next)) writeRunSignal(updated);
+  // A stall the dispatcher confirmed (stall-guard.ts) ends this attempt too: a
+  // waiter learns it at once instead of on its slow backstop. A supervisor
+  // escalation passes through `stalled` on its way to the salvage and is not one.
+  if (SENTINEL_STATES.has(next) || (next === "stalled" && updated.meta?.stall)) writeRunSignal(updated);
   projectToHost(updated);
   return updated;
 }
@@ -1292,12 +1338,20 @@ const TOUCH_EVENTS_PER_TICK = 25;
  *  have starved of its own tick. */
 const HEARTBEAT_DISCOVERY_TIMEOUT_MS = 1500;
 
-/** How many ticks get a discovery attempt before the sidecar stops trying —
+/** How many child-pid lookups the sidecar makes before it stops trying —
  *  more than one, because the real CLI child can still be mid-spawn on the
- *  very first tick (see heartbeatMain); a small fixed number rather than a
- *  wall-clock deadline, so the total cost stays bounded regardless of how
- *  small --interval is. */
-const MAX_DISCOVERY_ATTEMPTS = 2;
+ *  very first tick, and on Windows a lookup can time out on a loaded machine
+ *  (see heartbeatMain); a small fixed number rather than a wall-clock
+ *  deadline, so the total cost stays bounded regardless of how small
+ *  --interval is. */
+const MAX_DISCOVERY_ATTEMPTS = 5;
+
+/** Least time between two lookups when the tick saw no activity. */
+const DISCOVERY_RETRY_MS = 2_000;
+
+/** How often a quiet tick samples the worker's CPU for the stall guard. Tests
+ *  shorten it through NIRVANA_HEARTBEAT_CPU_SAMPLE_MS. */
+const CPU_SAMPLE_MS = Math.max(0, Number(process.env.NIRVANA_HEARTBEAT_CPU_SAMPLE_MS) || 60_000);
 
 function heartbeatArg(name: string): string | undefined {
   const i = process.argv.indexOf(name);
@@ -1323,12 +1377,42 @@ export function heartbeatMain(): void {
   // Absent flag = 0 = report nothing, so a caller that never asked for file
   // reporting keeps the old event stream byte for byte.
   let touchBudget = Math.max(0, parseInt(heartbeatArg("--touch-max") || "0", 10));
+  // The stall guard (stall-guard.ts): absent flags = 0 = off, so a caller that
+  // never asked for it keeps the observe-only sidecar.
+  const thresholds = {
+    silenceMs: Math.max(0, Number(heartbeatArg("--stall-kill-ms") || "0") || 0),
+    noStartMs: Math.max(0, Number(heartbeatArg("--no-start-ms") || "0") || 0),
+  };
+  const guardOn = thresholds.silenceMs > 0 || thresholds.noStartMs > 0;
+  const guard = guardOn ? createRequire(import.meta.url)("./stall-guard.ts") as typeof import("./stall-guard.ts") : null;
 
   const handle = openLedger(dbPath);
+  const startedAt = Date.now();
   let lastBytes = fileSize(outFile) + fileSize(errFile);
   let lastMtime = watchDir ? latestMtimeMs(watchDir) : 0;
-  let lastActivityAt = Date.now();
+  let lastActivityAt = startedAt;
   let stallRecorded = false;
+  // What the stall rule counts: output, writes, strong CPU, and the wider
+  // signals (run folders, hooks, child runs) checked while the run is quiet.
+  // Output that landed before this process took its baseline is a start too.
+  let lastSignAt = startedAt;
+  let everActive = lastBytes > 0;
+  let wideCheckedAt = 0;
+  const shortest = Math.min(...[thresholds.silenceMs, thresholds.noStartMs].filter((t) => t > 0), Number.POSITIVE_INFINITY);
+  // Look wider once the run has been quiet for a while, at most every minute.
+  const wideAfterMs = Math.min(stallMs, shortest / 2);
+  const wideEveryMs = Math.max(intervalMs, Math.min(60_000, shortest / 6));
+  const setupMs = Math.min(30_000, shortest / 10);
+  if (guardOn && getRun(handle, runId)) {
+    patchMeta(handle, runId, { stall_guard: { silence_ms: thresholds.silenceMs, no_start_ms: thresholds.noStartMs, sidecar_pid: process.pid, started_at: new Date(startedAt).toISOString() } });
+  }
+  // CPU of the worker's tree: a CLI run headless prints once, at the end, and a
+  // model that reasons for an hour writes nothing meanwhile. A rate above
+  // STALL_CPU_MIN_MS_PER_MIN counts as a sign of life for the stall rule; an
+  // idle TUI polling its backend (~0.4 s a minute) does not.
+  let cpuBaseline: { root: number; ms: number; at: number } | null = null;
+  let cpuSampledAt = 0;
+  let workerPid = 0;
 
   // Identity discovery: the dispatcher recorded no child_pid (it can't know
   // one — it's about to block inside spawnSync, and spawnSync exposes the
@@ -1338,35 +1422,29 @@ export function heartbeatMain(): void {
   // direct child of --parent and hands the ledger the pid the supervisor is
   // actually allowed to signal.
   //
-  // At most MAX_DISCOVERY_ATTEMPTS tries, and — this is the part that
-  // matters — only on a tick that ALREADY found activity (or is the very
-  // first tick, quiet or not — see below), after that tick's own
-  // renewLease, never on a LATER quiet tick. `findChildPid`/`processStartedAt`
-  // are a `ps` call on POSIX (single-digit ms) but a PowerShell spawn on
-  // Windows (hundreds of ms, sometimes several seconds under load).
-  // Attempting on every tick — quiet ones included — let that cost land on
-  // the EXACT ticks a quiet run depends on: each attempt still ran after that
-  // tick's own work, so no renewal was ever blocked, but a slow attempt
-  // sitting on what should have been a fast, empty tick could itself stand in
-  // for the very silence the stall detector is watching for, pushing the next
-  // real check late enough to miss the window — observed on a run whose child
-  // lived 3.4s: the first renewal landed, then attempts kept firing through
-  // the run's quiet stretch and the stall it was supposed to prove was never
-  // reached in time. Confining LATER attempts to activity ticks keeps every
-  // later quiet tick exactly as fast as it always was.
+  // At most MAX_DISCOVERY_ATTEMPTS lookups: the first tick, every tick that
+  // found activity, and a quiet tick at least DISCOVERY_RETRY_MS after the
+  // previous lookup. `findChildPid` is a `ps` call on POSIX (single-digit ms)
+  // but a PowerShell spawn on Windows (hundreds of ms, several seconds under
+  // load), so lookups are spaced and counted rather than made on every tick.
+  // A quiet tick must still get one: a child whose entire output is one line
+  // written at startup (a fake CLI's single tick, a real one's opening log
+  // line) can finish writing it before this process takes its `lastBytes`
+  // baseline, and never shows activity again. A lookup that timed out says
+  // nothing about the child, and the next one gets the standalone budget.
+  // Each lookup runs last in its tick, after that tick's renewLease.
   //
-  // The FIRST tick is exempt from that gate, activity or not: a child whose
-  // entire output is one line written at startup (a fake CLI's single tick,
-  // a real one's opening log line) can finish writing it before the sidecar —
-  // a separate, independently-started process — even captures its OWN
-  // `lastBytes` baseline, so `activity` reads false for that write on every
-  // tick for the rest of the run, forever, and a purely activity-gated
-  // sidecar would never get a SINGLE chance to discover the child. One
-  // unconditional try up front survives that; a small FIXED attempt count
-  // still bounds the cost, and every attempt after the first still needs
-  // genuine activity to earn one.
+  // The stall guard's CPU sample waits until discovery is settled: on Windows
+  // both are PowerShell + CIM queries, and a full-table CPU query stacked in
+  // the same tick ahead of a 1.5 s lookup made the lookup time out on a loaded
+  // runner (0.14.13 CI). Lost identity is not cosmetic: a row with no
+  // child_pid reads as a dead run to the supervisor, which relaunches it
+  // beside the CLI still running, and nothing can stop that CLI by pid.
   let discoveryAttempts = 0;
   let childDiscovered = false;
+  let lastLookupAt = 0;
+  let discoveryTimeoutMs = HEARTBEAT_DISCOVERY_TIMEOUT_MS;
+  const discoveryPending = (): boolean => !childDiscovered && parentPid > 0 && discoveryAttempts < MAX_DISCOVERY_ATTEMPTS;
 
   for (;;) {
     Bun.sleepSync(intervalMs);
@@ -1374,6 +1452,8 @@ export function heartbeatMain(): void {
     if (parentPid > 0 && !pidAlive(parentPid)) break;
     const row = getRun(handle, runId);
     if (!row || isTerminal(row.state)) break;
+    // Another decider (the Orca wait loop) already confirmed the stall.
+    if (row.state === "stalled" && row.meta?.stall) break;
 
     const bytes = fileSize(outFile) + fileSize(errFile);
     // `sinceMs` is the PREVIOUS high-water mark, so the sweep reports only what
@@ -1387,6 +1467,26 @@ export function heartbeatMain(): void {
     if (mtime > lastMtime) lastMtime = mtime;
 
     const now = Date.now();
+    let thinkingHard = false;
+    if (activity) cpuBaseline = null;
+    else if (guard && parentPid > 0 && !discoveryPending() && now - cpuSampledAt >= CPU_SAMPLE_MS) {
+      cpuSampledAt = now;
+      const root = workerPid && pidAlive(workerPid) ? workerPid : parentPid;
+      const cpu = processTreeCpuMs(root, process.pid);
+      if (cpu !== null) {
+        const grew = cpuBaseline?.root === root ? cpu - cpuBaseline.ms : 0;
+        if (cpuBaseline?.root === root) thinkingHard = grew >= guard.STALL_CPU_MIN_MS_PER_MIN * Math.max(1, (now - cpuBaseline.at) / 60_000);
+        cpuBaseline = { root, ms: cpu, at: now };
+      }
+    }
+    if (activity || thinkingHard) { lastSignAt = now; everActive = true; }
+    if (thinkingHard && !activity) {
+      // Working without a word: the lease is renewed, so the supervisor does
+      // not read a long think as an orphan.
+      lastActivityAt = now;
+      stallRecorded = false;
+      renewLease(handle, runId, leaseSec, "cpu");
+    }
     if (activity) {
       lastActivityAt = now;
       stallRecorded = false;
@@ -1413,19 +1513,59 @@ export function heartbeatMain(): void {
       }, row);
     }
 
-    if (!childDiscovered && parentPid > 0 && discoveryAttempts < MAX_DISCOVERY_ATTEMPTS
-        && (activity || discoveryAttempts === 0)) {
+    if (guard && !activity && now - lastSignAt >= wideAfterMs) {
+      // The wider signals: files anywhere under the run's folders, the run's
+      // hook-recorded tool events, a live child run. Read when the run is quiet,
+      // and once more right before a stall is confirmed.
+      const lookWide = (): void => {
+        wideCheckedAt = Date.now();
+        const wide = guard.latestWideActivity(handle, row, guard.runFolders(row, [watchDir]), wideCheckedAt, Math.max(wideCheckedAt - lastSignAt, intervalMs) + intervalMs);
+        if (wide && wide.at > lastSignAt) {
+          lastSignAt = wide.at;
+          // Files the dispatcher itself writes while it launches the worker (a
+          // prompt, a session record) are not the worker starting.
+          if (wide.source !== "files" || wide.at > startedAt + setupMs) everActive = true;
+          if (wide.at > lastActivityAt) {
+            lastActivityAt = wide.at;
+            stallRecorded = false;
+            renewLease(handle, runId, leaseSec, `wide:${wide.source}`);
+          }
+        }
+      };
+      if (now - wideCheckedAt >= wideEveryMs) lookWide();
+      const verdict = guard.stallVerdict({ startedAt, lastActivityAt: lastSignAt, everActive, now: Date.now(), thresholds });
+      if (verdict) {
+        lookWide();
+        const confirmed = guard.stallVerdict({ startedAt, lastActivityAt: lastSignAt, everActive, now: Date.now(), thresholds });
+        if (confirmed) {
+          const stalled = guard.confirmStall(handle, runId, confirmed, {
+            decidedBy: "heartbeat", workerPid: workerPid || row.child_pid || null,
+            signals: {
+              output_bytes: bytes, watch_dir: watchDir ?? null, folders: guard.runFolders(row, [watchDir]),
+              last_sign_at: new Date(lastSignAt).toISOString(), started_at: new Date(startedAt).toISOString(),
+              ever_active: everActive, cpu_rate_min_ms_per_min: guard.STALL_CPU_MIN_MS_PER_MIN,
+            },
+          });
+          if (stalled) {
+            const out = guard.endStalledWorker(stalled, { parentPid, workerPid, selfPid: process.pid });
+            emitLedgerAudit("x_ledger_stall_worker_ended", { run_id: runId, pids: out.ended, orca_closed: out.orcaClosed }, stalled);
+          }
+          break;
+        }
+      }
+    }
+
+    if (discoveryPending() && (activity || discoveryAttempts === 0 || Date.now() - lastLookupAt >= DISCOVERY_RETRY_MS)) {
       discoveryAttempts++;
-      // A tight budget (vs. the generous standalone default): this is a
-      // best-effort attempt sitting inside a liveness loop, not a caller
-      // that can afford to wait out a slow PowerShell spawn. Timing out
-      // just means this attempt found nothing — degrades exactly like "no
-      // ps on this platform" always has, and the next activity tick gets
-      // another try.
-      const childPid = findChildPid(parentPid, process.pid, HEARTBEAT_DISCOVERY_TIMEOUT_MS);
-      if (childPid) {
-        recordChildPid(handle, runId, childPid, processStartedAt(childPid, HEARTBEAT_DISCOVERY_TIMEOUT_MS));
+      lastLookupAt = Date.now();
+      const found = lookupChildPid(parentPid, process.pid, discoveryTimeoutMs);
+      if (found.pid) {
+        recordChildPid(handle, runId, found.pid, processStartedAt(found.pid, HEARTBEAT_DISCOVERY_TIMEOUT_MS));
         childDiscovered = true;
+        workerPid = found.pid;
+      } else if (!found.answered) {
+        // Timed out or failed: the next lookup gets the standalone budget.
+        discoveryTimeoutMs = WINDOWS_PS_TIMEOUT_MS;
       }
     }
   }

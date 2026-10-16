@@ -193,7 +193,7 @@ You can verify in real time via `nrv glance --allow-actions` → Memory tab → 
 
 When the user (or quality judge) flags issues:
 
-- Re-invoke the harness skill with the revised brief — the harness re-dispatches to the same target and re-runs the gate.
+- Ask for a revision: `nrv revise <project> "<change>"` continues the worker's own session and re-runs the gate. A correction or follow-up on dispatched work is a revise, never a new dispatch.
 - Don't patch the artifact with your own model — that bypasses the gate and breaks the audit trail.
 - Trust the gate; the harness handles iteration.
 

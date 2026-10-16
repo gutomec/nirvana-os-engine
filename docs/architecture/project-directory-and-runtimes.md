@@ -171,7 +171,7 @@ Inside an Orca terminal: every audit event carries an `orca` block naming the
 workspace and pane; `nrv init` registers the new project as a workspace;
 each ledger transition updates the workspace card (comment and board column);
 desktop notifications land on the card; `nrv glance` opens in Orca's embedded
-browser; and, with `host.orca_workers` on (its default) and Orca's
+browser; and, with `execution.orca_workers: on` (off by default) and Orca's
 orchestration enabled, every headless dispatch runs as a worker terminal
 titled `<business>/<employee> · claude` (or `squad <slug>`, `agent-x`), the
 engine waiting for its `worker_done` before verifying and gating as always.

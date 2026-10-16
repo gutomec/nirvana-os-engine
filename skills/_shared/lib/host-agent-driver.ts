@@ -63,6 +63,7 @@ import { childDepth, currentDepth, currentRole, DEFAULT_MAX_DEPTH, DEPTH_ENV, ma
 import { runOrcaWorker } from "./orca-worker.ts";
 import { confineToWorkspace, FENCE_FILE_PREFIX, RUN_WORKSPACE_ENV } from "./run-workspace.ts";
 import { claudeRunCost } from "./claude-session-cost.ts";
+import { codexSessionFor, findClaudeTranscript, looksLikeMissingSession } from "./session-capture.ts";
 
 /** `execution.child_env`. The variable NIRVANA_CHILD_ENV wins over any file
  *  (settings precedence), which is how a child that was itself filtered — it
@@ -1233,7 +1234,10 @@ export interface RunHeadlessOpts {
    * SUPERVISED: a detached sidecar renews the run's lease while the child shows
    * activity, and the wall clock falls back to LEDGER_DEFAULT_TIMEOUT_MS — a
    * backstop above any real run, not a hang detector. What ends a hung run is
-   * the lease expiring DEFAULT_LEASE_SEC after the last sign of life. */
+   * the sidecar's stall guard (harness/lib/stall-guard.ts: no sign of life for
+   * execution.stall_timeout_min, or none since the start for
+   * execution.stall_no_start_min), which ends the worker; the result then
+   * carries `stalled`. */
   ledger?: LedgerHeartbeatOpts;
   /** Max ms without observed activity before the sidecar RECORDS the gap
    * (`x_ledger_stall_observed`, the supervisor.stall_threshold_ms setting,
@@ -1355,6 +1359,12 @@ export interface RunHeadlessResult {
    * (spend-tracker / cost-estimator) may still ESTIMATE from token counts;
    * this flag only states the CLI did not say. */
   costUnavailable?: boolean;
+  /** True when `costUsd` is NOT the CLI's figure but the engine's estimate from
+   *  token counts and the model's price (an Orca claude worker, read from its
+   *  transcript). `costUnavailable` stays true beside it: the CLI said nothing. */
+  costEstimated?: boolean;
+  /** The model the run used, when the runner knows it. */
+  model?: string;
   /** Token usage as the CLI itself reported it (codex `turn.completed.usage`).
    * `cachedInputTokens` is the cached SUBSET of `inputTokens`, as OpenAI counts
    * it; the cost estimator prices the two parts differently. */
@@ -1373,6 +1383,10 @@ export interface RunHeadlessResult {
   stderr: string;
   durationMs: number;
   error?: string;
+  /** The run's heartbeat sidecar (or the Orca wait loop) confirmed a stall and
+   *  ended the worker (harness/lib/stall-guard.ts): `ok` is false, and this is
+   *  the evidence recorded on the ledger row. */
+  stalled?: Record<string, unknown> & { rule: string; silent_ms: number; threshold_ms: number; confirmed_at: string };
 }
 
 /**
@@ -1540,11 +1554,52 @@ function driverSpawnSync(cmd: string, args: string[], options: SpawnSyncOptions 
   }
 }
 
+/** What the process does when a ledgered run comes back stalled. */
+export type LedgerStallHandler = (stall: NonNullable<RunHeadlessResult["stalled"]>, result: RunHeadlessResult, opts: RunHeadlessOpts) => void;
+let ledgerStallHandler: LedgerStallHandler | null = null;
+
+/**
+ * Register what this process does when a ledgered run comes back stalled.
+ * `nrv dispatch` and `nrv revise` register a handler that reports and exits 76,
+ * so a stall ends the whole dispatch at once, whichever worker it hit (the
+ * producer, a seat, a correction round), with no gate and no cascade retry.
+ * Without one, the caller gets the result with `stalled` set and `ok` false.
+ */
+export function onLedgerStall(handler: LedgerStallHandler | null): void {
+  ledgerStallHandler = handler;
+}
+
+type StallGuardModule = typeof import("../../harness/lib/stall-guard.ts");
+let _stallGuard: StallGuardModule | null | false = null;
+function stallGuard(): StallGuardModule | null {
+  if (_stallGuard === null) {
+    try { _stallGuard = require(path.join(import.meta.dir, "..", "..", "harness", "lib", "stall-guard.ts")) as StallGuardModule; }
+    catch { _stallGuard = false; }
+  }
+  return _stallGuard || null;
+}
+
+/** The stall the ledger confirmed for this run since `sinceMs`, if any. */
+function ledgerStallSince(led: LedgerHeartbeatOpts, sinceMs: number): RunHeadlessResult["stalled"] | null {
+  try {
+    const guard = stallGuard();
+    if (!guard) return null;
+    const { openLedger, getRun } = require(path.join(import.meta.dir, "..", "..", "harness", "lib", "run-ledger.ts"));
+    const stall = guard.confirmedStallOf(getRun(openLedger(led.dbPath), led.runId), sinceMs - 1_000);
+    return stall ? (stall as unknown as RunHeadlessResult["stalled"]) : null;
+  } catch { return null; }
+}
+
 /** Wraps a runner call with the heartbeat sidecar + capture files. EVERY exit
  * path (return or throw) stops the sidecar and removes the temp dir — the
- * managed equivalent of "clear all timers". */
+ * managed equivalent of "clear all timers". The sidecar also carries the stall
+ * guard (execution.stall_timeout_min, execution.stall_no_start_min): on a
+ * confirmed stall it ends the worker, the call below returns, and the result
+ * says `stalled`. */
 function runWithLedgerHeartbeat(opts: RunHeadlessOpts, runner: (o: RunHeadlessOpts) => RunHeadlessResult): RunHeadlessResult {
   const led = opts.ledger!;
+  const startedMs = Date.now();
+  const thresholds = stallGuard()?.resolveStallThresholds() ?? { silenceMs: 0, noStartMs: 0 };
   const effective: RunHeadlessOpts = { ...opts, timeoutMs: resolveLedgerTimeoutMs(opts) };
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-hb-"));
   const outFile = path.join(tmpDir, "child-stdout.log");
@@ -1560,10 +1615,13 @@ function runWithLedgerHeartbeat(opts: RunHeadlessOpts, runner: (o: RunHeadlessOp
     runLedgerPath, "heartbeat",
     "--run-id", led.runId,
     "--out", outFile, "--err", errFile, "--done", doneFile,
-    "--interval", String(led.intervalMs ?? 15_000),
+    // NIRVANA_HEARTBEAT_INTERVAL_MS: tests shorten the tick for a whole dispatch.
+    "--interval", String(led.intervalMs ?? (Number(process.env.NIRVANA_HEARTBEAT_INTERVAL_MS) || 15_000)),
     "--stall", String(opts.stallBudgetMs ?? resolveSetting("supervisor.stall_threshold_ms").value),
     "--lease", String(led.leaseSec ?? DEFAULT_LEASE_SEC),
     "--parent", String(process.pid),
+    "--stall-kill-ms", String(thresholds.silenceMs),
+    "--no-start-ms", String(thresholds.noStartMs),
   ];
   if (led.watchDir) {
     sidecarArgs.push("--watch", led.watchDir);
@@ -1583,8 +1641,9 @@ function runWithLedgerHeartbeat(opts: RunHeadlessOpts, runner: (o: RunHeadlessOp
   }
 
   managedCtx = { outFile, errFile };
+  let result: RunHeadlessResult;
   try {
-    return runner(effective);
+    result = runner(effective);
   } finally {
     managedCtx = null;
     // Belt and suspenders: sentinel (sidecar polls it) + SIGTERM + cleanup.
@@ -1592,6 +1651,13 @@ function runWithLedgerHeartbeat(opts: RunHeadlessOpts, runner: (o: RunHeadlessOp
     if (sidecarPid) { try { process.kill(sidecarPid, "SIGTERM"); } catch { /* already gone */ } }
     try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* best-effort */ }
   }
+  const stall = result.stalled ?? ((thresholds.silenceMs > 0 || thresholds.noStartMs > 0) ? ledgerStallSince(led, startedMs) : null);
+  if (stall) {
+    const reason = stallGuard()?.stallReason(stall as never) ?? `stalled (${stall.rule})`;
+    result = { ...result, ok: false, stalled: stall, error: `stalled: ${reason}`, warnings: [...(result.warnings ?? []), `stalled: ${reason}`] };
+    if (ledgerStallHandler) ledgerStallHandler(stall, result, opts);
+  }
+  return result;
 }
 
 // ── per-runtime headless runners ──────────────────────────────────────────
@@ -1635,7 +1701,14 @@ function runClaudeCode(opts: RunHeadlessOpts): RunHeadlessResult {
   const started = Date.now();
   const args: string[] = ["-p", "--output-format", "json"];
 
+  // Every run has an id before it starts: a resume names the session it
+  // continues, a fresh run takes one the engine chose (`claude --help`, 2.1.301:
+  // `--session-id <uuid>` "Use a specific session ID for the conversation").
+  // A run that is killed, times out or fails before printing its JSON still
+  // left a session under that id, and `nrv revise` can continue it.
+  const preassigned = opts.sessionId ? null : randomUUID();
   if (opts.sessionId) args.push("--resume", opts.sessionId);
+  else args.push("--session-id", preassigned!);
   // Model and effort: the caller's explicit value, else the user's pin, else
   // NOTHING — a bare `claude` uses what the user configured in their claude.
   const ccModel = opts.model ?? resolveSystemModel("claude-code");
@@ -1735,7 +1808,7 @@ function runClaudeCode(opts: RunHeadlessOpts): RunHeadlessResult {
   let isError = exitCode !== 0;
   try {
     const parsed = JSON.parse(stdout.trim());
-    sessionId = parsed.session_id ?? null;
+    sessionId = parsed.session_id ?? opts.sessionId ?? preassigned;
     result = typeof parsed.result === "string" ? parsed.result : JSON.stringify(parsed.result ?? "");
     // A resumed session reports its cumulative total (claude 2.1.277+): the
     // run's own spend is the difference from the total last recorded for it.
@@ -1743,8 +1816,13 @@ function runClaudeCode(opts: RunHeadlessOpts): RunHeadlessResult {
     if (typeof parsed.subtype === "string") resultSubtype = parsed.subtype;
     if (typeof parsed.is_error === "boolean") isError = isError || parsed.is_error;
   } catch {
-    // Non-JSON stdout (e.g. early crash). Keep raw for diagnostics.
+    // Non-JSON stdout (e.g. early crash, a kill, a timeout). Keep raw for
+    // diagnostics. The session is still the one the run was given, when it
+    // exists: a resumed one always does, a fresh one once its transcript was
+    // written (a CLI that died before its first turn left nothing to resume).
     result = stdout.trim();
+    if (opts.sessionId) sessionId = opts.sessionId;
+    else if (preassigned && findClaudeTranscript(preassigned)) sessionId = preassigned;
   }
 
   return {
@@ -1910,6 +1988,11 @@ function runCodex(opts: RunHeadlessOpts): RunHeadlessResult {
       }
     } catch { /* not a json line */ }
   }
+  // The stream names the thread on its first event, so a run killed or timed
+  // out after it started still has it. When the stream carries none (an older
+  // codex, output lost), the session codex filed for this folder since the run
+  // started is the one (session-capture.ts).
+  if (!sessionId && !opts.ephemeral) sessionId = codexSessionFor(opts.cwd, started);
   let lastMsgContent = "";
   try { lastMsgContent = fs.readFileSync(lastMsg, "utf8"); } catch { /* ignore */ }
   try { fs.rmSync(lastMsg, { force: true }); } catch { /* ignore */ }
@@ -1938,6 +2021,23 @@ function runCodex(opts: RunHeadlessOpts): RunHeadlessResult {
 // to READ the file, so in --safe mode (no skip-permissions) a large-prompt
 // run can block on approval — a pre-existing agy constraint (headless agy
 // without the skip flag halts anyway).
+/** The conversation id any JSON line of an agy run named (a partial or
+ *  stream-json output carries it before the turn ends), or null. */
+export function agyStreamConversationId(stdout: string): string | null {
+  for (const line of (stdout || "").split("\n")) {
+    const t = line.trim();
+    if (!t.startsWith("{")) continue;
+    try {
+      const ev = JSON.parse(t);
+      for (const o of [ev, ev?.result, ev?.data]) {
+        const id = o?.conversation_id || o?.conversationId || o?.session_id || o?.sessionId;
+        if (typeof id === "string" && id) return id;
+      }
+    } catch { /* not an event line */ }
+  }
+  return null;
+}
+
 /**
  * A resume agy did not honour, read from its output, or null when it held (or
  * nothing says otherwise). This line resumes with `--continue`, which agy
@@ -2047,7 +2147,11 @@ function runAntigravity(opts: RunHeadlessOpts): RunHeadlessResult {
     if (j.is_error === true) envelopeError = envelopeErrorMessage(j.error) || "agy returned is_error";
     else if (j.error != null) envelopeError = envelopeErrorMessage(j.error);
     if (typeof j.total_cost_usd === "number" && Number.isFinite(j.total_cost_usd)) costUsd = j.total_cost_usd;
-  } catch { /* plain text — keep the whole stdout */ }
+  } catch {
+    // Plain text, or a run killed, timed out or failed mid-turn: keep the whole
+    // stdout, and the conversation id when any event line already named it.
+    sessionId = agyStreamConversationId(rawStdout) ?? sid;
+  }
 
   // A resume agy did not honour: `--continue` with no conversation to continue
   // (or another one more recent in the directory) exits 0 having run the turn,
@@ -2114,9 +2218,13 @@ export function argvRejectedFlag(
 // MAX_ARGV_PROMPT_BYTES.
 function runKimi(opts: RunHeadlessOpts): RunHeadlessResult {
   const started = Date.now();
-  const sid = opts.sessionId || randomUUID();
+  let sid: string | null = opts.sessionId || randomUUID();
   const delivery = argvOrPromptFile(withPreamble(opts), (p) => ["-p", p]);
-  const args = [...delivery.args, "--output-format", "stream-json"];
+  // `--session <id>` resumes that session, and "if the specified session ID
+  // does not exist, a new session is created automatically"
+  // (moonshotai.github.io/kimi-cli/en/guides/sessions.html, read 2026-10-15):
+  // the same flag continues a run and gives a fresh one the id the engine chose.
+  const args = [...delivery.args, "--output-format", "stream-json", "--session", sid];
   const kmModel = opts.model ?? resolveSystemModel("kimi-cli");
   if (kmModel) args.push("-m", kmModel);
   for (const d of opts.addDirs ?? []) args.push("--add-dir", d);
@@ -2139,6 +2247,14 @@ function runKimi(opts: RunHeadlessOpts): RunHeadlessResult {
     if (args.includes("--add-dir") && argvRejectedFlag(r, "--add-dir")) {
       for (let i = args.indexOf("--add-dir"); i >= 0; i = args.indexOf("--add-dir")) args.splice(i, 2);
       warnings.push(`kimi-cli: this version does not know --add-dir; retried without it (not granted by the CLI: ${(opts.addDirs ?? []).join(", ")})`);
+      r = driverSpawnSync("kimi", args, spawnOpts);
+    }
+    // A build without `--session`, on the same proof: the run goes on, and
+    // its id is only what its own output names.
+    if (argvRejectedFlag(r, "--session")) {
+      args.splice(args.indexOf("--session"), 2);
+      warnings.push("kimi-cli: this version does not know --session; retried without it (the session id is only what kimi reports)");
+      sid = null;
       r = driverSpawnSync("kimi", args, spawnOpts);
     }
     // A build without stream-json output, on the same proof.
@@ -2266,13 +2382,17 @@ const GROK_USAGE_EXIT = 2;
 
 function runGrok(opts: RunHeadlessOpts): RunHeadlessResult {
   const started = Date.now();
-  const sid = opts.sessionId || randomUUID();
+  let sid: string | null = opts.sessionId || randomUUID();
   const merged = withPreamble(opts);
   const promptFile = writePromptFile(merged);
   let withTrust = opts.yolo !== false;
+  // A fresh run takes the id the engine chose: `-s, --session-id <uuid>` "Use
+  // a specific session UUID for a new conversation" (`grok --help`, 1.0.52).
+  let withSessionId = !opts.sessionId;
   const buildArgs = (delivery: string[], withFormat: boolean): string[] => {
     const a = [...delivery, ...(withFormat ? ["--output-format", "json"] : []), "--cwd", opts.cwd];
     if (opts.sessionId) a.push("-r", opts.sessionId);
+    else if (withSessionId) a.push("--session-id", sid!);
     if (opts.yolo !== false) a.push("--always-approve");
     if (withTrust) a.push("--trust");
     const gkModel = opts.model ?? resolveSystemModel("grok-cli");
@@ -2298,6 +2418,11 @@ function runGrok(opts: RunHeadlessOpts): RunHeadlessResult {
     r = driverSpawnSync("grok", buildArgs(delivery, true), spawnOpts);
     if (withTrust && rejected(r, "--trust")) {
       withTrust = false;
+      r = driverSpawnSync("grok", buildArgs(delivery, true), spawnOpts);
+    }
+    if (withSessionId && rejected(r, "--session-id")) {
+      withSessionId = false;
+      sid = null;
       r = driverSpawnSync("grok", buildArgs(delivery, true), spawnOpts);
     }
     if (rejected(r, "--prompt-file")) {
@@ -2656,7 +2781,79 @@ function dispatchToRunner(opts: RunHeadlessOpts): RunHeadlessResult {
   }
 }
 
+// ── session homes and continuation ────────────────────────────────────────
+//
+// A runtime keeps a session under the folder it was started in (claude under
+// `projects/<cwd>`, pi and kimi per project), and resumes it only from there.
+// Every resume in this process therefore runs where its session was made,
+// whatever folder the caller computed for it: a correction round of a run
+// that continued an earlier project's session must not move to the new run's
+// folder and lose it.
+
+/** Session id → the folder it was started in, for the sessions of this process. */
+const sessionHomes = new Map<string, string>();
+
+/** The folder a session of this process was started in, or null. */
+export function sessionHome(sessionId: string | null | undefined): string | null {
+  return sessionId ? sessionHomes.get(sessionId) ?? null : null;
+}
+
+/** An earlier project's session the next worker of this dispatch continues
+ *  (`nrv dispatch --continue-from <project>`). */
+export interface SessionContinuation {
+  sessionId: string;
+  /** The runtime that owns the session: only a worker on it can continue it. */
+  runtime: Runtime;
+  /** The folder the session was started in. */
+  workspace: string | null;
+  /** The project the session belongs to, for the audit. */
+  fromProject: string;
+}
+
+let pendingContinuation: SessionContinuation | null = null;
+/** The roles that produce a run's deliverable as ONE worker: a business
+ *  session, the single intake seat and agent-x (both `agent-x`), a squad. A
+ *  team seat (`employee`), a planner or an exec never takes a continuation. */
+const WORKER_ROLES = new Set<string>(["business", "squad", "agent-x"]);
+
+/** Hands an earlier session to the next worker this process runs on the same
+ *  runtime. Consumed once; null clears it. */
+export function continueSessionOnNextWorker(c: SessionContinuation | null): void {
+  pendingContinuation = c;
+}
+
 function dispatchToRunnerInner(requested: RunHeadlessOpts): RunHeadlessResult {
+  let req = requested;
+  let continuation: SessionContinuation | null = null;
+  if (pendingContinuation && !req.sessionId && !req.noTools && req.runtime === pendingContinuation.runtime
+      && req.dispatchRole && WORKER_ROLES.has(req.dispatchRole)) {
+    continuation = pendingContinuation;
+    pendingContinuation = null;
+    if (continuation.workspace) sessionHomes.set(continuation.sessionId, continuation.workspace);
+    req = { ...req, sessionId: continuation.sessionId };
+  }
+  const home = sessionHome(req.sessionId);
+  if (home && req.workspace !== home) req = { ...req, workspace: home };
+  let result = runInWorkspace(req);
+  if (continuation) {
+    const missing = !result.ok && looksLikeMissingSession([result.error, result.stderr].filter(Boolean).join("\n"));
+    try {
+      loadAudit()?.emit?.(missing ? "x_continue_fresh_session" : "x_session_continued", {
+        from_project: continuation.fromProject, runtime: req.runtime, session_id: continuation.sessionId,
+        ...(missing ? { reason: "resume_failed", error: String(result.error || result.stderr || "").slice(0, 300) } : { result_session_id: result.sessionId }),
+      });
+    } catch { /* audit never decides a run */ }
+    // The session is gone (pruned, deleted): the worker runs fresh, in its own
+    // run folder, with the brief it was given. Said in the warnings and the audit.
+    if (missing) {
+      result = runInWorkspace(requested);
+      result = { ...result, warnings: [...(result.warnings ?? []), `continue-from ${continuation.fromProject}: session ${continuation.sessionId} could not be resumed; this run started a fresh session`] };
+    }
+  }
+  return result;
+}
+
+function runInWorkspace(requested: RunHeadlessOpts): RunHeadlessResult {
   // A worker with a workspace starts in its own run folder, fenced off from
   // the runs beside it (run-workspace.ts). Done here, once, so every runtime
   // and the Orca transport below get the same cwd and the same fence.
@@ -2664,7 +2861,10 @@ function dispatchToRunnerInner(requested: RunHeadlessOpts): RunHeadlessResult {
   const previousWorkspace = spawnInWorkspace;
   spawnInWorkspace = opts.workspace ? opts.cwd : null;
   try {
-    return runConfined(opts);
+    const result = runConfined(opts);
+    // Where this session lives: a later resume in this process runs there.
+    if (result.sessionId && opts.workspace && !sessionHomes.has(result.sessionId)) sessionHomes.set(result.sessionId, opts.cwd);
+    return result;
   } finally {
     spawnInWorkspace = previousWorkspace;
     cleanup();
@@ -2672,7 +2872,7 @@ function dispatchToRunnerInner(requested: RunHeadlessOpts): RunHeadlessResult {
 }
 
 function runConfined(opts: RunHeadlessOpts): RunHeadlessResult {
-  // Inside Orca (host.orca, host.orca_workers) the dispatch runs as a visible
+  // Inside Orca (host.orca, execution.orca_workers: on) the dispatch runs as a visible
   // worker terminal; null means the transport does not apply or could not
   // start, and the headless child below runs exactly as everywhere else.
   const viaOrca = runOrcaWorker(opts);

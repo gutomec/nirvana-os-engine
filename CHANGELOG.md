@@ -6,6 +6,41 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that the
 one-line installers and pack setups consume.
 
+## 0.14.13 — 2026-10-15
+
+### Every run records a session, and revisions continue it
+
+A correction used to start from nothing whenever the worker had left no session id behind: an Orca worker never recorded one, a squad or agent-x run kept no session file, and a run killed or timed out lost the id it had. Every run now records a session it can be resumed from, and `nrv revise` continues it.
+
+- Headless runs: claude and grok start under an id the engine chose (`--session-id`), kimi under `--session` (a build without the flag is retried without it), pi as before. codex reads its thread id from the `--json` stream whatever the exit code, else from the session file codex wrote for the run's folder since the run started. agy keeps the conversation id its output named when the run dies mid-turn. A killed, failed or timed-out claude run keeps its id once its transcript exists.
+- Orca workers start under an assigned id (claude, grok, kimi, pi) or have it read back from the CLI's own files (codex `sessions/`, agy `history.jsonl`). A revision in Orca resumes the session in the terminal; opencode resumes as the headless child. A claude worker's tokens are read from its transcript and priced.
+- Squad-only and agent-x runs write `session.json` beside their scaffold (`squads/<slug>/`, `agent-x/`), so `nrv revise` continues a squad or agent-x run as that worker, like a business run. A resume always runs in the folder its session was made in.
+- `nrv revise` no longer gives up when it cannot continue: with no id, a pruned session, a run from before session files or `--runtime` naming another runtime, it runs a fresh session seeded with the brief, the delivery, `_QA-RESERVATIONS.md` and the change, audited as `x_revise_fresh_session` with the reason. New: `nrv revise --last [<business|squad|agent-x>] "<change>"` and `--runtime`. A revision now runs under a ledger row of its trace.
+- `nrv dispatch --continue-from <project>`: the same business, squad or agent-x continues that project's session with a new brief (`x_session_continued`), refuses another worker (exit 4), and starts fresh with the earlier delivery as input when the session cannot continue (`x_continue_fresh_session`). A business that runs as a team chain starts fresh, since each seat keeps its own session.
+- The harness and nirvana SKILL.md and AGENTS.md say it: a correction or follow-up on dispatched work is `nrv revise`, never a new dispatch.
+
+### A dispatch always ends: the stall guard
+
+A dispatch is awaited through its completion notice, which only arrives when the dispatch ends, and a worker parked on a dialog kept one open for 94 minutes on 2026-10-15. The heartbeat sidecar now carries a stall guard (`harness/lib/stall-guard.ts`). It confirms a stall only when nothing moves: no worker output, no file under the run's folders, no hook-recorded tool event, no live child run, no CPU growth above 1 s per minute.
+
+- Two settings, both hang detectors and never spend ceilings: `execution.stall_timeout_min` (90) of silence and `execution.stall_no_start_min` (45) without a first sign of life; 0 turns one off (`NIRVANA_STALL_TIMEOUT_MIN`, `NIRVANA_STALL_NO_START_MIN`). Sized from 213 delivered runs, whose longest silent gap was 71.8 minutes.
+- On a stall the row goes to `stalled` with `meta.stall` and `meta.salvaged`, the worker's process tree is ended (`taskkill /T` on Windows) and its Orca terminal closed. `nrv dispatch` and `nrv revise` skip the gate, write `_STATUS.json` (state, reason, next steps) and exit **76**.
+- Team seats and the business's mandatory squads now run under the dispatch's ledger row, so the guard covers them too.
+- The supervisor leaves a run with a live dispatcher (`meta.dispatcher_pid`, now stamped on every row a dispatch or revision drives) to that dispatcher until the run has been silent past the threshold plus 15 minutes, and never relaunches or salvages a stall the dispatcher confirmed. A revise that exits 76 and a redispatch that stalls stay stalled.
+- `nrv run-track status` and `wait` answer 76 for a stalled run, with the stall and the next steps, and for a live dispatcher whose lease nobody renewed past the threshold plus the grace. A signal file from an earlier attempt no longer ends a wait, and a live dispatcher between two workers is no longer reported `killed`.
+
+### Orca workers are off by default
+
+`execution.orca_workers` (`off` | `on`, default `off`, `NIRVANA_ORCA_WORKERS` still takes `1`/`true`) replaces `host.orca_workers`, which was on by default: an interactive TUI can stop on a dialog nobody answers, and the headless child cannot. With `on`:
+
+- the screen is read again for six seconds after the inject, and a trust, permission or plan-review dialog, or a task left unsent, closes the terminal and runs the same brief as the headless child;
+- the wait ends on the stall guard's silence budget instead of the 7-day ledger backstop, and a timed-out or stalled worker's terminal is closed;
+- the terminal, Run, Task and dispatch ids are recorded on the ledger row (`meta.orca_worker`), and `nrv run-track close` closes a recorded terminal.
+
+### Prices
+
+The cost estimator knows `claude-fable-5-1`, `claude-opus-5-5`, `claude-sonnet-5-5` and `claude-haiku-5-5` (claude.com/pricing, 2026-10-15).
+
 ## 0.14.12 — 2026-10-14
 
 ### Quota: a spent quota pauses the run instead of burning it
