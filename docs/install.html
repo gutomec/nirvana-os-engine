@@ -59,7 +59,7 @@
         <p>Para todo mundo. É o que o comando padrão instala, e é o canal deste guia.</p>
       </div>
       <div class="channel beta" id="betas">
-        <p class="name">Beta · <span class="beta-tag">v0.15.0-beta.10</span></p>
+        <p class="name">Beta · <span class="beta-tag">v0.15.0-beta.12</span></p>
         <p>Para quem quer as mudanças da 0.15 agora. O comando de cada sistema está abaixo; o que muda está na <a href="./beta.html">página do beta</a>.</p>
       </div>
     </div>
@@ -97,8 +97,8 @@
         <p>Nada a preparar: o macOS já traz <code>curl</code> e <code>tar</code>. Abra o <strong>Terminal</strong> (Aplicativos, Utilitários, Terminal).</p>
         <h4>Estável</h4>
         <div class="code"><pre><code>curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | bash</code></pre></div>
-        <h4>Beta <span class="beta-tag">v0.15.0-beta.10</span></h4>
-        <div class="code"><pre><code>curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/<span class="beta-tag">v0.15.0-beta.10</span>/nirvana-os-engine.tar.gz bash</code></pre></div>
+        <h4>Beta <span class="beta-tag">v0.15.0-beta.12</span></h4>
+        <div class="code"><pre><code>curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/<span class="beta-tag">v0.15.0-beta.12</span>/nirvana-os-engine.tar.gz bash</code></pre></div>
         <h4>Depois</h4>
         <p>Feche o Terminal e abra de novo, para o comando <code>nrv</code> entrar no PATH. Confira com <code>nrv --version</code>. Ao fechar, o Terminal pode mostrar "Saving session… [Processo concluído]": é normal, não é erro.</p>
       </div>
@@ -109,9 +109,9 @@
         <p>Windows 10 ou 11, sem precisar de administrador. Abra o <strong>PowerShell</strong> pelo menu Iniciar.</p>
         <h4>Estável</h4>
         <div class="code"><pre><code>irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex</code></pre></div>
-        <h4>Beta <span class="beta-tag">v0.15.0-beta.10</span></h4>
+        <h4>Beta <span class="beta-tag">v0.15.0-beta.12</span></h4>
         <p>É <strong>uma linha só</strong>. Cole inteira e aperte Enter:</p>
-        <div class="code"><pre><code>$env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/download/<span class="beta-tag">v0.15.0-beta.10</span>/nirvana-os-engine.tar.gz'; irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex</code></pre></div>
+        <div class="code"><pre><code>$env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/download/<span class="beta-tag">v0.15.0-beta.12</span>/nirvana-os-engine.tar.gz'; irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex</code></pre></div>
         <p>Se a janela continuar aberta no fim, rode:</p>
         <div class="code"><pre><code>Remove-Item Env:NIRVANA_ENGINE_URL</code></pre></div>
         <p class="muted">Enquanto essa variável existir na janela, o <code>nrv update</code> e o setup de pacotes reinstalam o beta fixado. Os comandos usam aspas simples de propósito: uma aspa dupla perdida na colagem (um app de mensagens pode cortá-la) deixa o PowerShell parado em <code>&gt;&gt;</code>.</p>
@@ -135,8 +135,8 @@
         </ol>
         <h4>Estável</h4>
         <div class="code"><pre><code>curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | bash</code></pre></div>
-        <h4>Beta <span class="beta-tag">v0.15.0-beta.10</span></h4>
-        <div class="code"><pre><code>curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/<span class="beta-tag">v0.15.0-beta.10</span>/nirvana-os-engine.tar.gz bash</code></pre></div>
+        <h4>Beta <span class="beta-tag">v0.15.0-beta.12</span></h4>
+        <div class="code"><pre><code>curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/<span class="beta-tag">v0.15.0-beta.12</span>/nirvana-os-engine.tar.gz bash</code></pre></div>
         <h4>Depois</h4>
         <ul>
           <li>Feche o Ubuntu e abra de novo. Confira com <code>nrv --version</code>.</li>
@@ -152,15 +152,15 @@
         <div class="code"><pre><code>sudo apt update &amp;&amp; sudo apt install -y curl unzip</code></pre></div>
         <h4>Estável</h4>
         <div class="code"><pre><code>curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | bash</code></pre></div>
-        <h4>Beta <span class="beta-tag">v0.15.0-beta.10</span></h4>
-        <div class="code"><pre><code>curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/<span class="beta-tag">v0.15.0-beta.10</span>/nirvana-os-engine.tar.gz bash</code></pre></div>
+        <h4>Beta <span class="beta-tag">v0.15.0-beta.12</span></h4>
+        <div class="code"><pre><code>curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/<span class="beta-tag">v0.15.0-beta.12</span>/nirvana-os-engine.tar.gz bash</code></pre></div>
         <h4>Depois</h4>
         <p>Feche o terminal e abra um novo. Confira com <code>nrv --version</code>.</p>
       </div>
     </div>
 
     <div class="note">
-      <p><b>Sobre a tag do beta.</b> Ela começa com <code>v</code> (<code><span class="beta-tag">v0.15.0-beta.10</span></code>). Sem o <code>v</code>, ou com uma versão que não existe, o download devolve 404. As versões publicadas estão na <a href="https://github.com/gutomec/nirvana-os-engine/releases">lista de releases</a>.</p>
+      <p><b>Sobre a tag do beta.</b> Ela começa com <code>v</code> (<code><span class="beta-tag">v0.15.0-beta.12</span></code>). Sem o <code>v</code>, ou com uma versão que não existe, o download devolve 404. As versões publicadas estão na <a href="https://github.com/gutomec/nirvana-os-engine/releases">lista de releases</a>.</p>
     </div>
 
     <h3>O que o instalador muda na sua máquina</h3>
@@ -319,26 +319,32 @@
   <!-- Briefs -->
   <section class="blk" id="briefs" aria-labelledby="briefs-h">
     <h2 id="briefs-h">7. Configure os briefs do projeto</h2>
-    <p>Duas coisas definem o que o seu agente entrega às empresas que ele despacha.</p>
-    <h3>A altitude do brief</h3>
-    <p>Uma configuração por projeto, gravada em <code>.nirvana/config.yaml</code> (rode dentro de um projeto preparado com <code>nrv init</code>):</p>
-    <div class="code"><pre><code>nrv config set briefing.altitude guided --project</code></pre></div>
-    <div class="code"><pre><code>nrv config get briefing.altitude</code></pre></div>
+    <p>Duas coisas definem o que o seu agente entrega às empresas que ele despacha. <strong>Os templates existem a partir do beta 0.15.0-beta.11.</strong> Na versão estável (0.14.x), o nível de detalhe do brief se escolhe com <code>nrv config set briefing.altitude &lt;outcome|guided|prescriptive&gt; --project</code>.</p>
+    <h3>O template do brief</h3>
+    <p>O orquestrador escreve cada brief com um template: um arquivo markdown com a instrução e o esqueleto. O engine traz quatro:</p>
     <div class="table">
       <table>
-        <thead><tr><th scope="col">Valor</th><th scope="col">O que o brief leva</th></tr></thead>
+        <thead><tr><th scope="col">Template</th><th scope="col">O que o brief leva</th></tr></thead>
         <tbody>
-          <tr><td><code>outcome</code> (padrão)</td><td>o resultado, os limites e a definição de pronto</td></tr>
-          <tr><td><code>guided</code></td><td>o mesmo, mais a estrutura que o autor sugere</td></tr>
-          <tr><td><code>prescriptive</code></td><td>critérios por item, a lista de artefatos e o método (a forma do brief até a 0.13.9)</td></tr>
+          <tr><td><code>slim</code> (padrão)</td><td>linhas curtas com rótulo: Goal, Request (o caminho de um arquivo com as palavras do usuário, sem edição), Decisions, Inputs, Deliver, Done when e Session</td></tr>
+          <tr><td><code>standard</code></td><td>as seis seções: Request verbatim, Decisions, Your part, Inputs, Done when e Output</td></tr>
+          <tr><td><code>detailed</code></td><td>as seis seções, mais a estrutura sugerida e o método, um critério por item e cada artefato nomeado</td></tr>
+          <tr><td><code>karpathy</code></td><td>o slim mais uma explicação de volta: um resumo em linguagem simples, um diagrama e, quando ajuda, uma página HTML explicativa. Inspirado no <a href="https://x.com/karpathy/status/2105819303471976479">post de Andrej Karpathy no X</a> e no <a href="https://karpathy.bearblog.dev/year-in-review-2025/">2025 Year in Review</a> dele. Gasta mais tokens por entrega, por isso nunca é o padrão</td></tr>
         </tbody>
       </table>
     </div>
-    <p>Na 0.14.11, um pedido que diz "brief detalhado" sobe a altitude só naquela execução, e "brief simples" baixa.</p>
+    <p>Escolha um por projeto, gravado em <code>.nirvana/config.yaml</code> (rode dentro de um projeto preparado com <code>nrv init</code>):</p>
+    <div class="code"><pre><code>nrv config set briefing.template detailed --project</code></pre></div>
+    <div class="code"><pre><code>nrv brief templates</code></pre></div>
+    <h3>Um template seu</h3>
+    <p>Copie um template e edite a cópia. No projeto ela fica em <code>.nirvana/brief-templates/</code>; com <code>--global</code>, em <code>~/.nirvana/brief-templates/</code>, para todos os projetos:</p>
+    <div class="code"><pre><code>nrv brief init juridico --from standard --project</code></pre></div>
+    <div class="code"><pre><code>nrv config set briefing.template juridico --project</code></pre></div>
+    <p>Um nome é procurado primeiro no projeto, depois na pasta global e por último no engine, então dá para trocar o <code>slim</code> num projeto só. Mantenha os rótulos que a lista <code>required</code> do arquivo nomeia (no mínimo Request e Done when): o engine lê esses rótulos. A antiga <code>briefing.altitude</code> continua valendo como apelido obsoleto enquanto <code>briefing.template</code> estiver vazio: <code>outcome</code> vira <code>standard</code> e <code>prescriptive</code> vira <code>detailed</code>.</p>
     <h3>Regras do projeto em texto livre</h3>
     <p>Escreva no <code>CLAUDE.md</code>, <code>AGENTS.md</code> ou <code>GEMINI.md</code> do projeto (o que o seu agente lê), <strong>acima</strong> da primeira linha que começa com <code>&lt;!-- nirvana-os:</code>. Dali para baixo é o bloco do Nirvana, que o <code>nrv init</code> reescreve quando o texto do engine muda. O agente lê esses arquivos ao abrir a sessão e leva as suas regras para os briefs que escreve.</p>
     <p>Em linguagem natural:</p>
-    <p class="say">"Neste projeto, use briefs guiados."</p>
+    <p class="say">"Neste projeto, use briefs detalhados."</p>
     <p class="say">"Acrescente ao CLAUDE.md deste projeto, acima do bloco do Nirvana: todo entregável em português do Brasil, com fontes datadas."</p>
   </section>
 
@@ -353,7 +359,7 @@
       <dd>Aparece quando você fecha o Terminal. É o Terminal encerrando o shell, não um erro.</dd>
 
       <dt>A instalação do beta devolve 404</dt>
-      <dd>A tag está sem o <code>v</code> do começo (<code><span class="beta-tag">v0.15.0-beta.10</span></code>) ou a versão não existe. Confira na <a href="https://github.com/gutomec/nirvana-os-engine/releases">lista de releases</a>.</dd>
+      <dd>A tag está sem o <code>v</code> do começo (<code><span class="beta-tag">v0.15.0-beta.12</span></code>) ou a versão não existe. Confira na <a href="https://github.com/gutomec/nirvana-os-engine/releases">lista de releases</a>.</dd>
 
       <dt><code>nrv: command not found</code></dt>
       <dd>O terminal ainda não tem <code>~/.local/bin</code> no PATH. Feche e abra um novo. Se continuar, acrescente <code>export PATH="$HOME/.local/bin:$PATH"</code> ao perfil do seu shell (macOS, Linux e WSL).</dd>
