@@ -145,18 +145,18 @@ Nirvana-OS نظام متعدد الوكلاء، أصيل في Bun ومستقل �
 
 ## إصدارات بيتا
 
-إصدارات بيتا هي prereleases على GitHub. الأمر ذو السطر الواحد يثبّت أحدث إصدار مستقر، لذا يُثبَّت إصدار بيتا بتثبيت ملف tarball الخاص به. إصدار بيتا الحالي هو `v0.15.0-beta.11`. يبدأ الوسم بالحرف `v`؛ ومن دونه يعيد التنزيل 404. لإصدار بيتا أحدث، استبدل هذا الوسم بوسم من [قائمة الإصدارات](https://github.com/gutomec/nirvana-os-engine/releases).
+إصدارات بيتا هي prereleases على GitHub. الأمر ذو السطر الواحد يثبّت أحدث إصدار مستقر، لذا يُثبَّت إصدار بيتا بتثبيت ملف tarball الخاص به. إصدار بيتا الحالي هو `v0.15.0-beta.12`. يبدأ الوسم بالحرف `v`؛ ومن دونه يعيد التنزيل 404. لإصدار بيتا أحدث، استبدل هذا الوسم بوسم من [قائمة الإصدارات](https://github.com/gutomec/nirvana-os-engine/releases).
 
 macOS وLinux وWSL:
 
 ```bash
-curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.11/nirvana-os-engine.tar.gz bash
+curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.12/nirvana-os-engine.tar.gz bash
 ```
 
 Windows (PowerShell)، في سطر واحد:
 
 ```powershell
-$env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.11/nirvana-os-engine.tar.gz'; irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
+$env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.12/nirvana-os-engine.tar.gz'; irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
 ```
 
 بعد ذلك، إن بقيت النافذة مفتوحة، شغّل `Remove-Item Env:NIRVANA_ENGINE_URL`: ما دام المتغير موجوداً، يعيد `nrv update` تثبيت ملف tarball المثبَّت. تستخدم أوامر Windows علامات اقتباس مفردة لأن علامة اقتباس مزدوجة تضيع أثناء اللصق تترك PowerShell منتظراً عند `>>`.
