@@ -76,7 +76,10 @@ describe.skipIf(IS_WINDOWS)("a dispatch whose worker hangs", () => {
     expect(status.stall.rule).toBe("never_started");
     expect(status.next.join("\n")).toContain(`nrv run-track status ${projectId}`);
 
-    const row = findByTraceId(openLedger(db), projectId)!;
+    const ledger = openLedger(db);
+    const row = findByTraceId(ledger, projectId)!;
+    // Windows cannot delete a SQLite file that is still open (afterEach).
+    ledger.close();
     expect(row.state).toBe("stalled");
     expect(row.meta.salvaged).toBe(true);
     expect(pidAlive(Number(fs.readFileSync(pidFile, "utf8")))).toBe(false);

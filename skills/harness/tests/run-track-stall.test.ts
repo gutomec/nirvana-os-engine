@@ -24,6 +24,8 @@ const ENV = { ...process.env, NIRVANA_RUN_LEDGER_DB: DB, NIRVANA_PROJECT_ROOT: P
 
 afterAll(() => {
   for (const pid of started) { try { process.kill(pid, "SIGKILL"); } catch { /* gone */ } }
+  // Windows cannot delete a SQLite file that is still open.
+  openLedger(DB).close();
   try { fs.rmSync(TMP, { recursive: true, force: true }); } catch { /* best-effort */ }
 });
 

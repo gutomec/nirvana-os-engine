@@ -388,15 +388,21 @@ describe("the silence budget replaces the 7-day deadline", () => {
     });
     c.hooks.now = () => t.now;
     c.hooks.stallThresholds = { silenceMs: 3 * 60_000, noStartMs: 0 };
-    const r = runOrcaWorker(base({ cwd: tmp, ledger: { runId: row.run_id, dbPath: db } }), c.hooks)!;
-    expect(recordedDuringWait).toMatchObject({ terminal: "term_1", run_id: "run_1", task_id: "task_1", dispatch_id: "ctx_1" });
-    expect(r.stalled?.rule).toBe("silence");
-    const after = getRun(h, row.run_id)!;
-    expect(after.state).toBe("stalled");
-    expect((after.meta.stall as any).decided_by).toBe("orca-wait");
-    expect(after.meta.salvaged).toBe(true);
-    expect((after.meta.orca_worker as any).closed_at).toBeTruthy();
-    fs.rmSync(tmp, { recursive: true, force: true });
+    try {
+      const r = runOrcaWorker(base({ cwd: tmp, ledger: { runId: row.run_id, dbPath: db } }), c.hooks)!;
+      expect(recordedDuringWait).toMatchObject({ terminal: "term_1", run_id: "run_1", task_id: "task_1", dispatch_id: "ctx_1" });
+      expect(r.stalled?.rule).toBe("silence");
+      const after = getRun(h, row.run_id)!;
+      expect(after.state).toBe("stalled");
+      expect((after.meta.stall as any).decided_by).toBe("orca-wait");
+      expect(after.meta.salvaged).toBe(true);
+      expect((after.meta.orca_worker as any).closed_at).toBeTruthy();
+    } finally {
+      // Windows cannot delete a SQLite file that is still open. runOrcaWorker
+      // opened the same path, and openLedger caches by path, so this closes both.
+      h.close();
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });
 
