@@ -51,7 +51,7 @@ O engine vem sem conteúdo. Você cria empresas, squads e clones pedindo ao seu 
 
 ## Instalação
 
-Este README descreve o beta da 0.15, `v0.15.0-beta.9`. O comando do topo desta página instala a última release **estável** (0.14.11); para instalar este beta, use os comandos em [Betas](#betas). Node não é necessário. Se faltar o [Bun](https://bun.sh), qualquer um dos dois instaladores o coloca na sua pasta de usuário (`~/.bun`), sem sudo e sem administrador, e continua.
+Este README descreve o beta da 0.15, `v0.15.0-beta.10`. O comando do topo desta página instala a última release **estável** (0.14.11); para instalar este beta, use os comandos em [Betas](#betas). Node não é necessário. Se faltar o [Bun](https://bun.sh), qualquer um dos dois instaladores o coloca na sua pasta de usuário (`~/.bun`), sem sudo e sem administrador, e continua.
 
 Antes de rodar:
 
@@ -68,7 +68,7 @@ O que ele muda na sua máquina:
 - hooks de auditoria no Claude Code, no Antigravity e no Codex;
 - as pastas de conteúdo vazias `~/squads`, `~/businesses` e `~/businesses/_library/dna`.
 
-Rodar de novo é seguro. **Feche o terminal e abra um novo** para que o `nrv` entre no PATH, e confira com `nrv --version`; este beta mostra `0.15.0-beta.9`. Depois peça ao seu agente: *"Confira se o Nirvana-OS está instalado corretamente."* Ele roda `nrv doctor`. Saída 1 significa só avisos; saída 2 lista o que falhou.
+Rodar de novo é seguro. **Feche o terminal e abra um novo** para que o `nrv` entre no PATH, e confira com `nrv --version`; este beta mostra `0.15.0-beta.10`. Depois peça ao seu agente: *"Confira se o Nirvana-OS está instalado corretamente."* Ele roda `nrv doctor`. Saída 1 significa só avisos; saída 2 lista o que falhou.
 
 Pelo `curl | bash` o instalador não faz perguntas. Para escolher um perfil de desempenho já na instalação, passe-o adiante: troque o `bash` do fim por `bash -s -- --profile=balanced`. Você também pode defini-lo depois, pedindo ao seu agente (veja [Configurações](#configurações)).
 
@@ -154,18 +154,18 @@ Uma atualização nunca leva o engine para uma release mais antiga. Um engine es
 
 ## Betas
 
-Betas são prereleases no GitHub, e este README é o do beta: `v0.15.0-beta.9`. O comando do topo instala a última estável, então o beta é instalado fixando o tarball dele. A tag começa com `v`; sem ele o download devolve 404. Para um beta mais novo, troque essa tag por uma da [lista de releases](https://github.com/gutomec/nirvana-os-engine/releases).
+Betas são prereleases no GitHub, e este README é o do beta: `v0.15.0-beta.10`. O comando do topo instala a última estável, então o beta é instalado fixando o tarball dele. A tag começa com `v`; sem ele o download devolve 404. Para um beta mais novo, troque essa tag por uma da [lista de releases](https://github.com/gutomec/nirvana-os-engine/releases).
 
 macOS, Linux e WSL:
 
 ```bash
-curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.9/nirvana-os-engine.tar.gz bash
+curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.10/nirvana-os-engine.tar.gz bash
 ```
 
 Windows (PowerShell), numa linha só:
 
 ```powershell
-$env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.9/nirvana-os-engine.tar.gz'; irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
+$env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.10/nirvana-os-engine.tar.gz'; irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
 ```
 
 Depois, se a janela continuar aberta, rode `Remove-Item Env:NIRVANA_ENGINE_URL`: enquanto a variável existir, o `nrv update` reinstala o tarball fixado. Os comandos de Windows usam aspas simples porque uma aspa dupla perdida na colagem deixa o PowerShell esperando em `>>`.
@@ -247,4 +247,4 @@ Autor: **Luiz Gustavo Vieira Rodrigues (gutomec / Prospecteezy)**. Sem coautores
 
 Licença: a Nirvana-OS Sustainable Use License (SUL) v1.0. O código-fonte é publicado e abertamente legível, e o engine é grátis para usar. É source-available, não uma licença open-source aprovada pela OSI, e certos usos comerciais exigem uma licença comercial separada. Leia [LICENSE](./LICENSE) antes de confiar em qualquer resumo, incluindo este.
 
-Status: beta (0.x, atualmente 0.15.0-beta.9). O engine funciona hoje e instala em minutos. Espere a superfície continuar mudando até o 1.0.
+Status: beta (0.x, atualmente 0.15.0-beta.10). O engine funciona hoje e instala em minutos. Espere a superfície continuar mudando até o 1.0.

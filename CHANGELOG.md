@@ -6,6 +6,12 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that the
 one-line installers and pack setups consume.
 
+## 0.15.0-beta.10 — 2026-10-15
+
+### Windows: the run keeps track of its CLI worker
+
+On a busy Windows machine the heartbeat sidecar could miss the worker CLI's process id: the lookup is a PowerShell query with a short limit, and the new CPU sample ran first in the same tick and pushed it past its limit. A worker that printed once, early, was never looked up again, so the run had no worker pid, the supervisor took it for dead and relaunched it while the old CLI kept running, and nothing could stop that CLI. The sidecar now retries the lookup on quiet ticks, gives a timed-out lookup the normal limit on the next try, and holds the CPU sample until the worker is found. Tests that left their SQLite ledger open, which Windows cannot delete, now close it.
+
 ## 0.15.0-beta.9 — 2026-10-15
 
 - Sessions: every run records a session it can be resumed from, headless or as an Orca worker, and a revision continues it. A fresh claude run is started under an id the engine chose (`--session-id <uuid>`), as are grok (`--session-id`), pi (`--session-id`, as before) and kimi (`--session`, which the adapter never passed); codex's id is read from its `--json` stream whatever the exit code, else from its `sessions/` file for the run's folder; agy's from the stream's first event when no result arrives. A run that failed, was killed or timed out keeps its id once the runtime created the session; a claude run that died before its first turn invents none. qwen and opencode still return none.

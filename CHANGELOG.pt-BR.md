@@ -6,6 +6,12 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que os instaladores de uma linha e os setups de pack consomem.
 
+## 0.15.0-beta.10 — 2026-10-15
+
+### Windows: a execução não perde mais o worker do CLI
+
+Num Windows sobrecarregado, o processo auxiliar de batimento podia perder o id do processo do CLI que faz o trabalho: a busca é uma consulta do PowerShell com limite curto, e a nova amostra de CPU rodava antes, no mesmo ciclo, e a fazia estourar o limite. Um worker que imprimia uma vez, logo no início, nunca mais era procurado; a execução ficava sem o pid do worker, o supervisor a tomava por morta e a relançava enquanto o CLI antigo continuava rodando, e nada conseguia parar esse CLI. Agora a busca é repetida nos ciclos sem atividade, uma busca que estourou o limite ganha o limite normal na tentativa seguinte, e a amostra de CPU espera o worker ser encontrado. Os testes que deixavam o ledger SQLite aberto, que o Windows não consegue apagar, passaram a fechá-lo.
+
 ## 0.15.0-beta.9 — 2026-10-15
 
 - Sessões: toda execução registra uma sessão da qual pode ser retomada, headless ou como worker do Orca, e uma revisão a continua. Uma execução nova do claude começa com um id escolhido pelo engine (`--session-id <uuid>`), assim como o grok (`--session-id`), o pi (`--session-id`, como já era) e o kimi (`--session`, que o adapter nunca passava); o id do codex é lido do fluxo `--json` qualquer que seja o código de saída, senão do arquivo em `sessions/` da pasta da execução; o do agy, do primeiro evento do fluxo quando nenhum resultado chega. Uma execução que falhou, foi morta ou estourou o tempo mantém o id assim que o runtime criou a sessão; uma execução do claude que morreu antes do primeiro turno não inventa nenhum. qwen e opencode continuam sem id.

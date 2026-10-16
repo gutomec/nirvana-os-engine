@@ -51,7 +51,7 @@ Nirvana-OS نظام متعدد الوكلاء، أصيل في Bun ومستقل �
 
 ## التثبيت
 
-يصف هذا الملف README الإصدار التجريبي من 0.15، أي `v0.15.0-beta.9`. الأمر ذو السطر الواحد في أعلى هذه الصفحة يثبّت أحدث إصدار **مستقر** (0.14.11)؛ ولتثبيت هذا الإصدار التجريبي استخدم الأوامر في [إصدارات بيتا](#إصدارات-بيتا). لا حاجة إلى Node. إذا لم يكن [Bun](https://bun.sh) موجوداً، يضعه أيٌّ من المثبّتَين في مجلد المستخدم (`~/.bun`) دون sudo ودون صلاحيات المسؤول ويتابع عمله.
+يصف هذا الملف README الإصدار التجريبي من 0.15، أي `v0.15.0-beta.10`. الأمر ذو السطر الواحد في أعلى هذه الصفحة يثبّت أحدث إصدار **مستقر** (0.14.11)؛ ولتثبيت هذا الإصدار التجريبي استخدم الأوامر في [إصدارات بيتا](#إصدارات-بيتا). لا حاجة إلى Node. إذا لم يكن [Bun](https://bun.sh) موجوداً، يضعه أيٌّ من المثبّتَين في مجلد المستخدم (`~/.bun`) دون sudo ودون صلاحيات المسؤول ويتابع عمله.
 
 قبل التشغيل:
 
@@ -68,7 +68,7 @@ Nirvana-OS نظام متعدد الوكلاء، أصيل في Bun ومستقل �
 - خطافات تدقيق في Claude Code وAntigravity وCodex؛
 - مجلدات المحتوى الفارغة `~/squads` و`~/businesses` و`~/businesses/_library/dna`.
 
-إعادة تشغيله آمنة. **أغلق الطرفية وافتح واحدة جديدة** ليصبح `nrv` على PATH لديك، وتحقّق بالأمر `nrv --version`؛ يُظهر هذا الإصدار التجريبي `0.15.0-beta.9`. ثم اطلب من وكيلك: *"تحقق من أن Nirvana-OS مثبّت بشكل صحيح."* فيشغّل `nrv doctor`. رمز الخروج 1 يعني تحذيرات فقط؛ والرمز 2 يسرد ما فشل.
+إعادة تشغيله آمنة. **أغلق الطرفية وافتح واحدة جديدة** ليصبح `nrv` على PATH لديك، وتحقّق بالأمر `nrv --version`؛ يُظهر هذا الإصدار التجريبي `0.15.0-beta.10`. ثم اطلب من وكيلك: *"تحقق من أن Nirvana-OS مثبّت بشكل صحيح."* فيشغّل `nrv doctor`. رمز الخروج 1 يعني تحذيرات فقط؛ والرمز 2 يسرد ما فشل.
 
 عبر `curl | bash` لا يطرح المثبّت أسئلة. لاختيار ملف أداء عند التثبيت، مرّره إليه: استبدل `bash` في آخر الأمر بـ `bash -s -- --profile=balanced`. يمكنك أيضاً ضبطه لاحقاً بطلب ذلك من وكيلك (انظر [الإعدادات](#الإعدادات)).
 
@@ -154,18 +154,18 @@ Nirvana-OS نظام متعدد الوكلاء، أصيل في Bun ومستقل �
 
 ## إصدارات بيتا
 
-إصدارات بيتا هي prereleases على GitHub، وهذا الملف README هو الخاص بإصدار بيتا: `v0.15.0-beta.9`. الأمر ذو السطر الواحد في الأعلى يثبّت أحدث إصدار مستقر، لذا يُثبَّت إصدار بيتا بتثبيت ملف tarball الخاص به. يبدأ الوسم بالحرف `v`؛ ومن دونه يعيد التنزيل 404. لإصدار بيتا أحدث، استبدل هذا الوسم بوسم من [قائمة الإصدارات](https://github.com/gutomec/nirvana-os-engine/releases).
+إصدارات بيتا هي prereleases على GitHub، وهذا الملف README هو الخاص بإصدار بيتا: `v0.15.0-beta.10`. الأمر ذو السطر الواحد في الأعلى يثبّت أحدث إصدار مستقر، لذا يُثبَّت إصدار بيتا بتثبيت ملف tarball الخاص به. يبدأ الوسم بالحرف `v`؛ ومن دونه يعيد التنزيل 404. لإصدار بيتا أحدث، استبدل هذا الوسم بوسم من [قائمة الإصدارات](https://github.com/gutomec/nirvana-os-engine/releases).
 
 macOS وLinux وWSL:
 
 ```bash
-curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.9/nirvana-os-engine.tar.gz bash
+curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.10/nirvana-os-engine.tar.gz bash
 ```
 
 Windows (PowerShell)، في سطر واحد:
 
 ```powershell
-$env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.9/nirvana-os-engine.tar.gz'; irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
+$env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.10/nirvana-os-engine.tar.gz'; irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
 ```
 
 بعد ذلك، إن بقيت النافذة مفتوحة، شغّل `Remove-Item Env:NIRVANA_ENGINE_URL`: ما دام المتغير موجوداً، يعيد `nrv update` تثبيت ملف tarball المثبَّت. تستخدم أوامر Windows علامات اقتباس مفردة لأن علامة اقتباس مزدوجة تضيع أثناء اللصق تترك PowerShell منتظراً عند `>>`.
@@ -247,4 +247,4 @@ $env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/d
 
 الترخيص: Nirvana-OS Sustainable Use License (SUL) v1.0. المصدر منشور ومقروء علناً، والمحرك مجاني الاستخدام. إنه متاح المصدر، لا ترخيص مفتوح المصدر معتمداً من OSI، وبعض الاستخدامات التجارية تتطلب ترخيصاً تجارياً منفصلاً. اقرأ [LICENSE](./LICENSE) قبل الاعتماد على أي ملخص، بما في ذلك هذا.
 
-الحالة: بيتا (0.x، حالياً 0.15.0-beta.9). المحرك يعمل اليوم ويُثبَّت في دقائق. توقّع أن تستمر الواجهة في التغيّر حتى الإصدار 1.0.
+الحالة: بيتا (0.x، حالياً 0.15.0-beta.10). المحرك يعمل اليوم ويُثبَّت في دقائق. توقّع أن تستمر الواجهة في التغيّر حتى الإصدار 1.0.
