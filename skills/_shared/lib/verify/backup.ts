@@ -7,6 +7,7 @@
 // byte-identical to the moment before the fixers ran.
 
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { paths } from "../bun-helpers.ts";
 import type { Kind } from "./types.ts";
@@ -16,6 +17,11 @@ const SKIP = new Set(["node_modules", ".git", "output", "outputs", ".DS_Store"])
 
 export function defaultBackupRoot(): string {
   const home = (paths as Record<string, string>).NIRVANA_HOME ?? ".";
+  // The same floor as defaultBaselinePath() (baseline.ts says why it compares
+  // with homedir()): a test's --fix loop never backs up into the user's home.
+  if (process.env.NIRVANA_TEST_LOGS_HOME && path.resolve(home) === path.resolve(os.homedir())) {
+    return path.join(path.resolve(process.env.NIRVANA_TEST_LOGS_HOME), "verify-backups");
+  }
   return path.join(home, ".nirvana", "verify-backups");
 }
 

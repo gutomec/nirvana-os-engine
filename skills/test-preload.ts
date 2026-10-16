@@ -40,6 +40,15 @@ if (!process.env.NIRVANA_RUN_LEDGER_DB) {
   process.env.NIRVANA_RUN_LEDGER_DB = path.join(process.env.HARNESS_LOGS_DIR!, "run-ledger.sqlite");
 }
 
+// And the squads' state (verify.json, activated.json). It is a variable and not
+// a floor because the paths.js a test loads is the INSTALLED one when the engine
+// is installed (bun-helpers.ts), and only the environment reaches both copies:
+// a gate run on a fixture squad named my-squad kept rewriting the owner's
+// ~/.nirvana/squads-state/my-squad/verify.json.
+if (!process.env.NIRVANA_STATE_DIR) {
+  process.env.NIRVANA_STATE_DIR = path.join(process.env.HARNESS_LOGS_DIR!, "squads-state");
+}
+
 // The LLM judge runs by default on report deliverables, through whatever
 // runtime is on PATH. On a machine that has a real one installed, every test
 // that reaches the gate would call it (and spend) where CI, with none installed,

@@ -84,7 +84,15 @@ const VIEWS_DIR = path.dirname(import.meta.path) + "/views";
 // This used to write ~/.claude/.glance.pid, which CREATED a Claude Code
 // directory on machines that never had Claude Code — the same "Claude as
 // substrate" assumption the installer carried. Honors NIRVANA_HOME.
-const PID_FILE = path.join(process.env.NIRVANA_HOME || os.homedir(), ".nirvana", ".glance.pid");
+//
+// Under `bun test` the user's home falls to the same floor state-db.js and
+// run-ledger.ts have: thirteen glance tests started a server and overwrote the
+// owner's live cockpit pid file with one naming a test process gone a second
+// later. Set only by skills/test-preload.ts.
+const PID_HOME = process.env.NIRVANA_HOME || os.homedir();
+export const PID_FILE = process.env.NIRVANA_TEST_LOGS_HOME && path.resolve(PID_HOME) === path.resolve(os.homedir())
+  ? path.join(path.resolve(process.env.NIRVANA_TEST_LOGS_HOME), ".glance.pid")
+  : path.join(PID_HOME, ".nirvana", ".glance.pid");
 const STARTED_AT = Date.now();
 
 // Neutral skills-tree root. Resolves to ~/.nirvana/skills when present so the
