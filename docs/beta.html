@@ -51,7 +51,7 @@
 <main class="wrap" id="conteudo">
   <section class="hero">
     <p class="eyebrow">Canal beta</p>
-    <h1>Beta <span class="beta-tag">v0.15.0-beta.10</span></h1>
+    <h1>Beta <span class="beta-tag">v0.15.0-beta.11</span></h1>
     <p class="lede">O beta é uma prerelease no GitHub: a próxima versão, já usável, que ainda pode mudar até virar estável. O comando padrão de instalação nunca instala um beta; você o escolhe fixando a versão. Este é o beta atual, e a tag dele começa com <code>v</code>.</p>
     <nav class="toc" aria-labelledby="toc-title">
       <h2 id="toc-title">Nesta página</h2>
@@ -106,13 +106,13 @@
       <div class="panel" role="tabpanel" id="beta-mac" aria-labelledby="beta-tab-mac" tabindex="0">
         <h3 class="panel-title">macOS</h3>
         <p>No Terminal:</p>
-        <div class="code"><pre><code>curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/<span class="beta-tag">v0.15.0-beta.10</span>/nirvana-os-engine.tar.gz bash</code></pre></div>
+        <div class="code"><pre><code>curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/<span class="beta-tag">v0.15.0-beta.11</span>/nirvana-os-engine.tar.gz bash</code></pre></div>
       </div>
 
       <div class="panel" role="tabpanel" id="beta-win" aria-labelledby="beta-tab-win" tabindex="0">
         <h3 class="panel-title">Windows</h3>
         <p>No PowerShell, sem administrador. É <strong>uma linha só</strong>, com aspas simples:</p>
-        <div class="code"><pre><code>$env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/download/<span class="beta-tag">v0.15.0-beta.10</span>/nirvana-os-engine.tar.gz'; irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex</code></pre></div>
+        <div class="code"><pre><code>$env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/download/<span class="beta-tag">v0.15.0-beta.11</span>/nirvana-os-engine.tar.gz'; irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex</code></pre></div>
         <p>Se a janela continuar aberta no fim, rode:</p>
         <div class="code"><pre><code>Remove-Item Env:NIRVANA_ENGINE_URL</code></pre></div>
         <p class="muted">Enquanto a variável existir na janela, o <code>nrv update</code> e o setup de pacotes reinstalam exatamente esse beta. Se o PowerShell mostrar <code>&gt;&gt;</code>, uma aspa se perdeu na colagem: aperte <kbd>Ctrl</kbd>+<kbd>C</kbd> e cole a linha de novo.</p>
@@ -121,20 +121,20 @@
       <div class="panel" role="tabpanel" id="beta-wsl" aria-labelledby="beta-tab-wsl" tabindex="0">
         <h3 class="panel-title">Windows com WSL</h3>
         <p>Dentro do Ubuntu, com <code>curl</code> e <code>unzip</code> instalados:</p>
-        <div class="code"><pre><code>curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/<span class="beta-tag">v0.15.0-beta.10</span>/nirvana-os-engine.tar.gz bash</code></pre></div>
+        <div class="code"><pre><code>curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/<span class="beta-tag">v0.15.0-beta.11</span>/nirvana-os-engine.tar.gz bash</code></pre></div>
         <p>O seu agente de IA também precisa estar instalado dentro do Ubuntu.</p>
       </div>
 
       <div class="panel" role="tabpanel" id="beta-linux" aria-labelledby="beta-tab-linux" tabindex="0">
         <h3 class="panel-title">Linux</h3>
         <p>Com <code>curl</code> e <code>unzip</code> instalados:</p>
-        <div class="code"><pre><code>curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/<span class="beta-tag">v0.15.0-beta.10</span>/nirvana-os-engine.tar.gz bash</code></pre></div>
+        <div class="code"><pre><code>curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/<span class="beta-tag">v0.15.0-beta.11</span>/nirvana-os-engine.tar.gz bash</code></pre></div>
       </div>
     </div>
 
     <p>Depois, feche o terminal, abra um novo e confira:</p>
     <div class="code"><pre><code>nrv --version</code></pre></div>
-    <p>A saída mostra <code>0.15.0-beta.10</code>. Um 404 no download quer dizer tag sem o <code>v</code> ou versão inexistente; as versões publicadas estão na <a href="https://github.com/gutomec/nirvana-os-engine/releases">lista de releases</a>.</p>
+    <p>A saída mostra <code>0.15.0-beta.11</code>. Um 404 no download quer dizer tag sem o <code>v</code> ou versão inexistente; as versões publicadas estão na <a href="https://github.com/gutomec/nirvana-os-engine/releases">lista de releases</a>.</p>
   </section>
 
   <section class="blk" id="perfil" aria-labelledby="perfil-h">

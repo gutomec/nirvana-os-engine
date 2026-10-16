@@ -51,7 +51,7 @@ The engine ships with no content. You create businesses, squads and clones by as
 
 ## Install
 
-This README describes the 0.15 beta, `v0.15.0-beta.10`. The one-liner at the top of this page installs the latest **stable** release (0.14.11); to install this beta, use the commands under [Betas](#betas). Node is not needed. If [Bun](https://bun.sh) is missing, either installer puts it in your user folder (`~/.bun`) without sudo or admin rights and carries on.
+This README describes the 0.15 beta, `v0.15.0-beta.11`. The one-liner at the top of this page installs the latest **stable** release (0.14.11); to install this beta, use the commands under [Betas](#betas). Node is not needed. If [Bun](https://bun.sh) is missing, either installer puts it in your user folder (`~/.bun`) without sudo or admin rights and carries on.
 
 Before you run it:
 
@@ -68,7 +68,7 @@ What it changes on your machine:
 - audit hooks in Claude Code, Antigravity and Codex;
 - the empty content folders `~/squads`, `~/businesses` and `~/businesses/_library/dna`.
 
-Running it again is safe. **Close the terminal and open a new one** so `nrv` is on your PATH, and check with `nrv --version`; this beta prints `0.15.0-beta.10`. Then ask your agent: *"Check that Nirvana-OS is installed correctly."* It runs `nrv doctor`. Exit 1 means warnings only; exit 2 lists what failed.
+Running it again is safe. **Close the terminal and open a new one** so `nrv` is on your PATH, and check with `nrv --version`; this beta prints `0.15.0-beta.11`. Then ask your agent: *"Check that Nirvana-OS is installed correctly."* It runs `nrv doctor`. Exit 1 means warnings only; exit 2 lists what failed.
 
 Through `curl | bash` the installer asks no questions. To pick a performance profile at install time, pass it through: replace the final `bash` with `bash -s -- --profile=balanced`. You can also set it later by asking your agent (see [Settings](#settings)).
 
@@ -154,18 +154,18 @@ An update never moves the engine to an older release. A stable engine moves only
 
 ## Betas
 
-Betas are GitHub prereleases, and this README is the beta's: `v0.15.0-beta.10`. The one-liner at the top installs the latest stable, so the beta is installed by pinning its tarball. The tag has a leading `v`; without it the download returns 404. For a newer beta, replace that tag with one from the [release list](https://github.com/gutomec/nirvana-os-engine/releases).
+Betas are GitHub prereleases, and this README is the beta's: `v0.15.0-beta.11`. The one-liner at the top installs the latest stable, so the beta is installed by pinning its tarball. The tag has a leading `v`; without it the download returns 404. For a newer beta, replace that tag with one from the [release list](https://github.com/gutomec/nirvana-os-engine/releases).
 
 macOS, Linux and WSL:
 
 ```bash
-curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.10/nirvana-os-engine.tar.gz bash
+curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.11/nirvana-os-engine.tar.gz bash
 ```
 
 Windows (PowerShell), as one line:
 
 ```powershell
-$env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.10/nirvana-os-engine.tar.gz'; irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
+$env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.11/nirvana-os-engine.tar.gz'; irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
 ```
 
 Then, if the window is still open, run `Remove-Item Env:NIRVANA_ENGINE_URL`: while the variable is set, `nrv update` reinstalls the pinned tarball. The Windows commands use single quotes because a double quote lost in a paste leaves PowerShell waiting on `>>`.
@@ -247,4 +247,4 @@ Author: **Luiz Gustavo Vieira Rodrigues (gutomec / Prospecteezy)**. No co-author
 
 License: the Nirvana-OS Sustainable Use License (SUL) v1.0. The source is published and openly readable, and the engine is free to use. It is source-available, not an OSI-approved open-source license, and certain commercial uses require a separate commercial license. Read [LICENSE](./LICENSE) before relying on any summary, including this one.
 
-Status: beta (0.x, currently 0.15.0-beta.10). The engine works today and installs in minutes. Expect the surface to keep moving until 1.0.
+Status: beta (0.x, currently 0.15.0-beta.11). The engine works today and installs in minutes. Expect the surface to keep moving until 1.0.
