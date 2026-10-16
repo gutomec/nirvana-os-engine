@@ -145,18 +145,18 @@ Uma atualização nunca leva o engine para uma release mais antiga. Um engine es
 
 ## Betas
 
-Betas são prereleases no GitHub. O comando de instalação instala a última estável, então um beta é instalado fixando o tarball dele. O beta atual é `v0.15.0-beta.10`. A tag começa com `v`; sem ele o download devolve 404. Para um beta mais novo, troque essa tag por uma da [lista de releases](https://github.com/gutomec/nirvana-os-engine/releases).
+Betas são prereleases no GitHub. O comando de instalação instala a última estável, então um beta é instalado fixando o tarball dele. O beta atual é `v0.15.0-beta.11`. A tag começa com `v`; sem ele o download devolve 404. Para um beta mais novo, troque essa tag por uma da [lista de releases](https://github.com/gutomec/nirvana-os-engine/releases).
 
 macOS, Linux e WSL:
 
 ```bash
-curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.10/nirvana-os-engine.tar.gz bash
+curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.11/nirvana-os-engine.tar.gz bash
 ```
 
 Windows (PowerShell), numa linha só:
 
 ```powershell
-$env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.10/nirvana-os-engine.tar.gz'; irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
+$env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.11/nirvana-os-engine.tar.gz'; irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
 ```
 
 Depois, se a janela continuar aberta, rode `Remove-Item Env:NIRVANA_ENGINE_URL`: enquanto a variável existir, o `nrv update` reinstala o tarball fixado. Os comandos de Windows usam aspas simples porque uma aspa dupla perdida na colagem deixa o PowerShell esperando em `>>`.

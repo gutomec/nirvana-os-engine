@@ -9,7 +9,7 @@ There are two release channels:
 | Channel | Version | Who it is for |
 |---|---|---|
 | Stable | 0.14.11 | everyone; the one-liner installs it |
-| Beta | `v0.15.0-beta.10` | people who want the 0.15 changes now (see [Install a beta](#install-a-beta)) |
+| Beta | `v0.15.0-beta.11` | people who want the 0.15 changes now (see [Install a beta](#install-a-beta)) |
 
 ## Before you start
 
@@ -50,18 +50,18 @@ Arguments reach the engine installer on macOS, Linux and WSL through `bash -s --
 
 ## Install a beta
 
-Betas are GitHub prereleases. The one-liner above always installs the latest stable, so a beta is installed by pointing `NIRVANA_ENGINE_URL` at its tarball. The current beta is **`v0.15.0-beta.10`**. The tag has a leading `v`; without it GitHub answers 404. To install a newer beta later, replace `v0.15.0-beta.10` in the commands below with its tag from the [release list](https://github.com/gutomec/nirvana-os-engine/releases).
+Betas are GitHub prereleases. The one-liner above always installs the latest stable, so a beta is installed by pointing `NIRVANA_ENGINE_URL` at its tarball. The current beta is **`v0.15.0-beta.11`**. The tag has a leading `v`; without it GitHub answers 404. To install a newer beta later, replace `v0.15.0-beta.11` in the commands below with its tag from the [release list](https://github.com/gutomec/nirvana-os-engine/releases).
 
 macOS, Linux and WSL:
 
 ```bash
-curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.10/nirvana-os-engine.tar.gz bash
+curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.11/nirvana-os-engine.tar.gz bash
 ```
 
 Windows, in PowerShell. Paste it as one line:
 
 ```powershell
-$env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.10/nirvana-os-engine.tar.gz'; irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
+$env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.11/nirvana-os-engine.tar.gz'; irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
 ```
 
 Then, if the window is still open:
@@ -72,7 +72,7 @@ Remove-Item Env:NIRVANA_ENGINE_URL
 
 In PowerShell the variable lives for the whole window, and while it is set `nrv update` and pack setups reinstall that pinned tarball. A window that closed took the variable with it. Every Windows command on this page uses single quotes on purpose: a double quote lost in a copy and paste (a chat app can drop it) leaves PowerShell waiting on a `>>` prompt.
 
-Close the terminal, open a new one and check that `nrv --version` shows `0.15.0-beta.10`.
+Close the terminal, open a new one and check that `nrv --version` shows `0.15.0-beta.11`.
 
 What changes on the beta:
 
@@ -295,7 +295,7 @@ The repair rewrites the value with the kind it had (a `REG_EXPAND_SZ` stays unex
 
 **macOS prints "Saving session… [Processo concluído]" after you close Terminal** (in English, "[Process completed]"). That is Terminal closing the shell. It is not an error.
 
-**The download returns 404.** A pinned `NIRVANA_ENGINE_URL` is missing the `v` before the version (`v0.15.0-beta.10`, not `0.15.0-beta.10`), or names a release that does not exist. Check the [release list](https://github.com/gutomec/nirvana-os-engine/releases).
+**The download returns 404.** A pinned `NIRVANA_ENGINE_URL` is missing the `v` before the version (`v0.15.0-beta.11`, not `0.15.0-beta.11`), or names a release that does not exist. Check the [release list](https://github.com/gutomec/nirvana-os-engine/releases).
 
 **`nrv: command not found`.** `~/.local/bin` is not on the PATH of this terminal. Close it and open a new one; if `nrv` is still missing, add `export PATH="$HOME/.local/bin:$PATH"` to your shell profile.
 
