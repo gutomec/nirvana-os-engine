@@ -21,6 +21,8 @@ const started: number[] = [];
 
 afterAll(() => {
   for (const pid of started) { try { process.kill(pid, "SIGKILL"); } catch { /* gone */ } }
+  // Windows cannot delete a SQLite file that is still open.
+  for (const db of [DB, path.join(TMP, "ledger-procs.sqlite")]) openLedger(db).close();
   try { fs.rmSync(TMP, { recursive: true, force: true }); } catch { /* best-effort */ }
 });
 

@@ -184,6 +184,51 @@ describe("dispatch child identity — the kill targets the CLI child, not the di
       } catch { /* already gone or never existed */ }
     }
   }, spawnBudgetMs(2) + 15_000);
+
+  test("a CLI child that starts after the sidecar's first look and never prints is still found", async () => {
+    // The sidecar's first lookup sees no child yet, and the child never shows
+    // activity: before the fix that was the sidecar's last lookup, and the row
+    // never named the worker (on Windows the same happened when the one lookup
+    // timed out behind the stall guard's CPU query).
+    const dbPath = path.join(TMP, "late-child-ledger.sqlite");
+    const runIdFile = path.join(TMP, "late-run-id.txt");
+    const childPidFile = path.join(TMP, "late-child.pid");
+    const parentScript = path.join(TMP, "late-parent.ts");
+    fs.writeFileSync(parentScript, `
+      import { openLedger, openRun, markState } from ${JSON.stringify(RUN_LEDGER_TS)};
+      import { spawn, spawnSync } from "node:child_process";
+      import * as fs from "node:fs";
+
+      const h = openLedger(process.env.E2E_DB!);
+      const row = openRun(h, { targetSlug: "late", targetKind: "business", runtime: "grok-cli", initialLeaseSec: 30 });
+      markState(h, row.run_id, "running");
+      fs.writeFileSync(process.env.E2E_RUNID_FILE!, row.run_id);
+      spawn(process.execPath, [${JSON.stringify(RUN_LEDGER_TS)}, "heartbeat", "--run-id", row.run_id, "--db", process.env.E2E_DB!,
+        "--interval", "150", "--lease", "30", "--parent", String(process.pid)], { stdio: "ignore" });
+      // Past the sidecar's first tick, then a worker that says nothing at all.
+      await Bun.sleep(1500);
+      spawnSync(process.execPath, ["-e", "require('node:fs').writeFileSync(process.env.E2E_CHILD_PID_FILE, String(process.pid)); await Bun.sleep(8000)"], { stdio: "ignore", env: process.env });
+    `);
+    const parent = spawn(process.execPath, [parentScript], {
+      detached: true, stdio: "ignore",
+      env: { ...process.env, E2E_DB: dbPath, E2E_RUNID_FILE: runIdFile, E2E_CHILD_PID_FILE: childPidFile },
+    });
+    parent.unref();
+    let h: LedgerHandle | null = null;
+    try {
+      await waitFor(() => fs.existsSync(runIdFile) && fs.existsSync(childPidFile));
+      const runId = fs.readFileSync(runIdFile, "utf8").trim();
+      const childPid = Number(fs.readFileSync(childPidFile, "utf8").trim());
+      h = openLedger(dbPath);
+      let row = getRun(h, runId);
+      await waitFor(() => { row = getRun(h!, runId); return !!row?.child_pid; });
+      expect(row?.child_pid).toBe(childPid);
+    } finally {
+      try { process.kill(parent.pid!, "SIGKILL"); } catch { /* already gone */ }
+      try { process.kill(Number(fs.readFileSync(childPidFile, "utf8").trim()), "SIGKILL"); } catch { /* already gone */ }
+      h?.close();
+    }
+  }, spawnBudgetMs(3) + 15_000);
 });
 
 describe("dispatch child identity — pid-recycle guard", () => {

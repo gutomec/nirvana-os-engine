@@ -65,6 +65,8 @@ beforeAll(() => {
 afterAll(() => {
   for (const k of KEYS) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; }
   onLedgerStall(null);
+  // Windows cannot delete a SQLite file that is still open.
+  openLedger(DB).close();
   try { fs.rmSync(TMP, { recursive: true, force: true }); } catch { /* best-effort */ }
 });
 

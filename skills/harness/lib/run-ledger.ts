@@ -502,19 +502,19 @@ function processStartedAtWindows(pid: number, timeoutMs = WINDOWS_PS_TIMEOUT_MS)
  *  comment above `WINDOWS_PS_TIMEOUT_MS`), filtered server-side so Windows
  *  does the search instead of shipping the whole process table over stdout
  *  for this process to re-filter, the way the POSIX branch does with `ps -A`. */
-function findChildPidWindows(parentPid: number, excludePid?: number, timeoutMs = WINDOWS_PS_TIMEOUT_MS): number | null {
+function lookupChildPidWindows(parentPid: number, excludePid?: number, timeoutMs = WINDOWS_PS_TIMEOUT_MS): ChildPidLookup {
   try {
     const r = spawnSync("powershell", [
       "-NoProfile", "-NonInteractive", "-Command",
       `(Get-CimInstance Win32_Process -Filter "ParentProcessId=${parentPid}" -ErrorAction SilentlyContinue).ProcessId`,
     ], { windowsHide: true, encoding: "utf8", timeout: timeoutMs });
-    if (r.status !== 0) return null;
+    if (r.status !== 0) return { pid: null, answered: false };
     for (const line of (r.stdout || "").trim().split(/\r?\n/)) {
       const pid = parseInt(line.trim(), 10);
-      if (Number.isFinite(pid) && pid !== excludePid) return pid;
+      if (Number.isFinite(pid) && pid !== excludePid) return { pid, answered: true };
     }
-    return null;
-  } catch { return null; }
+    return { pid: null, answered: true };
+  } catch { return { pid: null, answered: false }; }
 }
 
 /** The OS's own process-start timestamp for `pid` — `ps -o lstart=` on POSIX,
@@ -545,19 +545,29 @@ export function processStartedAt(pid: number, timeoutMs?: number): string | null
  *  ledgered dispatcher at a time. `timeoutMs` (Windows only), same purpose as
  *  `processStartedAt`'s. */
 export function findChildPid(parentPid: number, excludePid?: number, timeoutMs?: number): number | null {
-  if (!Number.isFinite(parentPid) || parentPid <= 0) return null;
-  if (process.platform === "win32") return findChildPidWindows(parentPid, excludePid, timeoutMs);
+  return lookupChildPid(parentPid, excludePid, timeoutMs).pid;
+}
+
+/** `findChildPid` that also says whether the process table answered at all:
+ *  `answered: false` is "could not ask" (PowerShell timed out or failed, no
+ *  `ps`), which the heartbeat retries; `answered: true` with no pid is "no
+ *  such child right now". */
+export interface ChildPidLookup { pid: number | null; answered: boolean }
+
+export function lookupChildPid(parentPid: number, excludePid?: number, timeoutMs?: number): ChildPidLookup {
+  if (!Number.isFinite(parentPid) || parentPid <= 0) return { pid: null, answered: true };
+  if (process.platform === "win32") return lookupChildPidWindows(parentPid, excludePid, timeoutMs);
   try {
     const r = spawnSync("ps", ["-A", "-o", "pid=,ppid="], { windowsHide: true, encoding: "utf8" });
-    if (r.status !== 0) return null;
+    if (r.status !== 0) return { pid: null, answered: false };
     for (const line of (r.stdout || "").trim().split("\n")) {
       const [pidStr, ppidStr] = line.trim().split(/\s+/);
       const pid = parseInt(pidStr, 10);
       const ppid = parseInt(ppidStr, 10);
-      if (ppid === parentPid && Number.isFinite(pid) && pid !== excludePid) return pid;
+      if (ppid === parentPid && Number.isFinite(pid) && pid !== excludePid) return { pid, answered: true };
     }
-    return null;
-  } catch { return null; }
+    return { pid: null, answered: true };
+  } catch { return { pid: null, answered: false }; }
 }
 
 /** Ends `pid` and what it started. Windows has no process groups: `process.kill`
@@ -1421,12 +1431,16 @@ const HEARTBEAT_DISCOVERY_TIMEOUT_MS = 1500;
  *  shorten it through NIRVANA_HEARTBEAT_CPU_SAMPLE_MS. */
 const CPU_SAMPLE_MS = Math.max(0, Number(process.env.NIRVANA_HEARTBEAT_CPU_SAMPLE_MS) || 60_000);
 
-/** How many ticks get a discovery attempt before the sidecar stops trying —
+/** How many child-pid lookups the sidecar makes before it stops trying —
  *  more than one, because the real CLI child can still be mid-spawn on the
- *  very first tick (see heartbeatMain); a small fixed number rather than a
- *  wall-clock deadline, so the total cost stays bounded regardless of how
- *  small --interval is. */
-const MAX_DISCOVERY_ATTEMPTS = 2;
+ *  very first tick, and on Windows a lookup can time out on a loaded machine
+ *  (see heartbeatMain); a small fixed number rather than a wall-clock
+ *  deadline, so the total cost stays bounded regardless of how small
+ *  --interval is. */
+const MAX_DISCOVERY_ATTEMPTS = 5;
+
+/** Least time between two lookups when the tick saw no activity. */
+const DISCOVERY_RETRY_MS = 2_000;
 
 function heartbeatArg(name: string): string | undefined {
   const i = process.argv.indexOf(name);
@@ -1491,33 +1505,24 @@ export function heartbeatMain(): void {
   // direct child of --parent and hands the ledger the pid the supervisor is
   // actually allowed to signal.
   //
-  // At most MAX_DISCOVERY_ATTEMPTS tries, and — this is the part that
-  // matters — only on a tick that ALREADY found activity (or is the very
-  // first tick, quiet or not — see below), after that tick's own
-  // renewLease, never on a LATER quiet tick. `findChildPid`/`processStartedAt`
-  // are a `ps` call on POSIX (single-digit ms) but a PowerShell spawn on
-  // Windows (hundreds of ms, sometimes several seconds under load).
-  // Attempting on every tick — quiet ones included — let that cost land on
-  // the EXACT ticks a quiet run depends on: each attempt still ran after that
-  // tick's own work, so no renewal was ever blocked, but a slow attempt
-  // sitting on what should have been a fast, empty tick could itself stand in
-  // for the very silence the stall detector is watching for, pushing the next
-  // real check late enough to miss the window — observed on a run whose child
-  // lived 3.4s: the first renewal landed, then attempts kept firing through
-  // the run's quiet stretch and the stall it was supposed to prove was never
-  // reached in time. Confining LATER attempts to activity ticks keeps every
-  // later quiet tick exactly as fast as it always was.
+  // At most MAX_DISCOVERY_ATTEMPTS lookups: the first tick, every tick that
+  // found activity, and a quiet tick at least DISCOVERY_RETRY_MS after the
+  // previous lookup. `findChildPid` is a `ps` call on POSIX (single-digit ms)
+  // but a PowerShell spawn on Windows (hundreds of ms, several seconds under
+  // load), so lookups are spaced and counted rather than made on every tick.
+  // A quiet tick must still get one: a child whose entire output is one line
+  // written at startup (a fake CLI's single tick, a real one's opening log
+  // line) can finish writing it before this process takes its `lastBytes`
+  // baseline, and never shows activity again. A lookup that timed out says
+  // nothing about the child, and the next one gets the standalone budget.
+  // Each lookup runs last in its tick, after that tick's renewLease.
   //
-  // The FIRST tick is exempt from that gate, activity or not: a child whose
-  // entire output is one line written at startup (a fake CLI's single tick,
-  // a real one's opening log line) can finish writing it before the sidecar —
-  // a separate, independently-started process — even captures its OWN
-  // `lastBytes` baseline, so `activity` reads false for that write on every
-  // tick for the rest of the run, forever, and a purely activity-gated
-  // sidecar would never get a SINGLE chance to discover the child. One
-  // unconditional try up front survives that; a small FIXED attempt count
-  // still bounds the cost, and every attempt after the first still needs
-  // genuine activity to earn one.
+  // The CPU sample waits until discovery is settled: on Windows
+  // both are PowerShell + CIM queries, and a full-table CPU query stacked in
+  // the same tick ahead of a 1.5 s lookup made the lookup time out on a loaded
+  // runner (0.14.13 CI). Lost identity is not cosmetic: a row with no
+  // child_pid reads as a dead run to the supervisor, which relaunches it
+  // beside the CLI still running, and nothing can stop that CLI by pid.
   let discoveryAttempts = 0;
   let childDiscovered = false;
   let workerPid = 0;
@@ -1532,6 +1537,9 @@ export function heartbeatMain(): void {
   // renews the lease after it stops.
   let cpuBaseline: { root: number; ms: number; at: number } | null = null;
   let cpuSampledAt = 0;
+  let lastLookupAt = 0;
+  let discoveryTimeoutMs = HEARTBEAT_DISCOVERY_TIMEOUT_MS;
+  const discoveryPending = (): boolean => !childDiscovered && parentPid > 0 && discoveryAttempts < MAX_DISCOVERY_ATTEMPTS;
 
   for (;;) {
     Bun.sleepSync(intervalMs);
@@ -1557,7 +1565,7 @@ export function heartbeatMain(): void {
     let thinking = false;
     let thinkingHard = false;
     if (wrote) cpuBaseline = null;
-    else if (parentPid > 0 && now - cpuSampledAt >= CPU_SAMPLE_MS) {
+    else if (parentPid > 0 && !discoveryPending() && now - cpuSampledAt >= CPU_SAMPLE_MS) {
       cpuSampledAt = now;
       // The discovered worker, or the dispatcher's tree without this sidecar:
       // also when the discovered pid has exited, since it can be a CLI
@@ -1644,20 +1652,17 @@ export function heartbeatMain(): void {
       }
     }
 
-    if (!childDiscovered && parentPid > 0 && discoveryAttempts < MAX_DISCOVERY_ATTEMPTS
-        && (activity || discoveryAttempts === 0)) {
+    if (discoveryPending() && (activity || discoveryAttempts === 0 || Date.now() - lastLookupAt >= DISCOVERY_RETRY_MS)) {
       discoveryAttempts++;
-      // A tight budget (vs. the generous standalone default): this is a
-      // best-effort attempt sitting inside a liveness loop, not a caller
-      // that can afford to wait out a slow PowerShell spawn. Timing out
-      // just means this attempt found nothing — degrades exactly like "no
-      // ps on this platform" always has, and the next activity tick gets
-      // another try.
-      const childPid = findChildPid(parentPid, process.pid, HEARTBEAT_DISCOVERY_TIMEOUT_MS);
-      if (childPid) {
-        recordChildPid(handle, runId, childPid, processStartedAt(childPid, HEARTBEAT_DISCOVERY_TIMEOUT_MS));
+      lastLookupAt = Date.now();
+      const found = lookupChildPid(parentPid, process.pid, discoveryTimeoutMs);
+      if (found.pid) {
+        recordChildPid(handle, runId, found.pid, processStartedAt(found.pid, HEARTBEAT_DISCOVERY_TIMEOUT_MS));
         childDiscovered = true;
-        workerPid = childPid;
+        workerPid = found.pid;
+      } else if (!found.answered) {
+        // Timed out or failed: the next lookup gets the standalone budget.
+        discoveryTimeoutMs = WINDOWS_PS_TIMEOUT_MS;
       }
     }
   }

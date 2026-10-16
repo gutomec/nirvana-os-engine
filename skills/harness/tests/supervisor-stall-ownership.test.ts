@@ -20,16 +20,19 @@ process.env.NIRVANA_SKILLS_DIR = path.resolve(import.meta.dir, "..", "..");
 process.env.NIRVANA_RUN_LEDGER_DB = path.join(TMP, "ledger.sqlite");
 
 import { resumeOutcome, sweep, type RecoveryResult } from "../scripts/supervisor.ts";
-import { getRun, markState, openLedger, openRun, type RunRow } from "../lib/run-ledger.ts";
+import { getRun, markState, openLedger, openRun, type LedgerHandle, type RunRow } from "../lib/run-ledger.ts";
 
 const children: ChildProcess[] = [];
 afterAll(() => {
   for (const c of children) { try { c.kill("SIGKILL"); } catch { /* gone */ } }
+  // Windows cannot delete a SQLite file that is still open.
+  for (const h of handles) h.close();
   try { fs.rmSync(TMP, { recursive: true, force: true }); } catch { /* best-effort */ }
 });
 
 let seq = 0;
-function ledger() { return openLedger(path.join(TMP, `case-${seq++}.sqlite`)); }
+const handles: LedgerHandle[] = [];
+function ledger() { const h = openLedger(path.join(TMP, `case-${seq++}.sqlite`)); handles.push(h); return h; }
 function live(): number {
   const c = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { stdio: "ignore" });
   children.push(c);
