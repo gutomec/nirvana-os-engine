@@ -69,7 +69,8 @@ import { canonicalRuntimeName, loadRuntimeRules, decideRuntime, detectSessionHos
 import { DEFAULT_MAX_DEPTH, mayDispatch, refusalMessage, roleMayDispatch, roleRefusalMessage, type DispatchRole } from "../../_shared/lib/dispatch-depth.ts";
 import { enumerate, outputsDir, resolveScope } from "../../_shared/lib/scope.ts";
 import { paths as nirvanaPaths } from "../../_shared/lib/bun-helpers.ts";
-import { briefProblems, parseWorkBrief } from "../lib/work-brief.ts";
+import { briefProblems, briefSession, briefWithRequest, parseWorkBrief, requestFile, requestWords } from "../lib/work-brief.ts";
+import { recordBriefTemplate, recordRequest, resolveActiveTemplate } from "../lib/brief-templates.ts";
 import { preflightReindex } from "../lib/preflight-index.ts";
 import { maybeSweep } from "./supervisor.ts";
 import * as runLedger from "../lib/run-ledger.ts";
@@ -631,10 +632,35 @@ for (const [flag, value, valid, expects] of [
 if (projectId !== undefined && !isSafeId(projectId)) {
   refuse(`--project must be a plain id (letters, digits, '.', '_', '-'), never a path: '${projectId}'`);
 }
+let brief = inlineBrief;
+// The brief file's own text, when the run's brief is that file unchanged: the
+// worker then reads the file itself, so a decision appended to it mid-run
+// (`nrv brief decide`) still reaches it.
+let briefFileText: string | null = null;
+if (briefFile) {
+  const read = readBriefFile(briefFile);
+  if ("error" in read) refuse(read.error);
+  briefFileText = read.text;
+  if (brief) console.error(c("yellow", `⚠ both an inline brief and --brief-file were given: the inline brief is used, ${briefFile} is not`));
+  else brief = read.text;
+}
+if (!brief) refuse("pass an inline brief or --brief-file");
+if (briefFileText !== null && brief === briefFileText && explicitTarget?.kind !== "judge-x") {
+  const problems = briefProblems(parseWorkBrief(brief));
+  if (problems.length) console.error(c("yellow", `⚠ ${briefFile}: ${problems.join("; ")} (\`nrv brief check ${briefFile}\` says what the template needs)`));
+}
+// The brief's Session line: `continue <project>` is --continue-from <project>.
+const briefSessionLine = explicitTarget?.kind === "judge-x" ? null : briefSession(brief);
+
+
 // --continue-from <project>: a new brief for the same worker, in the session
 // that produced the earlier delivery. The target must be named and must be that
 // project's worker; anything else is an input error and nothing runs.
-const continueFromId = arg("--continue-from");
+const continueFromFlag = arg("--continue-from");
+if (continueFromFlag !== undefined && briefSessionLine?.kind === "continue" && briefSessionLine.project !== continueFromFlag) {
+  refuse(`--continue-from ${continueFromFlag} and the brief's "Session: continue ${briefSessionLine.project}" name different projects`);
+}
+const continueFromId = continueFromFlag ?? (briefSessionLine?.kind === "continue" ? briefSessionLine.project : undefined);
 const continueFrom = (() => {
   if (continueFromId === undefined) return null;
   if (!isSafeId(continueFromId)) refuse(`--continue-from must be a project id, never a path: '${continueFromId}'`);
@@ -654,24 +680,6 @@ if (manifest) {
   let isFile = false;
   try { isFile = fs.statSync(manifest).isFile(); } catch { isFile = false; }
   if (!isFile) refuse(`--manifest is not a readable file: ${manifest}`);
-}
-
-let brief = inlineBrief;
-// The brief file's own text, when the run's brief is that file unchanged: the
-// worker then reads the file itself, so a decision appended to it mid-run
-// (`nrv brief decide`) still reaches it.
-let briefFileText: string | null = null;
-if (briefFile) {
-  const read = readBriefFile(briefFile);
-  if ("error" in read) refuse(read.error);
-  briefFileText = read.text;
-  if (brief) console.error(c("yellow", `⚠ both an inline brief and --brief-file were given: the inline brief is used, ${briefFile} is not`));
-  else brief = read.text;
-}
-if (!brief) refuse("pass an inline brief or --brief-file");
-if (briefFileText !== null && brief === briefFileText && explicitTarget?.kind !== "judge-x") {
-  const problems = briefProblems(parseWorkBrief(brief));
-  if (problems.length) console.error(c("yellow", `⚠ ${briefFile}: ${problems.join("; ")} (\`nrv brief template\` shows the six sections)`));
 }
 
 // Runtime names, wherever they come from: a name the roster does not know used
@@ -849,6 +857,24 @@ console.log(c("dim", DECLARED_PROJECT_ROOT
 // dispatch-side emission.
 const dispatchAudit = createDispatchAudit();
 const emit = (event: string, payload: Record<string, any>) => dispatchAudit.emit(event, payload);
+
+/** The brief template this run was written with, and the user's words: both
+ *  copied into the run folder (`brief-template.md`, `request.md`) and named,
+ *  with their sha256, in `x_brief_template`, so the run can be reproduced. */
+function recordBriefRun(runDir: string, pid: string, target: string): void {
+  try {
+    const active = resolveActiveTemplate({ cwd: PROJECT_ROOT });
+    const t = recordBriefTemplate(runDir, active);
+    const r = recordRequest(runDir, brief!, { briefFile: briefFile ?? undefined, baseDirs: [PROJECT_ROOT] });
+    emit("x_brief_template", {
+      trace_id: pid, project_id: pid, target, template: t.template, template_origin: t.origin, template_path: t.path,
+      template_sha256: t.sha256, template_copy: t.copy, template_source: t.source,
+      brief_format: parseWorkBrief(brief!).format, request_file: r.file, request_copy: r.copy, request_sha256: r.sha256,
+    });
+  } catch (e) {
+    console.error(c("yellow", `⚠ the brief template was not recorded: ${(e as Error).message}`));
+  }
+}
 if (executionOptions.requestedMode !== "standard") {
   emit("x_gauntlet_execution_requested", {
     requested_mode: executionOptions.requestedMode, resolved_mode: executionOptions.resolvedMode,
@@ -1319,8 +1345,23 @@ if (wantAutoBrief) {
     // The runtime already decided for this run (session > brief > rule > default),
     // not a literal: enriching the brief on a vendor the user is not signed into
     // is the same defect as dispatching on one.
+    // The client's words keep a file of their own, which the enriched brief
+    // names on its Request line: the brief named one already, or the raw
+    // brief is written beside the orchestrator's briefs.
+    const proxyRequestPath = (() => {
+      const named = requestFile(brief, { briefFile: briefFile ?? undefined, baseDirs: [PROJECT_ROOT] });
+      if (named) return named;
+      const words = parseWorkBrief(brief).format === "none" ? brief : requestWords(brief);
+      if (!words?.trim()) return undefined;
+      try {
+        const file = path.join(PROJECT_ROOT, ".nirvana", "briefs", `${slug || "auto"}-${new Date().toISOString().replace(/[:.]/g, "-")}.request.md`);
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, `${words.trim()}\n`, "utf8");
+        return file;
+      } catch { return undefined; }
+    })();
     const pr = proxyEnrichBrief(brief, slug, runtimeDecision.runtime, {
-      maxBudgetUsd: effectiveBudgetUsd(),
+      maxBudgetUsd: effectiveBudgetUsd(), requestPath: proxyRequestPath,
     });
     if (pr.ok && pr.enriched) {
       brief = pr.enriched;
@@ -1780,6 +1821,7 @@ if (pendingCascade?.kind === "squad-only") {
   const scaffoldRoot = path.resolve(projDir, "..", "..");
   const projectRoot = PROJECT_ROOT;
   dispatchAudit.bindProjectRoot(projectRoot);
+  recordBriefRun(scaffoldRoot, pid, `squad:${squads.join(",")}`);
 
   if (scaffoldOnly) {
     printScaffoldNextStep(pid, `The brief is at ${path.join(scaffoldRoot, "brief.md")}.`);
@@ -2042,9 +2084,11 @@ if (pendingCascade?.kind === "agent-x") {
   const projDir = path.join(scaffoldRoot, "agent-x");
   fs.mkdirSync(projDir, { recursive: true });
   const briefPath = path.join(scaffoldRoot, "brief-enriched.md");
-  fs.writeFileSync(briefPath, brief, "utf8");
+  // The generalist reads this file: a Request given by path travels with its words.
+  fs.writeFileSync(briefPath, briefWithRequest(brief, { briefFile: briefFile ?? undefined, baseDirs: [PROJECT_ROOT] }), "utf8");
   dispatchAudit.bindProjectRoot(PROJECT_ROOT);
   emit("brief_received", { trace_id: pid, project_id: pid, target: "agent-x", brief_excerpt: briefExcerpt(brief), brief_chars: brief.length });
+  recordBriefRun(scaffoldRoot, pid, "agent-x");
 
   if (scaffoldOnly) {
     printScaffoldNextStep(pid, `The brief is at ${briefPath}.`);
@@ -2339,6 +2383,7 @@ if (executionOptions.requestedMode === "gauntlet") {
     requested_mode: executionOptions.requestedMode, intensity: executionOptions.intensity,
   });
 }
+recordBriefRun(scaffoldRoot, pid, `business:${slug}`);
 console.log(c("dim", `  ✓ dispatch_business written to ${path.join(harnessLogsDir({ cwd: projectRoot }), new Date().toISOString().slice(0, 10))}/audit.jsonl`));
 
 // ── EXEC MODE — actually run the runtime headless, then verify+gate+deliver ─

@@ -45,10 +45,10 @@ describe("the parts plan", () => {
 
   test("each brief carries the request whole, its own part, and who delivers the rest", () => {
     const s = parseWorkBrief(partBrief(input, input.parts[1])).sections;
-    expect(s["Request (verbatim)"]).toBe(REQUEST);
-    expect(s["Your part"]).toContain("O lançamento na Steam.");
-    expect(s["Your part"]).toContain("You start after crypto-foundry");
-    expect(s["Your part"]).toContain("- business crypto-foundry: O token, a tokenomics e o parecer regulatório.");
+    expect(s.Request).toBe(REQUEST);
+    expect(s.Goal).toContain("O lançamento na Steam.");
+    expect(s.Goal).toContain("You start after crypto-foundry");
+    expect(s.Goal).toContain("- business crypto-foundry: O token, a tokenomics e o parecer regulatório.");
   });
 
   test("the router's support squads and voices ride on the primary part only", () => {

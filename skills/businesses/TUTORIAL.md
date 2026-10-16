@@ -92,11 +92,12 @@ nrv find "launch a new filmmaking course"
 
 ## Step 6: write a brief
 
-The orchestrator writes one brief per business, in six sections:
+The orchestrator writes one brief per business, with the active brief template (`slim` unless `briefing.template` names another; `nrv brief templates` lists them):
 
 ```bash
-nrv brief template > .nirvana/briefs/beta-studio.md
-# fill: Request (verbatim), Decisions, Your part, Inputs, Done when, Output
+nrv brief request beta-studio --text "<the user's words, verbatim>"
+nrv brief template --for beta-studio > .nirvana/briefs/beta-studio.md
+# fill: Goal, Decisions, Inputs, Deliver, Done when (the Request line already names the words)
 nrv brief check .nirvana/briefs/beta-studio.md
 ```
 

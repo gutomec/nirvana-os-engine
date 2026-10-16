@@ -26,7 +26,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { businessDirFor, readAcceptance } from "../lib/acceptance.ts";
-import { resolveSetting } from "../../_shared/lib/settings.ts";
+import { resolveBriefAltitude } from "../../harness/lib/brief-altitude.ts";
 
 // Run plumbing the harness writes next to the deliverables. Never a deliverable.
 // One list: the API and the report builder read the same one.
@@ -58,8 +58,10 @@ function scanOutputsForDeliverables(root: string, maxDepth = 6): string[] {
   return found.sort();
 }
 
+/** The effective altitude: prescriptive under the detailed template (or a
+ *  stored prescriptive altitude), which wants a manifest instead of a scan. */
 function briefAltitude(): string {
-  try { return String(resolveSetting("briefing.altitude").value ?? "outcome"); } catch { return "outcome"; }
+  try { return resolveBriefAltitude().altitude; } catch { return "outcome"; }
 }
 
 const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR

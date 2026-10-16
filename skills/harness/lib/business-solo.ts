@@ -32,7 +32,7 @@ import { runFolderOf } from "../../_shared/lib/run-workspace.ts";
 import { writeSquadCards } from "../../_shared/lib/work-cards.ts";
 import { squadRunEnv } from "../../_shared/lib/squad-env.ts";
 import { findCloneForTask, type CloneHit } from "../../_shared/lib/clone-search.ts";
-import { parseWorkBrief } from "./work-brief.ts";
+import { parseWorkBrief, requestFile } from "./work-brief.ts";
 import { altitudeWorkerLine, briefAltitude, type BriefAltitude } from "./brief-altitude.ts";
 import { missingVoiceNotice, selectVoices, unsettledVoiceNotice, voiceQuery, type VoiceRerank, type VoiceSelection } from "./clone-voices.ts";
 import { jevVoiceRerank } from "./jev-voice.ts";
@@ -364,6 +364,8 @@ export interface SoloExtras {
   authorizedSquads?: string[];
   /** briefing.altitude; absent or outcome adds nothing. */
   altitude?: BriefAltitude;
+  /** The file holding the user's words, when the brief's Request names one. */
+  requestFile?: string | null;
 }
 
 /** The prompt of the one agent that is the business: a map, never pasted content. */
@@ -382,6 +384,7 @@ export function buildSoloPrompt(
 
   lines.push("## Your brief", "");
   lines.push(`\`${args.briefFile}\`. Read it first, and again at the start of every phase: the orchestrator appends decisions the user makes while you work.`);
+  if (extras.requestFile) lines.push(`The user's words, verbatim: \`${extras.requestFile}\`. They win over any summary in the brief.`);
   if (extras.inputs?.length) lines.push(`Inputs it names, resolved: ${extras.inputs.map((p) => `\`${p}\``).join(", ")}.`);
   const altitudeLine = altitudeWorkerLine(extras.altitude ?? "outcome");
   if (altitudeLine) lines.push(altitudeLine);
@@ -567,9 +570,11 @@ export function prepareBusinessSolo(args: BusinessSoloArgs): PreparedSolo {
   } catch { voices = []; } // a library that cannot be read leaves the seats' own voices
   const seatVoicesListed = listedSeatVoices(seats, voiceQuery(briefText, context), args.seatVoiceRank ?? ((q, slugs) => rankAmong(q, slugs, args.projectDir)));
   const inputs = briefInputPaths(briefText, args.projectRoot);
+  const userWords = requestFile(briefText, { baseDirs: [args.projectRoot], briefFile });
+  const userWordsDir = userWords ? path.dirname(userWords) : null;
   const prompt = buildSoloPrompt({ ...args, briefFile }, seats, memory.dirs, squadCards, voices, {
     memoryNewer: memory.newer, inputs, missingVoices, authorizedSquads: authorized, unsettledVoices, seatVoicesListed,
-    altitude: briefAltitude({ cwd: args.projectRoot }),
+    altitude: briefAltitude({ cwd: args.projectRoot }), requestFile: userWords,
   }) + "\n\n" + scopeGuard();
   fs.writeFileSync(path.join(args.projectDir, "solo-prompt.md"), prompt);
   // What the worker may touch: the run, the business, its voices, the squads
@@ -583,6 +588,7 @@ export function prepareBusinessSolo(args: BusinessSoloArgs): PreparedSolo {
     if (fs.existsSync(d)) dirs.push(d);
   }
   dirs.push(...inputs.map(inputFolder));
+  if (userWordsDir) dirs.push(userWordsDir);
   const workspace = runFolderOf(args.projectDir, args.projectRoot) ?? undefined;
   // The packages and Python of the carded squads, reached through variables on
   // the worker's run (squad-env.ts squadRunEnv).

@@ -67,6 +67,7 @@ import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
 import { scopeGuard } from "../../_shared/lib/scope-guard.ts";
 import { stamp } from "../../_shared/lib/audit-provenance.ts";
 import { briefWorkDirs, workElsewhereRule } from "../../_shared/lib/brief-work-dirs.ts";
+import { briefWithRequest } from "../lib/work-brief.ts";
 
 const ANSI = { reset: "\x1b[0m", bold: "\x1b[1m", dim: "\x1b[2m", green: "\x1b[32m", red: "\x1b[31m", yellow: "\x1b[33m", cyan: "\x1b[36m", lime: "\x1b[38;5;154m" };
 const noColor = process.argv.includes("--no-color") || !process.stdout.isTTY;
@@ -392,7 +393,7 @@ function freshPrompt(reason: string): string {
     "",
     "The brief this work answered:",
     "",
-    brief?.trim() || "(the run recorded no brief; the deliverables below are the whole record)",
+    (brief?.trim() ? briefWithRequest(brief, { baseDirs: [projectRoot] }).trim() : "") || "(the run recorded no brief; the deliverables below are the whole record)",
     "",
     `The delivered work is in ${oroot}${workDirs.length ? ` and in ${workDirs.join(", ")}` : ""}. Read it before you change anything: it is the input of this revision, not a draft to redo. Change what the request below asks and keep the rest as it is.`,
     ...(capped ? ["", `The quality gate's findings on that work (${findingsFile}):`, "", capped] : []),

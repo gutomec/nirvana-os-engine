@@ -36,6 +36,7 @@ import { scopeBoundary, scopeGuard } from "../../_shared/lib/scope-guard.ts";
 import { renderResourceMap } from "../../_shared/lib/entity-resource-map.ts";
 import { resolveSetting } from "../../_shared/lib/settings.ts";
 import { altitudeMethodSentence, briefAltitude, type BriefAltitude } from "./brief-altitude.ts";
+import { briefWithRequest } from "./work-brief.ts";
 import { preflightWarnings, squadPreflight } from "../../_shared/lib/squad-preflight.ts";
 import { squadEnvLines, squadRunEnv } from "../../_shared/lib/squad-env.ts";
 
@@ -571,7 +572,8 @@ export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
   }
 
   const prompt = buildSquadPrompt({
-    squadSlug: args.squadSlug, squadDir, brief: args.brief, outDir,
+    // The prompt pastes the brief: a Request given by path travels with its words.
+    squadSlug: args.squadSlug, squadDir, brief: briefWithRequest(args.brief, { baseDirs: [args.projectRoot] }), outDir,
     cloneInjection: cloneInj, capabilityId: args.capabilityId,
     traceId: args.projectId, envLines: squadEnvLines(args.squadSlug, args.envProblems),
     altitude: briefAltitude({ cwd: args.projectRoot }),

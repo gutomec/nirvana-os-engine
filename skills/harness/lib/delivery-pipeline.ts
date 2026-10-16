@@ -90,6 +90,7 @@ import * as runLedger from "./run-ledger.ts";
 import { JUDGE_BATCH_FILE_MAX_CHARS, JUDGE_BATCH_MAX_CHARS } from "./judge.ts";
 import { classify, isTransportFailure, quotaStop } from "./quota-detector.ts";
 import { markCooldown } from "./cooldown-registry.ts";
+import { briefWithRequest } from "./work-brief.ts";
 
 // ── deliverable surface (moved verbatim from scripts/dispatch.ts) ─────────
 
@@ -1035,7 +1036,8 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
   let briefFile: string | undefined;
   if (judgeMode && args.brief?.trim()) {
     briefFile = path.join(args.projectDir, "gate-brief.md");
-    try { fs.writeFileSync(briefFile, args.brief, "utf8"); } catch { briefFile = undefined; }
+    // The judge reads text: a Request given by path travels with its words.
+    try { fs.writeFileSync(briefFile, briefWithRequest(args.brief, { baseDirs: [args.projectRoot] }), "utf8"); } catch { briefFile = undefined; }
   }
   const gateOpts: GateRunOpts = {
     gateScript, offline: !judgeMode, produces: args.produces, briefFile, env: gateEnv,

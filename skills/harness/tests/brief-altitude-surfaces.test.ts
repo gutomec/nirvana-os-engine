@@ -16,6 +16,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { BRIEF_ALTITUDES, briefAltitude, type BriefAltitude } from "../lib/brief-altitude.ts";
 import { briefProblems, briefTemplate, parseWorkBrief } from "../lib/work-brief.ts";
+import { engineTemplate } from "../lib/brief-templates.ts";
 import { buildSoloPrompt, type BusinessSoloArgs } from "../lib/business-solo.ts";
 import { buildSquadPrompt } from "../lib/squad-exec.ts";
 import { proxyPrompt } from "../lib/brief-proxy.ts";
@@ -66,19 +67,20 @@ describe("nrv brief template", () => {
     return spawnSync(process.execPath, [BRIEF_CLI, "template"], { cwd: home, encoding: "utf8", env: e as Record<string, string> });
   };
 
-  test("unset: the skeleton is the one printed before, and stderr names outcome", () => {
+  test("unset: the slim template, and stderr names it", () => {
     const r = run({});
     expect(r.status).toBe(0);
-    expect(r.stdout).toBe(OUTCOME_TEMPLATE);
-    expect(r.stderr).toContain("briefing.altitude = outcome");
+    expect(r.stdout).toBe(engineTemplate("slim").skeleton);
+    expect(r.stderr).toContain("brief template: slim (engine:");
   }, 30_000);
 
   for (const altitude of BRIEF_ALTITUDES) {
-    test(`${altitude}: stdout is that altitude's skeleton, stderr names it`, () => {
+    test(`${altitude}: a stored altitude maps to its template, with a deprecation note`, () => {
       const r = run({ NIRVANA_BRIEF_ALTITUDE: altitude });
       expect(r.status).toBe(0);
       expect(r.stdout).toBe(briefTemplate(altitude));
       expect(r.stderr).toContain(`briefing.altitude = ${altitude}`);
+      expect(r.stderr).toContain("briefing.altitude is deprecated");
       expect(r.stdout).not.toContain("briefing.altitude");
     }, 30_000);
   }
@@ -97,12 +99,12 @@ describe("the skeleton per altitude", () => {
     expect(t).not.toContain("## Method");
   });
 
-  test("prescriptive adds the method, one criterion per item and every artifact", () => {
+  test("prescriptive is the detailed template: method, structure, one criterion per item and every artifact", () => {
     const t = briefTemplate("prescriptive");
+    expect(t).toBe(engineTemplate("detailed").skeleton);
     expect(t.indexOf("## Method")).toBeLessThan(t.indexOf("## Done when"));
     expect(t).toContain("one criterion per item");
     expect(t).toContain("every artifact, one per line");
-    expect(t).not.toContain("## Suggested structure");
   });
 
   test("every altitude still parses as a complete six-section brief", () => {
@@ -166,10 +168,10 @@ describe("the enrichment prompt (--auto-brief=proxy)", () => {
   });
 
   test("guided asks for the suggested structure, prescriptive for criteria, artifacts and method", () => {
-    expect(proxyPrompt("b", "acme", "ctx", "guided")).toContain("'## Suggested structure'");
+    expect(proxyPrompt("b", "acme", "ctx", "guided")).toContain("'Suggested structure'");
     const p = proxyPrompt("b", "acme", "ctx", "prescriptive");
     expect(p).toContain("one acceptance criterion per item");
     expect(p).toContain("every artifact");
-    expect(p).toContain("'## Method'");
+    expect(p).toContain("'Method'");
   });
 });

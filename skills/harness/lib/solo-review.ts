@@ -27,7 +27,7 @@ import { runHeadless, runtimeAvailable, type Runtime, type RunHeadlessResult } f
 import { extractJsonObject, jsonObjectsIn } from "../../_shared/lib/model-json.ts";
 import { isRunStateFile } from "../../_shared/lib/run-plumbing.ts";
 import { briefWorkDirs } from "../../_shared/lib/brief-work-dirs.ts";
-import { doneWhenCriteria, type Criterion } from "./work-brief.ts";
+import { doneWhenCriteria, requestFile, type Criterion } from "./work-brief.ts";
 import { soloDirective } from "./business-solo.ts";
 import { loadRuntimeRules, matchedVetoes, type RuntimeRule } from "./runtime-rules.ts";
 import * as runLedger from "./run-ledger.ts";
@@ -250,7 +250,7 @@ export function precheckSolo(outputsRoot: string, criteria: Criterion[], workDir
 // ── the reviewer ──────────────────────────────────────────────────────────
 
 /** The reviewer's prompt: the brief, the criteria, the worker's claims, and the rule that silence rejects. */
-export function buildSoloReviewPrompt(o: { business: string; briefFile: string; outputsRoot: string; criteria: Criterion[]; claims: Claim[] | null }): string {
+export function buildSoloReviewPrompt(o: { business: string; briefFile: string; outputsRoot: string; criteria: Criterion[]; claims: Claim[] | null; requestFile?: string | null }): string {
   const list = o.criteria.length
     ? o.criteria.map((c) => `- \`${c.id}\`${c.blocking ? " **(blocking)**" : ""}: ${c.description}`).join("\n")
     : "- (the brief has no \"Done when\" items, so nothing can be confirmed against it; judge against the brief and say what you found in `notes`)";
@@ -263,6 +263,7 @@ export function buildSoloReviewPrompt(o: { business: string; briefFile: string; 
     "You did not do this work; you check it. Open the files, never judge from the summary alone.",
     "",
     `- Brief: \`${o.briefFile}\``,
+    ...(o.requestFile ? [`- The user's words, verbatim: \`${o.requestFile}\` (they win over any summary in the brief)`] : []),
     `- Delivery: \`${o.outputsRoot}\` (the worker's summary is \`_SUMMARY.md\` there)`,
     "",
     "## Criteria",
@@ -474,6 +475,7 @@ export function runSoloReviewStage(a: SoloReviewArgs): SoloReviewOutcome {
   const run = a.runImpl ?? runHeadless;
   const briefText = (() => { try { return fs.readFileSync(a.briefFile, "utf8"); } catch { return ""; } })();
   const criteria = criteriaFromBrief(briefText);
+  const userWords = requestFile(briefText, { baseDirs: [a.projectRoot], briefFile: a.briefFile });
   const workDirs = briefWorkDirs(briefText, a.outputsRoot);
   let precheck = precheckSolo(a.outputsRoot, criteria, workDirs);
   const decision = decideReview({
@@ -562,11 +564,12 @@ export function runSoloReviewStage(a: SoloReviewArgs): SoloReviewOutcome {
     if (halt) return halt;
     const prompt = buildSoloReviewPrompt({
       business: a.business, briefFile: a.briefFile, outputsRoot: a.outputsRoot, criteria,
-      claims: readClaims(path.join(a.outputsRoot, "_CLAIMS.json")),
+      claims: readClaims(path.join(a.outputsRoot, "_CLAIMS.json")), requestFile: userWords,
     });
     fs.writeFileSync(path.join(reviewDir, `prompt-${pass}.md`), prompt, "utf8");
     const r = run({
-      runtime: reviewer, prompt, cwd: a.outputsRoot, addDirs: [a.outputsRoot, path.dirname(a.briefFile)],
+      runtime: reviewer, prompt, cwd: a.outputsRoot,
+      addDirs: [a.outputsRoot, path.dirname(a.briefFile), ...(userWords ? [path.dirname(userWords)] : [])],
       allowedTools: ["Read", "Grep", "Glob"], dispatchRole: "planner", yolo: a.yolo ?? true, timeoutMs: a.timeoutMs,
       maxBudgetUsd: a.maxBudgetUsd, ...ledger,
     } as Parameters<typeof runHeadless>[0]);

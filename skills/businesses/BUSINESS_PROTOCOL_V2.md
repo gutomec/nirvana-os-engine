@@ -63,7 +63,7 @@ Business authors, engine and adapter implementers, and the operators who set rev
 | **Business** | The folder under `business.yaml`: manifest, seats, org chart, routing, memory seed. |
 | **Seat** (employee) | A role of the business, one Markdown file with YAML frontmatter and a body. Not a separate running agent. |
 | **Org chart** | The reporting structure of the seats: `reports_to`, `manages`, `org-chart.yaml`. |
-| **Brief** | The six-section request the orchestrator writes for the business (§14.1). |
+| **Brief** | The request the orchestrator writes for the business with a brief template (§14.1). |
 | **Intake seat** | The one seat with `is_brief_intake: true`. Its `acceptance[]` is the business's contract with the judge (§11). |
 | **Antagonist** | A seat whose job is to challenge the work (BP7). |
 | **Mind-clone** | A persona from the clone library. A seat may pin one or hint at one (§7.7). |
@@ -645,27 +645,28 @@ A dispatched business is **one agent** that is the whole business for one reques
 
 ### 14.1 The brief
 
-The orchestrator writes one brief per business, in six sections with these exact headings:
+The orchestrator writes one brief per business with a brief template (`skills/harness/lib/brief-templates.ts`): `slim` by default, `standard`, `detailed`, `karpathy`, or one of the user's own, picked by `briefing.template` and looked up in `<project>/.nirvana/brief-templates/`, then `~/.nirvana/brief-templates/`, then the engine. Every format reads into the same labels:
 
-| Section | Content |
-|---|---|
-| `Request (verbatim)` | The user's own words, unedited |
-| `Decisions` | What the user already decided |
-| `Your part` | What this business delivers and what another covers |
-| `Inputs` | Paths the worker needs (attachments, another business's `_SUMMARY.md`) |
-| `Done when` | Observable criteria; `(blocking)` marks those the delivery fails without |
-| `Output` | The folder for the deliverables |
+| Label (slim) | Section (standard, detailed) | Content |
+|---|---|---|
+| `Goal` | `Your part` | What this business delivers and what another covers |
+| `Request` | `Request (verbatim)` | The user's own words: the path of the file `nrv brief request` wrote, or the words pasted |
+| `Decisions` | `Decisions` | What the user already decided |
+| `Inputs` | `Inputs` | Paths the worker needs (attachments, another business's `_SUMMARY.md`) |
+| `Deliver` | `Output` | What the deliverable is made of; the engine sets the folder |
+| `Done when` | `Done when` | Observable criteria; `(blocking)` marks those the delivery fails without |
+| `Session` | (none) | `new`, or `continue <project>` (the same as `--continue-from`) |
 
-It states what and why, never how. `nrv brief template` prints the skeleton, `nrv brief check <file>` validates it, and `nrv brief decide <file> "<decision>"` appends a decision while the run is going. The worker re-reads the brief at every phase, so decisions reach it without stopping the run. The "Done when" items become review criteria `d1..dn`.
+It states what and why, never how. `nrv brief template` prints the skeleton and names the template file, `nrv brief check <file>` validates the labels the template requires, and `nrv brief decide <file> "<decision>"` appends a decision while the run is going. The worker re-reads the brief at every phase, so decisions reach it without stopping the run. The "Done when" items become review criteria `d1..dn` in either format.
 
 ### 14.2 What the worker does
 
 The engine hands the worker a prompt that is a map, never pasted content: the brief file, the business folder, the memory directories, the seat map with each seat's file, the voices (each clone listed once, with its folder and the persona files inside), and the squad cards.
 
-- **Voices.** A clone counts as asked for only when the brief's `Request (verbatim)` section names it, or a line marks it `clone <slug>`; a clone listed as a fact elsewhere in the brief asks for nothing. When the brief asks for none, the library is searched on the request and the business's part, and at most three clones above the coverage gate are offered; if none fits, none is. A clone a seat already carries is not repeated. A clone that was asked for and is not installed gets one line in the prompt, and the search does not stand in for it. A squad dispatch selects its clones by the same rule (`harness/lib/clone-voices.ts`).
+- **Voices.** A clone counts as asked for only when the user's words (the brief's `Request`, or the file it names) name it, or a line marks it `clone <slug>`; a clone listed as a fact elsewhere in the brief asks for nothing. When the brief asks for none, the library is searched on the request and the business's part, and at most three clones above the coverage gate are offered; if none fits, none is. A clone a seat already carries is not repeated. A clone that was asked for and is not installed gets one line in the prompt, and the search does not stand in for it. A squad dispatch selects its clones by the same rule (`harness/lib/clone-voices.ts`).
 - **Squad cards.** Cards are written for the squads the router picked, the ones the brief names and the business's `squads_preferred`. The squads its seats are authorized for (`squads_authorized`) are listed by name only; `nrv cards squad <slug>` prints a card when the work needs one.
 - **Memory.** The first run seeds the machine memory home from the business's shipped `memory/` (`nrv memory` explains the two scopes). Directories whose files are stubs are not listed. When the shipped folder differs from the home, the prompt names it as newer. The prompt also gives the command to record a lesson: `nrv memory add <slug> "<fact>" --scope global|project`.
-- **Inputs.** Paths in `## Inputs` (absolute, `~`, or relative to the project root) that exist are resolved, listed in the prompt and granted to the run, so a worker whose folder is elsewhere still reads them.
+- **Inputs.** Paths in `Inputs` (absolute, `~`, or relative to the project root) that exist are resolved, listed in the prompt and granted to the run, so a worker whose folder is elsewhere still reads them.
 
 The worker then:
 

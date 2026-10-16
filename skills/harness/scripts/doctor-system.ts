@@ -41,6 +41,7 @@ import { expandEnv, findTempNrvEntries, readUserPath, tempRoots } from "../../_s
 import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
 import { GENESIS_EDITION, genesisProvenancePath, legacyProvenancePath, packProvenancePath } from "../../_shared/lib/license-store.ts";
 import { resolveProjectRoot, undeclaredProjectState } from "../../_shared/lib/project-root.js";
+import { resolveActiveTemplate, templateProblems } from "../lib/brief-templates.ts";
 import {
   describeSettingSource, discoverProjectRoot, engineConfigPath, globalConfigPath, projectConfigPath, resolveAllSettings, resolveSetting,
 } from "../../_shared/lib/settings.ts";
@@ -762,6 +763,24 @@ if (fs.existsSync(agentsSkillsDir)) {
       `${undeclared.dir.replace(HOME, "~")} holds Nirvana state (${undeclared.state.join(", ")}) but no .nirvana/project.yaml, so it is not a project and its work resolves globally. If it is one: nrv init --adopt ${undeclared.dir.replace(HOME, "~")} (writes only that file). If not, its .nirvana/ is leftover.`);
   } else {
     add("project: declared", "PASS", "no project here — runs use the global store");
+  }
+}
+
+// Brief template: the one the orchestrator writes with here, and where it
+// comes from (project, global or the engine). An unknown name fails every
+// `nrv brief template`, and a deprecated briefing.altitude is named.
+{
+  try {
+    const active = resolveActiveTemplate({ cwd: process.cwd() });
+    if (!active.template) add("brief: template", "FAIL", active.note ?? `no template named ${active.name}`);
+    else {
+      const problems = templateProblems(active.template);
+      const where = `${active.template.origin} ${active.template.path.replace(HOME, "~")}`;
+      add("brief: template", problems.length || active.note ? "WARN" : "PASS",
+        [`${active.name} (${where}; ${active.source})`, active.note, ...problems].filter(Boolean).join(" · "));
+    }
+  } catch (e) {
+    add("brief: template", "WARN", `could not be resolved: ${(e as Error).message.slice(0, 80)}`);
   }
 }
 

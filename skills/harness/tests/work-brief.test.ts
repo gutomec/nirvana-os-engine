@@ -74,7 +74,7 @@ describe("appendDecision", () => {
     appendDecision(file, "Everything runs on one VPS");
     const parsed = parseWorkBrief(fs.readFileSync(file, "utf8"));
     expect(parsed.sections.Decisions).toBe("- Baileys for now\n- Everything runs on one VPS");
-    expect(parsed.sections["Your part"]).toBe("Architecture and PRD.");
+    expect(parsed.sections.Goal).toBe("Architecture and PRD.");
     expect(briefProblems(parsed)).toEqual([]);
   });
 

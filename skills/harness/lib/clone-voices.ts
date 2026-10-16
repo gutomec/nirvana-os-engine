@@ -5,8 +5,8 @@
 // capped at two and searched with a different query. The owner's rule, in one
 // place:
 //
-//   1. A clone counts as ASKED FOR only when the brief's "Request (verbatim)"
-//      section names the person (clone-names.ts: a full name, a nickname, or a
+//   1. A clone counts as ASKED FOR only when the user's words (the brief's
+//      Request, or the file a slim Request names) name the person (clone-names.ts: a full name, a nickname, or a
 //      surname after a voice cue), or when a line marks it as `clone <slug>`.
 //      A brief that lists clones as facts about a product ("the pack ships
 //      Saul Bass and Paula Scher") in another section asks for none.
@@ -21,7 +21,7 @@
 //      at most `limit` clones above the coverage gate are offered. Nothing above
 //      the gate means no clone.
 
-import { parseWorkBrief } from "./work-brief.ts";
+import { parseWorkBrief, requestWords } from "./work-brief.ts";
 import { buildPeople, personOf, scanNames, type Person } from "./clone-names.ts";
 import type { CloneHit } from "../../_shared/lib/clone-search.ts";
 
@@ -75,8 +75,8 @@ const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
  *  squad does. The request itself only when the brief has no part. */
 export function voiceQuery(brief: string, extra = ""): string {
   const s = parseWorkBrief(brief).sections;
-  const part = (s["Your part"] ?? "").trim();
-  const request = s["Request (verbatim)"] ?? "";
+  const part = (s.Goal ?? "").trim();
+  const request = requestWords(brief) ?? "";
   // A part of a few words ("O roteiro.", "O plano da mudança.") says too little
   // to search on: one generic word carried clones over the gate. Then the
   // request joins it.
@@ -137,8 +137,7 @@ export function selectVoices(input: VoiceSelectionInput): VoiceSelection {
     return true;
   };
 
-  const sections = parseWorkBrief(input.brief).sections;
-  const request = sections["Request (verbatim)"] ?? input.brief;
+  const request = requestWords(input.brief) ?? input.brief;
   const scan = scanNames(request, people);
   // `clone <slug>` lines count wherever the orchestrator wrote them (Decisions).
   const marked = input.names.filter((c) =>

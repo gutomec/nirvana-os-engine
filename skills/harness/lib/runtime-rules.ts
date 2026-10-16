@@ -29,6 +29,7 @@ import { createRequire } from "node:module";
 import { listRuntimes, retiredRuntimeMessage, runtimeAvailable, type Runtime } from "../../_shared/lib/host-agent-driver.ts";
 import { resolveSetting } from "../../_shared/lib/settings.ts";
 import { globalEnvFiles, readEnvFile, resolveCascadeRoot } from "./cascade.ts";
+import { parseWorkBrief, requestWords } from "./work-brief.ts";
 
 const require = createRequire(import.meta.url);
 const { buildIndex, query } = require("./bm25.js");
@@ -492,6 +493,13 @@ function briefSection(brief: string, name: string): string | null {
  * words: its Request section, or the whole text.
  */
 function mentionScope(brief: string): string {
+  const parsed = parseWorkBrief(brief);
+  // A labelled brief (the slim template): Goal is this part, and the user's
+  // words are in the file its Request names.
+  if (parsed.format === "labels") {
+    if (parsed.sections.Goal !== undefined) return [parsed.sections.Decisions ?? "", parsed.sections.Goal].join("\n");
+    return requestWords(brief) ?? brief;
+  }
   const part = briefSection(brief, "Your part");
   if (part !== null) return [briefSection(brief, "Decisions") ?? "", part].join("\n");
   return briefSection(brief, "Request (verbatim)") ?? brief;

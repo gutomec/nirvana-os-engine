@@ -101,42 +101,24 @@ when nothing fits, `nrv dispatch --auto --exec` falls through to the generalist.
 ## 3. Write one brief per business
 
 ```bash
-nrv brief template > .nirvana/briefs/<business>.md
+nrv brief request <business> --text "<the user's words, verbatim>"   # or on stdin; prints the path
+nrv brief template --for <business> > .nirvana/briefs/<business>.md
+nrv brief check .nirvana/briefs/<business>.md
 ```
 
-Six sections, headings exactly as the template has them, content in the
-user's language:
+`nrv brief template` prints, on stderr, the active brief template (its name,
+the file and why it is the one: `briefing.template`, project, global or engine)
+and, on stdout, its skeleton. Read that file and follow it: it says how to write
+the brief and which labels the engine needs. Content goes in the user's
+language. `nrv brief templates` lists the templates; `--template <name>` picks
+another for one brief.
 
-- **Request (verbatim)**: the user's own words, pasted, unedited.
-- **Decisions**: what the user already decided in the conversation. Name a
-  squad as `squad <slug>` when its card shows it delivers a part no seat of
-  the business covers: the worker gets its card instead of searching for it.
-  A squad `nrv find` listed and nobody read is a guess, not a decision. A voice
-  the user asked for goes in as `clone <slug>`, the slug `nrv find-clone`
-  gives for the person they named or described ("o criador da Ethereum");
-  without one the engine searches the library, and a name listed as a fact
-  about the product is not a request.
-- **Your part**: what this business delivers, and what another one covers.
-- **Inputs**: paths the worker needs (attachments, another business's `_SUMMARY.md`).
-- **Done when**: observable criteria; mark with `(blocking)` the ones the
-  delivery fails without. A review checks these. Ask only for what the run can
-  prove under its settings: with `execution.visual_checks` off (every profile
-  but `max`) workers take no screenshots and drive no GUI, so evidence of a
-  visual review is the user's to give, never a criterion.
-- **Output**: what the deliverable is made of (files, formats). The engine
-  gives each run its folder; do not name one.
-
-**Altitude.** `nrv brief template` prints the active `briefing.altitude` and
-shapes the skeleton for it; write at that altitude. `outcome` (the default) is
-the six sections. `guided` adds `## Suggested structure` (sections, order,
-outline), which the worker may adapt. `prescriptive` adds `## Method` and asks
-for one "Done when" criterion per item and every artifact in **Output**.
-
-Beyond what the altitude adds, what and why, never how: no method, no steps, no
-seats, no file list the user did not ask for. A brief does not describe or change settings; never change a
-setting the user did not ask for, and when they ask, change it with
-`nrv config set` before you dispatch. Check the brief with
-`nrv brief check .nirvana/briefs/<business>.md`.
+Whatever the template, a brief names `squad <slug>` only for a squad whose card
+you read, `clone <slug>` only for a voice the user asked for, and asks in
+"Done when" only for what the run can prove under its settings. It says what and
+why, never how, unless the template asks for more. A brief does not describe or
+change settings; never change a setting the user did not ask for, and when they
+ask, change it with `nrv config set` before you dispatch.
 
 ## 4. Dispatch
 

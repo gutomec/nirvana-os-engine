@@ -292,9 +292,15 @@ export const SETTINGS = {
     "Headless children run with full access: every runtime skips its own CLI approvals (claude --dangerously-skip-permissions); false = restricted path.",
     { default: true, env: "NIRVANA_HEADLESS_SKIP_PERMISSIONS", fromEnv: offWordDisables }),
 
+  "briefing.template": stringSetting("briefing.template",
+    "The brief template the orchestrator writes with (nrv brief templates lists them); empty = slim, or the template briefing.altitude maps to when that is set. Names: slim, standard, detailed, karpathy, or one of your own in <project>/.nirvana/brief-templates/ or ~/.nirvana/brief-templates/. Wins over briefing.altitude.",
+    { default: "", env: "NIRVANA_BRIEF_TEMPLATE", type: z.string().regex(/^(|[A-Za-z0-9][A-Za-z0-9._-]*)$/), expects: "template name (slim, standard, detailed, karpathy, or your own)" }),
   "briefing.altitude": enumSetting("briefing.altitude",
-    "Altitude of the enriched brief and the dispatch instructions: outcome = result, guardrails and definition of done (default); guided = adds the structure the author suggests; prescriptive = per-item criteria, artifact list and method (the form up to 0.13.9).",
-    ["outcome", "guided", "prescriptive"], { default: "outcome", env: "NIRVANA_BRIEF_ALTITUDE" }),
+    "Deprecated: use briefing.template. Read only while briefing.template is unset: outcome = the standard template; guided = standard plus a suggested structure; prescriptive = the detailed template.",
+    ["outcome", "guided", "prescriptive"], { default: "outcome", env: "NIRVANA_BRIEF_ALTITUDE",
+      // The default is not handed to a child: a variable reads as a stored
+      // altitude there, and would pick the standard template over slim.
+      toEnv: (value) => (value === "outcome" ? null : value) }),
   "glance.execution": booleanSetting("glance.execution",
     "Glance runs Messages through a child process; false = cockpit without execution.",
     { default: true, env: "NIRVANA_GLANCE_EXECUTION", fromEnv: offWordDisables }),
