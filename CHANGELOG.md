@@ -6,6 +6,12 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that the
 one-line installers and pack setups consume.
 
+## 0.15.0-beta.12 — 2026-10-16
+
+### The agent knows how to show and change the brief template
+
+The settings table in the `nirvana` skill gains three rows: which brief template is active and which exist (`nrv brief templates`), switching a project to another template (`nrv config set briefing.template <name> --project`), and copying one into the project to edit or to start a new one (`nrv brief init`). Asked in conversation, the agent now runs the right command instead of guessing.
+
 ## 0.15.0-beta.11 — 2026-10-15
 
 ### Brief templates

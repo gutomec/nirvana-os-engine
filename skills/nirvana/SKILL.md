@@ -198,6 +198,9 @@ user's words.
 | "neste projeto, use o Nirvana só quando eu pedir" / "orquestre tudo neste projeto" | `nrv init . --orchestrators=on-demand` / `--orchestrators=always` |
 | "este projeto só com as empresas dele" / "as dele e as globais" / "a biblioteca toda" | `nrv init . --scope=project` / `merge` / `global` |
 | "limite cada execução a US$ 5" | `nrv config set budget.default_max_cost_usd 5 --global` |
+| "qual template de brief você está usando?" / "quais templates eu tenho?" | `nrv brief templates` (the active one has `*`, with its origin) |
+| "neste projeto use o template detailed" (`slim`, `standard`, `karpathy`, or one of the user's) | `nrv config set briefing.template detailed --project` |
+| "quero editar o slim neste projeto" / "crie um template juridico a partir do standard" | `nrv brief init slim --project` / `nrv brief init juridico --from standard --project`, then tell the user the file path it printed; a new name also needs `nrv config set briefing.template juridico --project` |
 
 - **Where it applies.** Always pass `--global` or `--project` to `nrv config`:
   without a flag it writes to the project when run inside one, which the user
