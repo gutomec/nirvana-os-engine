@@ -61,6 +61,7 @@ export const COMMANDS: Command[] = [
   { name: "tui", aliases: ["cockpit-tui"], target: "harness/scripts/tui.ts", category: "core", summary: "Terminal cockpit (live audit + projects + registries)", visibility: "user" },
   { name: "doctor", aliases: ["capability-doctor"], custom: true, category: "core", args: "[--system|--capability]", summary: "Full system diagnostic", visibility: "user" },
   { name: "route", target: "harness/scripts/route.ts", category: "dev", args: '"<brief>"', summary: "Keyword-router diagnostic: what it would match, never what runs", visibility: "dev" },
+  { name: "decide", target: "harness/scripts/decide.ts", category: "qol", args: 'status | --state "<text>" --questions \'<json>\' [--provider <p>]', summary: "Ask a decision model (Jev, Gemini Decision, OpenAI Decisions, local JEV-27B) closed questions; status shows what is configured", visibility: "user" },
   { name: "find", target: "harness/scripts/find.ts", category: "dev", args: '"<query>"', summary: "Keyword-router diagnostic: capability discovery dry-run", visibility: "dev" },
   { name: "validate", aliases: ["verify"], target: "_shared/scripts/verify.ts", category: "core", args: "<squad|business|mind-clone> <slug|path> [--fix] [--strict] [--json] | <kind> --all [--record] | --pack <dir>", summary: "Admission gate: verify an entity, --fix it, record debt (exit 0/1/2/64; bare = deprecated doctor alias)", visibility: "user" },
   { name: "index", target: "harness/scripts/index.ts", category: "core", summary: "Re-index squads + businesses", visibility: "user" },

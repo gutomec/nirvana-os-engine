@@ -47,3 +47,8 @@ if (process.env.NIRVANA_JUDGE_ENABLED === undefined) process.env.NIRVANA_JUDGE_E
 if (!process.env.NIRVANA_AUDIT_KEY) {
   process.env.NIRVANA_AUDIT_KEY = path.join(process.env.HARNESS_LOGS_DIR!, "audit-key");
 }
+
+// And the decision models: the owner's machine may hold real API keys, and no
+// test may spend them. A test that exercises a provider passes it explicitly
+// with a fake fetch.
+if (!process.env.NIRVANA_DECISION_PROVIDER) process.env.NIRVANA_DECISION_PROVIDER = "off";

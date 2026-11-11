@@ -248,6 +248,14 @@ From the catalog, pick the finalists worth opening: typically 3 to 6 across the 
 
 **Pass 2 — deep confirmation.** Read each finalist whole: businesses (`business.yaml` + `org-chart.yaml` + the relevant `employees/<name>.md`), squads (`squad.yaml` + the relevant `agents/` + `workflows/`), mind-clones (`agent/AGENT.md` + the relevant `dna/`). A manifest is a claim; the agents, tasks and workflows beside it are the evidence.
 
+**Second opinion from a decision model (when two or more finalists still fit after Pass 2).** Ask one closed question, with the enriched brief as the state and one line per finalist saying what it builds:
+
+```bash
+nrv decide --state-file <enriched-brief.md> --questions '{"executor":{"type":"choice","instructions":"Which of these should execute this brief?","options":{"<slug-a>":"<what it builds>","<slug-b>":"<what it builds>"}}}'
+```
+
+It answers in under a second for a fraction of a cent, with a probability per finalist. It is a signal, never the pick: routing stays yours. When it agrees with you at high confidence, go. When it disagrees, re-read the difference between the two finalists before deciding, and say in the plan what settled it. Skip it when `nrv decide status` shows only `subscription`: that path is a full CLI call, slow and uncalibrated. Jev and its peers read literally and are weak at arithmetic, dates and multi-step indirection, so never hand them a question that depends on those. Reference: `../_shared/DECISION_MODELS.md`.
+
 **Closure check (optional, multi-entity dispatches).** `nrv graph closure --business <slug> --json` returns the employees, the mind-clones they embody and the squads a business run needs, with missing dependencies named instead of silently absent.
 
 If the shortlist is empty, emit `signal=NO_MATCH`, say so, and **dispatch `agent-x` with the enriched brief anyway** (Phase 4, step 3). NO_MATCH changes *who* executes, never *whether*; what it forbids is inventing a match to dodge the fallback.

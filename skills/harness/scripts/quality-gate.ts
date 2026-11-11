@@ -50,7 +50,7 @@ const RUBRICS_DIR = path.join(SKILLS_ROOT, "harness", "rubrics");
  * Extra mode-specific fields may ride along, but every verdict carries these. */
 export type GateVerdict = {
   status: "PASS" | "FAIL" | "INDETERMINATE";
-  mode: "heuristic" | "judge";
+  mode: "heuristic" | "judge" | "decision";
   score: number;
   results: RubricResult[];
   critique?: unknown[];
@@ -205,6 +205,21 @@ async function runWithRevisions(artifact: string, content: string, args: string[
     // decide nothing, instead of letting the heuristics pass or fail the file.
     const unavailable = result.judge_runtime === "error" ? judgeQuotaOf((result.schema_errors ?? []).join("\n")) : null;
     if (unavailable) {
+      // A hosted or local decision model can still grade the file, for cents,
+      // when it is confident enough. Otherwise the file stays unjudged.
+      const fallback = await decisionVerdict(rubric, content, brief);
+      if (fallback) {
+        console.error(`[gate] the judge's runtime is out of quota (${unavailable.hint}): ${path.basename(artifact)} graded by the decision model (${fallback.provider}, confidence ${fallback.confidence.toFixed(2)}).`);
+        const out: GateVerdict = {
+          status: fallback.pass ? "PASS" : "FAIL", mode: "decision", score: fallback.score,
+          results: [{ name: rubric.name, passed: fallback.pass, score: fallback.score,
+            reasoning: `decision model ${fallback.provider}: meets brief p=${fallback.meets.toFixed(2)}, quality ${fallback.level.toFixed(1)}/4`,
+            fix_list: fallback.pass ? [] : ["Re-judge with the LLM judge once its quota resets: the decision model only grades, it does not explain."] }],
+          artifact, timestamp: new Date().toISOString(), judge_unavailable: unavailable, decision_provider: fallback.provider,
+        };
+        console.log(JSON.stringify(out, null, 2));
+        return fallback.pass ? 0 : 1;
+      }
       console.error(`[gate] the judge's runtime is out of quota (${unavailable.hint}): ${path.basename(artifact)} is NOT judged.`);
       console.log(JSON.stringify({
         status: "INDETERMINATE", mode: "unjudged", score: 0, results: [], artifact,
@@ -270,6 +285,46 @@ async function runWithRevisions(artifact: string, content: string, args: string[
   } catch { /* non-fatal */ }
 
   return result.verdict === "pass" ? 0 : 1;
+}
+
+/** The gate's fallback when the LLM judge is out of quota: a decision model
+ *  (API or local only) answers whether the artifact meets the brief and rubric,
+ *  and grades it 0-4. null when no provider answers, the confidence is below
+ *  decision.min_confidence, or the two answers disagree. */
+export async function decisionVerdict(
+  rubric: { name: string; display_name?: string; file_path?: string },
+  content: string, brief: string | undefined,
+  decideFn?: typeof import("../../_shared/lib/decision-model.ts").decide,
+): Promise<{ pass: boolean; score: number; meets: number; level: number; confidence: number; provider: string } | null> {
+  if (!content.trim()) return null;
+  const dm = await import("../../_shared/lib/decision-model.ts");
+  let rubricText = "";
+  try { rubricText = rubric.file_path ? fs.readFileSync(rubric.file_path, "utf8").slice(0, 8_000) : ""; } catch { /* the name alone */ }
+  const state = [
+    brief ? `BRIEF:\n${brief.slice(0, 6_000)}` : "",
+    `RUBRIC (${rubric.display_name ?? rubric.name}):\n${rubricText || rubric.name}`,
+    `ARTIFACT:\n${content.slice(0, 40_000)}`,
+  ].filter(Boolean).join("\n\n");
+  const r = await (decideFn ?? dm.decide)({
+    state,
+    questions: {
+      meets: { type: "yes_no", instructions: "The ARTIFACT delivers what the BRIEF asks and meets the RUBRIC's criteria." },
+      quality: { type: "score", instructions: "Grade the ARTIFACT against the RUBRIC.", levels: [
+        "unusable or off-brief", "major gaps against the rubric", "usable, with fixes the rubric requires",
+        "good: meets the rubric", "excellent: exceeds the rubric",
+      ] },
+    },
+  }, { apiOnly: true });
+  if (dm.isDecisionError(r)) return null;
+  const meets = r.answers.meets?.type === "yes_no" ? r.answers.meets.probability : null;
+  const q = r.answers.quality?.type === "score" ? r.answers.quality : null;
+  if (meets === null || !q || q.confidence === null) return null;
+  const floor = Number(dm.settingText("decision.min_confidence") || 0.7);
+  if (q.confidence < floor) return null;
+  const pass = meets >= 0.5 && q.score >= 2.5;
+  const fail = meets < 0.5 && q.score < 2.5;
+  if (!pass && !fail) return null;
+  return { pass, score: Math.round((q.score / 4) * 100) / 100, meets, level: q.score, confidence: q.confidence, provider: r.provider };
 }
 
 async function main() {

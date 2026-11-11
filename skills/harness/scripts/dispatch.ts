@@ -761,6 +761,26 @@ if (runtimeDecision.source === "brief") {
 } else if (runtimeRules.length && runtimeDecision.source === "default" && !explicitRuntime) {
   console.log(c("dim", `  USE_* rules present, none matched this brief — staying on the default (${runtimeDecision.runtime})`));
 }
+// Last rung: nothing named a runtime, so a decision model may pick one among
+// the installed runtimes outside cooldown (harness/lib/decision-runtime.ts).
+// Below decision.min_confidence, or with no hosted/local decision model, the
+// default stands.
+if (runtimeDecision.source === "default" && !runtimeDecision.vetoes?.length && resolveSetting("decision.provider").value !== "off") {
+  const cooldownRoot = resolveCascadeRoot(process.cwd());
+  const candidates = listRuntimes().map((r) => r.name).filter((rt) => runtimeAvailable(rt) && !isInCooldown(cooldownRoot, rt));
+  const { chooseRuntimeByDecision } = await import("../lib/decision-runtime.ts");
+  const pick = await chooseRuntimeByDecision({ brief, candidates, host: runtimeDecision.runtime });
+  if (pick) {
+    if (pick.runtime !== runtimeDecision.runtime) {
+      console.log(c("lime", "▶") + c("bold", ` Runtime picked by the decision model: ${pick.runtime}`) + c("dim", ` (${pick.provider}, confidence ${pick.confidence.toFixed(2)}; default was ${runtimeDecision.runtime})`));
+    }
+    emit("x_runtime_decision", {
+      project_id: projectId || null, runtime: pick.runtime, previous: runtimeDecision.runtime,
+      provider: pick.provider, confidence: pick.confidence, probabilities: pick.probabilities,
+    });
+    runtimeDecision = { runtime: pick.runtime, source: "decision", score: pick.confidence };
+  }
+}
 // Block appended to the AUTONOMOUS_DIRECTIVE: the maestro honors the rules when
 // DELEGATING sub-tasks ("" when there are no rules = no-op).
 const rulesDirective = formatRulesForDirective(runtimeRules);

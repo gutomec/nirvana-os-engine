@@ -197,6 +197,21 @@ export const SETTINGS = {
     "Passa o produces[] do alvo ao seletor de rubricas do quality gate, para que um relatório de pesquisa seja julgado pela rubrica de pesquisa; um produces sem rubrica cai na inferência pela extensão. false = o juiz usa só a rubrica inferida pela extensão.",
     { default: true, env: "NIRVANA_PRODUCES_TO_RUBRIC" }),
 
+  // Decision models (System One): typed, calibrated answers to closed questions,
+  // used for routing, runtime choice and the gate's fallback. See _shared/DECISION_MODELS.md.
+  "decision.provider": enumSetting("decision.provider",
+    "Modelo de decisão: auto (padrão) = o primeiro disponível na ordem local, typesafe, gemini, openai, subscription; um nome = só ele; off = desligado.",
+    ["auto", "local", "typesafe", "gemini", "openai", "subscription", "off"], { default: "auto", env: "NIRVANA_DECISION_PROVIDER" }),
+  "decision.local_url": stringSetting("decision.local_url",
+    "URL do servidor JEV-27B que o usuário mesmo iniciou (contrato /v1/decide); vazio (padrão) = não usa o local. O engine nunca baixa nem inicia o modelo.",
+    { env: "NIRVANA_DECISION_LOCAL_URL", type: z.string().regex(/^$|^https?:\/\/\S+$/), expects: "http(s)://host:porta ou vazio" }),
+  "decision.min_confidence": numberSetting("decision.min_confidence",
+    "Confiança mínima (0 a 1) para o engine agir sozinho sobre uma decisão; abaixo disso a decisão vira só um sinal.",
+    { default: 0.7, env: "NIRVANA_DECISION_MIN_CONFIDENCE", type: z.number().min(0).max(1), expects: "número entre 0 e 1" }),
+  "decision.runtime_choice": booleanSetting("decision.runtime_choice",
+    "Quando nenhuma flag, menção no brief ou regra USE_* escolhe o runtime, um modelo de decisão (só API ou local) escolhe entre os runtimes instalados e fora de cooldown.",
+    { default: true, env: "NIRVANA_DECISION_RUNTIME_CHOICE" }),
+
   "execution.default_runtime": stringSetting("execution.default_runtime",
     "Runtime usado quando a sessão não é identificada; vazio = primeiro disponível no PATH.",
     { env: "NIRVANA_DEFAULT_RUNTIME", type: z.string().regex(/^[A-Za-z0-9._-]*$/), expects: "nome de runtime (claude-code, codex, antigravity-cli, ...) ou vazio" }),

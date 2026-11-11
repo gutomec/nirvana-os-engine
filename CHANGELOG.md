@@ -6,6 +6,19 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that the
 one-line installers and pack setups consume.
 
+## 0.14.14 — 2026-11-11
+
+### Decision models: Jev, Gemini Decision 1, OpenAI Decisions and a local JEV-27B
+
+A decision model answers closed questions (yes/no, a choice, a score) with calibrated probabilities in under a second, for cents per thousand calls. The engine now knows the four that exist and uses them where it used to spend a text model to pick from a known list. Reference: `skills/_shared/DECISION_MODELS.md`.
+
+- `skills/_shared/lib/decision-model.ts`: one client over TypeSafe Jev (`TYPESAFE_API_KEY`), Gemini Decision 1 (`GEMINI_API_KEY`), OpenAI Decisions on `gpt-6-luna` (`OPENAI_API_KEY`) and JEV-27B on a server the user started (`decision.local_url`). None of the hosted APIs accepts a ChatGPT or Gemini subscription login, so a `subscription` provider asks the logged-in runtime CLI for the same JSON, uncalibrated (confidence `null`). Under `decision.provider=auto` the order is local, typesafe, gemini, openai, subscription; each failure is reported. Keys are read from the env and the `.env` chain and never printed.
+- `nrv decide`: closed questions from the orchestrator or a script, JSON out (exit 0 answered, 1 every provider failed, 2 usage, 3 none configured). `nrv decide status` shows what is configured and whether the machine can host JEV-27B (RAM, and GPU memory through `nvidia-smi` on Windows and Linux). The engine never downloads or starts the model.
+- Runtime choice: on the last rung only (no flag, brief mention or `USE_*` rule), a hosted or local decision model picks among the installed runtimes outside cooldown when it clears `decision.min_confidence` (0.7). Audited as `x_runtime_decision`; `decision.runtime_choice=false` turns it off.
+- Quality gate: when the LLM judge is out of quota, a hosted or local decision model grades the file (meets the brief, quality 0-4) and decides only when both answers agree above the confidence floor (`mode: "decision"`). Otherwise the file stays unjudged, exit 3, as before.
+- Routing: the harness SKILL.md adds a second opinion over the Phase 3 finalists with `nrv decide`. It is a signal, never the pick.
+- Tests never spend a real key: the test preload sets `NIRVANA_DECISION_PROVIDER=off`, and every provider is exercised with a fake fetch.
+
 ## 0.14.13 — 2026-10-15
 
 ### Every run records a session, and revisions continue it
