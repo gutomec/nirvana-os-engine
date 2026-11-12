@@ -48,8 +48,9 @@ describe("the documented shell-only dispatch form is one that parses", () => {
     });
     expect(r.status).toBe(4);
     expect(r.stderr).toContain('nrv dispatch --auto "write a one-page report" --exec');
-    // Nothing of the engine's: no outputs, no store, no logs (a runtime cache such as ~/Library may appear).
-    expect(fs.readdirSync(home).filter((name) => name !== "Library" && name !== "AppData")).toEqual([]);
+    // Nothing of the engine's: no outputs, no store, no logs (a runtime cache such
+    // as ~/Library, ~/AppData or Bun's own ~/.bun on Linux may appear).
+    expect(fs.readdirSync(home).filter((name) => !["Library", "AppData", ".bun"].includes(name))).toEqual([]);
     fs.rmSync(home, { recursive: true, force: true });
     const src = read("skills/harness/scripts/dispatch.ts");
     expect(src).toMatch(/function wantsExec\(\)/);
