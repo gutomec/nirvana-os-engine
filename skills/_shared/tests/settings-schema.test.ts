@@ -198,6 +198,24 @@ describe("legacy variables", () => {
     }
   });
 
+  test("NIRVANA_ORCA_WORKERS keeps its boolean spellings; the default is off", () => {
+    const spec = SETTINGS["execution.orca_workers"];
+    expect(spec.default).toBe("off");
+    expect(read(spec, { NIRVANA_ORCA_WORKERS: "1" })?.value).toBe("on");
+    expect(read(spec, { NIRVANA_ORCA_WORKERS: "false" })?.value).toBe("off");
+    expect(read(spec, { NIRVANA_ORCA_WORKERS: "on" })?.value).toBe("on");
+    expect(getSettingSpec("host.orca_workers")).toBeUndefined();
+  });
+
+  test("the stall guard: 90 and 45 minutes by default, fractions allowed, 0 = off, never negative", () => {
+    expect(SETTINGS["execution.stall_timeout_min"].default).toBe(90);
+    expect(SETTINGS["execution.stall_no_start_min"].default).toBe(45);
+    expect(read(SETTINGS["execution.stall_timeout_min"], { NIRVANA_STALL_TIMEOUT_MIN: "0.5" })?.value).toBe(0.5);
+    expect(read(SETTINGS["execution.stall_no_start_min"], { NIRVANA_STALL_NO_START_MIN: "0" })?.value).toBe(0);
+    expect(() => read(SETTINGS["execution.stall_timeout_min"], { NIRVANA_STALL_TIMEOUT_MIN: "-1" })).toThrow(/NIRVANA_STALL_TIMEOUT_MIN/);
+    expect(SETTINGS["execution.stall_timeout_min"].description).toMatch(/not a spend or time ceiling/);
+  });
+
   test("NIRVANA_ROUTER_DENSE speaks 1/0 and the mode names", () => {
     const spec = SETTINGS["routing.dense"];
     expect(read(spec, { NIRVANA_ROUTER_DENSE: "1" })?.value).toBe("fallback");

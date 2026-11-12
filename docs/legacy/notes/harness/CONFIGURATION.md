@@ -178,11 +178,11 @@ Estima custo antes de dispatchar. Aborta/warna conforme `on_budget_exceeded`.
 
 ### Stage 5 — Invocation plan
 
-Lazy: produz JSON do plano. Adapter (Claude Code, Codex, Gemini-CLI) dispatches via primitiva native.
+Lazy: produz JSON do plano. Adapter (Claude Code, Codex, Antigravity) dispatches via primitiva native.
 
 | Controle | Onde | Função |
 |---|---|---|
-| `ctx.runtime` | programmatic | `'claude-code' | 'codex' | 'gemini-cli'` — afeta `adapter_hint` no plan |
+| `ctx.runtime` | programmatic | `'claude-code' | 'codex' | 'antigravity-cli'` — afeta `adapter_hint` no plan |
 | `max_handoff_tokens` | hardcoded `stage5Invoke` | Default 800; tamanho máximo do handoff_artifact |
 
 ---

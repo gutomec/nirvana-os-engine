@@ -302,6 +302,11 @@ try {
     // declared failure is recorded, and the run ends in `abandoned`, which
     // carries the reason and which the supervisor never touches.
     if (state === "failed") abandon(handle, runId, `failed: ${flag("error") || "closed by the operator"}`);
+    // A worker the engine opened in an Orca terminal is not in any process
+    // tree here: closing its terminal is what ends that CLI (an agy left on a
+    // trust dialog outlived its run by hours, 2026-10-15).
+    const orca = orcaWorkerOf((getRun(handle, runId) ?? before).meta);
+    if (orca && !closeOrcaWorker(orca)) warn(`could not close Orca terminal ${orca.terminal}; close it in Orca`);
     // The whole point of the ledger, from the owner's side: they are not
     // watching this terminal, so the END of the work has to travel to them.
     const label = { delivered: "delivered", withheld: "WITHHELD by the gate", failed: "FAILED" }[state] ?? state;
