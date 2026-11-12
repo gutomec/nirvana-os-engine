@@ -215,6 +215,18 @@ export const SETTINGS = {
     "Passes the target's produces[] to the quality gate's rubric selector, so a research report is judged by the research rubric; a produces entry with no rubric falls back to inference by file extension. false = the judge uses only the rubric inferred from the extension.",
     { default: true, env: "NIRVANA_PRODUCES_TO_RUBRIC" }),
 
+  // Decision models (System One): typed, calibrated answers to closed questions,
+  // used for routing, runtime choice on request and the gate's fallback. See _shared/DECISION_MODELS.md.
+  "decision.provider": enumSetting("decision.provider",
+    "Decision model: auto (default) = the first available in the order local, typesafe, gemini, openai, subscription; a name = only that one; off = never.",
+    ["auto", "local", "typesafe", "gemini", "openai", "subscription", "off"], { default: "auto", env: "NIRVANA_DECISION_PROVIDER" }),
+  "decision.local_url": stringSetting("decision.local_url",
+    "URL of a JEV-27B server the user started (the /v1/decide contract); empty (default) = no local model. The engine never downloads or starts it.",
+    { env: "NIRVANA_DECISION_LOCAL_URL", type: z.string().regex(/^$|^https?:\/\/\S+$/), expects: "http(s)://host:port or empty" }),
+  "decision.min_confidence": numberSetting("decision.min_confidence",
+    "Minimum confidence (0 to 1) for the engine to act on a decision by itself; below it the decision is only a signal.",
+    { default: 0.7, env: "NIRVANA_DECISION_MIN_CONFIDENCE", type: z.number().min(0).max(1), expects: "number between 0 and 1" }),
+
   "execution.default_runtime": stringSetting("execution.default_runtime",
     "Runtime used when the session is not identified; empty = first one available on PATH.",
     { env: "NIRVANA_DEFAULT_RUNTIME", type: z.string().regex(/^[A-Za-z0-9._-]*$/), expects: "runtime name (claude-code, codex, antigravity-cli, ...) or empty" }),

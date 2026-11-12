@@ -49,8 +49,9 @@ export interface RuntimeRule {
 export interface RuntimeDecision {
   runtime: Runtime;
   /** flag = CLI (--exec=<rt>/--runtime); brief = explicit mention in the brief
-   *  text ("use o agy para..."); rule = USE_*; default = session host. */
-  source: "flag" | "brief" | "rule" | "default";
+   *  text ("use o agy para..."); rule = USE_*; default = session host;
+   *  decision = a decision model picked it on the last rung (decision-runtime.ts). */
+  source: "flag" | "brief" | "rule" | "default" | "decision";
   rule?: RuntimeRule;
   method?: "bm25" | "agentic";
   score?: number;

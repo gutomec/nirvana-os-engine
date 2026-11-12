@@ -6,6 +6,34 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that the
 one-line installers and pack setups consume.
 
+## 0.15.0 — 2026-11-12
+
+### The 0.15 line is stable
+
+0.15.0 is the 0.15 beta (beta.1 to beta.12, entries below) released as stable, with the decision models added. The plain one-liner now installs it, and a 0.14 engine moves to it on `nrv update`. What changes for someone coming from 0.14:
+
+- A business runs as one agent that plays its seats, embodies its clones and reads squad work cards; the chain, the director, `--team` and `nrv team` are gone (beta.1).
+- Review is an exception decided by `review.policy`, done once on another runtime when one is available (beta.1).
+- Performance profiles (`max`, `balanced`, `economy`), chosen at install (beta.1).
+- Nirvana stays out of the way until a request calls for it: `nrv init` writes the short on-demand note by default, and `--orchestrators=always` keeps the full contract. Rerunning `nrv init .` in a 0.14 project switches it in place and keeps the user's own lines (beta.1, beta.6).
+- Each squad installs into its own environment, prepared when it runs (beta.5).
+- Gemini CLI is no longer a runtime; Antigravity replaces it (beta.6).
+- TypeSafe's Jev as the first step of `--auto` routing, opt-in by key (`routing.jev`, beta.7).
+- Brief templates (`slim` by default, `standard`, `detailed`, `karpathy`) and the commands to show and change them (beta.11, beta.12).
+
+Also carried over from 0.14.12 and 0.14.13, which shipped beside the beta: `nrv doctor` checks the Antigravity context hook in `~/.gemini/config/hooks.json` and names hooks of ours left in the old location; a run its stall guard ended is not handed to another runtime; and `nrv run-track close` closes the Orca terminal of a worker the engine opened there.
+
+### Decision models: Jev, Gemini Decision 1, OpenAI Decisions and a local JEV-27B
+
+A decision model answers closed questions (yes/no, a choice, a score) with calibrated probabilities in under a second, for cents per thousand calls. The engine now knows the four that exist and uses them where it used to spend a text model to pick from a known list. Reference: `skills/_shared/DECISION_MODELS.md`.
+
+- `skills/_shared/lib/decision-model.ts`: one client over TypeSafe Jev (`TYPESAFE_API_KEY`), Gemini Decision 1 (`GEMINI_API_KEY`), OpenAI Decisions on `gpt-6-luna` (`OPENAI_API_KEY`) and JEV-27B on a server the user started (`decision.local_url`). None of the hosted APIs accepts a ChatGPT or Gemini subscription login, so a `subscription` provider asks the logged-in runtime CLI for the same JSON, uncalibrated (confidence `null`). Under `decision.provider=auto` the order is local, typesafe, gemini, openai, subscription; each failure is reported. Keys are read from the env and the `.env` chain and never printed. The `routing.jev` step keeps its own client and setting.
+- `nrv decide`: closed questions from the orchestrator or a script, JSON out (exit 0 answered, 1 every provider failed, 2 usage, 3 none configured). `nrv decide status` shows what is configured and whether the machine can host JEV-27B (RAM, and GPU memory through `nvidia-smi` on Windows and Linux). The engine never downloads or starts the model.
+- Runtime choice on request: the session host stays the default (a user in Claude Code gets Claude Code). Only when the user asks the engine to choose, through `nrv dispatch --runtime auto`, does a hosted or local decision model pick among the installed runtimes outside cooldown, and only when it clears `decision.min_confidence` (0.7). Audited as `x_runtime_decision`.
+- Quality gate: when the LLM judge is out of quota, a hosted or local decision model grades the file (meets the brief, quality 0-4) and decides only when both answers agree above the confidence floor (`mode: "decision"`). Otherwise the file stays unjudged, exit 3, as before.
+- Routing: the harness protocol adds a second opinion with `nrv decide` when two finalists still fit. It is a signal, never the pick.
+- Tests never spend a real key: the test preload sets `NIRVANA_DECISION_PROVIDER=off`, and every provider is exercised with a fake fetch.
+
 ## 0.15.0-beta.12 — 2026-10-16
 
 ### The agent knows how to show and change the brief template

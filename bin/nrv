@@ -140,6 +140,8 @@ case "$cmd" in
     exec "$BUN_BIN" "$SKILLS/harness/scripts/route.ts" "$@" --prefer business ;;
   use-squads|squad|squads)
     exec "$BUN_BIN" "$SKILLS/harness/scripts/route.ts" "$@" --prefer squad ;;
+  decide)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/decide.ts" "$@" ;;
   find)
     exec "$BUN_BIN" "$SKILLS/harness/scripts/find.ts" "$@" ;;
   validate|verify)

@@ -80,3 +80,8 @@ if (!process.env.NIRVANA_AUDIT_KEY) {
 // here instead of leaving the machine. A test that exercises the Jev sets both.
 if (process.env.NIRVANA_ROUTING_JEV === undefined) process.env.NIRVANA_ROUTING_JEV = "off";
 if (process.env.TYPESAFE_ENDPOINT === undefined) process.env.TYPESAFE_ENDPOINT = "http://127.0.0.1:9/v1/systemone";
+
+// And the decision models: the owner's machine may hold real API keys, and no
+// test may spend them. A test that exercises a provider passes it explicitly
+// with a fake fetch.
+if (!process.env.NIRVANA_DECISION_PROVIDER) process.env.NIRVANA_DECISION_PROVIDER = "off";

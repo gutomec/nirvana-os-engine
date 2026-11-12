@@ -385,6 +385,9 @@ const runtime = arg("--runtime");
 // Was the --runtime flag GIVEN by the user? (an explicit flag ALWAYS beats the
 // USE_* rules — a rule only beats the default.)
 const runtimeFlagGiven = process.argv.some(a => a === "--runtime" || a.startsWith("--runtime="));
+// `--runtime auto`: the user asked the engine to choose the runtime. Only then
+// may a decision model pick one; otherwise the session host runs the work.
+const runtimeAutoRequested = runtimeFlagGiven && (runtime ?? "").trim().toLowerCase() === "auto";
 // Absolute from here on: the worker starts in its run folder, the precheck runs
 // here and the reviewer in the outputs root, so a relative path named three
 // different folders. Seen on a Codex run: the worker wrote _SUMMARY.md and
@@ -528,7 +531,7 @@ function printUsage(write: (line: string) => void): void {
     "  Run:",
     "    --exec[=<runtime>]      run it: execute, verify, gate, deliver. Without --exec the command refuses",
     "    --scaffold-only         prepare the run folder and the prompt without running them (exit 3)",
-    `    --runtime=<name>        ${runtimes} (default: ${sessionHost ? `${sessionHost}, ` : ""}the runtime of this session)`,
+    `    --runtime=<name>        ${runtimes}, or auto to let a decision model choose (default: ${sessionHost ? `${sessionHost}, ` : ""}the runtime of this session)`,
     "    --claude-code           shortcut for --exec=claude-code",
     "    --brief-file=<path>     the brief in a file (alternative to an inline brief)",
     "    --manifest=<path>       deliverables.json, the expected paths (business only)",
@@ -688,7 +691,7 @@ const knownRuntimes = listRuntimes().map(r => r.name);
 const defaultRuntimeSetting = resolveSetting("execution.default_runtime");
 const execEq = cliArgs.find(a => a.startsWith("--exec="))?.slice("--exec=".length).trim() ?? "";
 for (const [value, origin] of [
-  [runtimeFlagGiven ? (runtime ?? "") : "", "--runtime"],
+  [runtimeFlagGiven && !runtimeAutoRequested ? (runtime ?? "") : "", "--runtime"],
   [execEq, "--exec="],
   [String(defaultRuntimeSetting.value ?? "").trim(), `execution.default_runtime, ${describeSettingSource(defaultRuntimeSetting)}`],
   // hermes is a host that delegates but does not execute: a valid value here.
@@ -736,7 +739,7 @@ const runtimeRules = loadRuntimeRules(resolveCascadeRoot(process.cwd()));
 const explicitRuntime: Runtime | null = (() => {
   if (execEq) return normRuntime(execEq);
   if (process.argv.includes("--claude-code")) return "claude-code";
-  if (runtimeFlagGiven && runtime) return normRuntime(runtime);
+  if (runtimeFlagGiven && runtime && !runtimeAutoRequested) return normRuntime(runtime);
   // A continued session lives in its own runtime: that runtime runs the work
   // unless the owner named another one (then the work starts fresh there).
   const continued = typeof continueFrom?.data.runtime === "string" ? normRuntime(continueFrom.data.runtime) : null;
@@ -762,6 +765,21 @@ let runtimeDecision: RuntimeDecision = decideRuntime({
   available: runtimeAvailable,
 });
 const installedRuntimes = (): Runtime[] => listRuntimes().map((r) => r.name).filter(runtimeAvailable);
+// The user asked the engine to choose (`--runtime auto`) and nothing named a
+// runtime: a decision model picks among the installed runtimes outside
+// cooldown (harness/lib/decision-runtime.ts). Without that request the session
+// host always runs the work. Below decision.min_confidence, or with no
+// hosted/local decision model, the host stands; announced and audited below.
+const runtimeAutoHost = runtimeDecision.runtime;
+const runtimeAutoPick = runtimeAutoRequested && runtimeDecision.source === "default" && !runtimeDecision.vetoes?.length
+  && resolveSetting("decision.provider").value !== "off"
+  ? await (await import("../lib/decision-runtime.ts")).chooseRuntimeByDecision({
+      brief,
+      candidates: installedRuntimes().filter((rt) => !isInCooldown(resolveCascadeRoot(process.cwd()), rt)),
+      host: runtimeDecision.runtime,
+    })
+  : null;
+if (runtimeAutoPick) runtimeDecision = { runtime: runtimeAutoPick.runtime, source: "decision", score: runtimeAutoPick.confidence };
 // A runtime the caller NAMED (flag or brief) and this machine does not have:
 // refuse, and say what is installed. Serving the run from another vendor
 // behind their back is the defect the resolution order above exists to prevent.
@@ -1051,6 +1069,18 @@ if (runtimeDecision.source === "brief") {
   });
 } else if (runtimeRules.length && runtimeDecision.source === "default" && !explicitRuntime) {
   console.log(c("dim", `  USE_* rules present, none matched this brief — staying on the default (${runtimeDecision.runtime})`));
+}
+if (runtimeAutoPick) {
+  console.log(c("lime", "▶") + c("bold", ` Runtime picked by the decision model: ${runtimeAutoPick.runtime}`) + c("dim", ` (${runtimeAutoPick.provider}, confidence ${runtimeAutoPick.confidence.toFixed(2)}; session host is ${runtimeAutoHost})`));
+} else if (runtimeAutoRequested && runtimeDecision.source === "default") {
+  console.log(c("dim", `  --runtime auto: no confident pick from a decision model, staying on the session host (${runtimeDecision.runtime})`));
+}
+if (runtimeAutoRequested) {
+  emit("x_runtime_decision", {
+    project_id: projectId || null, runtime: runtimeDecision.runtime, previous: runtimeAutoHost,
+    provider: runtimeAutoPick?.provider ?? null, confidence: runtimeAutoPick?.confidence ?? null,
+    probabilities: runtimeAutoPick?.probabilities ?? null,
+  });
 }
 // Block appended to the AUTONOMOUS_DIRECTIVE: the maestro honors the rules when
 // DELEGATING sub-tasks ("" when there are no rules = no-op).

@@ -6,6 +6,34 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que os instaladores de uma linha e os setups de pack consomem.
 
+## 0.15.0 — 2026-11-12
+
+### A linha 0.15 é estável
+
+A 0.15.0 é a beta 0.15 (beta.1 a beta.12, entradas abaixo) lançada como estável, com os modelos de decisão. O comando de uma linha agora instala a 0.15.0, e um engine 0.14 passa para ela no `nrv update`. O que muda para quem vem da 0.14:
+
+- Uma empresa roda como um agente só, que faz os papéis dos seus assentos, encarna os clones e lê os cartões de trabalho dos squads; a cadeia, o diretor, `--team` e `nrv team` saíram (beta.1).
+- A revisão é exceção, decidida por `review.policy` e feita uma vez em outro runtime quando há um disponível (beta.1).
+- Perfis de desempenho (`max`, `balanced`, `economy`), escolhidos na instalação (beta.1).
+- O Nirvana fica fora do caminho até um pedido chamá-lo: o `nrv init` escreve por padrão a nota curta sob demanda, e `--orchestrators=always` mantém o contrato completo. Rodar `nrv init .` de novo num projeto da 0.14 troca o modo ali mesmo e preserva as linhas do usuário (beta.1, beta.6).
+- Cada squad instala no seu próprio ambiente, preparado quando roda (beta.5).
+- O Gemini CLI deixou de ser runtime; o Antigravity o substitui (beta.6).
+- O Jev da TypeSafe como primeiro passo do roteamento `--auto`, ativado pela chave (`routing.jev`, beta.7).
+- Templates de brief (`slim` por padrão, `standard`, `detailed`, `karpathy`) e os comandos para ver e trocar o template (beta.11, beta.12).
+
+Vieram também da 0.14.12 e da 0.14.13, lançadas ao lado da beta: o `nrv doctor` confere o hook de contexto do Antigravity em `~/.gemini/config/hooks.json` e aponta hooks nossos deixados no lugar antigo; um run encerrado pelo detector de travamento não é passado para outro runtime; e `nrv run-track close` fecha o terminal do Orca de um worker que o engine abriu lá.
+
+### Modelos de decisão: Jev, Gemini Decision 1, OpenAI Decisions e um JEV-27B local
+
+Um modelo de decisão responde perguntas fechadas (sim/não, escolha, nota) com probabilidades calibradas em menos de um segundo, por centavos a cada mil chamadas. O engine agora conhece os quatro que existem e usa esses modelos onde antes gastava um modelo de texto para escolher de uma lista conhecida. Referência: `skills/_shared/DECISION_MODELS.md`.
+
+- `skills/_shared/lib/decision-model.ts`: um cliente para TypeSafe Jev (`TYPESAFE_API_KEY`), Gemini Decision 1 (`GEMINI_API_KEY`), OpenAI Decisions no `gpt-6-luna` (`OPENAI_API_KEY`) e JEV-27B num servidor que o próprio usuário iniciou (`decision.local_url`). Nenhuma das APIs hospedadas aceita login de assinatura do ChatGPT ou do Gemini, então um provedor `subscription` pede o mesmo JSON à CLI do runtime logado, sem calibração (confiança `null`). Com `decision.provider=auto` a ordem é local, typesafe, gemini, openai, subscription, e cada falha é informada. As chaves são lidas do ambiente e da cadeia de `.env` e nunca impressas. O passo `routing.jev` mantém seu próprio cliente e configuração.
+- `nrv decide`: perguntas fechadas do orquestrador ou de um script, com saída em JSON (exit 0 respondeu, 1 todos os provedores falharam, 2 uso incorreto, 3 nenhum configurado). `nrv decide status` mostra o que está configurado e se a máquina comporta o JEV-27B (RAM, e memória de GPU pelo `nvidia-smi` no Windows e no Linux). O engine nunca baixa nem inicia o modelo.
+- Escolha de runtime sob pedido: o padrão continua sendo o runtime da sessão (quem está no Claude Code usa o Claude Code). Só quando o usuário pede que o engine escolha, via `nrv dispatch --runtime auto`, um modelo de decisão hospedado ou local escolhe entre os runtimes instalados e fora de cooldown, e só se passar de `decision.min_confidence` (0,7). Auditado como `x_runtime_decision`.
+- Quality gate: quando o juiz LLM fica sem cota, um modelo de decisão hospedado ou local avalia o arquivo (atende ao brief, qualidade de 0 a 4) e só decide quando as duas respostas concordam acima do piso de confiança (`mode: "decision"`). Senão o arquivo fica sem julgamento, exit 3, como antes.
+- Roteamento: o protocolo do harness ganha uma segunda opinião com `nrv decide` quando dois finalistas ainda servem. É um sinal, nunca a escolha.
+- Os testes nunca gastam chave real: o preload de testes define `NIRVANA_DECISION_PROVIDER=off`, e cada provedor é exercitado com um fetch falso.
+
 ## 0.15.0-beta.12 — 2026-10-16
 
 ### O agente sabe mostrar e trocar o template do brief

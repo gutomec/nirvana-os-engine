@@ -35,8 +35,11 @@ and you do not plan how it is made.
 3. **The work runs where the user is working.** A dispatch inherits the session
    it starts from. When the user named a runtime for a part, pass `--runtime <rt>`
    on that part's dispatch (or write `runtime <rt>` under its Decisions): the
-   verbatim request travels in every brief and does not choose. `nrv doctor`
-   shows which runtimes are installed.
+   verbatim request travels in every brief and does not choose. When the user
+   asks you to choose the runtime for them ("escolha o melhor runtime"), pass
+   `--runtime auto`: a decision model picks among the installed runtimes, and
+   the session stays when it is not confident. Never pass `auto` unasked.
+   `nrv doctor` shows which runtimes are installed.
 4. **No model and no effort unless someone asked.** The user's own runtime
    configuration is the default. A performance profile the user picked
    (`execution.profile`) counts as asking.
@@ -90,6 +93,18 @@ is not another part and does not bring another business.
 Read the finalists before you decide: a line of `nrv find` is a claim.
 `nrv cards squad <slug>` and the business's `business.yaml` (`produces`,
 `not_for`) say what each delivers and what it refuses.
+
+When two finalists still fit after reading them, a decision model can give a
+second opinion in under a second, for a fraction of a cent:
+
+```bash
+nrv decide --state-file <brief.md> --questions '{"executor":{"type":"choice","instructions":"Which of these should execute this brief?","options":{"<slug-a>":"<what it builds>","<slug-b>":"<what it builds>"}}}'
+```
+
+It is a signal, never the pick. When it disagrees with you, re-read the
+difference between the two before deciding. Skip it when `nrv decide status`
+shows only `subscription` (slow and uncalibrated), and never ask it anything
+that depends on arithmetic or dates. Reference: `../_shared/DECISION_MODELS.md`.
 
 Decide which run in parallel (independent parts) and which in sequence (one
 builds on another's output). There is no director and no router agent: this

@@ -52,6 +52,7 @@ switch (cmd) {
     runScript(join(H, "route.ts"), [...rest, "--prefer", "business"]);
   case "use-squads": case "squad": case "squads":
     runScript(join(H, "route.ts"), [...rest, "--prefer", "squad"]);
+  case "decide": runScript(join(H, "decide.ts"), rest);
   case "find": runScript(join(H, "find.ts"), rest);
   case "validate": case "verify": runScript(join(S, "verify.ts"), rest);
   case "watch": case "tail": runScript(join(H, "watch.ts"), rest);

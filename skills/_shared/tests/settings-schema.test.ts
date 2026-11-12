@@ -150,8 +150,8 @@ describe("legacy variables", () => {
       if (!spec.env) continue;
       const samples: SettingValue[] = spec.kind === "enum" ? [...spec.options!]
         : spec.kind === "boolean" ? [true, false]
-        : spec.kind === "number" ? [spec.default, 7]
-        : [spec.default, spec.key === "gauntlet.evaluator" ? "squad:spec-judge" : "sample-value"];
+        : spec.kind === "number" ? [spec.default, spec.key === "decision.min_confidence" ? 0.5 : 7]
+        : [spec.default, spec.key === "gauntlet.evaluator" ? "squad:spec-judge" : spec.key === "decision.local_url" ? "http://localhost:8000" : "sample-value"];
       for (const value of samples) {
         const text = (spec.toEnv as (value: SettingValue) => string | null)(value);
         if (text === null) continue; // the variable cannot spell this value; the child resolves it itself
