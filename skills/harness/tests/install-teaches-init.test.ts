@@ -1,11 +1,10 @@
-// install-teaches-init.test.ts — the last screen of the install must teach the
-// one step that decides whether the product works as sold.
+// install-teaches-init.test.ts — the last screen of the install must teach
+// `nrv init`, and say what it does.
 //
-// `nrv init` writes the agent contract (AGENTS.md / CLAUDE.md / GEMINI.md) that
-// tells a runtime to orchestrate. Without it the skill must self-activate by
-// description match, and when it does not the brief is answered inline: no
-// dispatch, no gate, no audit. Users who skip init get a worse product and no
-// error telling them why.
+// `nrv init` writes a short note (AGENTS.md / CLAUDE.md / GEMINI.md): the AI CLI
+// keeps working as usual and uses Nirvana when a request names it, asks for a
+// business, a squad or a mind-clone, or asks for another runtime.
+// `--orchestrators=always` makes Nirvana the orchestrator of every artifact.
 //
 // The pack installer used to end with "open any AI CLI and just talk to it",
 // which taught the inline path to the buyer on their very first run.
@@ -26,7 +25,7 @@ function summaryBlock(): string {
 
 describe("the engine installer's last screen", () => {
   test("leads with nrv init, not with a command list", () => {
-    expect(summaryBlock()).toMatch(/Start every project with nrv init/);
+    expect(summaryBlock()).toMatch(/Start a project with nrv init/);
   });
 
   test("shows both shapes: a new dir and an existing one", () => {
@@ -35,12 +34,12 @@ describe("the engine installer's last screen", () => {
     expect(s).toMatch(/nrv init \./);
   });
 
-  test("states the consequence of skipping it, concretely", () => {
+  test("says the AI CLI keeps working as usual, when it uses Nirvana, and how to make Nirvana the orchestrator", () => {
     const s = summaryBlock();
-    expect(s).toMatch(/inline/i);
-    expect(s).toMatch(/no dispatch/i);
-    expect(s).toMatch(/no quality gate/i);
-    expect(s).toMatch(/no audit trail/i);
+    expect(s).toMatch(/keeps working as usual/);
+    expect(s).toMatch(/businesses, squads or mind-clones/);
+    expect(s).toMatch(/another runtime/);
+    expect(s).toMatch(/--orchestrators=always/);
   });
 
   test("names all three contract files — no runtime is privileged", () => {

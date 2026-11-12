@@ -18,10 +18,12 @@
 //
 // Exit: 0 ok · 1 render failed · 2 bad args
 
+import { findChrome } from "../../_shared/lib/find-chrome.ts";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { spawnSync } from "node:child_process";
+import { isRunPlumbing, isRunStateFile } from "../../_shared/lib/run-plumbing.ts";
 
 function arg(name: string, fallback?: string): string | undefined {
   const eq = process.argv.find(a => a.startsWith(`${name}=`));
@@ -35,11 +37,11 @@ const deliverablesDir = arg("--deliverables");
 const outputPdf = arg("--output");
 const summaryFile = arg("--summary");
 const orderArg = arg("--order");
-const title = arg("--title", "Relatório Técnico Integrado");
-const subtitle = arg("--subtitle", "Medicina, Segurança e Direito do Trabalho");
+const title = arg("--title", "Integrated Technical Report");
+const subtitle = arg("--subtitle", "Medicine, Safety and Labor Law");
 const client = arg("--client", "");
-const dateStr = arg("--date", new Date().toLocaleDateString("pt-BR"));
-const brand = arg("--brand", "Relatório");
+const dateStr = arg("--date", new Date().toLocaleDateString("en-US"));
+const brand = arg("--brand", "Report");
 
 if (!deliverablesDir || !outputPdf) {
   console.error('Usage: build-report-pdf.ts --deliverables <dir> --output <pdf> [--summary <md>] [--order "a.md,b.md"] [--title] [--subtitle] [--client] [--brand]');
@@ -87,7 +89,11 @@ function humanize(file: string): string {
 }
 
 // Resolve ordered deliverable list (exclude the summary file if it lives here).
-const allMd = fs.readdirSync(deliverablesDir).filter(f => f.toLowerCase().endsWith(".md")).sort((a, b) => a.localeCompare(b, "pt-BR", { numeric: true }));
+// The run's own bookkeeping (the worker's _SUMMARY.md, the gate's
+// _QA-RESERVATIONS.md, the prompt) is never a section of the client's report,
+// whoever names it in --order.
+const isWork = (f: string) => !isRunPlumbing(f) && !isRunStateFile(f);
+const allMd = fs.readdirSync(deliverablesDir).filter(f => f.toLowerCase().endsWith(".md") && isWork(f)).sort((a, b) => a.localeCompare(b, "pt-BR", { numeric: true }));
 const summaryBase = summaryFile ? path.basename(summaryFile) : null;
 let ordered: string[];
 if (orderArg) {
@@ -97,7 +103,7 @@ if (orderArg) {
 } else {
   ordered = allMd.filter(f => f !== summaryBase);
 }
-ordered = ordered.filter(f => f !== summaryBase && fs.existsSync(path.join(deliverablesDir, f)));
+ordered = ordered.filter(f => f !== summaryBase && isWork(f) && fs.existsSync(path.join(deliverablesDir, f)));
 
 // Build sections.
 type Section = { id: string; title: string; html: string };
@@ -173,55 +179,30 @@ a{ color:var(--primary); text-decoration:none; }
 `;
 
 const coverSummary = summaryHtml
-  ? `<div class="summary"><h2>Resumo Executivo</h2>${summaryHtml}</div>`
+  ? `<div class="summary"><h2>Executive summary</h2>${summaryHtml}</div>`
   : "";
 
-const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>${THEME_CSS}</style></head>
+const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>${THEME_CSS}</style></head>
 <body>
 <div class="cover">
   <div class="band">
-    <div class="kicker">${escapeHtml(brand)} · Relatório</div>
+    <div class="kicker">${escapeHtml(brand)} · Report</div>
     <h1>${escapeHtml(title)}</h1>
     <div class="subtitle">${escapeHtml(subtitle)}</div>
     <div class="meta">
-      ${client ? `<div><b>Cliente:</b> ${escapeHtml(client)}</div>` : ""}
-      <div><b>Data:</b> ${escapeHtml(dateStr)}</div>
+      ${client ? `<div><b>Client:</b> ${escapeHtml(client)}</div>` : ""}
+      <div><b>Date:</b> ${escapeHtml(dateStr)}</div>
     </div>
   </div>
   ${coverSummary}
 </div>
-${sections.length > 1 ? `<nav class="toc"><h2>Sumário</h2><ol>${toc}</ol></nav>` : ""}
+${sections.length > 1 ? `<nav class="toc"><h2>Contents</h2><ol>${toc}</ol></nav>` : ""}
 ${body}
 </body></html>`;
 
 const tmpHtml = path.join(os.tmpdir(), `medwork-report-${Date.now()}.html`);
 fs.writeFileSync(tmpHtml, html, "utf8");
 fs.mkdirSync(path.dirname(path.resolve(outputPdf)), { recursive: true });
-
-function findChrome(): string | null {
-  const env = process.env.PUPPETEER_EXECUTABLE_PATH;
-  if (env && fs.existsSync(env)) return env;
-  const byOs: Record<string, string[]> = {
-    darwin: [
-      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-      "/Applications/Chromium.app/Contents/MacOS/Chromium",
-      "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-    ],
-    win32: [
-      "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-      "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
-      "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
-    ],
-    linux: [],
-  };
-  for (const p of byOs[process.platform] || []) if (fs.existsSync(p)) return p;
-  for (const bin of ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "msedge"]) {
-    const probe = process.platform === "win32" ? "where" : "which";
-    const r = spawnSync(probe, [bin], { windowsHide: true, encoding: "utf8" });
-    if (r.status === 0 && r.stdout.trim()) return r.stdout.trim().split("\n")[0];
-  }
-  return null;
-}
 
 function render(): { ok: boolean; engine: string; error?: string } {
   // weasyprint first: best paged-media support (page numbers, TOC page refs).
@@ -235,16 +216,16 @@ function render(): { ok: boolean; engine: string; error?: string } {
   if (chrome) {
     const r = spawnSync(chrome, ["--headless=new", "--disable-gpu", "--no-pdf-header-footer", `--print-to-pdf=${path.resolve(outputPdf)}`, tmpHtml], { windowsHide: true, encoding: "utf8" });
     if (r.status === 0 && fs.existsSync(outputPdf)) return { ok: true, engine: "chrome" };
-    return { ok: false, engine: "chrome", error: r.stderr || "chrome print falhou" };
+    return { ok: false, engine: "chrome", error: r.stderr || "chrome print failed" };
   }
-  return { ok: false, engine: "none", error: "nenhum engine de PDF disponível (instale weasyprint ou Chrome)" };
+  return { ok: false, engine: "none", error: "no PDF engine available (install weasyprint or Chrome)" };
 }
 
 const res = render();
 try { fs.rmSync(tmpHtml, { force: true }); } catch { /* ignore */ }
 
 if (!res.ok) {
-  console.error(`✗ Falha ao renderizar PDF (${res.engine}): ${res.error}`);
+  console.error(`✗ Failed to render PDF (${res.engine}): ${res.error}`);
   process.exit(1);
 }
 const kb = (fs.statSync(outputPdf).size / 1024).toFixed(1);

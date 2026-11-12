@@ -3107,14 +3107,14 @@ html[data-theme="awwwards"] .icon-btn .theme-icon-awwwards { display: inline-blo
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   BATCH 1 — Navegação em pilha do sidebar (kinds → lista → detalhe)
+   BATCH 1: stacked sidebar navigation (kinds → list → detail)
    + quick wins de UX (focus-visible, loading/error, skeletons)
    ═══════════════════════════════════════════════════════════════════ */
 
-/* Utilitário de texto ligado ao token (substitui text-zinc-500 hardcoded) */
+/* Text utility bound to the token (replaces hardcoded text-zinc-500) */
 .text-secondary { color: var(--text-secondary); }
 
-/* ── NÍVEL 1 — cartões de tipo, ocupam o aside inteiro ── */
+/* ── LEVEL 1: kind cards, fill the whole aside ── */
 .kind-cards {
   flex: 1; overflow-y: auto;
   display: flex; flex-direction: column;
@@ -3142,7 +3142,7 @@ html[data-theme="awwwards"] .icon-btn .theme-icon-awwwards { display: inline-blo
 .kind-card-count { font-size: 12px; color: var(--text-tertiary); font-variant-numeric: tabular-nums; min-width: 18px; text-align: right; }
 .kind-card-chevron { width: 15px !important; height: 15px !important; color: var(--text-tertiary); }
 
-/* ── NÍVEL 2 — container da lista (back-header + filtro + lista) ── */
+/* ── LEVEL 2: list container (back-header + filter + list) ── */
 .list-nav { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .list-nav-header {
   display: flex; align-items: center; gap: var(--space-2);
@@ -3202,7 +3202,7 @@ html[data-theme="awwwards"] .icon-btn .theme-icon-awwwards { display: inline-blo
   color: var(--status-danger-solid, var(--text-secondary)); font-size: 13px;
 }
 
-/* ── QUICK WIN — foco de teclado visível nos controles primários ── */
+/* ── QUICK WIN: visible keyboard focus on primary controls ── */
 .kind-card:focus-visible,
 .list-row:focus-visible,
 .nav-back-btn:focus-visible,
@@ -3294,7 +3294,7 @@ html[data-theme="awwwards"] .icon-btn .theme-icon-awwwards { display: inline-blo
 .chat-text :is(p,ul,ol) { margin: 4px 0; }
 .chat-text code { background: rgba(0,0,0,0.15); padding: 1px 5px; border-radius: 5px; font-size: 12px; }
 .chat-text pre { background: var(--surface-0); border: 1px solid var(--border-default); border-radius: 8px; padding: 10px; overflow-x: auto; font-size: 12px; }
-/* Superfície de orquestração (modo run) — timeline viva AG-UI */
+/* Orchestration surface (run mode): live AG-UI timeline */
 .run-surface { margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--border-default); }
 .run-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; padding: 6px 10px; border-radius: var(--radius-md); background: linear-gradient(90deg, oklch(62% 0.14 275 / 0.10), transparent); border: 1px solid var(--border-subtle); }
 .run-head-actor { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; font-size: 12.5px; }
@@ -3319,7 +3319,7 @@ html[data-theme="awwwards"] .icon-btn .theme-icon-awwwards { display: inline-blo
 .run-infra-toggle { display: inline-block; margin: 4px 0 0 30px; padding: 0; border: none; background: none; color: var(--text-tertiary); font-size: 11px; cursor: pointer; text-decoration: underline dotted; }
 .run-infra-toggle:hover, .run-infra-toggle:focus-visible { color: var(--text-secondary); }
 
-/* ─── Cartão de Trajetória (trajectory-card.js) ───
+/* ─── Trajectory Card (trajectory-card.js) ───
    Single organism shared by the Chat panel and the Runs tab. A plain `event`
    row reuses `.run-step`/`.tone-*` above unchanged; this block only adds the
    three molecules layered on top: the judgement strip, the delivery-nuance
@@ -3356,7 +3356,7 @@ html[data-theme="awwwards"] .icon-btn .theme-icon-awwwards { display: inline-blo
 .delivery-badge-fail-reversible{ background: var(--status-danger-bg);  color: var(--status-danger-fg);  border-color: var(--status-danger-border); }
 .delivery-badge-detail { margin-top: 4px; }
 
-/* Chip de saúde de runtime: inline, not a separate banner — the hint is
+/* Runtime-health chip: inline, not a separate banner — the hint is
    visible without a click (runtime_auth_failed is the most actionable
    event in the whole taxonomy per the Wave 1 inventory; it does not hide). */
 .runtime-health-chip {
@@ -3399,7 +3399,7 @@ html[data-theme="awwwards"] .icon-btn .theme-icon-awwwards { display: inline-blo
 .chat-foot { padding: 0 var(--space-4) var(--space-3); }
 @media (prefers-reduced-motion: reduce) { .chat-panel { transition: none; } .chat-dots, .chat-send .spin { animation: none; } }
 
-/* ═══ FASE 4 — histórico de chats ═══ */
+/* ═══ PHASE 4: chat history ═══ */
 .chat-history {
   position: absolute; top: 60px; left: 0; right: 0; z-index: 10;
   max-height: 60%; overflow-y: auto;

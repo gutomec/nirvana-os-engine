@@ -3,9 +3,9 @@ brief_intake:
 
 # TODO (ROUTING_METADATA_CONTRACT.md §7): derive one route per example_brief
 # family in business.yaml. Each regex MUST fire on infinitive AND conjugated
-# forms, EN and PT, accented and unaccented — use verb stems, never one form.
+# forms, in every language the clients write in. Use verb stems, never one form.
 # No inline (?i) flag; matching is case-insensitive already. Example:
 # auto_routes:
-#   - pattern: '\b(escrev\w*|redig\w*|write|writing)\b.*\b(ebook|e-?book|livro)\b'
+#   - pattern: '\b(writ\w*|draft\w*)\b.*\b(ebook|e-?book|book)\b'
 #     route_to: ceo
 auto_routes: []

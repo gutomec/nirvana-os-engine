@@ -1,51 +1,51 @@
-# example-solo · Template de Business Solo
+# example-solo · Solo business template
 
-Este diretório é um template rodável de business mínima válida (1 employee CEO que faz brief_intake, processa e entrega).
+This directory is a runnable template for a minimal valid business (1 CEO employee who takes the brief, works it and delivers).
 
-## Estrutura
+## Structure
 
 ```
 example-business/
 ├── business.yaml                 # manifest protocol 2.0
-├── org-chart.yaml                # hierarquia (CEO sem reports)
+├── org-chart.yaml                # hierarchy (CEO with no reports)
 ├── routing.yaml                  # brief_intake → ceo
 ├── employees/
-│   └── ceo.md                    # CEO com acceptance + brief_intake=true
+│   └── ceo.md                    # CEO with acceptance + brief_intake=true
 ├── memory/
-│   └── permanent.md              # memória cross-session (skeleton)
-└── README.md                     # este arquivo
+│   └── permanent.md              # cross-session memory (skeleton)
+└── README.md                     # this file
 ```
 
-## Como usar este template
+## How to use this template
 
-Não modifique este diretório. Use como referência ou ponto de partida:
+Do not modify this directory. Use it as a reference or a starting point:
 
 ```bash
 # Via wizard:
-*business init minha-empresa --template solo
+*business init my-company --template solo
 
-# Ou copy manual:
-cp -R ~/.nirvana/skills/businesses/templates/example-business ~/businesses/minha-empresa
-# Editar ~/businesses/minha-empresa/business.yaml e ajustar nome, domínios, descrição.
-# Editar ~/businesses/minha-empresa/employees/ceo.md (description, entradas de acceptance).
-# Validar:
-nrv validate business minha-empresa --strict
+# Or copy by hand:
+cp -R ~/.nirvana/skills/businesses/templates/example-business ~/businesses/my-company
+# Edit ~/businesses/my-company/business.yaml and adjust name, domains, description.
+# Edit ~/businesses/my-company/employees/ceo.md (description, acceptance entries).
+# Validate:
+nrv validate business my-company --strict
 ```
 
-## Validação
+## Validation
 
-Este template passa no portão de admissão (`nrv validate business <slug>`):
+This template passes the admission gate (`nrv validate business <slug>`):
 
-- Manifest válido contra o schema Zod executado (`_shared/validators/validators.ts`).
-- Exatamente 1 brief_intake (ceo).
-- BP7 não-aplicável (1 funcionário, antagonista desnecessário).
-- Org chart sem ciclos, exatamente 1 CEO (`reports: []`).
-- Bloco `acceptance` com 3 critérios no cargo de intake (v2 §11).
+- Manifest valid against the executed Zod schema (`_shared/validators/validators.ts`).
+- Exactly 1 brief_intake (ceo).
+- BP7 not applicable (1 employee, no antagonist needed).
+- Org chart without cycles, exactly 1 CEO (`reports: []`).
+- `acceptance` block with 3 criteria on the intake seat (v2 §11).
 
-## Outros templates
+## Other templates
 
 - `template council`: 5 advisors + 1 CEO (council strategy review)
-- `template agency`: CEO + 4-7 specialists + 1 antagonist (agency model com BP7 atendido)
-- `template custom`: wizard pergunta tudo
+- `template agency`: CEO + 4-7 specialists + 1 antagonist (agency model with BP7 satisfied)
+- `template custom`: the wizard asks everything
 
-O fluxo completo do wizard está em `SKILL.md` (§Wizard flow).
+The full wizard flow is in `SKILL.md` (§Wizard flow).

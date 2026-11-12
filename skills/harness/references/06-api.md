@@ -279,4 +279,4 @@ wildcard.
   `docs/architecture/serve-hardening.md`.
 - **Seats**: each machine running the engine consumes a seat of the pack
   license. A fleet of API workers needs a licensing decision before it
-  scales (see API_PROJECTION_PROPOSAL.md §4).
+  scales.

@@ -6,6 +6,7 @@
  * (auto-cleanup on exit).
  */
 
+import { isSafeId } from "../../../_shared/lib/run-id.ts";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -45,6 +46,7 @@ import { readSubsystems } from "./subsystems.ts";
 import { paths, invalidatePathsCache, overridePath } from "../../../_shared/lib/bun-helpers.ts";
 import { readEnvFile, writeEnvFile, setVar, deleteVar, getVar, toMap } from "../../../_shared/lib/env-file.ts";
 import { CONFIG_SCHEMA, getField, isEditableKey, maskSecret } from "./config-schema.ts";
+import { manifestScope } from "../../../_shared/lib/project-root.js";
 import {
   SETTINGS_SCHEMA, SettingsError, engineConfigPath, globalConfigPath, projectConfigPath,
   requireSpec, resolveAllSettings, resolveSetting, setSetting, settingInfo, unsetSetting,
@@ -82,7 +84,15 @@ const VIEWS_DIR = path.dirname(import.meta.path) + "/views";
 // This used to write ~/.claude/.glance.pid, which CREATED a Claude Code
 // directory on machines that never had Claude Code — the same "Claude as
 // substrate" assumption the installer carried. Honors NIRVANA_HOME.
-const PID_FILE = path.join(process.env.NIRVANA_HOME || os.homedir(), ".nirvana", ".glance.pid");
+//
+// Under `bun test` the user's home falls to the same floor state-db.js and
+// run-ledger.ts have: thirteen glance tests started a server and overwrote the
+// owner's live cockpit pid file with one naming a test process gone a second
+// later. Set only by skills/test-preload.ts.
+const PID_HOME = process.env.NIRVANA_HOME || os.homedir();
+export const PID_FILE = process.env.NIRVANA_TEST_LOGS_HOME && path.resolve(PID_HOME) === path.resolve(os.homedir())
+  ? path.join(path.resolve(process.env.NIRVANA_TEST_LOGS_HOME), ".glance.pid")
+  : path.join(PID_HOME, ".nirvana", ".glance.pid");
 const STARTED_AT = Date.now();
 
 // Neutral skills-tree root. Resolves to ~/.nirvana/skills when present so the
@@ -655,7 +665,7 @@ export async function startServer(opts: ServerOptions) {
         const gauntletMatch = p.match(/^\/api\/v1\/runs\/(run_[A-Za-z0-9-]+)\/gauntlet$/);
         if (gauntletMatch && req.method === "GET") {
           const projectId = u.searchParams.get("project_id") || "";
-          if (!validId(projectId, "prj") && !projectId.startsWith("proj-")) return problem(400, "Invalid project", "project_id is required");
+          if (!validId(projectId, "prj") && !isSafeId(projectId)) return problem(400, "Invalid project", "project_id is required");
           const projection = getGauntlet(kernelService(), projectId, gauntletMatch[1]);
           return projection ? json({ projection,
             candidates: listCandidateRevisions(kernelService(), projectId, gauntletMatch[1]),
@@ -664,7 +674,7 @@ export async function startServer(opts: ServerOptions) {
         const multiTargetMatch = p.match(/^\/api\/v1\/runs\/(run_[A-Za-z0-9-]+)\/multi-target$/);
         if (multiTargetMatch && req.method === "GET") {
           const projectId = u.searchParams.get("project_id") || "";
-          if (!validId(projectId, "prj") && !projectId.startsWith("proj-")) return problem(400, "Invalid project", "project_id is required");
+          if (!validId(projectId, "prj") && !isSafeId(projectId)) return problem(400, "Invalid project", "project_id is required");
           if (!getKernelRun(kernelService(), projectId, multiTargetMatch[1])) return notFound("run not found");
           return json({ projection: projectMultiTargetRun(kernelService(), projectId, multiTargetMatch[1]) });
         }
@@ -1256,12 +1266,15 @@ export async function startServer(opts: ServerOptions) {
         const globalEntries = readEnvFile(globalEnvPath);
         const projectMap = toMap(projectEntries);
         const globalMap = toMap(globalEntries);
+        // The scope lives in the project's manifest, not in any .env.
+        const manifestMode = manifestScope(projectDir);
 
         const groups = CONFIG_SCHEMA.map(g => ({
           ...g,
           fields: g.fields.map(f => {
-            const projectVal = projectMap[f.key];
-            const globalVal = globalMap[f.key];
+            const isScope = f.key === "NIRVANA_SCOPE";
+            const projectVal = isScope ? (manifestMode ?? projectMap[f.key]) : projectMap[f.key];
+            const globalVal = isScope ? undefined : globalMap[f.key];
             const effective = projectVal !== undefined ? projectVal : (globalVal !== undefined ? globalVal : f.default || "");
             const source: "project" | "global" | "default" =
               projectVal !== undefined ? "project" :
@@ -1294,8 +1307,8 @@ export async function startServer(opts: ServerOptions) {
         try {
           const body = await req.json() as any;
           const targetScope: "project" | "global" = body.scope === "global" ? "global" : "project";
-          const updates: Record<string, string> = body.updates || {};
-          const deletes: string[] = Array.isArray(body.deletes) ? body.deletes : [];
+          const updates: Record<string, string> = { ...(body.updates || {}) };
+          const deletes: string[] = Array.isArray(body.deletes) ? [...body.deletes] : [];
 
           const scope = getScope();
           const projectDir = scope.projectRoot || process.cwd();
@@ -1319,9 +1332,25 @@ export async function startServer(opts: ServerOptions) {
             }
           }
 
+          const applied: Array<{ key: string; from: string; to: string; action: string }> = [];
+
+          // The scope is per project and lives in .nirvana/project.yaml: written
+          // there, never to a .env and never to process.env (an environment
+          // value would outrank the manifest for the rest of this process).
+          const scopeUpdate = "NIRVANA_SCOPE" in updates ? updates.NIRVANA_SCOPE : deletes.includes("NIRVANA_SCOPE") ? "global" : null;
+          delete updates.NIRVANA_SCOPE;
+          const scopeDeleteAt = deletes.indexOf("NIRVANA_SCOPE");
+          if (scopeDeleteAt >= 0) deletes.splice(scopeDeleteAt, 1);
+          if (scopeUpdate !== null) {
+            if (targetScope === "global") return json({ error: "the scope is per project: it lives in the project's .nirvana/project.yaml" }, 400);
+            if (projectInspection().kind !== "project") return json({ error: "not a Nirvana project: run `nrv init` first" }, 400);
+            const from = manifestScope(projectDir) ?? "global";
+            projectService.setScope(projectDir, scopeUpdate as "global" | "project" | "merge");
+            applied.push({ key: "NIRVANA_SCOPE", from, to: scopeUpdate, action: "set" });
+          }
+
           let entries = readEnvFile(filePath);
           const before = toMap(entries);
-          const applied: Array<{ key: string; from: string; to: string; action: string }> = [];
 
           for (const [k, v] of Object.entries(updates)) {
             // For sensitive fields, empty string means "leave unchanged"
@@ -1339,7 +1368,7 @@ export async function startServer(opts: ServerOptions) {
             applied.push({ key: k, from: f?.sensitive ? maskSecret(from) : from, to: "", action: "delete" });
           }
 
-          writeEnvFile(filePath, entries, { backup: true });
+          if (Object.keys(updates).length || deletes.length) writeEnvFile(filePath, entries, { backup: true });
 
           // Live-reload: update process.env so resolveScope() and other readers
           // see new values immediately. Without this the running Glance process
@@ -2310,7 +2339,7 @@ const ACTIONS: Record<string, ActionDef> = {
       const chatId = (b?.chat_id || "").toString();
       const resume = (b?.resume_session || "").toString();
       const runtime = (b?.runtime || "").toString();
-      if (!msg.trim()) throw new Error("message vazia");
+      if (!msg.trim()) throw new Error("empty message");
       if (!/^[a-z0-9-]+$/.test(chatId)) throw new Error("invalid chat_id");
       const args = [`${SKILLS}/harness/scripts/chat-concierge.ts`, msg];
       if (resume && /^[A-Za-z0-9_-]+$/.test(resume)) args.push("--resume", resume);
@@ -2331,7 +2360,7 @@ const ACTIONS: Record<string, ActionDef> = {
     argsBuilder: (b) => {
       const cmd = (b?.command || "").toString();
       const chatId = (b?.chat_id || "").toString();
-      if (!cmd.trim()) throw new Error("comando vazio");
+      if (!cmd.trim()) throw new Error("empty command");
       if (!/^[a-z0-9-]+$/.test(chatId)) throw new Error("invalid chat_id");
       return ["-c", cmd];
     },
@@ -2346,9 +2375,9 @@ const ACTIONS: Record<string, ActionDef> = {
       const msg = (b?.message || "").toString();
       const chatId = (b?.chat_id || "").toString();
       const budget = (b?.max_budget || "0.50").toString();
-      if (!msg.trim()) throw new Error("message vazia");
+      if (!msg.trim()) throw new Error("empty message");
       if (!/^[a-z0-9-]+$/.test(chatId)) throw new Error("invalid chat_id");
-      // slug vazio → --auto (roteador agêntico escolhe a empresa)
+      // empty slug → --auto (the agentic router picks the business)
       const args = [`${SKILLS}/harness/scripts/dispatch.ts`];
       if (slug) { if (!/^[a-z0-9-]+$/.test(slug)) throw new Error("invalid slug"); args.push(slug, msg); }
       else args.push("--auto", msg);
@@ -2365,7 +2394,7 @@ const ACTIONS: Record<string, ActionDef> = {
       const chatId = (b?.chat_id || "").toString();
       const msg = (b?.message || "").toString();
       if (!/^[a-z0-9-]+$/.test(chatId)) throw new Error("invalid chat_id");
-      if (!msg.trim()) throw new Error("message vazia");
+      if (!msg.trim()) throw new Error("empty message");
       return [`${SKILLS}/harness/scripts/revise.ts`, chatId, msg, "--safe"];
     },
   },
@@ -2440,8 +2469,14 @@ async function handleSwitchProject(req: Request, isLoopback: boolean): Promise<R
     PROJECTS_OUTPUT_DIR: "outputs",
   };
   process.env.NIRVANA_PROJECT_ROOT = to;
+  // The library's indexes stay global unless the new project owns a library of
+  // its own (paths.js projectOwnsLibraryIndex): the same rule paths.js applies.
+  const pathsLib = createRequire(import.meta.url)("../../../_shared/lib/paths.js");
+  const ownsIndex = pathsLib.projectOwnsLibraryIndex(to, getScope().mode);
+  const globalPaths = pathsLib.resolvePaths({ mode: "global", skipScopeFile: true });
+  const LIBRARY_INDEX_KEYS = new Set(["BUSINESSES_REGISTRY_PATH", "SQUADS_REGISTRY_PATH", "ROUTING_DIGEST_PATH", "KEYWORD_ALIASES_PATH"]);
   for (const [key, sub] of Object.entries(PROJECT_SCOPED_PATHS)) {
-    const value = path.join(dotNirvana, sub);
+    const value = LIBRARY_INDEX_KEYS.has(key) && !ownsIndex ? globalPaths[key] : path.join(dotNirvana, sub);
     // audit.js/log-paths.ts re-check these two specific env vars on every call; everything
     // else (including these same two, for OTHER readers) reads the frozen `paths.js` object
     // overridePath() mutates in place — set both so no reader is left on the old project.

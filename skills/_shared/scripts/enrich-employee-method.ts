@@ -217,7 +217,7 @@ function readCapped(file: string, cap: number): string {
 const METHOD_CONTRACT_DIGEST = `
 WHAT METHOD CONTENT IS (the admission gate measures exactly this):
 - Decision rules the seat applies alone: thresholds with numbers, DO/DON'T lines
-  (nunca/sempre/recuso...), reject criteria, revision triggers. Digits, not spelled-out numbers.
+  (never/always/refuse, or the same words in the seat's language), reject criteria, revision triggers. Digits, not spelled-out numbers.
 - Procedures: the ordered steps of the seat's core loop, each step checkable.
 - Boundaries: what this seat hands to which authorized squad, what escalates to
   the seat it reports to, what it refuses outright.

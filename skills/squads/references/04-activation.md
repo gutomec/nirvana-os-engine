@@ -4,7 +4,7 @@
 Intent: ACTIVATE (keywords: activate, register, install, deps, enable, ative, instale, prepare)
 
 ## Protocol Reference
-SQUAD_PROTOCOL_V5.md §5 (Squad Structure), §16 (Security), §18 (Runtime Compatibility), §22 (Capabilities).
+`SQUAD_PROTOCOL_V6.md` §5 (Squad Structure), §16 (Security), §18 (Runtime Compatibility), §22 (Capabilities).
 
 ## Sidecar `dependencies.yaml` (v5 install model)
 
@@ -17,8 +17,8 @@ Template: `~/.nirvana/skills/squads/templates/dependencies.template.yaml`. Refer
 | Category | Purpose | Example item |
 |---|---|---|
 | `system` | OS-level CLIs that must be on PATH | `ffmpeg`, `git`, `uv` — checked then installed via brew/apt/choco per-platform |
-| `python` | Python packages | installed into the squad's own venv `~/.nirvana/envs/<slug>/.venv` through a discovered interpreter (`uv venv` and `uv pip install` when uv is present, `-m venv` and pip otherwise); reinstalled only when the declared specs changed since the last successful install; `target_dir` and `use_squad_venv` are ignored (every squad is isolated); no usable Python is a warning, not a failure |
-| `node` | Node packages | installed into the squad's own environment `~/.nirvana/envs/<slug>/` (a `package.json` with the versions as declared, `bun install`, its `bun.lock`; each sub-app under `subapps/<dir>/`). Workers reach it through `NODE_PATH`, a Node ESM hook and an `npx` shim on `PATH`; the squad dir gets only a best-effort `node_modules` link, never over a real folder, kept out of git through `.git/info/exclude`. A dispatch prepares the same environment on demand. `cwd` is ignored. `global: true` still goes through npm for packages that must be a command on PATH |
+| `python` | Python packages | installed into the squad's own venv, `~/.nirvana/envs/<slug>/.venv`, through a discovered interpreter (uv when present, `python -m venv` and pip otherwise); installed again only when the declared packages change; `target_dir` and `use_squad_venv` are ignored (every squad is isolated); no usable Python is a warning, not a failure |
+| `node` | Node packages | installed with `bun install` into the squad's own environment, `~/.nirvana/envs/<slug>/` (sub-apps under `subapps/<dir>/`), versions as declared; the squad dir gets only a `node_modules` link to it, and the worker resolves packages through `NODE_PATH`, a Node ESM hook and an `npx` shim; `cwd` is ignored. `global: true` still goes through npm for packages that must be a command on PATH |
 | `services` | Long-lived daemons (cloned + installed, NOT started) | Pixelle-Video, ComfyUI, Ollama |
 | `custom_nodes` | ComfyUI-specific custom node repos | `kijai/ComfyUI-WanVideoWrapper`, etc. |
 | `models` | HuggingFace / URL downloads | `Wan-AI/Wan2.1-T2V-14B`. Items with `size_gb > 1` require user consent |

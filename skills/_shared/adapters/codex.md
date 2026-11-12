@@ -1,89 +1,89 @@
 # Adapter · Codex (OpenAI Codex CLI)
 
-> Runtime adapter para Squad Protocol v5 + Business Protocol v1 + Harness Protocol v1.
-> Cobre os 3 protocolos em um único doc. Seções canônicas conforme Squad v4 §18.5.
-> Identidade + capabilities do sistema (o que o Nirvana-OS é e pode fazer): ver `../NIRVANA-OS.md` (fonte única).
+> Runtime adapter for Squad Protocol v6 + Business Protocol v2 + Harness Protocol v1.
+> Covers the 3 protocols in a single doc. Canonical sections per Squad Protocol v6 §18.5.
+> System identity + capabilities (what Nirvana-OS is and can do): see `../NIRVANA-OS.md` (single source).
 >
-> Todo comando e flag abaixo existe em `codex --help` / `codex exec --help` nas versões testadas.
-> Agentes montam comandos a partir deste arquivo: se uma flag não está aqui, não invente.
+> Every command and flag below exists in `codex --help` / `codex exec --help` on the tested versions.
+> Agents build commands from this file: if a flag is not listed here, do not invent it.
 
 ---
 
 ## 1. Adapter metadata
 
-| Campo | Valor |
+| Field | Value |
 |---|---|
 | `runtime` | `codex` |
 | `vendor` | OpenAI |
-| `binary` | `codex` (entrada headless: `codex exec`, alias `codex e`) |
-| `min_version` | Codex CLI 0.153 (o conjunto de flags do driver foi auditado primeiro ali; builds mais antigos perdem flags pelo retry do driver, ver §11) |
-| `tested_against` | Codex CLI 0.159.2 (instalado, help lido em 2026-10-11) e 0.162.1 (último estável, fonte na tag `rust-v0.162.1`) |
-| `default_model` | Herdado do `~/.codex/config.toml` do usuário. O engine nunca fixa model; passa `--model` só quando o usuário ou uma entrada de cascade nomeia um id OpenAI. O default do catálogo embutido é `gpt-6.1-sol`. |
-| `config_paths` | `~/.codex/config.toml` (ou `$CODEX_HOME/config.toml`), `$CODEX_HOME/<nome>.config.toml` (profile aplicado por `-p <nome>`), `<repo>/.codex/config.toml` |
-| `instructions` | `~/.codex/AGENTS.md` (global), `AGENTS.md` da raiz do repo até o cwd (projeto) |
-| `skills_root` | `~/.agents/skills` (escopo oficial do usuário), `.agents/skills` (escopo do repo), `/etc/codex/skills` (admin). `$CODEX_HOME/skills` está deprecado, mas ainda é lido. |
-| `agents_root` | `~/.codex/agents/*.toml` (pessoal), `.codex/agents/*.toml` (projeto) |
-| `hooks` | `~/.codex/hooks.json`, `[hooks]` no `config.toml`, `<repo>/.codex/hooks.json`, hooks de plugins |
-| `audit_log` | `~/.codex/sessions/` (rollouts do Codex), mais o audit do Nirvana pelos hooks do Codex (§10) e `outputs/<trace>/audit.jsonl` |
-| `protocol_versions` | Squad 5.0, Business 1.0, Harness 1.0 (gaps em §13) |
+| `binary` | `codex` (headless entry point: `codex exec`, alias `codex e`) |
+| `min_version` | Codex CLI 0.153 (the driver's flag set was first audited there; older builds lose flags through the driver's retry, see §11) |
+| `tested_against` | Codex CLI 0.159.2 (installed, help pages read 2026-10-11) and 0.162.1 (latest stable, source at tag `rust-v0.162.1`) |
+| `default_model` | Inherited from the user's `~/.codex/config.toml`. The engine never pins a model; it passes `--model` only when the user or a cascade entry names an OpenAI id. The bundled catalog default is `gpt-6.1-sol`. |
+| `config_paths` | `~/.codex/config.toml` (or `$CODEX_HOME/config.toml`), `$CODEX_HOME/<name>.config.toml` (profile layered by `-p <name>`), `<repo>/.codex/config.toml` |
+| `instructions` | `~/.codex/AGENTS.md` (global), `AGENTS.md` from the repo root down to cwd (project) |
+| `skills_root` | `~/.agents/skills` (official user scope), `.agents/skills` (repo scope), `/etc/codex/skills` (admin). `$CODEX_HOME/skills` is deprecated but still scanned. |
+| `agents_root` | `~/.codex/agents/*.toml` (personal), `.codex/agents/*.toml` (project) |
+| `hooks` | `~/.codex/hooks.json`, `[hooks]` in `config.toml`, `<repo>/.codex/hooks.json`, plugin-bundled hooks |
+| `audit_log` | `~/.codex/sessions/` (Codex rollouts), plus Nirvana's own audit through the Codex hooks (§10) and `outputs/<trace>/audit.jsonl` |
+| `protocol_versions` | Squad 6, Business 2, Harness 1 (gaps in §13) |
 
 ---
 
 ## 2. Feature support matrix
 
-`✓` = nativo · `~` = workaround/parcial · `✗` = não suportado
+`✓` = native · `~` = workaround/partial · `✗` = not supported
 
-| Feature (Business v1 §6) | Squad v5 | Business v1 | Harness v1 | Notas |
+| Feature (Business v2 §6.5) | Squad v6 | Business v2 | Harness v1 | Notes |
 |---|---|---|---|---|
-| `max_turns` | ✗ | ✗ | ✗ | `codex exec` não tem limite de turns. O engine limita a execução por timeout (§6). |
-| `tool_whitelist` | ~ | ~ | ~ | Sem flag de allowlist por tool. Os gates são o modo de sandbox, o caminho de aprovação e hooks `PreToolUse` que podem negar (§5). |
-| `subagent_spawning` | ✓ | ✓ | ✓ | `multi_agent` nativo (ligado por padrão). Workers despachados recebem `-c agents.enabled=false`, salvo quando o chamador orquestra (§7). |
-| `audit_trail` | ✓ | ✓ | ✓ | Stream de eventos `--json`, rollouts em `~/.codex/sessions/`, hooks `PreToolUse`/`PostToolUse` do Nirvana. |
-| `scheduled_invocation` | ✗ | ✗ | ✗ | O CLI não tem scheduler; o harness usa cron externo. |
-| `event_bus` | ~ | ~ | ~ | Mentions e tickets passam pelo file system. |
-| `hooks` | ✓ | ✓ | ✓ | 12 eventos de ciclo de vida, trust pelo hash da definição (§10). |
+| `max_turns` | ✗ | ✗ | ✗ | `codex exec` has no turn cap. The engine bounds a run by wall-clock timeout (§6). |
+| `tool_whitelist` | ~ | ~ | ~ | No per-tool allowlist flag. Gates are the sandbox mode, the approval path and `PreToolUse` hooks that can deny (§5). |
+| `subagent_spawning` | ✓ | ✓ | ✓ | Native `multi_agent` (on by default). Dispatched workers get `-c agents.enabled=false` unless the caller orchestrates (§7). |
+| `audit_trail` | ✓ | ✓ | ✓ | `--json` event stream, rollouts in `~/.codex/sessions/`, Nirvana's `PreToolUse`/`PostToolUse` hooks. |
+| `scheduled_invocation` | ✗ | ✗ | ✗ | No scheduler on the CLI; the harness uses external cron. |
+| `event_bus` | ~ | ~ | ~ | Mentions and tickets go through the file system. |
+| `hooks` | ✓ | ✓ | ✓ | 12 lifecycle events, trust by definition hash (§10). |
 | `sandboxing` | ✓ | ✓ | ✓ | `read-only`, `workspace-write`, `danger-full-access`. |
-| `session_memory` | ✓ | ✓ | ✓ | Histórico da thread; `codex exec resume <id>` continua. |
-| `project_memory` | ✓ | ✓ | ✓ | `AGENTS.md` carregado automaticamente. |
-| `global_memory` | ~ | ~ | ~ | `~/.codex/AGENTS.md`. A feature `memories` existe, mas vem desligada. |
-| `handoff_artifacts` | ✓ | ✓ | ✓ | Mensagem final via `-o <arquivo>`; saída estruturada via `--output-schema`. |
-| `fork_context` | ✓ | ✓ | ✓ | `codex exec fork <id>` ramifica uma thread sem tocar a original. O driver ainda não usa. |
-| `teammate_primitive` | ✗ | ✗ | ✗ | Sem primitiva de time; time é convenção no file system. |
-| `telemetry_otel` | ✓ | ✓ | ✓ | Export OTel nativo pela chave de config `otel`. |
+| `session_memory` | ✓ | ✓ | ✓ | Thread history; `codex exec resume <id>` continues it. |
+| `project_memory` | ✓ | ✓ | ✓ | `AGENTS.md` loaded automatically. |
+| `global_memory` | ~ | ~ | ~ | `~/.codex/AGENTS.md`. The `memories` feature exists but ships off. |
+| `handoff_artifacts` | ✓ | ✓ | ✓ | Final message via `-o <file>`; structured output via `--output-schema`. |
+| `fork_context` | ✓ | ✓ | ✓ | `codex exec fork <id>` branches a thread without touching the original. The driver does not use it yet. |
+| `teammate_primitive` | ✗ | ✗ | ✗ | No team primitive; a team is a file-system convention. |
+| `telemetry_otel` | ✓ | ✓ | ✓ | Native OTel export through the `otel` config key. |
 
 ---
 
 ## 3. Concept mapping
 
-| Conceito (Protocolo) | Equivalente Codex | Implementação |
+| Concept (Protocol) | Codex equivalent | Implementation |
 |---|---|---|
-| Squad / Business | Skill em `~/.agents/skills/<nome>/SKILL.md` | O engine instala as skills; cada execução é um processo `codex exec` aberto por `runCodex` |
-| Capability | Arquivo dentro da skill | `<skill>/capabilities/<id>.md`, lido pelo agente quando o brief o nomeia |
-| Employee | Execução própria ou subagent nativo | `execution.business_mode: chain` (padrão): cada cargo roda numa sessão `codex exec` própria, em série. `session`: uma sessão roda a empresa e abre os cargos como subagents do Codex (`allowSubagents: true`). |
-| `is_brief_intake: true` | Primeira sessão da cadeia | Recebe o brief no stdin |
-| `is_antagonist: true` | Um despacho `codex exec` separado | Aberto pelo harness, nunca pelo worker |
-| Handoff artifact | `-o <arquivo>` mais arquivos em disco | Persistido em `<project>/.handoffs/` |
-| Mention `@employee` | Convenção no prompt | O harness resolve para um novo despacho |
-| Ticket | Arquivo persistido | `<project>/.tickets/<TICKET_ID>.json` |
-| Escalation trigger | Checagem do harness após a execução | Lê exit code, eventos `turn.failed` / `error` e a mensagem final |
-| Permanent memory | `~/.codex/AGENTS.md` + arquivos de memória da empresa | O Codex só carrega AGENTS.md sozinho; o brief leva o resto |
-| Project memory | `AGENTS.md` | Auto-load (teto conjunto `project_doc_max_bytes`, padrão 32768) |
-| Session memory | Histórico da thread | `codex exec resume <thread_id>` (`nrv revise`) |
-| Routing decision (harness) | Feita antes do spawn | O orquestrador escolhe a empresa; o Codex só executa |
+| Squad / Business | Skill in `~/.agents/skills/<name>/SKILL.md` | The engine installs its skills there; the run itself is one `codex exec` process started by `runCodex` |
+| Capability | File inside the skill | `<skill>/capabilities/<id>.md`, read by the agent when the brief names it |
+| Employee (seat) | Seat file played by the one business agent | A business runs as ONE solo agent (`skills/harness/lib/business-solo.ts`) that opens a seat's file when it works as that seat. A Codex custom agent (§4) is only needed for a stand-alone subagent. |
+| `is_brief_intake: true` | The solo agent itself | Gets the brief on stdin |
+| `is_antagonist: true` | A separate `codex exec` dispatch | Started by the harness, never by the worker (workers have subagents off) |
+| Handoff artifact | `-o <file>` plus files on disk | Persisted in `<project>/.handoffs/` |
+| Mention `@employee` | Convention in the prompt | The harness resolves it to a new dispatch |
+| Ticket | Persisted file | `<project>/.tickets/<TICKET_ID>.json` |
+| Escalation trigger | Harness check after the run | Reads exit code, `turn.failed` / `error` events and the final message |
+| Permanent memory | `~/.codex/AGENTS.md` + business memory files | Codex auto-loads only AGENTS.md; the brief carries the rest |
+| Project memory | `AGENTS.md` | Auto-load (combined cap `project_doc_max_bytes`, default 32768) |
+| Session memory | Thread history | `codex exec resume <thread_id>` (`nrv revise`) |
+| Routing decision (harness) | Done before the spawn | The orchestrator picks the business; Codex only executes |
 
 ---
 
 ## 4. Frontmatter mapping
 
-O Codex não lê frontmatter de squads nem de empresas. Dois formatos nativos importam.
+Codex reads no frontmatter from squads or businesses. Two native formats matter.
 
 ### Skill (`SKILL.md`)
 
-Uma skill é um diretório com `SKILL.md` (frontmatter YAML com `name` e `description`, depois o corpo). O Codex lista as skills dentro de um orçamento de 2% da janela de contexto ou 8.000 caracteres. Duas skills com o mesmo nome não são mescladas; as duas aparecem. `[[skills.config]]` com `enabled = false` esconde uma sem apagá-la.
+A skill is a directory with `SKILL.md` (YAML frontmatter `name` + `description`, then the body). Codex lists skills inside a budget of 2% of the context window or 8,000 characters. Two skills with the same name are not merged; both show up. `[[skills.config]]` with `enabled = false` hides one without deleting it.
 
-### Employee → custom agent do Codex (TOML)
+### Employee → Codex custom agent (TOML)
 
-Um agente por arquivo TOML avulso em `~/.codex/agents/` ou `.codex/agents/`. Chaves obrigatórias: `name`, `description`, `developer_instructions`. Qualquer outra chave do `config.toml` é opcional (`model`, `model_reasoning_effort`, `sandbox_mode`, `mcp_servers`, `skills.config`); o que o arquivo omite é herdado do pai. A identidade é o campo `name`, não o nome do arquivo.
+One agent per standalone TOML file in `~/.codex/agents/` or `.codex/agents/`. Required keys: `name`, `description`, `developer_instructions`. Any other `config.toml` key is optional (`model`, `model_reasoning_effort`, `sandbox_mode`, `mcp_servers`, `skills.config`); omitted keys inherit from the parent. The `name` field, not the filename, is the identity.
 
 ```toml
 # ~/.codex/agents/alex-hormozi.toml
@@ -93,119 +93,120 @@ developer_instructions = """
 You are a mind-clone of Alex Hormozi specialized in offer evaluation...
 """
 sandbox_mode = "read-only"
-# sem chave `model`: o engine não fixa model, vale o do pai
+# no `model` key: the engine does not pin a model, the parent's applies
 ```
 
-> O adapter prepende `(DISCLOSURE: ...)` na description quando `type: mind_clone`.
-> Um `model` definido no arquivo vence os valores do spawn e os defaults de `[agents]`, então deixe de fora.
+> The adapter prepends `(DISCLOSURE: ...)` to the description when `type: mind_clone`.
+> A `model` set in the file beats spawn values and `[agents]` defaults, so leave it out.
 
 ---
 
 ## 5. Tool whitelist mechanics
 
-`codex exec` não tem flag que liste tools permitidas. O que o engine tem:
+`codex exec` has no flag that lists allowed tools. What the engine has:
 
-- **Sandbox** (`-s/--sandbox`): `read-only`, `workspace-write`, `danger-full-access`. O driver mapeia `noTools` para `-s read-only`.
-- **Raízes graváveis**: em `workspace-write` só `-C <dir>` é gravável; o driver libera o diretório do projeto, a raiz de outputs e o diretório da empresa ou do squad com `--add-dir`.
-- **Aprovações**: `--approve-for-me` manda toda aprovação para o revisor do próprio Codex, sob o sandbox workspace-write. Não combina com `-s`. `--dangerously-bypass-approvals-and-sandbox` remove os dois gates.
-- **Hooks**: um handler `PreToolUse` pode negar uma chamada (`permissionDecision: "deny"` ou exit code 2). É o único gate rígido por tool.
-- `-a/--ask-for-approval` (`on-request`, `never`) existe só na raiz interativa, não no `exec`.
+- **Sandbox** (`-s/--sandbox`): `read-only`, `workspace-write`, `danger-full-access`. The driver maps `noTools` to `-s read-only`.
+- **Writable roots**: under `workspace-write` only `-C <dir>` is writable; the driver grants the project dir, the outputs root and the business or squad dir with `--add-dir`.
+- **Approvals**: `--approve-for-me` routes every approval to Codex's own reviewer under the workspace-write sandbox. It cannot be combined with `-s`. `--dangerously-bypass-approvals-and-sandbox` removes both gates.
+- **Hooks**: a `PreToolUse` handler can deny a call (`permissionDecision: "deny"` or exit code 2). This is the only hard per-tool gate.
+- `-a/--ask-for-approval` (`on-request`, `never`) exists only on the interactive root, not on `exec`.
 
 ---
 
 ## 6. Max-turns mechanics
 
-Não existe. `codex exec` não tem `--max-turns` nem chave de config para limitar turns por execução. O engine limita a execução com `timeoutMs` (o processo filho é encerrado e reportado com exit 124). Custo também não serve de limite: o Codex reporta contagem de tokens, nunca USD, então o driver devolve `costUnavailable: true` e o cost estimator precifica o `usage` que recebe.
+There is none. `codex exec` has no `--max-turns` and no config key for a per-run turn cap. The engine bounds a run with `timeoutMs` (the child is killed and reported with exit 124). Cost is not a usable bound either: Codex reports token counts, never USD, so the driver returns `costUnavailable: true` and the cost estimator prices the `usage` it hands back.
 
 ---
 
 ## 7. Subagent spawning
 
-O Codex tem subagents nativos: a feature `multi_agent` é estável e vem ligada. Os spawns aparecem no stream de eventos como itens `collab_tool_call`. As chaves globais ficam em `[agents]`:
+Codex has native subagents: the `multi_agent` feature is stable and on by default. Spawns show up in the event stream as `collab_tool_call` items. Global switches live under `[agents]`:
 
-| Chave | Significado |
+| Key | Meaning |
 |---|---|
-| `agents.enabled` | Liga ou desliga as tools de multi-agent. Padrão `true`. |
-| `agents.max_concurrent_threads_per_session` | Limita threads abertas por spawn (a principal não conta). `agents.max_threads` é alias legado. |
-| `agents.default_subagent_model` | Model padrão dos agentes abertos. |
-| `agents.default_subagent_reasoning_effort` | Effort padrão dos agentes abertos. |
+| `agents.enabled` | Turns the multi-agent tools on or off. Default `true`. |
+| `agents.max_concurrent_threads_per_session` | Caps open spawned threads (primary not counted). `agents.max_threads` is a legacy alias. |
+| `agents.default_subagent_model` | Default model for spawned agents. |
+| `agents.default_subagent_reasoning_effort` | Default effort for spawned agents. |
 
-Não existe chave `agents.max_depth` nem bloco `[agents.<nome>]`; custom agents são arquivos TOML (§4).
+There is no `agents.max_depth` key and no `[agents.<name>]` block; custom agents are TOML files (§4).
 
-**Regra do engine.** Um worker despachado não abre agentes próprios, a mesma regra que os workers Claude recebem com `--disallowedTools`. `runCodex` e o launcher interativo do Orca passam `-c agents.enabled=false`, salvo quando o chamador define `allowSubagents` (o `business_mode: session` define). Usa-se chave de config em vez de `--disable multi_agent` porque builds antigos toleram uma chave `-c` desconhecida, mas saem com exit 1 diante de uma feature desconhecida em `--disable`.
+**Engine rule.** A dispatched worker does not open its own agents, the same rule Claude workers get through `--disallowedTools Task Agent Workflow`. `runCodex` and the Orca interactive launcher pass `-c agents.enabled=false` unless the caller sets `allowSubagents`. A config key is used instead of `--disable multi_agent` because older builds tolerate an unknown `-c` key but exit 1 on an unknown `--disable` feature.
 
-**Para mention `@x`:** o harness detecta no handoff retornado e despacha `x` como nova execução.
+**For a mention `@x`:** the harness detects it in the returned handoff and dispatches `x` as a new run.
 
 ---
 
 ## 8. Memory storage
 
-| Camada | Path | Persistência |
+| Layer | Path | Persistence |
 |---|---|---|
 | Global | `~/.codex/AGENTS.md` | Auto-load |
-| Project | `AGENTS.md` da raiz do repo até o cwd | Auto-load, teto `project_doc_max_bytes` (32768 somando todos) |
-| Session | Histórico da thread em `~/.codex/sessions/` (pulado com `--ephemeral`) | Retomável pelo id da thread |
-| Business permanent | `~/businesses/<biz>/memory/permanent.md` | O engine escreve no brief |
+| Project | `AGENTS.md` from repo root to cwd | Auto-load, capped by `project_doc_max_bytes` (32768 across all files) |
+| Session | Thread history in `~/.codex/sessions/` (skipped with `--ephemeral`) | Resumable by thread id |
+| Business permanent | `~/businesses/<biz>/memory/permanent.md` | The engine writes it into the brief |
 | Project (business) | `<project>/<biz>/<project_id>/memory/` | Isolation by construction |
 
-> **Isolation guard:** o Codex não isola memória por projeto. O engine monta o prompt com APENAS a memória do `project_id` atual; qualquer outra coisa é `audit_event: isolation_violation`.
+> **Isolation guard:** Codex does not isolate memory per project. The engine builds the prompt with ONLY the memory of the current `project_id`; anything else is `audit_event: isolation_violation`.
 
 ---
 
 ## 9. Context window and compaction
 
-- Janela: 272.000 tokens para todo model listado no catálogo embutido (`codex debug models --bundled`).
-- A compactação é automática e segue a config do usuário. Nesta linha o engine não passa nenhuma configuração de janela de contexto ao Codex.
-- Não existe flag de checkpoint. Uma execução que precisa continuar é retomada pelo id da thread.
+- Window: 272,000 tokens for every listed model in the bundled catalog (`codex debug models --bundled`).
+- Compaction is automatic. The engine sets the threshold with `-c model_auto_compact_token_limit=<n>` when its context-window setting is above 0, on both the headless and the Orca interactive path.
+- There is no checkpoint flag. A run that must survive is resumed by thread id instead.
 
 ---
 
 ## 10. Hook system
 
-O Codex tem hooks granulares (feature `hooks`, estável, ligada).
+Codex has granular hooks (feature `hooks`, stable, on).
 
-**Eventos (12):** `SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PreToolUse`, `PermissionRequest`, `PostToolUse`, `PreCompact`, `PostCompact`, `SubagentStart`, `SubagentStop`, `Stop`, `Interrupt`.
+**Events (12):** `SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PreToolUse`, `PermissionRequest`, `PostToolUse`, `PreCompact`, `PostCompact`, `SubagentStart`, `SubagentStop`, `Stop`, `Interrupt`.
 
-**Fontes:** `~/.codex/hooks.json`, `[hooks]` inline no `~/.codex/config.toml`, `<repo>/.codex/hooks.json` e `<repo>/.codex/config.toml` (carregados só quando essa camada do projeto é confiável), plugins habilitados e `requirements.toml` gerenciado.
+**Sources:** `~/.codex/hooks.json`, inline `[hooks]` in `~/.codex/config.toml`, `<repo>/.codex/hooks.json` and `<repo>/.codex/config.toml` (loaded only when that project layer is trusted), enabled plugins, and managed `requirements.toml`.
 
-**Trust:** um hook não gerenciado só roda depois de revisado e marcado como confiável (`/hooks` na TUI). O trust é gravado contra o hash da definição do hook, então um hook novo ou editado fica de fora até ganhar trust de novo. A chave do registro também inclui o índice do grupo de matcher: um grupo inserido antes do Nirvana por outro instalador desliga em silêncio o trust do Nirvana até `nrv setup` rodar de novo. `--dangerously-bypass-hook-trust` ignora o trust gravado por uma invocação. Hooks gerenciados são confiáveis por política.
+**Trust:** a non-managed hook runs only after it is reviewed and trusted (`/hooks` in the TUI). Trust is recorded against the hook's definition hash, so a new or edited hook is skipped until trusted again. The record key also includes the matcher-group index, which means a group inserted before Nirvana's by another installer silently detaches Nirvana's trust until `nrv setup` runs again. `--dangerously-bypass-hook-trust` skips persisted trust for one invocation. Managed hooks are trusted by policy.
 
-**Matchers** (para `PreToolUse`, `PostToolUse`, `PermissionRequest`): shell é `Bash`; edições de arquivo são `apply_patch` (aliases `Edit`, `Write`, enquanto o `tool_name` do payload continua `apply_patch`); tools MCP são `mcp__<server>__<tool>`. Tools hospedadas, como web search, não casam.
+**Matchers** (for `PreToolUse`, `PostToolUse`, `PermissionRequest`): shell is `Bash`; file edits are `apply_patch` (aliases `Edit`, `Write`, while the payload `tool_name` stays `apply_patch`); MCP tools are `mcp__<server>__<tool>`. Hosted tools such as web search are not matched.
 
-**Bloqueio:** `PreToolUse` nega com `hookSpecificOutput.permissionDecision: "deny"` ou exit 2; `UserPromptSubmit` bloqueia com `decision: "block"` ou exit 2; `PostToolUse` não desfaz a chamada, só troca o resultado por feedback; handlers `async` nunca bloqueiam.
+**Blocking:** `PreToolUse` denies with `hookSpecificOutput.permissionDecision: "deny"` or exit 2; `UserPromptSubmit` blocks with `decision: "block"` or exit 2; `PostToolUse` cannot undo a call, only replace its result with feedback; `async` handlers never block.
 
-**O que o Nirvana instala:** grupos `PreToolUse` e `PostToolUse` em `~/.codex/hooks.json`, matcher `Bash|apply_patch`, handlers de comando async que rodam `audit-emit-from-hook.ts`, com os registros de trust gravados por `skills/_shared/lib/codex-hooks.ts`. Chamadas de tools MCP não casam hoje.
+**What Nirvana installs:** `PreToolUse` and `PostToolUse` groups in `~/.codex/hooks.json`, matcher `Bash|apply_patch`, async command handlers running `audit-emit-from-hook.ts`, with the trust records written by `skills/_shared/lib/codex-hooks.ts`. MCP tool calls are not matched today.
 
 ---
 
 ## 11. Invocation examples
 
-### O que o driver roda (`runCodex`, headless)
+### What the driver runs (`runCodex`, headless)
 
 ```text
 codex exec -C <cwd>
-  [--add-dir <dir>]...                        # dir do projeto, raiz de outputs, dir da empresa/squad
-  [-s read-only | --approve-for-me]           # noTools | --safe (modo trust não passa nenhum)
-  [resume <thread_id>]                        # só ao retomar (nrv revise)
-  --json --skip-git-repo-check -o <arquivo-tmp>
-  [--model <id openai>]                       # só gpt-*, o<N>*, codex*; o resto é descartado
-  [-c model_reasoning_effort="<nível>"]       # níveis do engine: low, medium, high, xhigh, max
-  [-c agents.enabled=false]                   # salvo allowSubagents
+  [--add-dir <dir>]...                        # project dir, outputs root, business/squad dir
+  [-s read-only | --approve-for-me]           # noTools | --safe (trust mode passes neither)
+  [resume <thread_id>]                        # only when resuming (nrv revise)
+  --json --skip-git-repo-check -o <tmp-file>
+  [--model <openai id>]                       # only gpt-*, o<N>*, codex*; anything else is dropped
+  [-c model_reasoning_effort="<level>"]       # engine levels: low, medium, high, xhigh, max
+  [-c model_auto_compact_token_limit=<n>]
+  [-c agents.enabled=false]                   # unless allowSubagents
   [-c model_provider="<provider>"]
-  [--ephemeral]                               # nunca no resume
-  [--output-schema <arquivo>]
-  [-i <imagem>]...
-  [-c web_search="<modo>"]
-  [--dangerously-bypass-approvals-and-sandbox] # modo trust (padrão)
-  < prompt no stdin
+  [--ephemeral]                               # never on resume
+  [--output-schema <file>]
+  [-i <image>]...
+  [-c web_search="<mode>"]
+  [--dangerously-bypass-approvals-and-sandbox] # trust mode (default)
+  < prompt on stdin
 ```
 
-- `-C`, `--add-dir`, `-s` e `--approve-for-me` existem só no pai `exec`, por isso vêm antes de `resume`. Depois dele são erro de parse (exit 2).
-- A diretiva (`appendSystemPrompt`) não tem flag; ela vai dobrada no prompt do stdin como preâmbulo seguido de `---`.
-- O id da sessão é `thread.started.thread_id` do stream `--json`. A resposta final é lida do arquivo de `-o`.
-- Se um Codex antigo rejeita uma flag (`unexpected argument`), o driver a remove e tenta de novo, até quatro vezes, para `--add-dir`, `--approve-for-me` (trocada por `-s workspace-write`), `--ephemeral`, `--output-schema`, `-i`, `-c` e `--model`.
+- `-C`, `--add-dir`, `-s` and `--approve-for-me` exist only on the `exec` parent, so they come before `resume`. After it they are a parse error (exit 2).
+- The directive (`appendSystemPrompt`) has no flag; it is folded into the stdin prompt as a preamble followed by `---`.
+- The session id is `thread.started.thread_id` from the `--json` stream, read whatever the exit code (a failed, killed or timed-out run that started has it). When the stream names none, the driver reads the newest `$CODEX_HOME/sessions/YYYY/MM/DD/rollout-*.jsonl` whose `session_meta` names the run's folder and a start after the run's. The final answer is read from the `-o` file.
+- If an older Codex rejects a flag (`unexpected argument`), the driver drops it and retries, up to four times, for `--add-dir`, `--approve-for-me` (replaced by `-s workspace-write`), `--ephemeral`, `--output-schema`, `-i`, `-c` and `--model`.
 
-Execução concreta (modo trust, projeto fora de git):
+Concrete run (trust mode, project outside git):
 
 ```bash
 codex exec -C /work/proj --add-dir /work/proj/outputs \
@@ -214,86 +215,86 @@ codex exec -C /work/proj --add-dir /work/proj/outputs \
   --dangerously-bypass-approvals-and-sandbox < brief.md
 ```
 
-Resume para uma revisão (mesmas flags do pai, depois o subcomando):
+Resume for a revision (same parent flags, then the subcommand):
 
 ```bash
 codex exec -C /work/proj resume 0199a3c2-... \
   --json --skip-git-repo-check -o /tmp/codex-last.txt \
-  -c agents.enabled=false --dangerously-bypass-approvals-and-sandbox < revisao.md
+  -c agents.enabled=false --dangerously-bypass-approvals-and-sandbox < revision.md
 ```
 
-### Worker interativo do Orca (`interactiveArgv`)
+### Orca interactive worker (`interactiveArgv`)
 
 ```text
-codex [--dangerously-bypass-approvals-and-sandbox] [-m <id openai>]
-  [-c model_reasoning_effort="<nível>"] [-c agents.enabled=false] [--add-dir <dir>]...
+codex [--dangerously-bypass-approvals-and-sandbox] [-m <openai id>]
+  [-c model_reasoning_effort="<level>"] [-c model_auto_compact_token_limit=<n>]
+  [-c agents.enabled=false] [--add-dir <dir>]...
 ```
 
-### Camada leve (`callHostAgent`, chamadas de judge e tradução)
+### Light layer (`callHostAgent`, judge and translate calls)
 
-`codex exec [--dangerously-bypass-approvals-and-sandbox]`, prompt no stdin. Não passa `-C` nem `--skip-git-repo-check`, então com `headless_skip_permissions=false` a partir de um cwd fora de git o Codex sai com exit 1 antes do model.
+`codex exec [--dangerously-bypass-approvals-and-sandbox]`, prompt on stdin. It passes no `-C` and no `--skip-git-repo-check`, so with `headless_skip_permissions=false` from a non-git cwd Codex exits 1 before the model.
 
-### Superfície do `codex exec` (0.159.2)
+### `codex exec` surface (0.159.2)
 
-| Forma | Uso |
+| Form | Use |
 |---|---|
-| `codex exec [OPTIONS] [PROMPT]` | Uma execução. Sem prompt, ou com `-`, lê o stdin; prompt mais stdin em pipe anexa um bloco `<stdin>`. |
-| `codex exec resume [SESSION_ID] [PROMPT]` | Continua uma thread por UUID ou nome de thread, ou `--last`. `--all` tira o filtro de cwd. Sem prompt, lê o stdin quando há pipe. |
-| `codex exec fork <SESSION_ID> [PROMPT]` | Thread nova ramificada de uma existente; a original não muda. |
-| `codex exec review [PROMPT]` | Code review do repo atual: `--uncommitted`, `--base <branch>`, `--commit <sha>`, `--title`. |
+| `codex exec [OPTIONS] [PROMPT]` | One run. No prompt or `-` reads stdin; a prompt plus piped stdin appends a `<stdin>` block. |
+| `codex exec resume [SESSION_ID] [PROMPT]` | Continue a thread by UUID or thread name, or `--last`. `--all` lifts the cwd filter. No prompt reads stdin when piped. |
+| `codex exec fork <SESSION_ID> [PROMPT]` | New thread branched from an existing one; the original is unchanged. |
+| `codex exec review [PROMPT]` | Code review of the current repo: `--uncommitted`, `--base <branch>`, `--commit <sha>`, `--title`. |
 
-Opções só do pai: `-C/--cd`, `--add-dir`, `-s/--sandbox`, `--approve-for-me`, `-p/--profile`, `--oss`, `--local-provider`, `--color`. Compartilhadas pelos subcomandos: `-c`, `--enable`/`--disable <feature>`, `--strict-config`, `-m`, `-i`, `--dangerously-bypass-approvals-and-sandbox`, `--dangerously-bypass-hook-trust`, `--worktree`, `--thread-source`, `--skip-git-repo-check`, `--ephemeral`, `--ignore-user-config`, `--ignore-rules`, `--output-schema`, `--json`, `-o/--output-last-message`.
+Parent-only options: `-C/--cd`, `--add-dir`, `-s/--sandbox`, `--approve-for-me`, `-p/--profile`, `--oss`, `--local-provider`, `--color`. Shared by the subcommands: `-c`, `--enable`/`--disable <feature>`, `--strict-config`, `-m`, `-i`, `--dangerously-bypass-approvals-and-sandbox`, `--dangerously-bypass-hook-trust`, `--worktree`, `--thread-source`, `--skip-git-repo-check`, `--ephemeral`, `--ignore-user-config`, `--ignore-rules`, `--output-schema`, `--json`, `-o/--output-last-message`.
 
-### Stream de eventos JSON (`--json`)
+### JSON event stream (`--json`)
 
-`type` de topo: `thread.started` (`thread_id`), `turn.started`, `turn.completed` (`usage`), `turn.failed` (`error.message`), `item.started` / `item.updated` / `item.completed` (`item`), `error` (`message`). `usage` traz `input_tokens`, `cached_input_tokens`, `cache_write_input_tokens`, `output_tokens`, `reasoning_output_tokens`. Tipos de item incluem `agent_message`, `reasoning`, `command_execution`, `file_change`, `mcp_tool_call`, `collab_tool_call`, `web_search`, `todo_list`, `error`. Nenhum evento traz o nome do model.
+Top-level `type`: `thread.started` (`thread_id`), `turn.started`, `turn.completed` (`usage`), `turn.failed` (`error.message`), `item.started` / `item.updated` / `item.completed` (`item`), `error` (`message`). `usage` carries `input_tokens`, `cached_input_tokens`, `cache_write_input_tokens`, `output_tokens`, `reasoning_output_tokens`. Item types include `agent_message`, `reasoning`, `command_execution`, `file_change`, `mcp_tool_call`, `collab_tool_call`, `web_search`, `todo_list`, `error`. No event carries the model name.
 
-Contrato de falha usado pelo driver: exit 0 não é sucesso. Um `error` terminal ou `turn.failed` marca falha; um `turn.completed` posterior limpa; um `item` do tipo `error` é aviso.
+Failure contract used by the driver: exit 0 is not success. A terminal `error` or `turn.failed` marks failure; a later `turn.completed` clears it; an `item` of type `error` is a warning.
 
 ---
 
 ## 12. Runtime-specific validators
 
-- **Id do model**: só um id OpenAI chega a `--model` / `-m`. Um alias Claude fixado na sessão é descartado.
-- **Effort por model**: o Codex valida `model_reasoning_effort` contra a entrada do model no catálogo. `gpt-6-luna` e `gpt-5.6-luna` param em `max`; `ultra` existe no Codex para alguns models, mas não é nível do engine, então o engine nunca o envia.
-- **Models aposentados**: `gpt-5.5` sai do Codex em 2026-10-14. Nunca o coloque em exemplo, default ou entrada de cascade.
-- **Flags de aprovação**: nunca passe `-s` junto com `--approve-for-me`.
-- **Local das skills**: instale skills em `~/.agents/skills`; uma cópia no deprecado `$CODEX_HOME/skills` aparece listada duas vezes.
+- **Model id**: only an OpenAI id reaches `--model` / `-m`. A Claude alias pinned for the session is dropped.
+- **Effort per model**: Codex validates `model_reasoning_effort` against the model's catalog entry. `gpt-6-luna` and `gpt-5.6-luna` stop at `max`; `ultra` exists on Codex for some models but is not an engine level, so the engine never sends it.
+- **Retired models**: `gpt-5.5` leaves Codex on 2026-10-14. Never put it in an example, a default or a cascade entry.
+- **Approval flags**: never pass `-s` together with `--approve-for-me`.
+- **Skill location**: install skills in `~/.agents/skills`; a copy in the deprecated `$CODEX_HOME/skills` is listed a second time.
 
 ---
 
 ## 13. Known limitations
 
-1. **Sem limite de turns por execução** → limitado só por timeout.
-2. **Sem custo em USD** → só contagem de tokens; sem `--model` passado e sem model no stream de eventos, a busca de preço pode falhar e orçamentos `$N` em entradas `codex:` do cascade passam sem trava.
-3. **Sem allowlist por tool** → sandbox, caminho de aprovação e deny no `PreToolUse` são os gates.
-4. **Sem flag de append-system-prompt** → a diretiva viaja dentro do prompt do usuário.
-5. **Trust dos hooks preso à ordem dos grupos** → uma edição alheia no `hooks.json` pode desligar os hooks de audit do Nirvana até `nrv setup`.
-6. **Skills instaladas na raiz deprecada** → `runtime-dirs.ts` ainda mira `~/.codex/skills`, e o alvo OpenClaw preenche `~/.agents/skills`, então o Codex lista `nirvana` duas vezes.
-7. **Sem configuração de janela de contexto nesta linha** → o engine não passa `model_auto_compact_token_limit`; vale a config do usuário.
-8. **Sem scheduler e sem primitiva de time** → cron externo e convenções no file system.
-9. **Mentions e tickets** dependem do harness fazer o fan-out entre execuções.
+1. **No per-run turn cap** → bounded by timeout only.
+2. **No USD cost** → token counts only; with no `--model` passed and no model in the event stream, the price lookup can miss and `$N` budgets on `codex:` cascade entries fail open.
+3. **No per-tool allowlist** → sandbox, approval path and `PreToolUse` deny are the gates.
+4. **No append-system-prompt flag** → the directive travels inside the user prompt.
+5. **Hook trust is tied to group order** → a foreign edit to `hooks.json` can detach Nirvana's audit hooks until `nrv setup`.
+6. **Skills installed in the deprecated root** → `runtime-dirs.ts` still targets `~/.codex/skills`, and the OpenClaw target fills `~/.agents/skills`, so Codex lists `nirvana` twice.
+7. **No scheduler and no team primitive** → external cron and file-system conventions.
+8. **Mentions and tickets** depend on the harness fanning out between runs.
 
 ---
 
 ## 14. Source references
 
 - `codex --help`, `codex exec --help`, `codex exec resume|fork|review --help`, `codex features list`, `codex debug models --bundled` (0.159.2, 2026-10-11)
-- Fonte do Codex em `rust-v0.162.1`: `codex-rs/exec/src/cli.rs`, `codex-rs/exec/src/exec_events.rs`, `codex-rs/ext/skills/src/host_roots.rs`, `codex-rs/core/config.schema.json`
-- Hooks: https://developers.openai.com/codex/hooks (redireciona para learn.chatgpt.com/docs/hooks)
-- Subagents: https://developers.openai.com/codex/subagents (redireciona para learn.chatgpt.com/docs/agent-configuration/subagents)
+- Codex source at `rust-v0.162.1`: `codex-rs/exec/src/cli.rs`, `codex-rs/exec/src/exec_events.rs`, `codex-rs/ext/skills/src/host_roots.rs`, `codex-rs/core/config.schema.json`
+- Hooks: https://developers.openai.com/codex/hooks (redirects to learn.chatgpt.com/docs/hooks)
+- Subagents: https://developers.openai.com/codex/subagents (redirects to learn.chatgpt.com/docs/agent-configuration/subagents)
 - Skills: https://developers.openai.com/codex/skills
 - Releases: https://github.com/openai/codex/releases
-- Driver: `skills/_shared/lib/host-agent-driver.ts` (`runCodex`, `buildCall` da camada leve), `skills/_shared/lib/orca-worker.ts` (`interactiveArgv`), `skills/_shared/lib/codex-hooks.ts`, `skills/harness/lib/business-session.ts`
-- Squad Protocol v5: `~/.nirvana/skills/squads/SQUAD_PROTOCOL_V5.md`
-- Business Protocol v1: `~/.nirvana/skills/businesses/BUSINESS_PROTOCOL_V1.md`
-- Harness Protocol v1: `~/.nirvana/skills/harness/HARNESS_PROTOCOL_V1.md`
+- Driver: `skills/_shared/lib/host-agent-driver.ts` (`runCodex`, light-layer `buildCall`), `skills/_shared/lib/orca-worker.ts` (`interactiveArgv`), `skills/_shared/lib/codex-hooks.ts`
+- Squad Protocol v6: `~/.nirvana/skills/squads/SQUAD_PROTOCOL_V6.md`
+- Business Protocol v2: `~/.nirvana/skills/businesses/BUSINESS_PROTOCOL_V2.md`
+- Harness protocol: `~/.nirvana/skills/harness/SKILL.md`
 
 ---
 
 ## 15. Version history
 
-| Versão | Data | Mudanças |
+| Version | Date | Changes |
 |---|---|---|
-| 1.0.0 | 2026-05-02 | Doc inicial: cobre Squad 5.0 + Business 1.0 + Harness 1.0 contra Codex CLI 0.2x |
-| 2.0.0 | 2026-10-11 | Reescrito contra Codex CLI 0.159.2 / 0.162.1. Removidos `codex run`, `--max-turns`, `--output-format json`, `--checkpoint`, `--agent`/`--skill`/`--prompt`, custom agents em Markdown e `[agents.<nome>]`/`agents.max_depth`, que não existem. Documentados o argv real de `runCodex` e do Orca, a superfície `exec`/`resume`/`fork`/`review`, os eventos JSON, os 12 eventos de hook e o trust, skills em `~/.agents/skills`, custom agents em TOML, `agents.enabled` e a ausência de limite de turns. |
+| 1.0.0 | 2026-05-02 | Initial doc: covers Squad 5.0 + Business 1.0 + Harness 1.0 against Codex CLI 0.2x |
+| 2.0.0 | 2026-10-11 | Rewritten against Codex CLI 0.159.2 / 0.162.1. Removed nonexistent `codex run`, `--max-turns`, `--output-format json`, `--checkpoint`, `--agent`/`--skill`/`--prompt`, Markdown custom agents and `[agents.<name>]`/`agents.max_depth`. Documented the real `runCodex` and Orca argv, the `exec`/`resume`/`fork`/`review` surface, the JSON events, the 12 hook events and trust, skills at `~/.agents/skills`, TOML custom agents, `agents.enabled` and the absence of a turn cap. |

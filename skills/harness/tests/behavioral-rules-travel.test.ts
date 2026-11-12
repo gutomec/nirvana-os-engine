@@ -37,18 +37,6 @@ describe("the builder's rules ride the dispatch", () => {
   });
 });
 
-describe("the orchestrator's version rides the skill", () => {
-  test("all four are restated for dispatching", () => {
-    for (const rule of [/Think before dispatching/i, /Minimum viable dispatch/i, /Surgical scope/i, /Gate-driven execution/i]) {
-      expect(skill).toMatch(rule);
-    }
-  });
-
-  test("it protects the shared libraries from dispatch side effects", () => {
-    expect(skill).toMatch(/Never mutate `~\/squads`/);
-  });
-});
-
 describe("no runtime is left out", () => {
   test("every adapter's contract file is one nrv init writes", () => {
     // If an adapter ever declares a file `nrv init` does not create, a project

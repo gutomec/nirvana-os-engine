@@ -2,7 +2,7 @@
 
 > How the harness computes and applies cost caps. Source of truth:
 > `lib/budget.js` (this file documents its current defaults; the
-> `HARNESS_PROTOCOL_V1.md` §8 figures are historical).
+> the archived Harness Protocol v1 §8 figures are historical).
 
 ## Principle (HP3, amended by Rule 4)
 
@@ -105,7 +105,7 @@ Configured by `budget.on_budget_exceeded`:
 |---|---|
 | `warn` (default) | Continue, but emit a warning plus a `budget_violation` audit event |
 | `abort` | Stop immediately, structured error, `budget_violation` audit event |
-| `escalate` | Pause and fire the escalation trigger (Business Protocol §12) |
+| `escalate` | Pause and fire the escalation trigger (Business Protocol v2 §12) |
 
 ## Telemetry
 
@@ -132,7 +132,7 @@ Plus the audit event:
 # per-run hard cap on a dispatch
 nrv dispatch <business> "<brief>" --exec --max-budget=5.00
 
-# routing pre-flight only (fast router)
+# keyword-router diagnostic with budget pre-flight (never dispatches)
 nrv route "manage marketing for client X"
 
 # self-test covers budget.check
@@ -146,7 +146,7 @@ nrv doctor
 - For recurring businesses, declare `run_budget_usd` per business and review
   monthly.
 - When telemetry history is available, replace the static baseline with a
-  moving average of the last N runs (not implemented — see BUILD-NOTES.md).
+  moving average of the last N runs (not implemented).
 
 ## Anti-patterns
 

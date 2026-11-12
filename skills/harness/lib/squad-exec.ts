@@ -1,18 +1,12 @@
 // squad-exec.ts — the squad headless runner (routing-360 Phase 4.1).
 //
-// Extracted from team-orchestrator.ts so a squad can be dispatched in TWO
-// contexts through ONE code path:
-//   1. team mode ("team-mandatory") — a mandatory squad running as a sub-task
-//      of a business chain; its output feeds the synthesizer. This is the
-//      original team-orchestrator behavior, byte-compatible prompt included.
-//   2. squad-only mode ("squad-only") — the agentic router decided a squad
-//      delivers the object alone (primary_business: null). Before Phase 4
-//      dispatch.ts printed instructions and exited 0 WITHOUT dispatching;
-//      now it dispatches through here and flows into the delivery pipeline.
+// A squad dispatched on its own: the router (or the user) decided a squad
+// delivers the object alone. A business never dispatches a squad; it works
+// from the squad's card (business-solo.ts).
 //
-// Emits the same audit chain as the team path always did: dispatch_squad,
-// agent_executed, squad_run_failed, mind_clone_missing_degraded, plus the
-// session_resumed / session_resume_failed pair from the session-store reuse.
+// Emits dispatch_squad, agent_executed, squad_run_failed and
+// mind_clone_missing_degraded, plus the session_resumed /
+// session_resume_failed pair from the session-store reuse.
 
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -32,22 +26,19 @@ import { briefExcerpt } from "../../_shared/lib/brief-excerpt.ts";
 import { resolveClonePersona, loadCloneRegistry } from "../../_shared/lib/clone-resolver.ts";
 import { layersForPhase } from "../../_shared/lib/dna-layer-policy.ts";
 import { findCloneForTask } from "../../_shared/lib/clone-search.ts";
+import { selectVoices, unsettledVoiceNotice, type VoiceRerank } from "./clone-voices.ts";
+import { jevVoiceRerank } from "./jev-voice.ts";
+import { jevEnabled } from "../../_shared/lib/typesafe-client.ts";
+import { cloneNamesOf } from "./clone-names.ts";
+import { summaryFileOf } from "./business-solo.ts";
 import { paths } from "../../_shared/lib/bun-helpers.ts";
 import { scopeBoundary, scopeGuard } from "../../_shared/lib/scope-guard.ts";
 import { renderResourceMap } from "../../_shared/lib/entity-resource-map.ts";
 import { resolveSetting } from "../../_shared/lib/settings.ts";
+import { altitudeMethodSentence, briefAltitude, type BriefAltitude } from "./brief-altitude.ts";
+import { briefWithRequest } from "./work-brief.ts";
 import { preflightWarnings, squadPreflight } from "../../_shared/lib/squad-preflight.ts";
-import { prepareSquadEnvs, squadEnvLines, squadRunEnv } from "../../_shared/lib/squad-env.ts";
-
-/** Why a squad is running.
- *
- *  `team-mandatory` and `single-mandatory` are the same job — a specialist the
- *  router chose, run before the seat that consumes it — and differ only in what
- *  consumes it: the synthesizer at the end of a chain, or the one seat of a
- *  `--single` run. They stay distinct in the audit because "the router's pick
- *  ran, and the run was still one seat" is a sentence the owner needs to be able
- *  to read back. Both collapse to `squad-mandatory` on `agent_executed`. */
-export type SquadExecMode = "team-mandatory" | "single-mandatory" | "squad-only";
+import { squadEnvLines, squadRunEnv } from "../../_shared/lib/squad-env.ts";
 
 export interface SquadExecArgs {
   squadSlug: string;
@@ -58,9 +49,6 @@ export interface SquadExecArgs {
   /** Where THIS squad writes its files. */
   outputsDir: string;
   runtime: Runtime;
-  /** Business the squad serves (team mode); null for squad-only dispatch. */
-  businessSlug?: string | null;
-  mode: SquadExecMode;
   /** Capability this dispatch runs (capability-resolver.ts). It builds the
    *  prompt and travels on `dispatch_squad`; absent keeps the historical prompt. */
   capabilityId?: string | null;
@@ -69,13 +57,14 @@ export interface SquadExecArgs {
   /** User USE_* rules block, appended to the AUTONOMOUS_DIRECTIVE. */
   rulesDirective?: string;
   /** AUTONOMOUS_DIRECTIVE (kept as a param so the caller owns the directive
-   * text; team-orchestrator passes host-agent-driver's constant). */
+   * text; dispatch passes host-agent-driver's constant). */
   autonomousDirective: string;
   /** Ledger heartbeat for supervised squad-only runs. */
   ledger?: { runId: string; watchDir?: string };
-  /** Failures of the squad's environment (squad-env.ts) the worker is told
-   *  about, when the caller already prepared it. Absent: this run prepares it. */
+  /** Failures of the squad's environment (squad-env.ts) the worker is told about. */
   envProblems?: string[];
+  /** Clones the router chose for this request; offered when the request names none. */
+  suggestedClones?: string[];
   /** Squads root override (tests). */
   squadsRoot?: string;
   /** Test seam: canned cascade runner (zero-token tests). */
@@ -86,9 +75,8 @@ export interface SquadExecResult {
   ok: boolean;
   squadSlug: string;
   sessionId: string | null;
-  /** The runtime that finished the squad's work, after any cascade handoff:
-   *  the session is its. */
-  finalRuntime?: string;
+  /** The runtime that finished the work, after any handoff: the session is its. */
+  finalRuntime: Runtime;
   costUsd: number | null;
   durationMs: number;
   outputsDir: string;
@@ -104,53 +92,54 @@ function appendAudit(payload: Record<string, any>, projectRoot?: string): void {
   } catch { /* non-fatal */ }
 }
 
-/** Resolve mind-clones for a squad sub-task by the canonical order:
- *  SOLICITADO (brief names a clone) → BUSCA (task→clone search) → PADRÃO (none).
- *  Squads have no assigned_mind_clones, so the order is request-or-search. Every
- *  clone is resolved from the single library (full embodiment) — closing the gap
- *  where squad agents got zero DNA. (Moved verbatim from team-orchestrator.ts.) */
+/** Resolve mind-clones for a squad sub-task by the rule every worker shares
+ *  (clone-voices.ts): ASKED FOR in the request (or marked `clone <slug>`), else
+ *  the library's SEARCH above its coverage gate, else none; at most three. Every
+ *  clone is resolved from the single library (full embodiment). A squad keeps
+ *  its own presentation below (the execution.dna_injection mode); the selection
+ *  is the one the business path uses. */
 // `cwd` anchors the clone registry to the DISPATCH's project scope — without it
 // the registry resolves from process.cwd(), and the two halves of one dispatch
-// can read different scopes (the exact leak fixed in employee-prompt on
+// can read different scopes (the exact leak fixed in the business loader on
 // 2026-08-18: a test run from the engine repo picked up the repo's derived
 // registry and injected clones its fixture never wrote).
-export function squadCloneInjection(brief: string, cwd?: string): { block: string; decision: string; missingClones: string[]; mode?: "reference" | "full" | "fragments"; personaDirs?: string[] } {
-  const MAX = 2;
-  const picked: Array<{ slug: string; reason: string }> = [];
-  // 1. SOLICITADO — brief names a clone (slug or display name)
-  const reg = loadCloneRegistry();
-  const low = (brief || "").toLowerCase();
-  for (const [slug, c] of Object.entries(reg)) {
-    if (picked.length >= MAX) break;
-    const name = String((c as any).display_name || "").toLowerCase();
-    if (low.includes(slug) || low.includes(slug.replace(/-/g, " ")) || (name.length > 3 && low.includes(name))) {
-      picked.push({ slug, reason: "solicitado" });
-    }
-  }
-  let decision = picked.length ? "SOLICITADO pelo usuário" : "";
-  // 2. BUSCA — only if nothing requested
-  if (!picked.length) {
-    let hits: any[] = [];
-    try { hits = findCloneForTask(brief, { limit: MAX, cwd }); } catch { hits = []; }
-    for (const h of hits) {
-      if (picked.length >= MAX) break;
-      // Coverage gate (routing-360 Phase 3.3), not normalized>=0.5: normalized
-      // is max-normalized, so the top hit is 1.0 by construction even for an
-      // out-of-domain brief ("consertar a bomba hidráulica do trator") — a
-      // vacuous gate. `below_gate` mirrors the router's Stage 3 coverage bands.
-      if (h.below_gate === false) picked.push({ slug: h.slug, reason: `busca cobertura ${h.coverage?.matched}/${h.coverage?.total}` });
-    }
-    decision = picked.length ? "encontrado por BUSCA" : "PADRÃO — nenhum clone útil";
-  }
-  if (!picked.length) return { block: "", decision, missingClones: [] };
-  // Same mode as employee-prompt (the execution.dna_injection setting):
+export function squadCloneInjection(brief: string, cwd?: string, opts: { suggested?: string[]; extraQuery?: string; rerank?: VoiceRerank | null } = {}): { block: string; decision: string; missingClones: string[]; mode?: "reference" | "full" | "fragments"; personaDirs?: string[] } {
+  let names: Array<{ slug: string; name: string }> = [];
+  let registry: Record<string, any> = {};
+  try {
+    registry = loadCloneRegistry({ cwd }) as Record<string, any>;
+    names = cloneNamesOf(registry);
+  } catch { names = []; }
+  // With a TypeSafe key (and routing.jev on), the Jev picks among the candidates
+  // before the lexical search; `rerank: null` keeps it off.
+  const rerank = opts.rerank === undefined ? (jevEnabled({ cwd }) ? jevVoiceRerank(registry, { cwd }) : undefined) : (opts.rerank ?? undefined);
+  const selection = selectVoices({
+    brief, names,
+    // Whether the files open is decided below, where the persona is read.
+    installed: () => true,
+    // Coverage gate (routing-360 Phase 3.3), not normalized>=0.5: normalized
+    // is max-normalized, so the top hit is 1.0 by construction even for an
+    // out-of-domain brief ("consertar a bomba hidráulica do trator") — a
+    // vacuous gate. `below_gate` mirrors the router's Stage 3 coverage bands.
+    search: (query, gateQuery) => { try { return findCloneForTask(query, { limit: 6, cwd, gateQuery }); } catch { return []; } },
+    suggested: opts.suggested, extraQuery: opts.extraQuery,
+    ...(rerank ? { rerank } : {}),
+  });
+  const picked = selection.voices.map((v) => ({ slug: v.slug, reason: v.why }));
+  const decision = selection.how === "asked" ? "REQUESTED by the user"
+    : selection.how === "suggested" ? "CHOSEN by the router"
+    : selection.how === "rerank" ? "CHOSEN by the Jev classifier"
+    : selection.how === "search" ? "found by SEARCH" : "DEFAULT, no useful clone";
+  const unsettled = unsettledVoiceNotice(selection);
+  if (!picked.length && !selection.missing.length && !unsettled) return { block: "", decision, missingClones: [] };
+  // The execution.dna_injection setting:
   // reference (the default) = a card naming the persona files, read on demand;
   // fragments = SOUL + phase layers (squads execute → execute layers) with a
   // byte budget; full = the whole persona.
   const dnaMode: "reference" | "full" | "fragments" = resolveSetting("execution.dna_injection").value;
   const fragLayers = layersForPhase("execute");
   const parts: string[] = [];
-  const missingClones: string[] = [];
+  const missingClones: string[] = [...selection.missing];
   // A card names files the executor opens on demand, so each clone's folder is
   // granted to the run: a runtime that refuses an ungranted path would otherwise
   // hold a card it cannot read.
@@ -173,22 +162,32 @@ export function squadCloneInjection(brief: string, cwd?: string): { block: strin
   // to report the absence in the deliverable.
   if (missingClones.length) {
     parts.push(
-      `--- MIND-CLONE AUSENTE: ${missingClones.join(", ")} ---\n\n` +
-      `# Especialista sem clone na biblioteca\n\n` +
-      `Os seguintes especialistas foram pedidos e NÃO existem como mind-clone instalado: ` +
+      `--- MIND-CLONE MISSING: ${missingClones.join(", ")} ---\n\n` +
+      `# Expert without a clone in the library\n\n` +
+      `The following experts were requested and are NOT installed as a mind-clone: ` +
       `**${missingClones.join(", ")}**.\n\n` +
-      `Você NÃO está carregando o DNA dessas pessoas. Trabalhe com o seu próprio ` +
-      `conhecimento sobre o método delas, e trate isso como o que é: uma aproximação, ` +
-      `não a persona.\n\n` +
-      `Duas obrigações:\n` +
-      `1. **Não afirme** que aplicou o método daquela pessoa com fidelidade de clone. ` +
-      `Diga que atuou por conhecimento geral.\n` +
-      `2. **Registre no entregável** quais especialistas faltaram, para que o dono ` +
-      `possa decidir se quer criar o mind-clone (o squad \`fabrica-de-genios\` faz isso ` +
-      `pela capability \`knowledge_management.mind_clone_generation_pipeline.execute\`).\n`
+      `You are NOT loading these people's DNA. Work from your own ` +
+      `knowledge of their method, and treat it for what it is: an approximation, ` +
+      `not the persona.\n\n` +
+      `Two obligations:\n` +
+      `1. **Do not claim** that you applied that person's method with clone fidelity. ` +
+      `Say that you worked from general knowledge.\n` +
+      `2. **Record in the deliverable** which experts were missing, so the owner ` +
+      `can decide whether to create the mind-clone (the \`fabrica-de-genios\` squad does this ` +
+      `through the \`knowledge_management.mind_clone_generation_pipeline.execute\` capability).\n`
     );
   }
+  if (unsettled) parts.push(`--- MIND-CLONE ASKS NOT SETTLED ---\n\n${unsettled}`);
   return { block: parts.join("\n\n"), decision, missingClones, mode: dnaMode, personaDirs };
+}
+
+/** What a squad does, for the voice search: its description and domains. */
+export function squadContext(squadDir: string): string {
+  try {
+    const y = parseYaml(fs.readFileSync(path.join(squadDir, "squad.yaml"), "utf8")) ?? {};
+    const domains = Array.isArray(y.domains) ? y.domains : [];
+    return [String(y.description ?? ""), ...domains.map(String)].join(" ").slice(0, 1500);
+  } catch { return ""; }
 }
 
 // ── the manifest an executor reads ──────────────────────────────────────────
@@ -266,7 +265,7 @@ function renderComponents(squadDir: string, sub: "agents" | "tasks", stems: stri
     try { text = fs.readFileSync(file, "utf8"); } catch { missing++; continue; }
     parts.push(`--- ${stem}.md ---\n${text}`);
   }
-  if (missing) parts.push(`[${missing} referência(s) sem arquivo em ${sub}/]`);
+  if (missing) parts.push(`[${missing} reference(s) without a file in ${sub}/]`);
   return parts.join("\n\n");
 }
 
@@ -283,11 +282,11 @@ function ceilingNote(agentDocs: string, taskSection: string): string {
   const max = componentsBytesMax();
   const total = Buffer.byteLength(agentDocs, "utf8") + Buffer.byteLength(taskSection, "utf8");
   if (total <= max) return "";
-  // "nada foi cortado pelo teto", not "nada foi omitido": the sibling note from
+  // "nothing was cut by the ceiling", not "nothing was omitted": the sibling note from
   // renderComponents can be reporting a reference with no file on disk, and an
   // absolute about omission would read as contradicting it. This note answers
   // for the ceiling only — the one thing it measures.
-  return `\n\n[componentes (agentes + tasks) somam ${total} bytes, ${total - max} acima do teto de ${max} — nada foi cortado pelo teto]`;
+  return `\n\n[components (agents + tasks) total ${total} bytes, ${total - max} above the ceiling of ${max}; nothing was cut by the ceiling]`;
 }
 
 /**
@@ -333,7 +332,7 @@ export function capabilityContext(squadDir: string, capabilityId: string): Squad
       // Only take over the blocks when at least the agents resolved: a workflow
       // whose every reference is dangling must not leave the squad with nothing.
       if (agentDocs) {
-        const taskSection = taskDocs || "(o workflow não referencia nenhuma task)";
+        const taskSection = taskDocs || "(the workflow references no task)";
         // The note rides the LAST section the prompt shows, so the reader meets
         // it after the content it is measuring.
         components = { agents: agentDocs, tasks: taskSection + ceilingNote(agentDocs, taskSection) };
@@ -361,15 +360,15 @@ const EM_DASH_CELL = "—";
  * the whole premise of this cut (Cut 1, #157) is that a doc read once at
  * authoring time does not reach the agent naming an event mid-run.
  *
- * Mirrors the pattern `employee-prompt.ts` already ships for businesses
+ * Mirrors the pattern the business loader used to ship
  * (`nrv audit emit x_clone_choice --business=<slug> --trace=<trace> --json=...`),
  * which Cut 1 measured at zero rogue events — the working precedent, not a
  * new invention.
  */
 function renderEventContractBlock(squadSlug: string, traceId?: string): string {
   const trace = traceId || "<trace_id>";
-  return `## COMO REPORTAR EVENTOS
-Emita marcos do seu trabalho com \`nrv audit emit <nome> --squad=${squadSlug} --trace=${trace}\`. Sempre passe \`--squad=${squadSlug}\`: é o que atribui o evento a você no cockpit. O nome não precisa estar na lista fechada do motor — se não estiver, escreva-o já com o prefixo \`x_\` (ex.: \`x_pagina_altura_acima_orcamento\`), assim o nome que chega ao log é o mesmo que você digitou. Payload vai em \`--json='{...}'\`, curto: nunca o brief inteiro, um output completo ou um segredo, só o resumo que o evento precisa carregar.`;
+  return `## HOW TO REPORT EVENTS
+Emit milestones of your work with \`nrv audit emit <name> --squad=${squadSlug} --trace=${trace}\`. Always pass \`--squad=${squadSlug}\`: it is what attributes the event to you in the cockpit. The name does not need to be on the engine's closed list. If it is not, write it with the \`x_\` prefix from the start (e.g. \`x_page_height_above_budget\`), so the name that reaches the log is the one you typed. The payload goes in \`--json='{...}'\` and stays short: never the whole brief, a full output or a secret, only the summary the event needs to carry.`;
 }
 
 /** The three the prompt carries in full — but only when a capability resolved
@@ -380,29 +379,29 @@ const INLINED_DIRS = ["agents", "tasks", "workflows"];
 
 /** The capability block, plus the workflow block when the graph resolved. */
 function renderCapabilityBlock(ctx: SquadCapabilityPromptContext): string {
-  const lines = ["## SUA CAPABILITY", `- **id**: \`${ctx.capabilityId}\``];
-  if (ctx.description) lines.push(`- **descrição**: ${ctx.description}`);
+  const lines = ["## YOUR CAPABILITY", `- **id**: \`${ctx.capabilityId}\``];
+  if (ctx.description) lines.push(`- **description**: ${ctx.description}`);
   if (ctx.produces.length) lines.push(`- **produces**: ${ctx.produces.join(", ")}`);
   if (ctx.acceptance.length) {
-    lines.push("- **pronto quando** (critérios de aceitação; os bloqueantes são obrigatórios):");
+    lines.push("- **done when** (acceptance criteria; the blocking ones are mandatory):");
     for (const a of ctx.acceptance) {
-      const marks = [a.blocking ? "bloqueante" : "", a.minimumScore !== undefined ? `nota mínima ${a.minimumScore}` : ""].filter(Boolean);
+      const marks = [a.blocking ? "blocking" : "", a.minimumScore !== undefined ? `minimum score ${a.minimumScore}` : ""].filter(Boolean);
       lines.push(`  - \`${a.id}\`${marks.length ? ` (${marks.join(", ")})` : ""} — ${a.description}`);
     }
-    lines.push("- Antes de terminar, confira você mesmo cada critério de pronto.");
+    lines.push("- Before you finish, check each done criterion yourself.");
   }
   if (!ctx.workflow) {
-    lines.push("", "> Esta capability não aponta para um workflow legível; siga o manifesto e os documentos abaixo.");
+    lines.push("", "> This capability does not point to a readable workflow; follow the manifest and the documents below.");
     return lines.join("\n");
   }
 
   const table = [
-    `## SEU WORKFLOW (\`${ctx.workflow.file}\`)`,
-    "| # | passo | agente | task | requer | cria |",
+    `## YOUR WORKFLOW (\`${ctx.workflow.file}\`)`,
+    "| # | step | agent | task | requires | creates |",
     "| --- | --- | --- | --- | --- | --- |",
     ...ctx.workflow.steps.map((s, i) => `| ${i + 1} | \`${s.id}\` | \`${s.agent}\` | ${s.task ? `\`${s.task}\`` : EM_DASH_CELL} | ${s.requires.length ? s.requires.map(r => `\`${r}\``).join(", ") : EM_DASH_CELL} | ${s.creates.length ? s.creates.join(", ") : EM_DASH_CELL} |`),
     "",
-    "Esse é o método de referência do autor do squad. As dependências da coluna `requer` valem; profundidade, formato e o que fazer entre um passo e outro são seus, desde que os critérios acima fiquem verdadeiros.",
+    "This is the squad author's reference method. The dependencies in the `requires` column hold; depth, format and what to do between one step and the next are yours, as long as the criteria above come true.",
   ];
   if (ctx.workflow.body) table.push("", ctx.workflow.body);
   return `${lines.join("\n")}\n\n${table.join("\n")}`;
@@ -412,7 +411,7 @@ function renderCapabilityBlock(ctx: SquadCapabilityPromptContext): string {
  * dispatched for (when one was resolved) with that capability's workflow and
  * exactly the agents and tasks the workflow runs, mind-clone injection and the
  * brief. WITHOUT a resolved capability the string is byte-identical to the
- * pre-extraction team-orchestrator prompt: the capability section is empty and
+ * historical squad prompt: the capability section is empty and
  * the component blocks fall back to the historical top-3 collection, headings
  * included. `squad-exec.test.ts` pins the whole string on that path. */
 export function buildSquadPrompt(args: {
@@ -420,7 +419,6 @@ export function buildSquadPrompt(args: {
   squadDir: string;
   brief: string;
   outDir: string;
-  mode: SquadExecMode;
   cloneInjection: { block: string; decision: string; mode?: "reference" | "full" | "fragments" };
   /** The capability this dispatch runs (capability-resolver.ts). Absent, or the
    *  legacy `squad.execute`, keeps the historical prompt. */
@@ -429,11 +427,13 @@ export function buildSquadPrompt(args: {
    *  Absent falls back to a `<trace_id>` placeholder — never omits the block. */
   traceId?: string;
   /** The squad's environment lines (squad-env.ts squadEnvLines): its Python,
-   *  its Node packages and any install failure. Empty or absent leaves the
-   *  prompt unchanged. */
+   *  and any install failure. Empty or absent leaves the prompt unchanged. */
   envLines?: string[];
+  /** briefing.altitude: the sub-task's sentence on method. Absent or outcome
+   *  keeps the historical sentence. */
+  altitude?: BriefAltitude;
 }): string {
-  const { squadSlug, squadDir, brief, outDir, mode, cloneInjection: cloneInj } = args;
+  const { squadSlug, squadDir, brief, outDir, cloneInjection: cloneInj } = args;
   const readIfExists = (p: string) => fs.existsSync(p) ? fs.readFileSync(p, "utf8") : "";
   const rawManifest = readIfExists(path.join(squadDir, "squad.yaml")) || "(squad.yaml missing)";
   // Collect up to ~3 agents and ~3 tasks so the prompt stays bounded.
@@ -469,58 +469,54 @@ export function buildSquadPrompt(args: {
   const resourceMap = renderResourceMap(squadDir, {
     kind: "squads",
     inlined: capability?.components ? INLINED_DIRS : [],
-    label: "ESTE SQUAD",
-    sourceNoun: "do squad",
-    outputsHint: "o diretório de saída indicado na sua sub-tarefa",
+    label: "THIS SQUAD",
+    sourceNoun: "of the squad",
+    outputsHint: "the output directory named in your sub-task",
   });
   const resourceSection = resourceMap ? `\n${resourceMap}\n` : "";
 
-  const roleLine = mode === "team-mandatory"
-    ? `Você É o squad "${squadSlug}" executando uma sub-tarefa de um business maior. Sua saída é input do synthesizer do business.`
-    : `Você É o squad "${squadSlug}" executando o brief do cliente de ponta a ponta. Sua saída é o ENTREGÁVEL FINAL para o usuário.`;
-  const doneLine = mode === "team-mandatory"
-    ? "Termine quando o trabalho estiver pronto para o synthesizer integrar."
-    : "Termine quando o trabalho estiver pronto para entrega ao usuário.";
+  const roleLine = `You ARE the squad "${squadSlug}", running the client's brief end to end. Your output is the FINAL DELIVERABLE for the user.`;
+  const doneLine = "Finish when the work is ready to hand to the user.";
 
   return `${roleLine}
 
-## SUA IDENTIDADE (squad.yaml)
+## YOUR IDENTITY (squad.yaml)
 \`\`\`yaml
 ${manifest}
 \`\`\`
 
-${capabilitySection}## SEUS AGENTES${componentsHeading}
+${capabilitySection}## YOUR AGENTS${componentsHeading}
 ${agentsSection}
 
-## SUAS TASKS${componentsHeading}
+## YOUR TASKS${componentsHeading}
 ${tasksSection}
 ${resourceSection}
-## MIND-CLONES QUE VOCÊ INCORPORA (decisão: ${cloneInj.decision})
+## MIND-CLONES YOU EMBODY (decision: ${cloneInj.decision})
 > ${cloneInj.block && cloneInj.mode === "reference"
-    ? "Cada clone vem como cartão: abra os arquivos de persona dele quando precisar do método e entregue COMO SE o clone tivesse produzido, sob a especialidade do squad."
+    ? "Each clone comes as a card: open its persona files when you need the method, and deliver AS IF the clone had produced it, under the squad's specialty."
     : cloneInj.block && cloneInj.mode === "fragments"
-      ? "Os clones vêm pelas camadas desta fase; entregue COMO SE o clone tivesse produzido, sob a especialidade do squad."
-      : "Incorpore por inteiro; entregue COMO SE o clone tivesse produzido, sob a especialidade do squad."}
-${cloneInj.block || "(sem clone para esta tarefa — opere com a especialidade padrão do squad)"}
+      ? "The clones come through this phase's layers; deliver AS IF the clone had produced it, under the squad's specialty."
+      : "Embody it fully; deliver AS IF the clone had produced it, under the squad's specialty."}
+${cloneInj.block || "(no clone for this task: operate with the squad's default specialty)"}
 
-## BRIEF ORIGINAL DO CLIENTE
+## CLIENT'S ORIGINAL BRIEF
 ${brief}
 
-## SUA SUB-TAREFA
-Execute a SUA especialidade aplicada ao brief acima. Escreva arquivos sob \`${outDir}\`, no formato que a sua especialidade pede; imagem neles é imagem gerada de verdade, nunca placeholder nem SVG genérico. Método e ferramentas são seus. Não invoque a skill harness, não rode \`nrv run\`/\`nrv dispatch\` para este mesmo brief (anti-loop).
+## YOUR SUB-TASK
+Run YOUR specialty applied to the brief above. Write your deliverables under \`${outDir}\`, in the format your specialty calls for. When the brief's work lives in another folder (a project to review or fix, a new project to create), do that work there and list every path you created or changed. If the deliverable includes images, they are really generated images, never a placeholder or a generic SVG. ${altitudeMethodSentence(args.altitude ?? "outcome")} Deliverables follow the language of the request. Do not invoke the harness skill, and do not run \`nrv run\`/\`nrv dispatch\` for this same brief (anti-loop).
 ${args.envLines?.length ? `\n${args.envLines.join("\n")}\n` : ""}
-Se o brief mencionar você por nome (ex.: "use o squad ${squadSlug}"), priorize fazer EXATAMENTE o que o usuário pediu nesse parágrafo. O usuário manda.
+If the brief mentions you by name (e.g. "use the ${squadSlug} squad"), prioritize doing EXACTLY what the user asked in that paragraph. The user decides.
 
-${scopeGuard("pt-BR")} Escopo é o brief acima e os critérios de aceitação da sua sub-tarefa. ${scopeBoundary("pt-BR")}
+${scopeGuard()} Scope is the brief above and the acceptance criteria of your sub-task. ${scopeBoundary()}
 
-## SAÍDA
-Arquivos no diretório acima. Não printe sumário — entregue arquivos. ${doneLine}`;
+## OUTPUT
+Files in the directory above, then \`${summaryFileOf(outDir)}\`: one page at most with what you delivered and where, the decisions you took, what is still open and the out-of-scope notes. Do not print a summary to stdout: the deliverables and that file are the output. ${doneLine}`;
 }
 
 /**
  * Run one squad headless, with session reuse and the full audit chain.
  *
- * Session policy (lifted from team-orchestrator's runWithSession): resume the
+ * Session policy: resume the
  * prior session of THIS squad in THIS project when one exists; on failure with
  * a resumed session, drop the id and retry ONCE cold — reuse may only ever
  * improve the result, never degrade it.
@@ -532,7 +528,6 @@ export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
   const squadDir = path.join(squadsRoot, args.squadSlug);
   const outDir = args.outputsDir;
   fs.mkdirSync(outDir, { recursive: true });
-  const bizCtx = args.businessSlug ? { business_slug: args.businessSlug } : {};
 
   // The slug reaches here unvalidated: the explicit-target layer of the dispatch
   // cascade returns what the caller named without a registry lookup, and the
@@ -545,13 +540,13 @@ export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
   const rootReal = fs.existsSync(squadsRoot) ? fs.realpathSync(squadsRoot) : path.resolve(squadsRoot);
   const dirResolved = fs.existsSync(squadDir) ? fs.realpathSync(squadDir) : path.resolve(squadDir);
   if (dirResolved !== rootReal && !dirResolved.startsWith(rootReal + path.sep)) {
-    appendAudit({ event: "squad_run_failed", project_id: args.projectId, ...bizCtx, squad_slug: args.squadSlug, reason: "squad slug escapes the squads root" }, args.projectRoot);
-    return { ok: false, squadSlug: args.squadSlug, sessionId: null, costUsd: null, durationMs: 0, outputsDir: outDir, error: "squad slug escapes the squads root" };
+    appendAudit({ event: "squad_run_failed", project_id: args.projectId, squad_slug: args.squadSlug, reason: "squad slug escapes the squads root" }, args.projectRoot);
+    return { ok: false, squadSlug: args.squadSlug, sessionId: null, finalRuntime: args.runtime, costUsd: null, durationMs: 0, outputsDir: outDir, error: "squad slug escapes the squads root" };
   }
 
   if (!fs.existsSync(squadDir)) {
-    appendAudit({ event: "squad_run_failed", project_id: args.projectId, ...bizCtx, squad_slug: args.squadSlug, reason: "squad dir not found" }, args.projectRoot);
-    return { ok: false, squadSlug: args.squadSlug, sessionId: null, costUsd: null, durationMs: 0, outputsDir: outDir, error: "squad dir not found" };
+    appendAudit({ event: "squad_run_failed", project_id: args.projectId, squad_slug: args.squadSlug, reason: "squad dir not found" }, args.projectRoot);
+    return { ok: false, squadSlug: args.squadSlug, sessionId: null, finalRuntime: args.runtime, costUsd: null, durationMs: 0, outputsDir: outDir, error: "squad dir not found" };
   }
 
   // Credentials and MCP servers the squad declares of its host: a warning
@@ -561,39 +556,38 @@ export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
     const warnings = preflightWarnings(pre, args.squadSlug);
     for (const w of warnings) console.error(`[squad-exec] WARN: ${w}`);
     if (warnings.length) {
-      appendAudit({ event: "x_preflight_warning", project_id: args.projectId, ...bizCtx, squad_slug: args.squadSlug, missing_required: pre.missingRequired.map((v) => v.name), mcps_not_configured: pre.mcpsNotConfigured.map((m) => m.name) }, args.projectRoot);
+      appendAudit({ event: "x_preflight_warning", project_id: args.projectId, squad_slug: args.squadSlug, missing_required: pre.missingRequired.map((v) => v.name), mcps_not_configured: pre.mcpsNotConfigured.map((m) => m.name) }, args.projectRoot);
     }
   }
 
-  // The squad runs in its own environment (squad-env.ts), prepared here, on
-  // demand: milliseconds when nothing changed, an install when its declared
-  // packages did. A failure is printed and told to the worker; the run goes on.
-  const envProblems = args.envProblems
-    ?? prepareSquadEnvs([{ slug: args.squadSlug, dir: squadDir }]).get(args.squadSlug) ?? [];
-
-  const cloneInj = squadCloneInjection(args.brief, args.projectDir);
+  const cloneInj = squadCloneInjection(args.brief, args.projectDir, {
+    suggested: args.suggestedClones,
+    extraQuery: squadContext(path.join(args.squadsRoot ?? paths.SQUADS_DIR, args.squadSlug)),
+  });
   for (const slug of cloneInj.missingClones) {
     appendAudit({
       event: "mind_clone_missing_degraded", trace_id: args.projectId, project_id: args.projectId,
-      ...bizCtx, squad_slug: args.squadSlug, reason: "mind_clone_not_found", slug_requested: slug,
+      squad_slug: args.squadSlug, reason: "mind_clone_not_found", slug_requested: slug,
     }, args.projectRoot);
   }
 
   const prompt = buildSquadPrompt({
-    squadSlug: args.squadSlug, squadDir, brief: args.brief, outDir,
-    mode: args.mode, cloneInjection: cloneInj, capabilityId: args.capabilityId,
-    traceId: args.projectId, envLines: squadEnvLines(args.squadSlug, envProblems),
+    // The prompt pastes the brief: a Request given by path travels with its words.
+    squadSlug: args.squadSlug, squadDir, brief: briefWithRequest(args.brief, { baseDirs: [args.projectRoot] }), outDir,
+    cloneInjection: cloneInj, capabilityId: args.capabilityId,
+    traceId: args.projectId, envLines: squadEnvLines(args.squadSlug, args.envProblems),
+    altitude: briefAltitude({ cwd: args.projectRoot }),
   });
 
   appendAudit({
     event: "dispatch_squad",
     trace_id: args.projectId,
     project_id: args.projectId,
-    ...bizCtx,
+   
     squad_slug: args.squadSlug,
     squad_name: args.squadSlug,
     ...(args.capabilityId ? { capability_id: args.capabilityId } : {}),
-    mode: args.mode,
+    mode: "squad-only",
     outputs_dir: outDir,
     // How big the thing we just built actually is. The components ceiling stopped
     // cutting documents, so the prompt is now bounded only by what the workflow
@@ -618,8 +612,8 @@ export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
     // and the stamp is what makes that enforceable rather than advisory.
     dispatchRole: "squad",
     // The dispatched runtime starts in its own run folder, with the project it
-    // serves granted beside it (its .nirvana/, config, logs and code-base)
-    // (run-workspace.ts). The scaffold and
+    // serves granted beside it (its .nirvana/, config, logs and code-base) and
+    // the other runs' folders fenced off (run-workspace.ts). The scaffold and
     // the outputs dir are handed to it as additional directories so both stay
     // writable when a caller pins them elsewhere.
     workspace: runFolderOf(args.projectDir, args.projectRoot) ?? undefined,
@@ -641,7 +635,7 @@ export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
     appendSystemPrompt: args.autonomousDirective + (args.rulesDirective ?? ""),
     maxBudgetUsd: args.maxBudgetUsd, timeoutMs: args.timeoutMs,
     brief: args.brief, projectRoot: args.projectRoot, outputsRoot: outDir,
-    taskHint: args.mode === "team-mandatory" ? `mandatory squad: ${args.squadSlug}` : `squad-only dispatch: ${args.squadSlug}`,
+    taskHint: `squad-only dispatch: ${args.squadSlug}`,
     label: `squad ${args.squadSlug}`,
     projectId: args.projectId,
     ...(args.ledger ? { ledger: { runId: args.ledger.runId, watchDir: args.ledger.watchDir ?? outDir } } : {}),
@@ -657,30 +651,31 @@ export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
   if (!res.ok && prior) {
     appendAudit({
       event: "session_resume_failed", trace_id: args.projectId, project_id: args.projectId,
-      ...bizCtx, entity: `squad:${args.squadSlug}`, runtime: args.runtime, session_id: prior,
+      entity: `squad:${args.squadSlug}`, runtime: args.runtime, session_id: prior,
     }, args.projectRoot);
     dropSession(args.projectDir, key);
     res = cascadeImpl(cascadeArgs);
   } else if (prior && res.ok) {
     appendAudit({
       event: "session_resumed", trace_id: args.projectId, project_id: args.projectId,
-      ...bizCtx, entity: `squad:${args.squadSlug}`, runtime: args.runtime, session_id: prior,
+      entity: `squad:${args.squadSlug}`, runtime: args.runtime, session_id: prior,
     }, args.projectRoot);
   }
   putSession(args.projectDir, key, res.finalRuntime ?? args.runtime, res.sessionId);
 
   appendAudit({
     event: "agent_executed",
-    trace_id: args.projectId, project_id: args.projectId, ...bizCtx,
+    trace_id: args.projectId, project_id: args.projectId,
     squad_slug: args.squadSlug, employee: `squad:${args.squadSlug}`,
     runtime: res.finalRuntime, session_id: res.sessionId,
     cost_usd: res.costUsd, duration_ms: res.durationMs,
-    mode: args.mode === "squad-only" ? "squad-only" : "squad-mandatory",
+    mode: "squad-only",
     handoffs: res.handoffs.length ? res.handoffs : undefined,
   }, args.projectRoot);
 
   return {
-    ok: res.ok, squadSlug: args.squadSlug, sessionId: res.sessionId, finalRuntime: res.finalRuntime,
+    ok: res.ok, squadSlug: args.squadSlug, sessionId: res.sessionId,
+    finalRuntime: res.finalRuntime ?? args.runtime,
     costUsd: res.costUsd, durationMs: res.durationMs, outputsDir: outDir,
     error: res.ok ? undefined : (res.error || res.stderr || `exit ${res.exitCode}`),
   };

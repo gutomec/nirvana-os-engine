@@ -15,7 +15,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { writeFakeCli, readCapturedArgs } from "./helpers/fake-cli.ts";
 import {
-  ORCA_AGENT_ID, briefFileContent, forwardedEnv, interactiveArgv, preTrustWorkspace, runOrcaWorker, screenDialog, screenShowsTrustPrompt, workerCommand,
+  ORCA_AGENT_ID, briefFileContent, forwardedEnv, interactiveArgv, preTrustWorkspace, runOrcaWorker, screenDialog, screenShowsTrustPrompt, workerCommand, workerRoleEnv,
 } from "../../_shared/lib/orca-worker.ts";
 import { getRun, markState, openLedger, openRun } from "../lib/run-ledger.ts";
 import type { OrcaCall } from "../../_shared/lib/orca.ts";
@@ -85,8 +85,19 @@ describe("the interactive command per runtime", () => {
       .toEqual(["claude", "--dangerously-skip-permissions", "--model", "opus", "--settings", "/tmp/fence.json", "--disallowedTools", "Task", "Agent", "Workflow", "--add-dir", "/p"]);
   });
 
-  test("subagents and workflows are denied unless the caller is an orchestrator", () => {
+  test("subagents are denied unless the caller is an orchestrator", () => {
     expect(interactiveArgv({ runtime: "claude-code", yolo: true, allowSubagents: true })).toEqual(["claude", "--dangerously-skip-permissions"]);
+  });
+
+  test("the worker is stamped with its own depth and role, never the parent's", () => {
+    expect(workerRoleEnv({ dispatchRole: "squad" }, { NIRVANA_DISPATCH_DEPTH: "1", NIRVANA_DISPATCH_ROLE: "business" } as any))
+      .toEqual({ NIRVANA_DISPATCH_DEPTH: "2", NIRVANA_DISPATCH_ROLE: "squad" });
+    expect(workerRoleEnv({}, {} as any)).toEqual({ NIRVANA_DISPATCH_DEPTH: "1" });
+  });
+
+  test("variables that carry secrets are not put on the visible command line", () => {
+    const env = forwardedEnv({ NIRVANA_TRACE_ID: "t", NIRVANA_API_KEY: "k", NIRVANA_X_TOKEN: "x", NIRVANA_AUDIT_KEY: "/k/audit-key" } as any);
+    expect(env).toEqual({ NIRVANA_TRACE_ID: "t", NIRVANA_AUDIT_KEY: "/k/audit-key" });
   });
 
   test("the terminal command enters the run's directory and pins the engine's environment", () => {
@@ -115,6 +126,13 @@ describe("with canned Orca answers", () => {
   test("inactive host: null and not one call", () => {
     const c = canned(HAPPY, { active: false });
     expect(runOrcaWorker(base(), c.hooks)).toBeNull();
+    expect(c.calls).toEqual([]);
+  });
+
+  test("an answer-only or tool-restricted call keeps the headless child: a worker cannot honour it", () => {
+    const c = canned(HAPPY);
+    expect(runOrcaWorker(base({ noTools: true }), c.hooks)).toBeNull();
+    expect(runOrcaWorker(base({ allowedTools: ["Read"] }), c.hooks)).toBeNull();
     expect(c.calls).toEqual([]);
   });
 
@@ -168,26 +186,6 @@ describe("with canned Orca answers", () => {
     // The delivery is acknowledged and the finished worker's tab is closed.
     expect(c.fired).toContainEqual(["orchestration", "check", "--run", "run_1", "--ack", "d1"]);
     expect(c.fired).toContainEqual(["terminal", "close", "--terminal", "term_1"]);
-  });
-
-  test("the run's own variables (a squad's environment) reach the worker terminal", () => {
-    const c = canned(HAPPY);
-    runOrcaWorker(base({ env: { NODE_PATH: "/env/brandcraft/node_modules" } }), c.hooks);
-    const termCreate = c.calls.find((a) => a[0] === "terminal" && a[1] === "create")!;
-    // POSIX `NODE_PATH='…'`, PowerShell `$env:NODE_PATH='…'`: the pin is there either way.
-    expect(termCreate[termCreate.indexOf("--command") + 1]).toContain("NODE_PATH='/env/brandcraft/node_modules'");
-  });
-
-  test("a claude worker runs with CLAUDE_CODE_DISABLE_WORKFLOWS=1 over the run's own value; an orchestrator does not", () => {
-    const worker = canned(HAPPY);
-    runOrcaWorker(base({ env: { CLAUDE_CODE_DISABLE_WORKFLOWS: "0" } }), worker.hooks);
-    const cmd = (c: ReturnType<typeof canned>) => { const t = c.calls.find((a) => a[0] === "terminal" && a[1] === "create")!; return t[t.indexOf("--command") + 1]; };
-    expect(cmd(worker)).toContain("CLAUDE_CODE_DISABLE_WORKFLOWS='1'");
-    expect(cmd(worker)).toContain("'Workflow'");
-    const orchestrator = canned(HAPPY);
-    runOrcaWorker(base({ allowSubagents: true }), orchestrator.hooks);
-    expect(cmd(orchestrator)).not.toContain("CLAUDE_CODE_DISABLE_WORKFLOWS");
-    expect(cmd(orchestrator)).not.toContain("'Workflow'");
   });
 
   test("a question on the way is answered with the defaults policy, then the worker finishes", () => {
@@ -247,6 +245,21 @@ describe("with canned Orca answers", () => {
     for (const call of c.calls.filter((a) => a[1] === "check")) {
       expect(Number(call[call.indexOf("--timeout-ms") + 1])).toBeLessThanOrEqual(150_000);
     }
+  });
+
+  test("a timed-out worker's terminal is closed, with its transcript archived first", () => {
+    let t = 1_000_000;
+    const c = canned({
+      ...HAPPY,
+      "orchestration check": () => { t += 60_000; return ok({ deliveryId: null, messages: [] }); },
+      "orchestration worker-show": ok({ dispatch: { status: "dispatched" }, terminal: { connected: true } }),
+    });
+    c.hooks.now = () => t;
+    const r = runOrcaWorker(base({ timeoutMs: 150_000 }), c.hooks)!;
+    expect(r.ok).toBe(false);
+    expect(c.fired.some((a) => a[0] === "terminal" && a[1] === "close")).toBe(true);
+    expect(r.warnings?.some((w) => w.includes("transcript at"))).toBe(true);
+    expect(r.warnings?.some((w) => w.includes("closed after the timeout"))).toBe(true);
   });
 
   test("a vanished worker terminal ends the wait", () => {
@@ -414,8 +427,8 @@ describe("the worker's session: assigned, resumed or read back", () => {
     expect(interactiveArgv({ runtime: "claude-code", yolo: true, allowSubagents: true }, { assign: "u1" })).toEqual(["claude", "--dangerously-skip-permissions", "--session-id", "u1"]);
     expect(interactiveArgv({ runtime: "claude-code", yolo: true, allowSubagents: true }, { resume: "s1" })).toEqual(["claude", "--dangerously-skip-permissions", "--resume", "s1"]);
     expect(interactiveArgv({ runtime: "codex", yolo: true, allowSubagents: true }, { resume: "t1" })).toEqual(["codex", "resume", "t1", "--dangerously-bypass-approvals-and-sandbox"]);
-    // agy resumes the folder's most recent conversation, as its headless runner does on this line.
-    expect(interactiveArgv({ runtime: "antigravity-cli", yolo: true }, { resume: "c1" })).toEqual(["agy", "--dangerously-skip-permissions", "--continue"]);
+    expect(interactiveArgv({ runtime: "antigravity-cli", yolo: true }, { resume: "c1" })).toEqual(["agy", "--dangerously-skip-permissions", "--conversation", "c1"]);
+    expect(interactiveArgv({ runtime: "antigravity-cli", yolo: true }, { resume: "nrv-agy-x" })).toEqual(["agy", "--dangerously-skip-permissions", "--continue"]);
     expect(interactiveArgv({ runtime: "grok-cli", yolo: true }, { assign: "g1" })).toEqual(["grok", "--always-approve", "--session-id", "g1"]);
     expect(interactiveArgv({ runtime: "grok-cli", yolo: true }, { resume: "g1" })).toEqual(["grok", "--always-approve", "-r", "g1"]);
     expect(interactiveArgv({ runtime: "kimi-cli", yolo: true }, { assign: "k1" })).toEqual(["kimi", "--session", "k1"]);
@@ -504,7 +517,7 @@ describe("the worker's session: assigned, resumed or read back", () => {
         message: { id, model, usage: { input_tokens: 10, cache_creation_input_tokens: 100, cache_read_input_tokens: 1000, output_tokens: 50 } } }) + "\n";
       const c = canned({
         ...HAPPY,
-        "orchestration dispatch": () => {
+        "orchestration dispatch": (args) => {
           // The worker writes its transcript under the id it was started with.
           const cmd = c.calls.find((a) => a[1] === "create" && a[0] === "terminal")!;
           const sid = cmd[cmd.indexOf("--command") + 1].match(/'--session-id' '([0-9a-f-]+)'/)![1];
@@ -512,6 +525,7 @@ describe("the worker's session: assigned, resumed or read back", () => {
           fs.mkdirSync(path.dirname(file), { recursive: true });
           // An earlier turn (before the worker) and one message written on two lines.
           fs.writeFileSync(file, turn("m0", Date.now() - 3_600_000, "sonnet") + turn("m1", Date.now(), "sonnet") + turn("m1", Date.now(), "sonnet"));
+          void args;
           return ok({ dispatch: { id: "ctx_1" } });
         },
       });
@@ -710,7 +724,6 @@ describe("through the driver, with real fakes on PATH", () => {
 
   test("a confined worker's terminal starts in its run folder, filed under the caller's project", () => {
     process.env.NIRVANA_ORCA_HOST = "on";
-    process.env.NIRVANA_ORCA_WORKERS = "on";
     delete process.env.ORCA_WORKTREE_ID;
     const run = path.join(root, "outputs", "run-1");
     fs.mkdirSync(path.join(root, "outputs", "run-0"), { recursive: true });

@@ -1,7 +1,7 @@
 // log-paths.ts — typed ESM face of log-paths.js.
 //
 // The implementation lives in the CJS sibling so a `.js` caller
-// (context-budget.js) can `require()` it directly, and so the project-root
+// (audit.js, handoff.js) can `require()` it directly, and so the project-root
 // walk it depends on (project-root.js) never crosses the ESM boundary that
 // only Windows' Bun enforces as a hard error for a `.ts` whose dependency
 // chain carries a top-level await (require() of an ESM module throws
@@ -10,7 +10,7 @@
 // platform — mirrors brief-excerpt.ts/.js.
 //
 // All read/write callers (audit emit, audit-view, validate-chain, quality-gate,
-// employee-prompt, doctor, tui, baseline, etc.) MUST use this helper. Hardcoded
+// doctor, tui, baseline, etc.) MUST use this helper. Hardcoded
 // `~/.harness-logs` paths create split brain: writes go per-project, reads still
 // hit $HOME, the audit chain breaks.
 //

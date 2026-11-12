@@ -21,11 +21,13 @@
 //   nrv run-track close  <run-id> --state <delivered|withheld|failed> [--error "<why>"]
 //                                                     # a close is final: `failed` ends in
 //                                                     # `abandoned`, never resumed
+//   nrv run-track stop   <run-id|project-id>         # end the dispatcher and its worker, close the run
 //   nrv run-track list                               # what is open right now, IN THIS PROJECT
 //   nrv run-track status <run-id|trace-id> [--json]  # one-shot: is it done, and how did it end
 //   nrv run-track wait   <run-id|trace-id> [--timeout <sec>] [--json]
 //                                                     # block until it is, woken by the signal;
-//                                                     # exits 0, 1, 2 or 76 (stalled), 6 on timeout
+//                                                     # always ends: 0, 1, 2, 75 (quota),
+//                                                     # 76 (stalled)
 //
 // `status`/`wait` answer the question `close` exists to make answerable: a
 // caller that started a dispatch detached (`nohup … &`) and either walked away
@@ -54,7 +56,8 @@ import * as path from "node:path";
 import { resolveScope } from "../../_shared/lib/scope.ts";
 import {
   openLedger, openAgenticRun, markState, abandon, renewLease, findNonTerminal, getRun, findByTraceId,
-  resolveProjectRoot, sameProjectRoot, isTerminal, pidAlive, runSignalDir, dispatcherAlive,
+  resolveProjectRoot, sameProjectRoot, isTerminal, pidAlive, runSignalDir,
+  killProcessTree, processStartedAt, workerPidAlive, dispatcherAlive, runProcesses, quotaWaitOf,
   AGENTIC_LEASE_SEC, type RunState, type RunRow,
 } from "../lib/run-ledger.ts";
 import { notifyDesktop } from "../lib/os-notify.ts";
@@ -102,22 +105,23 @@ function refuseForeignRun(row: RunRow, action: string): void {
   const mine = resolveProjectRoot();
   if (!row.project_root || sameProjectRoot(row.project_root, mine)) return;
   process.stderr.write(
-    `[run-track] recusado: o run '${row.run_id}' pertence ao projeto ${row.project_root}` +
-    `${row.project_id ? ` (${row.project_id})` : ""}, e esta sessão atende ${mine ?? "nenhum projeto"}.\n` +
-    `  Nada foi ${action}. Rode o comando de dentro do projeto dono, ou use\n` +
-    `  \`nrv supervisor status --all-projects\` para a visão da máquina inteira.\n`,
+    `[run-track] refused: run '${row.run_id}' belongs to project ${row.project_root}` +
+    `${row.project_id ? ` (${row.project_id})` : ""}, and this session serves ${mine ?? "no project"}.\n` +
+    `  Nothing was ${action}. Run the command from inside the owning project, or use\n` +
+    `  \`nrv supervisor status --all-projects\` for the whole-machine view.\n`,
   );
   process.exit(4);
 }
 
 function usage(code: number): never {
   process.stderr.write(
-    "uso:\n" +
+    "usage:\n" +
     "  nrv run-track open   --target <slug> --kind <business|squad|agent-x|clone> --outputs <dir> [--project <id>] [--runtime <r>]\n" +
     "  nrv run-track beat   <run-id>\n" +
     "  nrv run-track close  <run-id> --state <delivered|withheld|failed> [--error \"<why>\"]\n" +
-    "  nrv run-track list                              # só os runs deste projeto\n" +
-    "  nrv run-track status <run-id|trace-id> [--json]  # terminou? em qual estado?\n" +
+    "  nrv run-track stop   <run-id|project-id>        # end the dispatcher and worker, close the run\n" +
+    "  nrv run-track list                              # only this project's runs\n" +
+    "  nrv run-track status <run-id|trace-id> [--json]  # finished? in which state?\n" +
     "  nrv run-track wait   <run-id|trace-id> [--timeout <sec>] [--json]\n",
   );
   process.exit(code);
@@ -126,55 +130,96 @@ function usage(code: number): never {
 /** How a caller OUTSIDE the ledger's own state machine reads a row: `failed`
  *  is recoverable INSIDE the ledger (the supervisor may resume the same
  *  run_id), but for one dispatch attempt it is exactly as final as
- *  delivered/withheld/abandoned — the process that held it already exited.
- *  A row still in a live state whose recorded pid is no longer alive is not
- *  "still running" either: it is `killed`, the fourth outcome the owner asked
- *  to distinguish from a live run. This is a READ — it never mutates the row;
- *  only the supervisor's own sweep gets to decide what happens to an
- *  abandoned run. Pid-less (agentic) rows are left as-is: their liveness is
- *  the supervisor's richer, multi-signal call (resolveAgenticLiveness), not
- *  this quick check. */
+ *  delivered/withheld/abandoned — the process that held it already exited. A
+ *  run whose worker died after writing never passes through `failed` (the
+ *  salvage walks it straight into `verifying`), so a `failed` read here is not
+ *  a recovery in progress.
+ *  A row whose WORKER is still supposed to be at work (dispatched, running)
+ *  and whose recorded pid is no longer alive is not "still running" either: it
+ *  is `killed`, the fourth outcome the owner asked to distinguish from a live
+ *  run. In `verifying` and `gated` the worker has ended by design and the
+ *  dispatcher itself is judging and publishing, so a dead worker pid there
+ *  says nothing (the pipeline also clears it). This is a READ — it never
+ *  mutates the row; only the supervisor's own sweep gets to decide what
+ *  happens to an abandoned run. Pid-less (agentic) rows are left as-is: their
+ *  liveness is the supervisor's richer, multi-signal call
+ *  (resolveAgenticLiveness), not this quick check. */
+const WORKER_STATES: ReadonlySet<string> = new Set(["dispatched", "running"]);
+
+/** Something recorded on the row is still working on it: its worker, its
+ *  dispatcher (revise.ts records itself when it takes a row over), or a sweep
+ *  recovering it. */
+function anyoneAlive(row: RunRow): boolean {
+  return (!!row.child_pid && pidAlive(row.child_pid)) || dispatcherAlive(row) || runProcesses(row, null).length > 0;
+}
+
+/**
+ * Two more readings, both from 2026-10-14, where a `verifying` row whose
+ * dispatcher had died five hours earlier read as `verifying`, with an
+ * `ended_at`, and its usage-limit error in `error`:
+ *
+ *  - `quota_wait`: the row stopped on a spent quota whose reset is still
+ *    ahead (run-ledger.ts quotaWaitOf), whether it reads `failed` (the
+ *    pipeline's own quota stop) or a working state nobody drives any more.
+ *    The supervisor resumes it at `retry_at`. Exit 75, "not done yet".
+ *  - `stale`: a working state (verifying, gated, …) whose recorded dispatcher
+ *    and worker are both dead. Nobody will move it until the supervisor
+ *    sweeps it. Exit 1, like `killed`.
+ *
+ * A row with no dispatcher recorded (an agentic run, an older row) keeps its
+ * state: its liveness is the supervisor's call.
+ */
 function interpretState(row: RunRow): string {
-  if (isTerminal(row.state) || row.state === "failed") return row.state;
+  if (isTerminal(row.state)) return row.state;
   // Stalled: the dispatcher's stall guard ended the worker (or the supervisor
   // escalated it). Nobody resumes it unasked: it is the agent's to act on.
   if (row.state === "stalled") return "stalled";
-  // A live dispatcher (meta.dispatcher_pid) still owns the run, between two
-  // workers or judging what one wrote, whatever its last worker pid says.
-  if (dispatcherAlive(row)) {
-    // The safety net for a wedged sidecar: nothing has renewed the lease for
-    // longer than the stall threshold plus the grace, so nothing will end the
-    // run either. A waiter is told instead of left waiting.
-    if (leaseLongExpired(row)) return "stalled";
-    return row.state;
-  }
-  if (row.child_pid && !pidAlive(row.child_pid)) return "killed";
+  // The safety net for a wedged sidecar: the dispatcher is alive, but nothing
+  // has renewed the lease for longer than the stall threshold plus the grace,
+  // so nothing will end it either. A waiter is told instead of left waiting.
+  if (dispatcherAlive(row) && leaseLongExpired(row)) return "stalled";
+  // Only a RECORDED dispatcher can be found dead: in verifying and gated the
+  // worker has ended by design, so its pid alone says nothing.
+  const dead = Number(row.meta?.dispatcher_pid) > 0 && !anyoneAlive(row);
+  if (row.state === "failed") return quotaWaitOf(row) ? "quota_wait" : "failed";
+  if (dead && quotaWaitOf(row)) return "quota_wait";
+  // A dead worker pid is a killed run only when the dispatcher is gone too:
+  // the pid the sidecar recorded can be a launcher that exited while the real
+  // agent kept working, and the status flipped between killed and running.
+  if (WORKER_STATES.has(row.state) && row.child_pid && !pidAlive(row.child_pid) && !dispatcherAlive(row)) return "killed";
+  if (dead && row.state !== "stalled") return "stale";
   return row.state;
 }
 
 /** The wait's slow DB recheck; tests shorten it. */
 const BACKSTOP_MS = Math.max(50, Number(process.env.NIRVANA_RUN_TRACK_BACKSTOP_MS) || 30_000);
 
-const DONE_STATES = new Set(["delivered", "withheld", "abandoned", "failed", "killed", "stalled"]);
-const EXIT_BY_STATE: Record<string, number> = { delivered: 0, withheld: 2, failed: 1, abandoned: 1, killed: 1, stalled: STALLED_EXIT };
+const DONE_STATES = new Set(["delivered", "withheld", "abandoned", "failed", "killed", "stale", "quota_wait", "stalled"]);
+const EXIT_BY_STATE: Record<string, number> = { delivered: 0, withheld: 2, failed: 1, abandoned: 1, killed: 1, stale: 1, quota_wait: 75, stalled: STALLED_EXIT };
 
 function findRowById(id: string): RunRow | null {
   return getRun(handle, id) ?? findByTraceId(handle, id);
 }
 
 /** Print the answer and exit with the code the state maps to — 0 delivered,
- *  2 withheld, 1 failed/abandoned/killed, 76 stalled, or 75 ("not done yet")
- *  for any live state `status` was asked to report on directly. */
+ *  2 withheld, 1 failed/abandoned/killed, or 75 ("not done yet") for any live
+ *  state `status` was asked to report on directly. */
 function report(row: RunRow, state: string): never {
   const meta = row.meta ?? {};
   const outputsRoot = (typeof meta.outputs_root === "string" && meta.outputs_root)
     || (typeof meta.project_dir === "string" && meta.project_dir) || null;
+  // ended_at only for a run that ended: a `verifying` row reported its last
+  // update as `ended_at`, and the caller polled a "finished" run for minutes.
+  const wait = state === "quota_wait" ? quotaWaitOf(row) : null;
   const payload = {
     run_id: row.run_id, trace_id: row.trace_id, state,
-    outputs_root: outputsRoot, ended_at: row.terminal_at ?? row.updated_at,
+    ...(state !== row.state ? { ledger_state: row.state } : {}),
+    outputs_root: outputsRoot, ended_at: isTerminal(row.state) ? (row.terminal_at ?? row.updated_at) : null,
+    updated_at: row.updated_at, lease_expires_at: row.lease_expires_at,
+    dispatcher_alive: dispatcherAlive(row),
+    ...(wait ? { retry_at: wait.resetAt } : {}),
     ...(state === "stalled" ? {
-      stall: row.meta?.stall ?? { rule: row.state === "stalled" ? "supervisor" : "lease_expired",
-        reason: row.state === "stalled" ? (row.last_error ?? "escalated by the supervisor") : "the dispatcher is alive but nothing has renewed the run's lease for longer than the stall threshold plus the grace" },
+      stall: row.meta?.stall ?? { rule: "lease_expired", reason: "the dispatcher is alive but nothing has renewed the run's lease for longer than the stall threshold plus the grace" },
       next: stallNextSteps(row.project_id ?? row.trace_id),
     } : {}),
     error: row.last_error,
@@ -183,7 +228,8 @@ function report(row: RunRow, state: string): never {
     process.stdout.write(JSON.stringify(payload) + "\n");
   } else {
     const why = row.last_error ? ` — ${row.last_error}` : "";
-    process.stdout.write(`${row.run_id} → ${state}${why}\n`);
+    const retry = wait ? ` (retry at ${wait.resetAt})` : "";
+    process.stdout.write(`${row.run_id} → ${state}${retry}${why}\n`);
     if (state === "stalled") for (const n of stallNextSteps(row.project_id ?? row.trace_id)) process.stdout.write(`  next: ${n}\n`);
   }
   process.exit(state in EXIT_BY_STATE ? EXIT_BY_STATE[state] : 75);
@@ -222,7 +268,7 @@ try {
     const runId = argv[1];
     if (!runId) usage(4);
     const beating = getRun(handle, runId);
-    if (beating) refuseForeignRun(beating, "renovado");
+    if (beating) refuseForeignRun(beating, "renewed");
     const ok = renewLease(handle, runId, Number(flag("seconds") || AGENTIC_LEASE_SEC));
     if (!ok) warn(`run '${runId}' is not renewable (unknown or already terminal)`);
     process.exit(0);
@@ -238,7 +284,7 @@ try {
     }
     const before = getRun(handle, runId);
     if (!before) { warn(`run '${runId}' not found — nothing closed`); process.exit(0); }
-    refuseForeignRun(before, "fechado");
+    refuseForeignRun(before, "closed");
     // Walk the state machine rather than jumping: a run that is still `running`
     // cannot go straight to `delivered`, and refusing here would leave it open
     // forever — the very thing this command exists to prevent.
@@ -263,11 +309,64 @@ try {
     if (orca && !closeOrcaWorker(orca)) warn(`could not close Orca terminal ${orca.terminal}; close it in Orca`);
     // The whole point of the ledger, from the owner's side: they are not
     // watching this terminal, so the END of the work has to travel to them.
-    const label = { delivered: "entregue", withheld: "RETIDO pelo gate", failed: "FALHOU" }[state] ?? state;
+    const label = { delivered: "delivered", withheld: "WITHHELD by the gate", failed: "FAILED" }[state] ?? state;
     const why = flag("error") ? ` — ${flag("error")}` : "";
     notifyDesktop("Nirvana-OS", `${before.target_kind ?? "run"}/${before.target_slug ?? runId}: ${label}${why}`);
     process.stdout.write(`${runId} → ${state}\n`);
     process.exit(0);
+  }
+
+  if (sub === "stop") {
+    // Killing a run's processes by hand leaves its row open: once the lease
+    // expires the supervisor takes it for a crash and resumes it, which is how
+    // a Grok run its owner had stopped would have come back by itself. This
+    // ends the dispatcher first (so it does not take a killed worker for a
+    // failure and go on to the gate), then the worker, and closes the run.
+    const target = argv[1];
+    if (!target) usage(4);
+    const one = getRun(handle, target);
+    const rows = one ? [one] : findNonTerminal(handle).filter(r => r.project_id === target || r.trace_id === target);
+    const open = rows.filter(r => !isTerminal(r.state));
+    if (!open.length) { process.stdout.write(`no open run for '${target}'; nothing to stop\n`); process.exit(0); }
+    for (const row of open) refuseForeignRun(row, "stopped");
+    let stopFailed = false;
+    for (const row of open) {
+      const dispatcher = Number(row.meta?.dispatcher_pid) || 0;
+      const startedAt = typeof row.meta?.dispatcher_started_at === "string" ? row.meta.dispatcher_started_at as string : null;
+      const pids: number[] = [];
+      // A pid whose start time no longer matches belongs to another process now.
+      if (dispatcher > 0 && pidAlive(dispatcher) && (!startedAt || (processStartedAt(dispatcher) ?? startedAt) === startedAt)) pids.push(dispatcher);
+      if (workerPidAlive(row)) pids.push(row.child_pid!);
+      // The pids on the row can be stale while the run still works: a sweep
+      // recovering it, a revise started for it. Found by what they run.
+      pids.push(...runProcesses(row));
+      // Every process of the run, the dispatcher's and the worker's trees, from
+      // one snapshot: a worker the CLI launcher started as a grandchild
+      // outlived the stop when only the recorded pids were signalled.
+      const ended = [...new Set(pids.flatMap((pid) => killProcessTree(pid)))];
+      let deadline = Date.now() + 5_000;
+      while (ended.some(pidAlive) && Date.now() < deadline) Bun.sleepSync(100);
+      for (const pid of ended.filter(pidAlive)) killProcessTree(pid, "SIGKILL");
+      deadline = Date.now() + 2_000;
+      while (ended.some(pidAlive) && Date.now() < deadline) Bun.sleepSync(100);
+      const survivors = ended.filter(pidAlive);
+      // A worker in an Orca terminal is not in the dispatcher's tree: closing
+      // its terminal is what ends that CLI (an agy left on a trust dialog
+      // outlived a stop by hours, 2026-10-15).
+      const fresh = getRun(handle, row.run_id) ?? row;
+      const orca = orcaWorkerOf(fresh.meta);
+      let orcaNote = "";
+      if (orca) {
+        const closed = closeOrcaWorker(orca);
+        orcaNote = closed ? ` · closed Orca terminal ${orca.terminal}` : ` · could not close Orca terminal ${orca.terminal}; close it in Orca`;
+        if (!closed) stopFailed = true;
+      }
+      // The dispatcher may have closed the run itself on the way out.
+      if (!isTerminal(getRun(handle, row.run_id)?.state ?? "abandoned")) abandon(handle, row.run_id, "stopped by the user");
+      process.stdout.write(`${row.run_id} stopped${ended.length ? ` (ended ${ended.length} process(es): ${ended.join(", ")})` : " (no live process)"}${orcaNote}\n`);
+      if (survivors.length) { warn(`pid ${survivors.join(", ")} still alive after SIGKILL; end it from the task manager`); stopFailed = true; }
+    }
+    process.exit(stopFailed ? 1 : 0);
   }
 
   if (sub === "list") {
@@ -276,7 +375,7 @@ try {
     const rows = findNonTerminal(handle);
     if (!rows.length) {
       const root = resolveProjectRoot();
-      process.stdout.write(`no open runs${root ? ` em ${root}` : ""}\n`);
+      process.stdout.write(`no open runs${root ? ` in ${root}` : ""}\n`);
       process.exit(0);
     }
     // The `run_id` column is the point of the listing: `beat` and `close` take
@@ -302,7 +401,7 @@ try {
     if (!id) usage(4);
     const row = findRowById(id);
     if (!row) { warn(`no run found for '${id}' (checked run_id and trace_id)`); process.exit(5); }
-    refuseForeignRun(row, "consultado");
+    refuseForeignRun(row, "queried");
     report(row, interpretState(row));
   }
 
@@ -326,7 +425,7 @@ try {
       row0 = findRowById(id);
     }
     if (!row0) { warn(`no run found for '${id}' (checked run_id and trace_id)`); process.exit(5); }
-    refuseForeignRun(row0, "aguardado");
+    refuseForeignRun(row0, "awaited");
     const runId = row0.run_id;
 
     const early = interpretState(row0);
@@ -373,7 +472,7 @@ try {
     if (argv.includes("--json")) {
       process.stdout.write(JSON.stringify({ run_id: runId, trace_id: final.trace_id, state: finalState, timed_out: true }) + "\n");
     } else {
-      process.stdout.write(`${runId} → ainda ${finalState} (timeout após ${timeoutSec}s)\n`);
+      process.stdout.write(`${runId} → still ${finalState} (timed out after ${timeoutSec}s)\n`);
     }
     process.exit(6);
   }

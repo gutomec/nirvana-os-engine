@@ -1,17 +1,17 @@
 # Code amplification questions
 
 ## objective
-Qual o comportamento desejado (input → output) e que erros precisam ser tratados?
-_Example:_ Endpoint POST /users cria user; valida email único; 400 em duplicata.
+What is the desired behavior (input → output) and which errors need to be handled?
+_Example:_ POST /users endpoint creates a user; validates unique email; 400 on duplicate.
 
 ## audience
-Que consumirá este código (interno, lib pública, microserviço, frontend)?
-_Example:_ Frontend Next.js + 1 outro microserviço Go.
+Who will consume this code (internal, public library, microservice, frontend)?
+_Example:_ A Next.js frontend and one Go microservice.
 
 ## constraints
-Stack, deps proibidas, performance, deadline, restrições legais (LGPD)?
-_Example:_ TypeScript + Bun. Sem Express. P95 < 100ms. LGPD obrigatório.
+Stack, forbidden dependencies, performance, deadline, legal constraints (GDPR)?
+_Example:_ TypeScript + Bun. No Express. P95 < 100ms. GDPR compliance required.
 
 ## success_criteria
-Como vai validar (testes passam, smoke local, performance test)?
-_Example:_ Vitest suite + curl manual + p95 < 100ms num bench de 1k req.
+How will you validate it (tests pass, local smoke test, performance test)?
+_Example:_ Vitest suite + manual curl + p95 < 100ms on a 1k-request benchmark.

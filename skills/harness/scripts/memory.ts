@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// memory.ts — `nrv memory`: memória cross-session temporal (supersede-never-delete).
+// memory.ts — `nrv memory`: temporal cross-session memory (supersede-never-delete).
 //
 //   nrv memory add <business> "<statement>" --scope <global|project> [--source <s>] [--supersedes <id>]
 //   nrv memory list <business> [--all] [--scope <global|project>]
@@ -12,8 +12,8 @@
 // update, a migration or a reinstall replaces those directories whole, so memory
 // kept inside them sits on a surface built to be overwritten. Dry-run by default.
 //
-// Fatos vigentes (superseded_by IS NULL) são recuperados no prompt do employee.
-// Nada é apagado: mudar um fato = inserir o novo e marcar o antigo como superseded.
+// Current facts (superseded_by IS NULL) are retrieved into the employee prompt.
+// Nothing is deleted: changing a fact = inserting the new one and marking the old one superseded.
 
 import * as fs from "node:fs";
 import * as path from "node:path";

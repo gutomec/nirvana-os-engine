@@ -231,6 +231,14 @@ describe("errors", () => {
     expect(f.find((x) => x.id === "pinned_clone_unresolved")!.where).toBe("nobody-at-all");
   }, spawnBudgetMs(2));
 
+  test("manifest_clone_unresolved: business.yaml names a clone the library does not have — a warning", () => {
+    const f = check("ghost-dna", { manifestExtra: "dna:\n  required:\n    - nobody-at-all\n    - nobody-either\n" }).findings;
+    const hit = f.find((x) => x.id === "manifest_clone_unresolved");
+    expect(hit).toBeDefined();
+    expect(hit!.severity).toBe("warning");
+    expect(hit!.message).toContain("nobody-at-all, nobody-either");
+  }, spawnBudgetMs(2));
+
   test("acceptance_invalid: a malformed id, a duplicate id and a score outside 0..1", () => {
     const bad = INTAKE_SEAT.replace("  - id: brief_understood", "  - id: Brief Understood");
     expect(idsOf(check("bad-acc-id", { employees: { "ceo.md": bad } }).findings)).toContain("acceptance_invalid");

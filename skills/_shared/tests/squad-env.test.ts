@@ -23,6 +23,7 @@ import {
 } from "../lib/squad-env.ts";
 import { binDirsOn, binFile, planNpx, realNpx, windowsCmdLine } from "../lib/npx-shim.ts";
 import { depsStore, venvPython } from "../lib/deps-home.ts";
+import { squadWorkCard } from "../lib/work-cards.ts";
 
 const REPO = path.resolve(import.meta.dir, "..", "..", "..");
 const ACTIVATOR = path.join(REPO, "skills", "squads", "lib", "activator.js");
@@ -339,10 +340,12 @@ describe("what the worker is told", () => {
   }
 
   test("the Python line appears only when the squad has a venv", () => {
-    squad("cardy", "");
+    const dir = squad("cardy", "");
     expect(squadEnvLines("cardy")).toEqual([]);
+    expect(squadWorkCard("cardy", dir)).not.toContain("This squad's Python");
     const bin = fakeVenv("cardy");
     expect(squadEnvLines("cardy")).toEqual([pythonLine(bin)]);
+    expect(squadWorkCard("cardy", dir)).toContain(pythonLine(bin));
   });
 
   test("the Node line and the run env appear only when the squad has packages", () => {
@@ -362,9 +365,9 @@ describe("what the worker is told", () => {
     expect(Object.keys(win)).not.toContain("PATH");
   });
 
-  test("an install failure becomes one line for the worker", () => {
-    squad("broken", "");
-    expect(squadEnvLines("broken", ["bun install failed: x"])).toEqual(["Environment problem: bun install failed: x"]);
+  test("an install failure reaches the card as one line", () => {
+    const dir = squad("broken", "");
+    expect(squadWorkCard("broken", dir, ["bun install failed: x"])).toContain("Environment problem: bun install failed: x");
   });
 });
 

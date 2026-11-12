@@ -15,11 +15,11 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
-  HEADLESS_SKIP_PERMISSIONS_ENV, __testables, claudeDirectiveArgs, headlessClaudeEnv, headlessSkipPermissions, resolveExecutable,
+  CLAUDE_LEAN_SETTINGS, HEADLESS_SKIP_PERMISSIONS_ENV, __testables, claudeDirectiveArgs, claudeLeanSettingsArg, headlessClaudeEnv, headlessSkipPermissions, resolveExecutable,
   runHeadless, type Runtime,
 } from "../../_shared/lib/host-agent-driver.ts";
 import { childDepth } from "../../_shared/lib/dispatch-depth.ts";
-import { CAPTURE_PRELUDE, readCapturedArgs, writeFakeCli } from "./helpers/fake-cli.ts";
+import { AGY_FAKE_PRELUDE, CAPTURE_PRELUDE, readCapturedArgs, writeFakeCli } from "./helpers/fake-cli.ts";
 import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-driver-autonomy-"));
@@ -45,7 +45,7 @@ beforeAll(() => {
   const fake = (name: string, body: string) => writeFakeCli(BIN, name, CAPTURE_PRELUDE + body);
   fake("claude", `await stdinLen(); if (captureDir) fs.writeFileSync(path.join(captureDir, "claude-env.json"), JSON.stringify({ CLAUDE_CODE_DISABLE_WORKFLOWS: process.env.CLAUDE_CODE_DISABLE_WORKFLOWS ?? null })); process.stdout.write(JSON.stringify({ type: "result", is_error: false, result: "ok", session_id: "s1", total_cost_usd: 0.01 }));`);
   fake("codex", `await stdinLen(); const oi = argv.indexOf("-o"); if (oi >= 0) fs.writeFileSync(argv[oi + 1], "ok"); console.log(JSON.stringify({ type: "turn.completed" }));`);
-  fake("agy", `process.stdout.write(JSON.stringify({ response: "ok", session_id: "a1" }));`);
+  fake("agy", AGY_FAKE_PRELUDE + `await agyPrompt(); agyReply({ response: "ok", session_id: "a1" });`);
   fake("kimi", `console.log(JSON.stringify({ type: "result", is_error: false, session_id: "k1" }));`);
   fake("grok", `process.stdout.write(JSON.stringify({ text: "ok", session_id: "gk1" }));`);
   fake("pi", `console.log(JSON.stringify({ type: "session", id: "p1" })); console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "ok" }] } }));`);
@@ -98,7 +98,9 @@ describe("light layer — buildCall argv per adapter", () => {
       ["-p", "--no-session-persistence", "--output-format", "json", "--dangerously-skip-permissions", "--append-system-prompt", "persona"],
       ["-p", "--no-session-persistence", "--output-format", "json", "--append-system-prompt", "persona"]],
     ["codex", ["exec", "--dangerously-bypass-approvals-and-sandbox"], ["exec"]],
-    ["antigravity-cli", ["-p", MERGED, "--dangerously-skip-permissions"], ["-p", MERGED]],
+    ["antigravity-cli",
+      ["--input-format", "stream-json", "--output-format", "stream-json", "--dangerously-skip-permissions", "-p="],
+      ["--input-format", "stream-json", "--output-format", "stream-json", "-p="]],
     ["grok-cli", ["--prompt-file", "<file>", "--always-approve", "--trust"], ["--prompt-file", "<file>"]],
     ["opencode", ["run", MERGED, "--auto"], ["run", MERGED]],
   ])("%s passes its documented autonomy flag by default and drops it under =0", (name, byDefault, restricted) => {
@@ -308,7 +310,7 @@ describe("a dispatched worker does not open its own agents", () => {
     expect(run({})).not.toContain("--disable");
   });
 
-  test("headlessClaudeEnv sets the workflow switch only for a worker (the maestro, an orchestrator, keeps workflows)", () => {
+  test("headlessClaudeEnv sets the workflow switch only for a worker (the Orca worker and the maestro share it)", () => {
     expect(headlessClaudeEnv({} as Record<string, string | undefined>, { denySubagents: true }).CLAUDE_CODE_DISABLE_WORKFLOWS).toBe("1");
     expect(headlessClaudeEnv({ CLAUDE_CODE_DISABLE_WORKFLOWS: "0" } as Record<string, string | undefined>, { denySubagents: true }).CLAUDE_CODE_DISABLE_WORKFLOWS).toBe("1");
     expect(headlessClaudeEnv({} as Record<string, string | undefined>).CLAUDE_CODE_DISABLE_WORKFLOWS).toBeUndefined();
@@ -458,6 +460,40 @@ describe("an answer-only call runs without tools where the CLI can say so", () =
     expect(argvNoTools("claude-code", "claude", false)).not.toContain("--tools");
   });
 
+  test("claude-code: the answer-only child starts lean (no MCP, no skills, hooks off) and keeps the user's model", () => {
+    const args = argvNoTools("claude-code", "claude");
+    expect(args).toContain("--strict-mcp-config");
+    expect(args).not.toContain("--mcp-config");
+    expect(args).toContain("--disable-slash-commands");
+    // Never the switch that also drops the user's configured model.
+    expect(args).not.toContain("--setting-sources");
+    expect(args).not.toContain("--bare");
+    expect(args).not.toContain("--model");
+    const i = args.indexOf("--settings");
+    expect(i).toBeGreaterThan(-1);
+    const value = args[i + 1];
+    // Inline JSON on a direct spawn; a temp file (already removed) under a shell shim.
+    if (value.startsWith("{")) expect(JSON.parse(value)).toEqual({ disableAllHooks: true });
+    else {
+      expect(path.basename(value)).toStartWith("nrv-lean-settings-");
+      expect(fs.existsSync(value)).toBe(false);
+    }
+    const worker = argvNoTools("claude-code", "claude", false);
+    for (const flag of ["--strict-mcp-config", "--disable-slash-commands", "--settings"]) expect(worker).not.toContain(flag);
+  });
+
+  test("claude-code: the lean settings travel as a file under a shell, and the prefix is reaped", () => {
+    expect(claudeLeanSettingsArg(false)).toEqual({ value: CLAUDE_LEAN_SETTINGS, tmpFiles: [] });
+    const viaShell = claudeLeanSettingsArg(true);
+    try {
+      expect(viaShell.tmpFiles).toEqual([viaShell.value]);
+      expect(JSON.parse(fs.readFileSync(viaShell.value, "utf8"))).toEqual({ disableAllHooks: true });
+      expect(__testables.TMP_FILE_PREFIXES).toContain("nrv-lean-settings-");
+    } finally {
+      fs.rmSync(viaShell.value, { force: true });
+    }
+  });
+
   test("codex: the read-only sandbox, in place of both autonomy paths", () => {
     const args = argvNoTools("codex", "codex");
     expect(hasPair(args, ["-s", "read-only"])).toBeTrue();
@@ -465,7 +501,16 @@ describe("an answer-only call runs without tools where the CLI can say so", () =
     expect(args).not.toContain("--approve-for-me");
   });
 
-  test("antigravity-cli has no such switch and runs as before", () => {
-    expect(argvNoTools("antigravity-cli", "agy")).toContain("--dangerously-skip-permissions");
+  test("antigravity-cli: plan mode, never the bypass, whatever the switch says", () => {
+    for (const value of [undefined, "1", "0"]) {
+      const args = withSwitch(value, () => argvNoTools("antigravity-cli", "agy"));
+      expect(hasPair(args, ["--mode", "plan"])).toBeTrue();
+      expect(args).not.toContain("--dangerously-skip-permissions");
+      // agy: "--mode plan has no effect while slash command expansion is disabled".
+      expect(args).not.toContain("--disable-slash-commands");
+    }
+    const worker = argvNoTools("antigravity-cli", "agy", false);
+    expect(worker).not.toContain("--mode");
+    expect(worker).toContain("--dangerously-skip-permissions");
   });
 });

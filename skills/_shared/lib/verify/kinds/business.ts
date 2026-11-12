@@ -136,6 +136,7 @@ export const criteria: Criterion[] = [
   { id: "surface_stale", severity: "warning", autofix: "mechanical", baselineable: false, title: ".nirvana-surface.json differs from the extraction", fixer: "surface_regen" },
   { id: "operation_mode_unsupported", severity: "warning", autofix: "none", baselineable: false, title: "operation_mode other than zero_human, not honored this cycle" },
   { id: "legacy_partial", severity: "warning", autofix: "none", baselineable: false, title: "the legacy block is present and incomplete" },
+  { id: "manifest_clone_unresolved", severity: "warning", autofix: "none", baselineable: false, title: "every clone business.yaml names (dna.required, dna.optional) is installed" },
 ];
 
 const BY_ID = new Map(criteria.map((c) => [c.id, c]));
@@ -448,7 +449,7 @@ function deprecatedFindings(dir: string, b: BusinessRead): Finding[] {
 /** §5.3: the chart is a graph over the seats, consistent in both directions. */
 function chartFindings(b: BusinessRead): Finding[] {
   const out: Finding[] = [];
-  if (b.chartMissing) return [mk("org_chart_missing", "org-chart.yaml is absent — the hierarchy the team mode walks has no file", "org-chart.yaml")];
+  if (b.chartMissing) return [mk("org_chart_missing", "org-chart.yaml is absent — the single agent that runs the business has no file to read which seat owns what", "org-chart.yaml")];
   if (!b.chart) return [mk("org_chart_inconsistent", `org-chart.yaml does not load: ${b.chartParseError ?? "unknown reason"}`, "org-chart.yaml")];
   const parsed = OrgChartSchema.safeParse(b.chart);
   if (!parsed.success) {
@@ -575,6 +576,17 @@ function cloneFindings(dir: string, b: BusinessRead): Finding[] {
       if (installed.has(slug)) continue;
       out.push(mk("pinned_clone_unresolved", `${seats.join(", ")} pins ${slug}, which is not in the library — a seat that promises a voice must have it`, "pinned_mind_clones", slug));
     }
+  }
+  // business.yaml can name clones too (`dna: { required: [...], optional: [...] }`).
+  // Nothing loads them as voices, so a missing one is a warning, not a broken seat.
+  const dnaBlock = (b.manifest as Record<string, any> | null)?.dna;
+  const named = dnaBlock && typeof dnaBlock === "object" && !Array.isArray(dnaBlock)
+    ? [...strings(dnaBlock.required), ...strings(dnaBlock.optional)].map((r) => cloneSlugOf(r) ?? r)
+    : [];
+  if (named.length) {
+    const installed = installedSlugs("mind-clone");
+    const absent = [...new Set(named)].filter((s) => !installed.has(s));
+    if (absent.length) out.push(mk("manifest_clone_unresolved", `business.yaml names ${absent.length} clone${absent.length === 1 ? "" : "s"} the library does not have: ${absent.join(", ")}`, "dna.required / dna.optional"));
   }
   const dnaDir = path.join(dir, "dna");
   if (!fs.existsSync(dnaDir)) return out;

@@ -2,14 +2,14 @@
 
 The engine is free and installs on macOS, Windows (PowerShell), Windows with WSL (Ubuntu) and Linux. Once it is installed you do not drive it by hand: you talk to your AI agent (Claude Code, Codex, Antigravity, Pi…) and the agent runs Nirvana-OS. The commands on this page are for the install itself, and for anyone who wants them.
 
-The illustrated guide, in Portuguese, with a tab per system, is at [gutomec.github.io/nirvana-os-engine/install.html](https://gutomec.github.io/nirvana-os-engine/install.html).
+This file describes **0.15.0**, the current stable release, which the plain one-liner installs. The illustrated guide, in Portuguese, with a tab per system, is at [gutomec.github.io/nirvana-os-engine/install.html](https://gutomec.github.io/nirvana-os-engine/install.html), and betas have [their own page](https://gutomec.github.io/nirvana-os-engine/beta.html).
 
 There are two release channels:
 
 | Channel | Version | Who it is for |
 |---|---|---|
-| Stable | 0.14.11 | everyone; the one-liner installs it |
-| Beta | `v0.15.0-beta.12` | people who want the 0.15 changes now (see [Install a beta](#install-a-beta)) |
+| Stable | `v0.15.0` | everyone; the plain one-liner installs it |
+| Beta | none right now | testers; see [Install a beta](#install-a-beta) |
 
 ## Before you start
 
@@ -24,7 +24,9 @@ On Ubuntu and WSL, `unzip` is needed by the Bun installer and to open pack zips.
 
 You also need at least one agent CLI: [Claude Code](https://claude.com/claude-code), [Codex](https://github.com/openai/codex), [Antigravity CLI](https://antigravity.google/docs/cli-features) (`agy`), Pi, Kimi, Grok, Qwen Code or OpenCode. Python 3.10+ only matters for squads that declare Python packages, and for the zip that `nrv export` builds.
 
-## Install the stable engine
+## Install
+
+The plain one-liner installs the latest stable release (0.15.0).
 
 macOS, Linux and WSL:
 
@@ -38,30 +40,35 @@ Windows, in PowerShell:
 irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
 ```
 
-The script finds Bun or installs it, downloads the latest stable engine release from GitHub, and runs the engine's installer with that Bun. Running it again is safe.
+The script finds Bun or installs it, downloads the engine tarball, and runs the engine's installer with that Bun. Running it again is safe; over an earlier engine it keeps your content, packs and settings.
 
-**Close the terminal and open a new one** when it finishes, so `~/.local/bin` is on your PATH. Then check:
+**Close the terminal and open a new one** when it finishes, so `~/.local/bin` is on your PATH. Then check the version, which prints `0.15.0`:
 
 ```bash
 nrv --version
 ```
 
-Arguments reach the engine installer on macOS, Linux and WSL through `bash -s --`, for example `| bash -s -- --no-index`. `irm | iex` cannot pass arguments.
+Arguments reach the engine installer on macOS, Linux and WSL through `bash -s --`: replace the final `bash` with `bash -s -- --profile=economy`, for example. `irm | iex` cannot pass arguments.
+
+What 0.15 changes compared with 0.14:
+
+- `nrv init` writes the on-demand note by default: your agent works as usual and uses Nirvana only when a request asks for it. See [Start a project](#start-a-project).
+- Performance profiles exist (`max`, `balanced`, `economy`). See [Performance profiles](#performance-profiles).
 
 ## Install a beta
 
-Betas are GitHub prereleases. The one-liner above always installs the latest stable, so a beta is installed by pointing `NIRVANA_ENGINE_URL` at its tarball. The current beta is **`v0.15.0-beta.12`**. The tag has a leading `v`; without it GitHub answers 404. To install a newer beta later, replace `v0.15.0-beta.12` in the commands below with its tag from the [release list](https://github.com/gutomec/nirvana-os-engine/releases).
+Betas are GitHub prereleases, so the plain one-liner never installs one. A beta is installed by pointing `NIRVANA_ENGINE_URL` at its tarball; replace `v<version>` in the commands below with its tag from the [release list](https://github.com/gutomec/nirvana-os-engine/releases). The tag has a leading `v`; without it GitHub answers 404.
 
 macOS, Linux and WSL:
 
 ```bash
-curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.12/nirvana-os-engine.tar.gz bash
+curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v<version>/nirvana-os-engine.tar.gz bash
 ```
 
 Windows, in PowerShell. Paste it as one line:
 
 ```powershell
-$env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.12/nirvana-os-engine.tar.gz'; irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
+$env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/download/v<version>/nirvana-os-engine.tar.gz'; irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
 ```
 
 Then, if the window is still open:
@@ -72,14 +79,7 @@ Remove-Item Env:NIRVANA_ENGINE_URL
 
 In PowerShell the variable lives for the whole window, and while it is set `nrv update` and pack setups reinstall that pinned tarball. A window that closed took the variable with it. Every Windows command on this page uses single quotes on purpose: a double quote lost in a copy and paste (a chat app can drop it) leaves PowerShell waiting on a `>>` prompt.
 
-Close the terminal, open a new one and check that `nrv --version` shows `0.15.0-beta.12`.
-
-What changes on the beta:
-
-- `nrv init` writes the on-demand note by default: your agent works as usual and uses Nirvana only when a request asks for it. See [Start a project](#start-a-project).
-- Performance profiles exist (`max`, `balanced`, `economy`). Through `curl | bash` there is no terminal to ask in, so pass one with `| NIRVANA_ENGINE_URL=… bash -s -- --profile=balanced`, or ask your agent later (*"put Nirvana in economy mode"*, which runs `nrv config set execution.profile economy --global`).
-
-To leave the beta, see [Back to stable](#back-to-stable-from-a-beta).
+To leave a beta for stable, follow [Back to stable](#back-to-stable-from-a-beta).
 
 ## Windows with WSL (Ubuntu)
 
@@ -102,12 +102,13 @@ WSL runs Ubuntu inside Windows. If you choose it, Nirvana-OS and your AI agent b
 2. Puts `nrv` and `nrv-hermes` in `~/.local/bin` (`.cmd` launchers on Windows) and adds `~/.local/bin` to your PATH: one line in `~/.zshrc`, or `~/.bashrc` and `~/.bash_profile`, plus `~/.profile`; on Windows, the user PATH in the registry.
 3. Wires audit hooks into the runtimes it finds:
    - Claude Code: `~/.claude/settings.json` (PreToolUse, PostToolUse);
-   - Antigravity: `~/.gemini/config/hooks.json` (a named `nirvana-os` PreInvocation hook that gives each session Nirvana's context; entries an earlier install left in `~/.antigravity/settings.json` are removed);
+   - Antigravity: `~/.gemini/config/hooks.json`;
    - Codex: `~/.codex/hooks.json`, plus a trust record in `~/.codex/config.toml`.
 4. Links the `nirvana` skill into every runtime whose folder or binary it finds: `~/.claude/skills`, `~/.codex/skills` (always a copy), `~/.gemini/config/skills` (Antigravity), `~/.pi/agent/skills` and `~/.agents/skills` (OpenClaw). On Windows, or with `--copy-skills`, the entries are copies. A folder of yours with the same name is moved to `~/.nirvana/backups/runtime-skills/`, never deleted.
 5. Creates the empty content folders `~/squads`, `~/businesses` and `~/businesses/_library/dna`. It never deletes content.
 6. Rebuilds the registries (`nrv index`).
-7. Offers the Hermes bridge when the `hermes` CLI is on PATH (or `--with-hermes`).
+7. In a terminal, asks once for a performance profile (`max`, `balanced`, `economy`) and records it in `~/.nirvana/config.yaml`. Through `curl | bash` there is no terminal to ask in, so nothing is recorded unless you pass `--profile=<name>`. An update never asks again.
+8. Offers the Hermes bridge when the `hermes` CLI is on PATH (or `--with-hermes`).
 
 The engine ships no content. Packs install separately; see [Install a pack](#install-a-pack-from-squadssh).
 
@@ -158,17 +159,17 @@ Every piece of work happens inside a project folder. Open the folder, start your
 nrv init .
 ```
 
-`nrv init` writes `.nirvana/project.yaml`, a `.env` with the project's library scope (`NIRVANA_SCOPE`), `.env.example`, `.gitignore`, `README.md`, the `.nirvana/{squads,businesses,mind-clones}/` folders, and the project contract in `AGENTS.md`, `CLAUDE.md` and `GEMINI.md`. An existing file keeps your own lines; the Nirvana blocks go in under markers. Deliverables land in `outputs/` inside the project.
+`nrv init` writes `.nirvana/project.yaml` (identity, library scope, orchestration mode), `.env.example`, `.gitignore`, `README.md`, the `.nirvana/{squads,businesses,mind-clones}/` folders, and a short note in `AGENTS.md`, `CLAUDE.md` and `GEMINI.md`. It creates no `.env` (0.14 wrote one with `NIRVANA_SCOPE`). An existing file keeps your own lines; the Nirvana block goes in under a marker. Deliverables land in `outputs/` inside the project.
 
-How Nirvana behaves in the project depends on the mode, and the two channels differ here:
+How Nirvana behaves in the project depends on the mode, and 0.15 changed the default:
 
-| | 0.14.11 (stable) | 0.15 (beta) |
+| | 0.14 | 0.15 |
 |---|---|---|
 | Default | `always`: Nirvana orchestrates every concrete deliverable | `on-demand`: your agent works as usual and uses Nirvana only when a request asks for it |
 | Asks? | Only when you run it yourself in a terminal **and** the folder already has `AGENTS.md`, `CLAUDE.md` or `GEMINI.md`; it then recommends on-demand. Run by your agent, or in a folder without those files, it uses `always` | Never |
 | Other mode | `nrv init . --orchestrators=on-demand` | `nrv init . --orchestrators=always` |
 
-On-demand means Nirvana acts when you name it (*"use Nirvana to…"*), name one of your businesses, squads or mind-clones, or ask for work on another runtime. `--scope=project|merge` decides which library the project sees.
+On-demand means Nirvana acts when you name it (*"use Nirvana to…"*), name one of your businesses, squads or mind-clones, or ask for work on another runtime. To orchestrate everything, say *"orchestrate everything in this project with Nirvana"* (`nrv init . --orchestrators=always`) and open a new session. Running init again with the other mode switches the project in place and keeps your own lines. A project set up on 0.14 keeps its full contract until you run `nrv init .` again, which makes it on-demand unless you pass `--orchestrators=always`. `--scope=project|merge|global` decides which library the project sees.
 
 ## Talk to your agent
 
@@ -206,24 +207,52 @@ A first `--all` on a big pack takes several minutes; later runs only re-check. I
 
 Two things shape what your agent hands to the businesses it dispatches.
 
-**Brief altitude.** One setting, per project:
+**Brief template.** The orchestrator writes each brief with a template, one markdown file holding the instruction and the skeleton. The engine ships four:
+
+| Template | What the brief carries |
+|---|---|
+| `slim` (default) | short labelled lines: Goal, Request (the path of a file with the user's words, verbatim), Decisions, Inputs, Deliver, Done when, Session |
+| `standard` | the six sections: Request verbatim, Decisions, Your part, Inputs, Done when, Output |
+| `detailed` | the six sections plus a suggested structure and the method, one criterion per item and every artifact named |
+| `karpathy` | slim plus an explain-back: a plain-language summary, a diagram and, when it helps, an HTML explainer. After Andrej Karpathy's [post on X](https://x.com/karpathy/status/2105819303471976479) and his [2025 Year in Review](https://karpathy.bearblog.dev/year-in-review-2025/). It costs more tokens per delivery, so it is never the default |
+
+Pick one per project (run it inside a project that `nrv init` set up; `--project` writes `.nirvana/config.yaml`):
 
 ```bash
-nrv config set briefing.altitude guided --project
-nrv config get briefing.altitude
+nrv config set briefing.template detailed --project
+nrv brief templates
 ```
 
-| Value | What the brief carries |
-|---|---|
-| `outcome` (default) | the result, the guardrails and the definition of done |
-| `guided` | the above plus the structure the author suggests |
-| `prescriptive` | per-item criteria, the artifact list and the method (the brief's form up to 0.13.9) |
+To change a template or add your own, copy one and edit the copy:
 
-Run it inside a project that `nrv init` set up; `--project` writes `.nirvana/config.yaml` there. On 0.14.11 a request that says "brief detalhado" raises the altitude for that run, and "brief simples" lowers it.
+```bash
+nrv brief init juridico --from standard --project   # .nirvana/brief-templates/juridico.md
+nrv brief init slim --global                        # ~/.nirvana/brief-templates/slim.md, for every project
+```
+
+A name is looked up in the project's `.nirvana/brief-templates/`, then in `~/.nirvana/brief-templates/`, then in the engine. Keep the labels the file's `required` list names (Request and Done when at least): the engine reads them. `briefing.altitude` still works as a deprecated alias while `briefing.template` is unset (`outcome` is `standard`, `prescriptive` is `detailed`).
 
 **Project rules in free text.** Write them in the project's `CLAUDE.md`, `AGENTS.md` or `GEMINI.md` (the one your agent reads), **above** the first line that starts with `<!-- nirvana-os:`. Everything from that marker down is the Nirvana block, and `nrv init` rewrites it when the engine's text changes. Your agent reads these files when the session starts and carries your rules into the briefs it writes.
 
 In plain language: *"In this project, use guided briefs"* and *"Add to this project's CLAUDE.md, above the Nirvana block: every deliverable in Brazilian Portuguese, with sources dated."*
+
+## Performance profiles
+
+Profiles exist from 0.15 on. One profile moves several settings at once:
+
+| Profile | Effort | Context ceiling per worker | Review | Visual checks by workers |
+|---|---|---|---|---|
+| `max` | xhigh | none (runtime default) | every delivery, up to two rounds | on |
+| `balanced` | high | 400k tokens | when a rule asks for it | off |
+| `economy` | medium | 200k tokens | only on request | off |
+
+Ask your agent (*"put Nirvana in economy mode"*, *"maximum quality"*), or run:
+
+```bash
+nrv config set execution.profile balanced --global
+```
+
+A profile never picks the model; your runtime's own configuration does. A setting you change explicitly wins over the profile.
 
 ## Update
 
@@ -234,7 +263,7 @@ nrv update            # back up ~/.nirvana/skills, install the newer release, ke
 nrv update --check    # name the release it would install, change nothing
 ```
 
-An update never installs an older or equal release. A stable engine moves only to a newer stable. A beta moves to the newest greater release, beta or stable, so a 0.15 beta becomes 0.15.0 when that ships; it never goes back to 0.14. After an engine update, `nrv update` checks every installed pack that has a license.
+An update never installs an older or equal release. A stable engine moves only to a newer stable. A beta moves to the newest greater release, beta or stable, so a beta becomes the stable release that follows it; it never goes back. After an engine update, `nrv update` checks every installed pack that has a license.
 
 If an update goes wrong, the previous skills are in `~/.nirvana/skills-backup-<stamp>`, and `nrv update` prints the command that restores them.
 
@@ -243,9 +272,9 @@ To update a pack, ask your agent or run `nrv update <pack-slug>`, for example `n
 ## Back to stable from a beta
 
 1. On Windows, open a **new** PowerShell window first and run `Remove-Item Env:NIRVANA_ENGINE_URL`. An error saying it does not exist is fine.
-2. Run the stable one-liner from [Install the stable engine](#install-the-stable-engine). It installs the latest stable over the beta and keeps your content, packs and settings.
+2. Run the stable one-liner from [Install](#install). It installs the latest stable over the beta and keeps your content, packs and settings.
 3. Close the terminal, open a new one and check that `nrv --version` no longer shows `beta`.
-4. In each project you used with the beta, run `nrv init .` again (or ask your agent to). 0.14.11 does not recognise the note the beta wrote, so first delete the Nirvana block the beta left in `AGENTS.md`, `CLAUDE.md` and `GEMINI.md` (from the `<!-- nirvana-os:on-demand-contract:v3 -->` or `<!-- nirvana-os:invocation-contract:v4 -->` line to the end of that block), keeping your own lines. To keep the beta's on-demand behaviour, run `nrv init . --orchestrators=on-demand`.
+4. In each project you used with the beta, run `nrv init .` again (or ask your agent to). Your own lines stay.
 
 ## Other ways in
 
@@ -295,7 +324,7 @@ The repair rewrites the value with the kind it had (a `REG_EXPAND_SZ` stays unex
 
 **macOS prints "Saving session… [Processo concluído]" after you close Terminal** (in English, "[Process completed]"). That is Terminal closing the shell. It is not an error.
 
-**The download returns 404.** A pinned `NIRVANA_ENGINE_URL` is missing the `v` before the version (`v0.15.0-beta.12`, not `0.15.0-beta.12`), or names a release that does not exist. Check the [release list](https://github.com/gutomec/nirvana-os-engine/releases).
+**The download returns 404.** A pinned `NIRVANA_ENGINE_URL` is missing the `v` before the version (`v0.15.0`, not `0.15.0`), or names a release that does not exist. Check the [release list](https://github.com/gutomec/nirvana-os-engine/releases).
 
 **`nrv: command not found`.** `~/.local/bin` is not on the PATH of this terminal. Close it and open a new one; if `nrv` is still missing, add `export PATH="$HOME/.local/bin:$PATH"` to your shell profile.
 

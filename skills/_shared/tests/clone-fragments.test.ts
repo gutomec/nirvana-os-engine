@@ -15,7 +15,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 
-const MARCA_DE_CORTE = "persona truncada";
+const MARCA_DE_CORTE = "persona truncated";
 
 // The resolver locates clones by SCOPE and requires MANIFEST.yaml. We build an
 // isolated project in tmp and point the scope at it BEFORE importing the

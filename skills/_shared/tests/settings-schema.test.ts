@@ -98,14 +98,16 @@ describe("the table", () => {
 
 describe("validation", () => {
   const cases: Array<[string, unknown, boolean, RegExp?]> = [
-    ["routing.mode", "fast", true],
-    ["routing.mode", "turbo", false, /routing\.mode: valor inválido "turbo"; esperado agentic \| cards \| fast/],
+    ["routing.mode", "cards", true],
+    ["routing.mode", "fast", false, /routing\.mode: "fast" was retired \(.+\); expected agentic \| cards/],
+    ["routing.mode", "turbo", false, /routing\.mode: invalid value "turbo"; expected agentic \| cards/],
+    ["routing.on_router_failure", "cascade", false, /was retired/],
     ["multi_target.enabled", true, true],
-    ["multi_target.enabled", "true", false, /esperado true \| false/],
+    ["multi_target.enabled", "true", false, /expected true \| false/],
     ["quality_gate.max_revisions", 3, true],
-    ["quality_gate.max_revisions", -1, false, /inteiro >= 0/],
+    ["quality_gate.max_revisions", -1, false, /integer >= 0/],
     ["quality_gate.max_revisions", 1.5, false],
-    ["supervisor.stall_threshold_ms", 0, false, /inteiro > 0/],
+    ["supervisor.stall_threshold_ms", 0, false, /integer > 0/],
     ["budget.default_max_cost_usd", 2.5, true],
     ["gauntlet.evaluator", "squad:spec-judge:quality.specification_conformance", true],
     ["gauntlet.evaluator", "squad:spec-judge", true],
@@ -148,8 +150,8 @@ describe("legacy variables", () => {
       if (!spec.env) continue;
       const samples: SettingValue[] = spec.kind === "enum" ? [...spec.options!]
         : spec.kind === "boolean" ? [true, false]
-        : spec.kind === "number" ? [spec.default, 7]
-        : [spec.default, spec.key === "gauntlet.evaluator" ? "squad:spec-judge" : "sample-value"];
+        : spec.kind === "number" ? [spec.default, spec.key === "decision.min_confidence" ? 0.5 : 7]
+        : [spec.default, spec.key === "gauntlet.evaluator" ? "squad:spec-judge" : spec.key === "decision.local_url" ? "http://localhost:8000" : "sample-value"];
       for (const value of samples) {
         const text = (spec.toEnv as (value: SettingValue) => string | null)(value);
         if (text === null) continue; // the variable cannot spell this value; the child resolves it itself
@@ -175,7 +177,7 @@ describe("legacy variables", () => {
     expect(read(spec, { NIRVANA_MULTI_TARGET_ENGINE: "1" })).toBeNull(); // accepted, no effect
     expect(read(spec, { NIRVANA_MULTI_TARGET_ENGINE: "1", NIRVANA_MULTI_TARGET_KILL_SWITCH: "on" })?.variable).toBe("NIRVANA_MULTI_TARGET_KILL_SWITCH");
     expect(() => read(spec, { NIRVANA_MULTI_TARGET_KILL_SWITCH: "maybe" })).toThrow(SettingsError);
-    expect(() => read(spec, { NIRVANA_MULTI_TARGET_KILL_SWITCH: "maybe" })).toThrow(/NIRVANA_MULTI_TARGET_KILL_SWITCH=maybe inválido para multi_target\.enabled/);
+    expect(() => read(spec, { NIRVANA_MULTI_TARGET_KILL_SWITCH: "maybe" })).toThrow(/NIRVANA_MULTI_TARGET_KILL_SWITCH=maybe is invalid for multi_target\.enabled/);
     expect(spec.toEnv!(true)).toBe("0");
     expect(spec.toEnv!(false)).toBe("1");
   });
@@ -219,13 +221,31 @@ describe("legacy variables", () => {
     expect(read(spec, { NIRVANA_ROUTER_DENSE: "1" })?.value).toBe("fallback");
     expect(read(spec, { NIRVANA_ROUTER_DENSE: "0" })?.value).toBe("off");
     expect(read(spec, { NIRVANA_ROUTER_DENSE: "fallback" })?.value).toBe("fallback");
-    expect(() => read(spec, { NIRVANA_ROUTER_DENSE: "2" })).toThrow(/NIRVANA_ROUTER_DENSE=2 inválido para routing\.dense; esperado off \| fallback/);
+    expect(() => read(spec, { NIRVANA_ROUTER_DENSE: "2" })).toThrow(/NIRVANA_ROUTER_DENSE=2 is invalid for routing\.dense; expected off \| fallback/);
+  });
+
+  test("NIRVANA_ORCA_WORKERS keeps its boolean spellings; the default is off", () => {
+    const spec = SETTINGS["execution.orca_workers"];
+    expect(spec.default).toBe("off");
+    expect(read(spec, { NIRVANA_ORCA_WORKERS: "1" })?.value).toBe("on");
+    expect(read(spec, { NIRVANA_ORCA_WORKERS: "false" })?.value).toBe("off");
+    expect(read(spec, { NIRVANA_ORCA_WORKERS: "on" })?.value).toBe("on");
+    expect(getSettingSpec("host.orca_workers")).toBeUndefined();
+  });
+
+  test("the stall guard: 90 and 45 minutes by default, fractions allowed, 0 = off, never negative", () => {
+    expect(SETTINGS["execution.stall_timeout_min"].default).toBe(90);
+    expect(SETTINGS["execution.stall_no_start_min"].default).toBe(45);
+    expect(read(SETTINGS["execution.stall_timeout_min"], { NIRVANA_STALL_TIMEOUT_MIN: "0.5" })?.value).toBe(0.5);
+    expect(read(SETTINGS["execution.stall_no_start_min"], { NIRVANA_STALL_NO_START_MIN: "0" })?.value).toBe(0);
+    expect(() => read(SETTINGS["execution.stall_timeout_min"], { NIRVANA_STALL_TIMEOUT_MIN: "-1" })).toThrow(/NIRVANA_STALL_TIMEOUT_MIN/);
+    expect(SETTINGS["execution.stall_timeout_min"].description).toMatch(/not a spend or time ceiling/);
   });
 
   test("a number variable must be a number, an enum variable one of its choices", () => {
     expect(read(SETTINGS["supervisor.progress_ping_sec"], { NIRVANA_PROGRESS_PING_SEC: "60" })?.value).toBe(60);
     expect(() => read(SETTINGS["supervisor.progress_ping_sec"], { NIRVANA_PROGRESS_PING_SEC: "soon" })).toThrow(/NIRVANA_PROGRESS_PING_SEC=soon/);
-    expect(() => read(SETTINGS["gauntlet.default_mode"], { NIRVANA_EXECUTION_MODE: "forever" })).toThrow(/esperado standard \| gauntlet \| auto/);
+    expect(() => read(SETTINGS["gauntlet.default_mode"], { NIRVANA_EXECUTION_MODE: "forever" })).toThrow(/expected standard \| gauntlet \| auto/);
   });
 
   test("a string setting pins nothing when empty and its text otherwise", () => {

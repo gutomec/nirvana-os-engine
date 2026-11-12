@@ -1,15 +1,19 @@
 // brief-work-folders.test.ts — the folder a brief places the work in survives
-// the resume, the revision and the correction (2026-10-14 Camila incident).
+// the resume, the revision, the correction and the claims check (2026-10-14
+// Camila incident).
 //
 // A resumed worker copied a whole website project into its deliverables,
-// because the resume prompt asked for "the final files under the outputs root".
+// because the resume prompt asked for "the final files under the outputs root"
+// and the claims check accepted evidence only there; the same check called an
+// existing `_work/revisao.md` nonexistent.
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { runDelivery, type DeliveryArgs } from "../lib/delivery-pipeline.ts";
 import { loadHarnessConfig, type HarnessConfig } from "../lib/harness-config.ts";
-import { briefWorkDirs } from "../../_shared/lib/brief-work-dirs.ts";
+import { claimProblems, evidencePaths, evidenceVerdict } from "../lib/solo-review.ts";
+import { briefWorkDirs, workElsewhereRule } from "../../_shared/lib/brief-work-dirs.ts";
 import { CONTINUE_PROMPT } from "../scripts/supervisor.ts";
 import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
@@ -48,6 +52,7 @@ function baseArgs(oroot: string, over: Partial<DeliveryArgs> = {}): { args: Deli
     config: judgeOff(loadHarnessConfig(path.join(tmp, "no-config.yaml"))),
     audit: (event, payload) => calls.push({ event, payload }), gateScript: GATE, log: () => {}, warn: () => {},
     runHeadlessImpl: (() => { throw new Error("no runtime may run here"); }) as any,
+    claimsCheck: false,
     ...over,
   };
   return { args, calls };
@@ -61,20 +66,46 @@ function openTestRun(): { handle: runLedger.LedgerHandle; runId: string } {
 const statusOf = (oroot: string) => JSON.parse(fs.readFileSync(path.join(oroot, "_STATUS.json"), "utf8"));
 const write = (file: string, text: string) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, text); };
 
-describe("the correction prompt keeps the brief's folder", () => {
-  test("the fix prompt names the folder and never asks to move the work", () => {
+describe("claims: evidence is honest about _work/ and accepts the brief's work folder", () => {
+  const CRITERIA = [{ id: "d1", description: "o texto foi revisado", blocking: true }] as any;
+
+  test("an existing _work/ file is refused as run state, never as nonexistent", () => {
+    const oroot = path.join(tmp, "out");
+    write(path.join(oroot, "_work", "revisao.md"), "notas");
+    write(path.join(oroot, "_CLAIMS.json"), JSON.stringify([{ id: "d1", evidence: "_work/revisao.md:5-11, veredito da revisão" }]));
+    expect(evidencePaths("_work/revisao.md:5-11, veredito")).toEqual(["_work/revisao.md"]);
+    const [p] = claimProblems(oroot, CRITERIA);
+    expect(p.why).toContain("run state");
+    expect(p.why).not.toContain("names no file that exists");
+  });
+
+  test("a file in the folder the brief places the work in is accepted as evidence", () => {
+    const oroot = path.join(tmp, "out");
+    const proj = path.join(tmp, "proj");
+    write(path.join(proj, "index.html"), "<html></html>");
+    fs.mkdirSync(oroot, { recursive: true });
+    const brief = `## Output\nO site fica em ${proj} (trabalhe nele, no lugar).\n`;
+    const dirs = briefWorkDirs(brief, oroot, tmp);
+    expect(dirs).toEqual([proj]);
+    expect(evidenceVerdict(oroot, `${proj}/index.html:1-20, a página`, dirs).file).not.toBeNull();
+    expect(evidenceVerdict(oroot, `${proj}/index.html:1-20, a página`, []).file).toBeNull();
+    write(path.join(oroot, "_CLAIMS.json"), JSON.stringify([{ id: "d1", evidence: `${proj}/index.html:1-20, a página` }]));
+    expect(claimProblems(oroot, CRITERIA, dirs)).toEqual([]);
+  });
+
+  test("the fix prompt keeps the brief's folder and never asks to move the work", () => {
     const oroot = path.join(tmp, "out");
     const proj = path.join(tmp, "proj");
     fs.mkdirSync(proj, { recursive: true });
     write(path.join(oroot, "dados.json"), INVALID_JSON);
     const prompts: string[] = [];
     const { args } = baseArgs(oroot, {
-      brief: `Corrija o projeto em ${proj}.`, maxRevisions: 1, gateExhaustedPolicy: "withhold",
+      brief: `Corrija o projeto em ${proj}.`, maxRevisions: 1,
       runHeadlessImpl: ((o: any) => { prompts.push(o.prompt); return { ok: true, runtime: o.runtime, sessionId: null, result: "", costUsd: null, exitCode: 0, stderr: "", durationMs: 1 }; }) as any,
     });
     runDelivery(args);
-    expect(prompts[0]).toContain(`O brief coloca trabalho em: ${proj}.`);
-    expect(prompts[0]).toContain("nunca o copie para dentro de");
+    expect(prompts[0]).toContain(workElsewhereRule(path.resolve(oroot), [proj]));
+    expect(prompts[0]).toContain(proj);
   }, spawnBudgetMs(4));
 });
 

@@ -1,11 +1,12 @@
-# Reference 01 — Routing (the fast router, stage by stage)
+# Reference 01 — Routing (the deciders, and the keyword retriever stage by stage)
 
-> How a brief becomes a decision in **fast mode**. Source of truth:
-> `lib/router.js` (this file documents what that code does today, routing-360
-> state, 2026-08-06). The legacy 5-stage description in
-> `HARNESS_PROTOCOL_V1.md` §6 is historical.
+> Who decides which business, squad or agent-x executes a request, and how the
+> keyword router (`lib/router.js`) builds the shortlists they read. The stage
+> sections document what `lib/router.js` does today (routing-360 state,
+> 2026-08-06). The legacy 5-stage description in the archived Harness
+> Protocol v1 §6 is historical.
 
-Three routers exist, and the mode decides which one speaks:
+Two routers decide, and `routing.mode` picks which one speaks:
 
 - **agentic (default)** — the model reads the brief plus a compact registry
   digest (`scripts/build-routing-digest.ts`, businesses + squads + per-squad
@@ -17,13 +18,128 @@ Three routers exist, and the mode decides which one speaks:
   business and squad, what it produces first; written beside the digest) and
   the top mind-clones of the lexical clone search (`lib/cards-router.ts`). It
   answers `business:<slug>`, `squad:<slug>` or `solo` plus the brief's done
-  states, mapped onto the same contract the cascade consumes.
-- **fast** — `lib/router.js`, documented below. Deterministic, zero LLM tokens
-  by default. Used by `nrv route` / `nrv find`, `--mode=fast`, and as the
-  BM25 fallback rung when the agentic router fails at the transport level.
+  states, mapped onto the same contract the cascade consumes. See
+  [The cards call](#the-cards-call) for the prompt layout and the parts.
 
-The router does NOT execute anything. It returns a decision JSON; invocation
+The orchestrator path (the harness `SKILL.md`) decides with the session's own
+model, reading the `nrv find` shortlist and the finalists' cards.
+
+**The keyword router is a retriever, never a decider.** `lib/router.js` (BM25,
+documented stage by stage below) is deterministic and spends no tokens. It
+builds the `nrv find` shortlist, breaks capability ties inside a squad
+(`capability-resolver.ts`) and backs the clone search (`clone-search.ts`);
+`nrv route` shows its pipeline as a diagnostic. It never picks the target of a
+dispatch. The `fast` mode that let it do so was retired on 2026-10-13: on 48
+labeled requests it answered AMBIGUOUS for 42 and found the right business for
+4 of 42, and in a library written in two languages the request's language
+decided the answer. Since then `--mode=fast` and `nrv config set routing.mode
+fast` exit 4, a stored `routing.mode: fast` (config file or
+`NIRVANA_ROUTING_MODE`) reads as unset with one warning naming where it came
+from, and a router failure goes to agent-x: `routing.on_router_failure` takes
+`agent-x-only` (default) or `fail`, and a stored `cascade` reads as
+`agent-x-only`.
+
+A router does NOT execute anything. It returns a decision JSON; invocation
 belongs to the dispatch layer.
+
+## The cards call
+
+The prompt has two halves (`buildCardsStatic`, `buildCardsRequest`):
+
+- **System prompt:** the instructions, the rules, the answer shape and the
+  cards. They are the same for every request, so the runtime reads them back
+  from its prompt cache from the second call on.
+- **Message:** the clone candidates, the request and, on the one retry, the
+  correction.
+
+The call runs from a fixed empty folder (`routerCwd()`), because the cwd is
+part of the prompt and a new temp folder per call broke the cached prefix.
+Measured on 48 labeled requests (2026-10-13): $19.70 before, $6.65 after, with
+the runtime's default model. A runtime with no system-prompt flag (codex,
+qwen, agy, kimi, grok, opencode) gets both halves folded into one prompt by
+the driver (`withPreamble`), static half first.
+
+The answer may split the request into **parts**:
+
+```json
+{"target": "business:<slug>", "parts": [{"target": "business:<slug>", "part": "<what it delivers>", "after": ["business:<slug>"]}], "voices": [], "squads": [], "done": [], "reason": ""}
+```
+
+One part per deliverable that belongs to a different business or squad, with
+`after` naming the targets whose output it needs. `target` stays the part the
+others build on. An answer without `parts` reads as one part. With two parts
+or more, `nrv dispatch --auto` writes a multi-target plan
+(`lib/auto-parts-plan.ts`: one node per target, `depends_on` edges, one
+six-section brief per node) to `.nirvana/plans/<project>.json` and runs
+`scripts/multi-target.ts run` on it, passing `--runtime` when the dispatch had
+one (audit: `x_route_parts`). Under `--scaffold-only` it writes the plan,
+prints the command and exits 3. With the multi-target engine switched off it
+warns and runs the primary part only.
+
+The voices the router chooses (`suggested_mind_clones`) reach the worker: the
+business seats, the squad and agent-x all receive them through `selectVoices`
+(`lib/clone-voices.ts`), after the voices the request names and before the
+lexical search. Agent-x never gets a searched voice.
+
+## The Jev step (optional, only with a TypeSafe key)
+
+With `TYPESAFE_API_KEY` configured (the environment, the project's `.env` or
+`~/.env`) and `routing.jev` not `off`, `nrv dispatch --auto` asks TypeSafe's
+Jev classifier before the LLM router (`lib/jev-router.ts`, client in
+`_shared/lib/typesafe-client.ts`). Without the key nothing changes and nothing
+is sent. With it, **the request text goes to TypeSafe**.
+
+1. Code: a target the request names by slug (`detectTargetMention`) and the
+   clones it names (`scanNames`). A named target is a command; the Jev is never
+   asked about it.
+2. Local: the `nrv find` shortlist (`lib/shortlist.ts`, businesses and squads
+   apart) and voice candidates (8 from the library search, plus the voices of
+   the seats of the named or best-ranked business).
+3. One Jev call with Choice questions: `business`, `squad`, `shape`
+   (one business / one squad / several / nothing), one business and one squad
+   question per clause of the request (`clauses()`, split by code), and
+   `voice` when the request names nobody.
+4. Code composes the decision in the routers' contract, with `parts` for a
+   `several` shape (each clause's owner at `PART` 0.5 or more, at most
+   `MAX_PARTS` 3), a rationale built from the probabilities, and a confidence.
+
+At or above `GATE` (0.8) the decision goes to `planRouteWithFallback` as if the
+LLM router had made it, parts included (audit `x_jev_route_decided`). Below it
+(`x_jev_route_escalated`) or on any error, timeout (3 s) or invalid answer
+(`x_jev_route_failed`), the cards or agentic router decides as before. The
+events carry confidence, latency, tokens and cost, never the request text or
+the key. The voice selection of a business or squad run uses the same voice
+question as `rerank` in `selectVoices`, between the router's suggestion and
+the lexical search (a voice at `VOICE` 0.5 or more; `none` offers nothing; an
+error leaves the search to decide).
+
+Measured on 48 labeled requests (2026-10-13, `bench/jev/`): 42/48 exact with
+the Jev alone, 0 wrong decisions at or above 0.8, 16/48 decided at the gate;
+with the cards router behind it, 47/48. `nrv find --jev` prints the Jev's
+suggestion above the shortlist; it is off by default because its effect on
+the orchestrator was never measured.
+
+## `nrv find`: the orchestrator's shortlist
+
+`scripts/find.ts` prints what the orchestrator decides between, zero tokens,
+in one BM25 pass (the ranking lives in `lib/shortlist.ts`; the named target
+comes from `detectTargetMention`, not from a second run of the router; about
+0.4 s on a 74-business library):
+
+- businesses and squads in **separate** lists, best first, 8 of each
+  (`SHORTLIST_SIZE`). A `business_route` match counts as its business, never
+  as the seat it routes to;
+- each line is the entity's routing card (what it produces, what it is, what
+  it refuses), and a squad line names the capability that matched;
+- the target named in the request, when there is one, and the clones the
+  request names, the ambiguous names and the names missing from the library
+  (`lib/clone-names.ts`).
+
+`--json` prints the router's full decision, unchanged, plus a `shortlist`
+object (`named`, `businesses`, `squads`, `clones`). Parse that, never the
+human text, which is for reading. Measured on 48 labeled requests
+(2026-10-13): the right business is in the first five for 95% of the parts,
+against 78% with the old mixed list of five.
 
 ## Pipeline order (what `route()` actually runs)
 
@@ -269,7 +385,8 @@ the squad manifest and dispatch its best capability agentically".
 
 ```bash
 nrv route "<brief>"                     # full pipeline, human summary
-nrv find  "<brief>"                     # same engine, discovery view
+nrv find  "<brief>"                     # the shortlist: businesses and squads apart, with cards
+nrv find  "<brief>" --json              # the router decision plus `shortlist`
 bun skills/harness/lib/router.js route --json "<brief>"
 
 # flags: --json · --prefer business|squad|auto · --no-amplify ·
@@ -295,8 +412,8 @@ recalibrations must keep those green.
 
 - Do NOT auto-invoke on AMBIGUOUS. HP2: failure-loud; confirm with the user.
 - Do NOT load full manifests during Stage 2 — registries only (HP5).
-- Do NOT treat `nrv route`/`nrv find` output as authoritative in agentic mode
-  — there they are diagnostic peeks; the model's registry reasoning decides.
+- Do NOT treat `nrv route`/`nrv find` output as a decision. `nrv find` is the
+  shortlist a model reads before it decides; `nrv route` is a diagnostic.
 - Do NOT re-enable the dense fusion by "just trying it" — it was measured
   twice; the fallback slot is where the dense arm lives now.
 - Do NOT tune thresholds without re-running the eval suite; the golden set is

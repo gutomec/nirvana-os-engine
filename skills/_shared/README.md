@@ -28,7 +28,7 @@ This directory exists so that the three skills don't drift. When you change a JS
 ├── lib/
 │   ├── bun-helpers.ts                  ← cross-platform primitives (Bun + Node 22 fallback)
 │   ├── paths.js                        ← scope-aware path resolver (CommonJS)
-│   ├── scope.ts                        ← NIRVANA_SCOPE resolver + slug enumeration
+│   ├── scope.ts                        ← scope resolver + slug enumeration
 │   └── _delegator.sh                   ← .sh → .ts router for legacy callers
 ├── scripts/
 │   └── init-project.{ts,sh,cmd}        ← bootstrap a scoped project skeleton
@@ -50,14 +50,14 @@ This directory exists so that the three skills don't drift. When you change a JS
 
 ---
 
-## Project scoping (NIRVANA_SCOPE)
+## Project scoping
 
-The framework supports per-project isolation via `<project>/.env`:
+The framework supports per-project isolation; the mode is `scope` in `<project>/.nirvana/project.yaml`, set with `nrv init --scope=<mode>`:
 
-```bash
-NIRVANA_SCOPE=global   # only ~/squads/*, ~/businesses/* (default — backward compat)
-NIRVANA_SCOPE=project  # only <project>/.nirvana/*       (fully isolated)
-NIRVANA_SCOPE=merge    # both, project overrides global by slug (directory name)
+```
+global   # only ~/squads/*, ~/businesses/* (default)
+project  # only <project>/.nirvana/*       (fully isolated)
+merge    # both, project overrides global by slug (directory name)
 ```
 
 In project mode, registries / state / logs persist under `<project>/.nirvana/` (not `$HOME`). Two scope=project projects on the same machine never collide. See **`SCOPE_CONTRACT.md`** for the full contract (path resolution table per mode, override rules, what is intentionally not scope-aware).
@@ -78,7 +78,7 @@ bun ~/.nirvana/skills/_shared/tests/scope.test.ts
 bun ~/.nirvana/skills/_shared/tests/scope-isolation-smoke.ts
 ```
 
-The `.env.example` in the skeleton documents every variable the system actually reads (≈40 vars across 8 sections: scope, core paths, runtime, agent integration, API keys, runtimes, Stage 6.5/DAG, Antigravity hints). Copy what you need into `.env`.
+The `.env.example` in the skeleton lists the environment variables a project may set (runtime cascade, `USE_*` runtime rules, paths, authentication). `nrv init` creates no `.env`; engine settings live in `nrv config`.
 
 ---
 
@@ -255,7 +255,7 @@ Never copy these into a skill's own dir. Always import via path absolute.
 1. Edit `catalogs/CAPABILITY_CATALOG_V1.yaml`.
 2. Place the new entry in the appropriate category (Marketing/Content/Engineering/Business/Vertical/Cross-cutting). Update the count in the comment header.
 3. If it warrants a new namespace (rare), add to `namespaces` with `prefix`, `parent_domain`, `sample_capabilities`.
-4. Note the addition in `~/.nirvana/skills/squads/SQUAD_PROTOCOL_V5.md` Appendix C if you're a protocol author.
+4. Record the addition in `~/.nirvana/skills/squads/SQUAD_PROTOCOL_V6.md` if you're a protocol author.
 5. The next time `index-squads.ts` runs, the new domain becomes accepted (squads can now use it without `experimental_domains: true`).
 
 ---

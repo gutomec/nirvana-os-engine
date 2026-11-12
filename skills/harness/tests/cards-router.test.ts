@@ -16,7 +16,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { businessCard, clip, renderRoutingCards, squadCard } from "../lib/routing-cards.ts";
 import {
-  buildCardsPrompt, cardsRoute, cloneCandidateLine, ensureFreshCards, parseCardsAnswer,
+  buildCardsPrompt, cardsRoute, routerCwd, cloneCandidateLine, ensureFreshCards, parseCardsAnswer,
   resolveCardsTarget, toCardsDecision, withDoneWhen, type CardsRouterPaths,
 } from "../lib/cards-router.ts";
 import type { RegistrySlugs } from "../lib/agentic-router.ts";
@@ -91,6 +91,16 @@ describe("cards prompt", () => {
     expect(buildCardsPrompt("x", "cards", [], "The previous answer chose \"ghost\".")).toContain("# Correction\n\nThe previous answer chose \"ghost\".");
     expect(buildCardsPrompt("x", "cards", [])).toContain("(none)");
   });
+
+  test("the static part comes first and the request last, so the runtime can cache the prefix", () => {
+    const cards = "## Businesses\nbusiness:acme-web | produces: site";
+    const a = buildCardsPrompt("Build a landing page", cards, ["clone:jane-doe | Jane Doe"]);
+    const b = buildCardsPrompt("Escreva um ebook", cards, []);
+    const prefix = a.slice(0, a.indexOf("# Mind-clone candidates"));
+    expect(prefix).toContain(cards);
+    expect(b.startsWith(prefix)).toBe(true);
+    expect(a.endsWith("# Request\n\nBuild a landing page")).toBe(true);
+  });
 });
 
 describe("parseCardsAnswer", () => {
@@ -98,7 +108,7 @@ describe("parseCardsAnswer", () => {
     const r = parseCardsAnswer('Here:\n```json\n{"target":"business:acme-web","voices":["clone:jane-doe","jane-doe"],"squads":["squad:squad-a"],"done":["a","b","c","d","e","f"],"reason":"Web object."}\n```');
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.answer).toEqual({ target: "business:acme-web", voices: ["jane-doe"], squads: ["squad-a"], done: ["a", "b", "c", "d", "e"], reason: "Web object." });
+    expect(r.answer).toEqual({ target: "business:acme-web", parts: [], voices: ["jane-doe"], squads: ["squad-a"], done: ["a", "b", "c", "d", "e"], reason: "Web object." });
   });
 
   test("a JSON envelope is unwrapped to the model's text", () => {
@@ -166,6 +176,26 @@ describe("toCardsDecision — the dispatch's decision contract", () => {
     expect(d.mandatory_squads).toEqual(["squad-a", "squad-b"]);
     expect(d.dropped).toEqual(["clone:ghost-clone", "clone:alex-pro", "squad:ghost-squad", "squad:squad-c"]);
     expect(d.warnings).toHaveLength(4);
+  });
+});
+
+describe("a request with deliverables for several targets", () => {
+  test("each installed part is kept with what it delivers and what it waits for", () => {
+    const parsed = parseCardsAnswer('{"target":"business:acme-web","parts":[{"target":"business:acme-web","part":"the site"},{"target":"squad:brandcraft","part":"the PDF","after":["business:acme-web"]},{"target":"business:ghost","part":"x"}],"done":["a"],"reason":"r"}');
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    const d = toCardsDecision(parsed.answer, { kind: "business", slug: "acme-web" }, SLUGS);
+    expect(d.parts).toEqual([
+      { kind: "business", slug: "acme-web", part: "the site", after: [] },
+      { kind: "squad", slug: "brandcraft", part: "the PDF", after: ["acme-web"] },
+    ]);
+    expect(d.dropped).toEqual(["part:business:ghost"]);
+  });
+
+  test("a single part is no split", () => {
+    const parsed = parseCardsAnswer('{"target":"business:acme-web","parts":[{"target":"business:acme-web","part":"the site"}],"done":["a"],"reason":"r"}');
+    if (!parsed.ok) throw new Error("parse");
+    expect(toCardsDecision(parsed.answer, { kind: "business", slug: "acme-web" }, SLUGS).parts).toEqual([]);
   });
 });
 
@@ -265,7 +295,7 @@ describe("cardsRoute", () => {
 
   const clonesSeam = () => [{ slug: "jane-doe", display_name: "Jane Doe", one_liner: "Typography director." }];
 
-  test("one call, no tools, an empty scratch directory, the planner role and routing.timeout_ms", async () => {
+  test("one call, no tools, the fixed empty router directory, the planner role and routing.timeout_ms", async () => {
     const run = canned('{"target":"business:acme-web","voices":["clone:jane-doe"],"squads":["squad:squad-a"],"done":["The page is live","Copy reviewed","Forms work"],"reason":"Web object."}');
     const d = await cardsRoute({ brief: "Build a landing page", runtime: "claude-code", cwd: tmp, runHeadlessImpl: run.impl, paths, cloneSearchImpl: clonesSeam });
     expect(run.calls).toHaveLength(1);
@@ -275,9 +305,13 @@ describe("cardsRoute", () => {
     expect(call.timeoutMs).toBe(resolveSetting("routing.timeout_ms").value);
     expect(call.cwd).not.toBe(tmp);
     expect(run.cwdWasEmpty[0]).toBe(true);
-    expect(fs.existsSync(call.cwd)).toBe(false);
+    // The same folder every call: the runtime puts its cwd in the prompt, and a
+    // random one per call defeated the prompt cache.
+    expect(call.cwd).toBe(routerCwd());
     expect(call.prompt).toContain("Build a landing page");
-    expect(call.prompt).toContain("business:acme-web | produces: landing-page");
+    // The cards ride in the system prompt, where the runtime caches them across requests.
+    expect(call.appendSystemPrompt).toContain("business:acme-web | produces: landing-page");
+    expect(call.prompt).not.toContain("business:acme-web | produces: landing-page");
     expect(call.prompt).toContain("clone:jane-doe | Jane Doe | Typography director.");
 
     expect(d).toMatchObject({
@@ -390,8 +424,7 @@ describe("cardsRoute against a real claude process", () => {
     expect(i).toBeGreaterThan(-1);
     expect(call.argv[i + 1]).toBe("");
     expect(call.entries).toEqual([]);
-    expect(path.basename(call.cwd)).toStartWith("nrv-cards-route-");
-    expect(fs.existsSync(call.cwd)).toBe(false);
+    expect(fs.realpathSync(call.cwd)).toBe(fs.realpathSync(routerCwd()));
     expect(call.promptChars).toBeGreaterThan(0);
     expect(d).toMatchObject({ ok: true, kind: "no_match", done: ["The answer file exists"], cost_usd: 0.002 });
   }, spawnBudgetMs(1));

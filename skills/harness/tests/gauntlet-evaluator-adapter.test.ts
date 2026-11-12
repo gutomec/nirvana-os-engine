@@ -7,7 +7,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { SCOPE_GUARD_SENTINEL_PT_BR } from "../../_shared/lib/scope-guard.ts";
+import { SCOPE_GUARD_SENTINEL } from "../../_shared/lib/scope-guard.ts";
 import { GAUNTLET_EVALUATION_SHARE, gauntletRoundBudget, runAgentXGauntlet, type AgentXGauntletEvaluationInput } from "../lib/gauntlet/agent-x-cutover.ts";
 import { compileGauntletPlan } from "../lib/gauntlet/compiler.ts";
 import { requirementsFor } from "../lib/gauntlet/success-requirements.ts";
@@ -176,13 +176,13 @@ describe("scorecard contract", () => {
       scorecardPath: "/tmp/eval/scorecard.json", briefDigest: "d", requirements, gauntletIds: ["brief-conformance"] };
     const text = renderEvaluationBrief(request, BRIEF);
     expect(text).toContain(BRIEF);
-    expect(text).toContain("| `brief-conformance` | `quality.specification_conformance` | sim | 0.85 |");
-    expect(text).toContain("Você não produz nem edita o entregável.");
-    expect(text).toContain("somente leitura: `/tmp/cand`");
+    expect(text).toContain("| `brief-conformance` | `quality.specification_conformance` | yes | 0.85 |");
+    expect(text).toContain("You do not produce or edit the deliverable.");
+    expect(text).toContain("read-only: `/tmp/cand`");
     expect(text).toContain("`/tmp/eval/scorecard.json`");
-    expect(text).toContain(SCOPE_GUARD_SENTINEL_PT_BR);
+    expect(text).toContain(SCOPE_GUARD_SENTINEL);
     expect(text).toContain("holdout `evaluator_only`");
-    expect(text).toContain("Nunca há aprovação implícita.");
+    expect(text).toContain("There is never an implicit pass.");
     expect(renderEvaluationBrief({ ...request, holdout: false }, BRIEF)).not.toContain("holdout");
     expect(renderEvaluationBrief(request, BRIEF)).toBe(text);
   });
@@ -215,8 +215,8 @@ describe("dispatch evaluator adapter", () => {
     expect(captured.cwd).toBe(setup.projectRoot);
     expect(captured.env.HARNESS_LOGS_DIR).toBe(setup.logsDir);
     expect(captured.brief).toContain(BRIEF);
-    expect(captured.brief).toContain(`somente leitura: \`${setup.candidateRoot}\``);
-    expect(captured.brief).toContain(SCOPE_GUARD_SENTINEL_PT_BR);
+    expect(captured.brief).toContain(`read-only: \`${setup.candidateRoot}\``);
+    expect(captured.brief).toContain(SCOPE_GUARD_SENTINEL);
     const request = JSON.parse(fs.readFileSync(path.join(evaluationDir, EVALUATION_REQUEST_FILE), "utf8")) as EvaluationRequest;
     expect(request).toMatchObject({ projectId: "prj_1", runId: "run_1", candidateId: "can_1", revisionId: "crv_run_1_can_1_1", revision: 1, round: 1,
       holdout: false, candidateRoot: setup.candidateRoot, scorecardPath: path.join(outputsRoot, SCORECARD_FILE), briefDigest: plan.successContract.briefDigest,
@@ -224,8 +224,8 @@ describe("dispatch evaluator adapter", () => {
     // The adapter's files sit beside the outputs root, never inside it: only what the executor wrote is under --outputs-root.
     expect(fs.readdirSync(evaluationDir).sort()).toEqual([EVALUATION_BRIEF_FILE, EVALUATION_REQUEST_FILE, EVALUATION_OUTPUTS_DIR].sort());
     expect(fs.readdirSync(outputsRoot).sort()).toEqual(["_SUMMARY.md", "dispatch-capture.json", SCORECARD_FILE]);
-    expect(captured.brief).toContain(`\`${SCORECARD_FILE}\`, no seu output_path (caminho absoluto: \`${path.join(outputsRoot, SCORECARD_FILE)}\`)`);
-    expect(captured.brief).toContain("Você tem shell disponível para OBSERVAR o candidate");
+    expect(captured.brief).toContain(`\`${SCORECARD_FILE}\`, in your output_path (absolute path: \`${path.join(outputsRoot, SCORECARD_FILE)}\`)`);
+    expect(captured.brief).toContain("You have a shell available to OBSERVE the candidate");
     expect(fs.readdirSync(setup.candidateRoot)).toEqual(["report.md"]);
     expect(setup.audit).toEqual([{ event: "x_gauntlet_evaluation_completed", payload: expect.objectContaining({
       trace_id: "prj_1", run_id: "run_1", candidate_id: "can_1", revision_id: "crv_run_1_can_1_1", evaluator: "squad:fixture-evaluator:quality.specification_conformance",

@@ -56,11 +56,9 @@ Gerada a partir do schema. `nrv config explain <chave>` mostra a descrição de 
 | `execution.default_runtime` | `NIRVANA_DEFAULT_RUNTIME` | `""` | global, projeto | nome de runtime (claude-code, codex, antigravity-cli, ...) ou vazio |
 | `execution.model` | `NIRVANA_MODEL` | `""` | global, projeto | id ou alias de modelo (opus, sonnet, haiku, fable, ...) ou vazio |
 | `execution.dna_injection` | `NIRVANA_DNA_INJECTION` | `reference` | global, projeto | reference / fragments / full |
-| `briefing.altitude` | `NIRVANA_BRIEF_ALTITUDE` | `outcome` | global, projeto | outcome / guided / prescriptive |
+| `briefing.template` | `NIRVANA_BRIEF_TEMPLATE` | `""` (= `slim`) | global, projeto | nome de um template de brief: slim / standard / detailed / karpathy, ou um seu (ver "Templates de brief" abaixo) |
+| `briefing.altitude` | `NIRVANA_BRIEF_ALTITUDE` | `outcome` | global, projeto | obsoleto, use `briefing.template`; lido só com `briefing.template` vazio: outcome = standard, guided = standard com estrutura sugerida, prescriptive = detailed |
 | `execution.headless_skip_permissions` | `NIRVANA_HEADLESS_SKIP_PERMISSIONS` | `true` | global, projeto | true / false |
-| `execution.stall_timeout_min` | `NIRVANA_STALL_TIMEOUT_MIN` | `90` | global, projeto | número >= 0 (minutos); 0 = desligado. Silêncio total do worker (sem saída, sem arquivo escrito na pasta do run, sem atividade de ferramenta, sem run filho vivo) após o qual o despacho encerra o worker e sai com 76 |
-| `execution.stall_no_start_min` | `NIRVANA_STALL_NO_START_MIN` | `45` | global, projeto | número >= 0 (minutos); 0 = desligado. Nenhum sinal de vida desde o início do worker: o despacho o encerra e sai com 76 |
-| `execution.orca_workers` | `NIRVANA_ORCA_WORKERS` (`1`/`true` = on) | `off` | global, projeto | off / on. Dentro do Orca, `on` roda cada despacho num terminal de worker visível; substitui `host.orca_workers` |
 | `execution.child_env` | `NIRVANA_CHILD_ENV` | `inherit` | global, projeto | inherit / declared (o `nrv serve` usa `declared` salvo `NIRVANA_SERVE_CHILD_ENV=inherit`) |
 | `execution.max_dispatch_depth` | `NIRVANA_MAX_DISPATCH_DEPTH` | `4` | global, projeto | inteiro >= 0; 0 = ilimitado. Cadeia de agentes despachando agentes. No terminal: empresa (1), assento (2), squad usado pelo assento (3). No Glance o maestro é ele mesmo um filho e tudo desce um nível, então 4 |
 | `execution.business_mode` | `NIRVANA_BUSINESS_MODE` | `chain` | global, projeto | chain / session. Como uma empresa roda quando o pedido não traz `--team` nem `--single`: `chain` é o diretor e uma sessão por cargo, em série; `session` é uma sessão só, com os cargos como subagentes do runtime |
@@ -74,6 +72,9 @@ Gerada a partir do schema. `nrv config explain <chave>` mostra a descrição de 
 | `routing.timeout_ms` | `NIRVANA_ROUTING_TIMEOUT_MS` | `300000` (5 min) | global, projeto | inteiro > 0 (ms) |
 | `routing.digest_token_budget` | nenhuma | `0` (sem teto) | global, projeto | inteiro >= 0 (tokens); 0 = sem teto |
 | `host.orca` | `NIRVANA_ORCA_HOST` | `auto` | global, projeto | auto (só dentro de um terminal do Orca) / on / off |
+| `execution.orca_workers` | `NIRVANA_ORCA_WORKERS` (aceita também `1` / `0`) | `off` | global, projeto | off / on. `off`: os workers rodam como o filho headless invisível, inclusive dentro de um terminal do Orca. `on`: cada despacho vira um terminal de worker no Orca. Substitui `host.orca_workers` (padrão `true`), aposentado na 0.15 |
+| `execution.stall_timeout_min` | `NIRVANA_STALL_TIMEOUT_MIN` | `90` | global, projeto | número >= 0 (minutos, aceita frações); 0 = desligado. Minutos de silêncio total (sem saída do worker, sem escrita de arquivo na pasta do run, sem atividade de ferramenta registrada pelos hooks, sem run filho vivo) até o despacho encerrar o worker e sair com 76. Detector de travamento, não teto de gasto nem de tempo |
+| `execution.stall_no_start_min` | `NIRVANA_STALL_NO_START_MIN` | `45` | global, projeto | número >= 0 (minutos, aceita frações); 0 = desligado. Minutos sem nenhum sinal de vida desde o início até o despacho encerrar o worker e sair com 76. Detector de travamento, não teto de gasto nem de tempo |
 | `supervisor.progress_ping_sec` | `NIRVANA_PROGRESS_PING_SEC` | `1800` | global, projeto | inteiro >= 0 (segundos) |
 | `supervisor.stall_threshold_ms` | `NIRVANA_STALL_THRESHOLD_MS` | `300000` | global, projeto | inteiro > 0 (milissegundos) |
 | `supervisor.touch_events_max` | `NIRVANA_TOUCH_EVENTS_MAX` | `500` | global, projeto | inteiro >= 0 (eventos); 0 = não relata arquivos |
@@ -98,6 +99,20 @@ Formas legadas das variáveis, mantidas por compatibilidade: `NIRVANA_MULTI_TARG
 `updates.check` é a única chave só global: a verificação de release é da máquina, não do projeto. O `bin/nrv` em bash, que decide antes de qualquer Bun se imprime o aviso de release, continua lendo só a variável e o `CI`; com `updates.check: false` no arquivo global, o refresher em Bun grava um cache sem aviso e o bash não imprime nada nem o relança.
 
 Desligar o juiz LLM: `nrv config set quality_gate.judge_enabled false` (ou `off`) desliga na máquina ou no projeto, `NIRVANA_JUDGE_ENABLED=false` desliga no ambiente, e `nrv dispatch ... --no-judge` desliga numa execução só. Com o juiz desligado, o gate heurístico offline continua rodando e a execução ainda registra um veredito.
+
+## Templates de brief
+
+O brief que o orquestrador escreve para cada empresa segue um template, um arquivo markdown com a instrução e o esqueleto. `briefing.template` escolhe o nome, e o nome é procurado nesta ordem; o primeiro arquivo que existe vence:
+
+```
+<projeto>/.nirvana/brief-templates/<nome>.md
+<NIRVANA_HOME|~>/.nirvana/brief-templates/<nome>.md
+skills/harness/references/brief-templates/<nome>.md   (engine: slim, standard, detailed, karpathy)
+```
+
+Assim dá para trocar o `slim` num só projeto ou criar um template novo, por exemplo `juridico`, para todos. `nrv brief init <nome> --project|--global [--from <outro>]` copia um template como ponto de partida e não sobrescreve sem `--force`; `nrv brief templates` lista os nomes e de onde vêm. O frontmatter do arquivo diz o formato (`labels` ou `sections`) e os rótulos que o engine precisa (`required`, no mínimo Request e Done when); `nrv brief check` recusa um brief sem eles, e um nome que não existe em nenhuma das três pastas é erro em `nrv brief template` e `nrv brief check`, com a lista dos nomes disponíveis.
+
+`briefing.altitude` virou apelido: só é lido com `briefing.template` vazio, e então `outcome` escolhe `standard`, `guided` escolhe `standard` com a estrutura sugerida e `prescriptive` escolhe `detailed`, com uma nota de obsolescência em `nrv brief template` e no `nrv doctor`. A altitude padrão não vai para o ambiente dos processos filhos, para que um filho não a leia como valor gravado. Cada dispatch copia o template e as palavras do usuário para a pasta da execução (`brief-template.md`, `request.md`) e registra nome, origem, caminho e sha256 em `x_brief_template`.
 
 ## Leitores migrados
 
@@ -143,7 +158,7 @@ Um filho que só lê variáveis não veria o arquivo de projeto nem o global. Po
 
 ## O `nrv doctor`
 
-A seção `config` do doctor tem uma linha `config: files` com os três arquivos (projeto, global, engine) e se existem, e uma linha por chave, `config: <chave>`, com o valor efetivo e a origem (`env NIRVANA_X=...`, `project <arquivo>`, `global <arquivo>`, `engine <arquivo>`, `default`). Não há segredo no schema, então não há valor mascarado. Um arquivo que a resolução recusa é `config: files` em FAIL com a mesma mensagem que todo leitor daria; `nrv config list` mostra o mesmo erro.
+A seção `config` do doctor tem uma linha `config: files` com os três arquivos (projeto, global, engine) e se existem, e uma linha por chave, `config: <chave>`, com o valor efetivo e a origem (`env NIRVANA_X=...`, `project <arquivo>`, `global <arquivo>`, `engine <arquivo>`, `default`). Não há segredo no schema, então não há valor mascarado. A linha `brief: template` mostra o template ativo, o arquivo e a origem (projeto, global ou engine), e avisa quando ele vem de uma `briefing.altitude` obsoleta ou quando o nome não existe. Um arquivo que a resolução recusa é `config: files` em FAIL com a mesma mensagem que todo leitor daria; `nrv config list` mostra o mesmo erro.
 
 ## O que fica só no ambiente, e por quê
 

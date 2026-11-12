@@ -1,20 +1,20 @@
 # Adapter · Claude Code
 
-> Runtime adapter para Squad Protocol v5 + Business Protocol v1 + Harness Protocol v1.
-> Cobre os 3 protocolos em um único doc. Seções canônicas conforme Squad v4 §18.5.
-> Identidade + capabilities do sistema (o que o Nirvana-OS é e pode fazer): ver `../NIRVANA-OS.md` (fonte única).
+> Runtime adapter for Squad Protocol v6 + Business Protocol v2 + Harness Protocol v1.
+> Covers the 3 protocols in a single doc. Canonical sections per Squad Protocol v6 §18.5.
+> System identity + capabilities (what Nirvana-OS is and can do): see `../NIRVANA-OS.md` (single source).
 
 ---
 
 ## 1. Adapter metadata
 
-| Campo | Valor |
+| Field | Value |
 |---|---|
 | `runtime` | `claude-code` |
 | `vendor` | Anthropic |
-| `min_version` | Não é imposto pelo engine. O argv da §7 foi auditado no 2.1.284 e no 2.1.296; a correção de custo em resume pressupõe 2.1.277 ou posterior e mantém como está o valor por execução de um CLI mais antigo. O engine chama o CLI e não usa nenhum SDK da Anthropic. |
-| `default_model` | herdado do runtime — o engine NUNCA define model; a config do runtime do usuário decide. Passe model só quando o usuário pedir explicitamente. |
-| `tested_against` | Claude Code 2.1.296 (CLI, build nativo), auditado em 2026-10-11. Opus 5.5 é o Opus padrão desde o 2.1.280 |
+| `min_version` | Not enforced by the engine. The argv in §7 was audited on 2.1.284 and 2.1.296; the resume cost correction assumes 2.1.277 or later and keeps an older CLI's per-run figure as it is. The engine spawns the CLI and uses no Anthropic SDK. |
+| `default_model` | inherited from the runtime. The engine NEVER sets a model; the user's runtime config decides. Pass a model only when the user explicitly asks. |
+| `tested_against` | Claude Code 2.1.296 (CLI, native build), audited 2026-10-11. Opus 5.5 is the default Opus since 2.1.280 |
 | `config_paths` | `~/.claude/settings.json` (user), `<project>/.claude/settings.json`, `<project>/.claude/settings.local.json` |
 | `skills_root` | `~/.nirvana/skills/` (user), `<project>/.claude/skills/` (project), bundled |
 | `agents_root` | `~/.claude/agents/` (user), `<project>/.claude/agents/` (project) |
@@ -26,54 +26,54 @@
 
 ## 2. Feature support matrix
 
-`✓` = nativo · `~` = workaround/parcial · `✗` = não suportado
+`✓` = native · `~` = workaround/partial · `✗` = not supported
 
-| Feature (Business v1 §6) | Squad v5 | Business v1 | Harness v1 | Notas |
+| Feature (Business v2 §6.5) | Squad v6 | Business v2 | Harness v1 | Notes |
 |---|---|---|---|---|
-| `max_turns` | ✓ | ✓ | ✓ | O runtime impõe: `maxTurns` no frontmatter do subagent, `--max-turns` no `claude -p`. O engine ainda não mapeia o `max_turns` do employee para a flag (§6) |
-| `tool_whitelist` | ✓ | ✓ | ✓ | `tools:` no frontmatter + `permissions` em settings.json |
-| `subagent_spawning` | ✓ | ✓ | ✓ | `Agent` tool com `subagent_type` (`Task` é o nome antigo, ainda aceito). A tool `Workflow` também abre agentes (§7) |
-| `audit_trail` | ✓ | ✓ | ✓ | OTel se configurado, fallback para jsonl em `~/.harness-logs/` |
+| `max_turns` | ✓ | ✓ | ✓ | Enforced by the runtime: `maxTurns` in subagent frontmatter, `--max-turns` on `claude -p`. The engine does not map employee `max_turns` to the flag yet (§6) |
+| `tool_whitelist` | ✓ | ✓ | ✓ | `tools:` in frontmatter + `permissions` in settings.json |
+| `subagent_spawning` | ✓ | ✓ | ✓ | `Agent` tool with `subagent_type` (`Task` is the old name, still accepted). The `Workflow` tool also spawns agents (§7) |
+| `audit_trail` | ✓ | ✓ | ✓ | OTel if configured, fallback to jsonl in `~/.harness-logs/` |
 | `scheduled_invocation` | ✓ | ✓ | ✓ | `ScheduleWakeup`, `CronCreate` (deferred tools) |
-| `event_bus` | ~ | ~ | ~ | Sem broker nativo. Mentions e tickets viajam por tool results + filesystem watch + memory polling. Documentado como limitação em §13. |
+| `event_bus` | ~ | ~ | ~ | No native broker. Mentions and tickets travel through tool results + filesystem watch + memory polling. Documented as a limitation in §13. |
 | `hooks` | ✓ | ✓ | ✓ | `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `Stop`, `SubagentStop`, `SessionStart`, `PreCompact`, `PostCompact` (§10) |
-| `sandboxing` | ~ | ~ | ~ | `dangerouslyDisableSandbox` no Bash tool; sandbox é por permissão de tool, não por process isolation |
-| `session_memory` | ✓ | ✓ | ✓ | Conversation context (auto-compactado) |
+| `sandboxing` | ~ | ~ | ~ | `dangerouslyDisableSandbox` on the Bash tool; the sandbox is per tool permission, not process isolation |
+| `session_memory` | ✓ | ✓ | ✓ | Conversation context (auto-compacted) |
 | `project_memory` | ✓ | ✓ | ✓ | `CLAUDE.md` + `<project>/.claude/memory/` |
 | `global_memory` | ✓ | ✓ | ✓ | `~/.claude/CLAUDE.md` + `~/.claude/memory/` |
-| `handoff_artifacts` | ✓ | ✓ | ✓ | Estrutura JSON em `tool_result` ou em arquivo persistido |
-| `fork_context` | ✓ | ✓ | ✓ | Cada `Agent` invocation cria um sub-context isolado |
-| `teammate_primitive` | ~ | ~ | ~ | Subagents servem de teammate por convenção; `TeamCreate` é deferred tool, não está disponível em todas as instalações. Quando indisponível o adapter cai para spawn paralelo de `Agent`. |
-| `telemetry_otel` | ✓ | ✓ | ✓ | Via OTLP endpoint quando `HARNESS_TELEMETRY=otel` |
+| `handoff_artifacts` | ✓ | ✓ | ✓ | JSON structure in `tool_result` or in a persisted file |
+| `fork_context` | ✓ | ✓ | ✓ | Each `Agent` invocation creates an isolated sub-context |
+| `teammate_primitive` | ~ | ~ | ~ | Subagents act as teammates by convention; `TeamCreate` is a deferred tool and is not available in every install. When unavailable the adapter falls back to parallel `Agent` spawns. |
+| `telemetry_otel` | ✓ | ✓ | ✓ | Via OTLP endpoint when `HARNESS_TELEMETRY=otel` |
 
 ---
 
 ## 3. Concept mapping
 
-| Conceito (Protocolo) | Equivalente Claude Code | Implementação |
+| Concept (Protocol) | Claude Code equivalent | Implementation |
 |---|---|---|
-| Squad / Business | Skill | Diretório `~/.nirvana/skills/<name>/SKILL.md` (frontmatter + body) |
-| Capability | Sub-skill / task / workflow | Arquivo invocado por nome a partir do `Skill` tool ou via slash command |
-| Employee | Subagent | Arquivo agent.md (`name`, `description`, `tools`, `model`) em `~/.claude/agents/` ou bundled em skill |
-| `is_brief_intake: true` | Skill activator | Skill que dispara primeiro quando harness recebe brief |
-| `is_antagonist: true` | Subagent invocado em loop de revisão | Spawn paralelo de subagent crítico |
-| Handoff artifact | Tool result | JSON estruturado retornado por subagent (validável contra `HandoffArtifactSchema`) |
-| Mention `@employee` | Convenção em prompt + memory | Adapter resolve `@x` para `Agent({ subagent_type: "x", ...})` |
-| Ticket | Arquivo persistido + memory ref | `<project>/.tickets/<TICKET_ID>.json` + entrada em memory |
-| Escalation trigger | Hook + harness notification | `PostToolUse` checa condição → emite `HarnessNotification` |
-| Permanent memory | `~/.claude/memory/*.md` + `~/.claude/CLAUDE.md` | Files referenciados via auto-load |
-| Project memory | `<project>/.claude/memory/` + `CLAUDE.md` | Auto-load por sessão |
-| Session memory | Conversation context | Mantido pelo runtime, compactado quando perto do limit |
-| Routing decision (harness) | Skill scoring + AgentTool dispatch | BM25 sobre `capabilities[].examples[]` |
+| Squad / Business | Skill | Directory `~/.nirvana/skills/<name>/SKILL.md` (frontmatter + body) |
+| Capability | Sub-skill / task / workflow | File invoked by name from the `Skill` tool or via slash command |
+| Employee (seat) | Seat file played by the one business agent | The business runs as ONE solo agent (`skills/harness/lib/business-solo.ts`); it opens a seat's `employees/<slug>.md` when it works as that seat. No subagent per seat. A standalone `agent.md` in `~/.claude/agents/` is only needed when the user wants a seat as a stand-alone subagent |
+| `is_brief_intake: true` | Skill activator | Skill that fires first when the harness receives a brief |
+| `is_antagonist: true` | Subagent invoked in a review loop | Parallel spawn of a critic subagent |
+| Handoff artifact | Tool result | Structured JSON returned by a subagent (validatable against `HandoffArtifactSchema`) |
+| Mention `@employee` | Convention in prompt + memory | Adapter resolves `@x` to `Agent({ subagent_type: "x", ...})` |
+| Ticket | Persisted file + memory ref | `<project>/.tickets/<TICKET_ID>.json` + memory entry |
+| Escalation trigger | Hook + harness notification | `PostToolUse` checks the condition → emits `HarnessNotification` |
+| Permanent memory | `~/.claude/memory/*.md` + `~/.claude/CLAUDE.md` | Files referenced via auto-load |
+| Project memory | `<project>/.claude/memory/` + `CLAUDE.md` | Auto-load per session |
+| Session memory | Conversation context | Kept by the runtime, compacted near the limit |
+| Routing decision (harness) | Skill scoring + AgentTool dispatch | BM25 over `capabilities[].examples[]` |
 
 ---
 
 ## 4. Frontmatter mapping
 
-### Squad v5 → Skill frontmatter
+### Squad v6 → Skill frontmatter
 
 ```yaml
-# squad.yaml (Squad v5 §22)
+# squad.yaml (Squad Protocol v6 §22)
 name: instagram-intelligence
 version: 5.4.0
 protocol: 5.0
@@ -87,14 +87,14 @@ capabilities:
 ---
 # ~/.nirvana/skills/instagram-intelligence/SKILL.md frontmatter
 name: instagram-intelligence
-description: <copia de squad.yaml description>
+description: <copy of squad.yaml description>
 ---
 ```
 
-### Business v1 → Skill frontmatter
+### Business v2 → Skill frontmatter
 
 ```yaml
-# business.yaml (Business v1 §6)
+# business.yaml (Business v2 §6.5)
 name: nexus-council
 employee_count: 9
 operation_mode: zero_human
@@ -104,14 +104,14 @@ operation_mode: zero_human
 ---
 # ~/.nirvana/skills/nexus-council/SKILL.md frontmatter
 name: nexus-council
-description: <gerado a partir de description+pitch>
+description: <generated from description+pitch>
 ---
 ```
 
-### Employee → Subagent agent.md
+### Employee → Subagent agent.md (optional, only for a stand-alone subagent)
 
 ```yaml
-# employees/alex-hormozi.md frontmatter (Business v1 §7)
+# employees/alex-hormozi.md frontmatter (Business v2 §7)
 name: alex-hormozi
 type: mind_clone
 disclosure_required: true
@@ -130,16 +130,16 @@ model: inherit
 ---
 ```
 
-> **Regra de tradução:** quando `type: mind_clone`, o adapter **prepende** `(DISCLOSURE: AI-generated persona, not real person.)` à description do agent.md.
+> **Translation rule:** when `type: mind_clone`, the adapter **prepends** `(DISCLOSURE: AI-generated persona, not real person.)` to the agent.md description.
 
 ---
 
 ## 5. Tool whitelist mechanics
 
-- O frontmatter `tools:` aceita semantic names (`read`, `write`, `edit`, `grep`, `glob`, `bash`, `web_search`, `web_fetch`) — Squad v4 §10.7.
-- Adapter Claude Code traduz para nomes nativos: `Read`, `Write`, `Edit`, `Grep`, `Glob`, `Bash`, `WebSearch`, `WebFetch`.
-- Tools MCP entram como `mcp__<server>__<tool>`.
-- Para enforçar whitelist em runtime, configurar `permissions` em `<project>/.claude/settings.json`:
+- The `tools:` frontmatter accepts semantic names (`read`, `write`, `edit`, `grep`, `glob`, `bash`, `web_search`, `web_fetch`), Squad Protocol v6 §10.7.
+- The Claude Code adapter translates them to native names: `Read`, `Write`, `Edit`, `Grep`, `Glob`, `Bash`, `WebSearch`, `WebFetch`.
+- MCP tools enter as `mcp__<server>__<tool>`.
+- To enforce the whitelist at runtime, configure `permissions` in `<project>/.claude/settings.json`:
 
 ```json
 {
@@ -154,20 +154,20 @@ model: inherit
 
 ## 6. Max-turns mechanics
 
-O Claude Code impõe limite de turns nativamente em dois lugares:
+Claude Code enforces a turn limit natively in two places:
 
-1. **Frontmatter do subagent**: `maxTurns: N` em `~/.claude/agents/<name>.md` limita aquele subagent.
-2. **Execuções headless**: `claude -p --max-turns N`. A flag não aparece no `claude --help`, mas é aceita (conferido no 2.1.296). Uma execução que bate no limite termina com subtype `error_max_turns`; o `runClaudeCode` devolve isso em `resultSubtype` e cita no `error`.
+1. **Subagent frontmatter**: `maxTurns: N` in `~/.claude/agents/<name>.md` caps that subagent.
+2. **Headless runs**: `claude -p --max-turns N`. The flag is hidden from `claude --help` but accepted (checked on 2.1.296). A run that hits the cap ends with result subtype `error_max_turns`; `runClaudeCode` returns it as `resultSubtype` and names it in `error`.
 
-O engine hoje não passa `--max-turns`, então o `max_turns` de um employee chega ao worker headless só como:
+The engine does not pass `--max-turns` today, so an employee's `max_turns` reaches a headless worker only as:
 
-- **Informativo**: `maxTurns` no frontmatter do employee aparece no prompt ("você tem N turns").
-- **Pre-flight budget**: o harness converte `maxTurns × estimated_cost_per_turn` em `budget.default_max_cost_usd` (Harness §6), e o `--max-budget-usd` encerra a execução (`error_max_budget_usd`).
+- **Informative**: `maxTurns` in the employee frontmatter appears in the prompt ("you have N turns").
+- **Pre-flight budget**: the harness converts `maxTurns × estimated_cost_per_turn` into `budget.default_max_cost_usd` (Harness §6), and `--max-budget-usd` stops the run (`error_max_budget_usd`).
 
-Um hook pode acrescentar um contador onde nenhum dos limites nativos alcança. Um hook `PostToolUse` que devolve `{"continue": false}` quando a contagem estoura interrompe o processamento; `decision: "block"` no `PostToolUse` só mostra o motivo ao Claude, porque a tool já rodou. Schema atual (evento, grupo com matcher, lista de handlers):
+A hook can add a counter where neither native limit applies. A `PostToolUse` hook that returns `{"continue": false}` once the count is exceeded stops processing; `decision: "block"` on `PostToolUse` only shows the reason to Claude, because the tool already ran. Current settings schema (event, matcher group, handler list):
 
 ```json
-// settings.json hook (exemplo)
+// settings.json hook (example)
 {
   "hooks": {
     "PostToolUse": [
@@ -182,93 +182,93 @@ Um hook pode acrescentar um contador onde nenhum dos limites nativos alcança. U
 }
 ```
 
-**Limitação conhecida:** se o trabalho roda via `Skill` em vez de `Agent`, nem o `maxTurns` do subagent nem um matcher `Agent` o enxergam; só o `--max-turns` da sessão cobre esse caso.
+**Known limitation:** if the work runs via `Skill` instead of `Agent`, a subagent-scoped `maxTurns` or an `Agent` matcher does not see it; only the session-level `--max-turns` covers it.
 
 ---
 
 ## 7. Subagent spawning
 
-Padrão: `Agent` tool com `subagent_type` apontando para o nome do agent definido em `~/.claude/agents/<name>.md`.
+Default: the `Agent` tool with `subagent_type` pointing to the agent name defined in `~/.claude/agents/<name>.md`.
 
 ```typescript
-// Pseudo-invocação interna
+// Internal pseudo-invocation
 Agent({
   subagent_type: "alex-hormozi",
   description: "Offer review",
   prompt: "Review this offer for clarity and pricing...",
   // optional:
-  isolation: "worktree" // git worktree para mudanças isoladas
+  isolation: "worktree" // git worktree for isolated changes
 })
 ```
 
-O `Agent` tool é o **caminho PRIMÁRIO de dispatch**: roda in-process dentro da sessão do maestro, sem child `claude -p` e sem hard kill de 20 min de wall-clock — deliverables longos não são truncados.
+The `Agent` tool is the **PRIMARY dispatch path**: it runs in-process inside the maestro's session, with no child `claude -p` and no 20-minute wall-clock hard kill, so long deliverables are not truncated.
 
-O spawn devolve na hora um recibo (`"Async agent launched successfully"`) e a sessão segue livre. O trabalho chega depois, numa `<task-notification>` com `<result>` — é ali que está o relatório do subagente. Não passe `run_in_background: false`: bloqueia a sessão inteira pela duração do subagente (uma stack de deploy leva 45 min) e não traz nada que a notificação já não traga. O caminho headless `claude -p` (`host-agent-driver.runClaudeCode`) é o FALLBACK, usado só por scripts standalone sem contexto LLM próprio (o `dispatch.ts`).
+The spawn returns a receipt right away (`"Async agent launched successfully"`) and the session stays free. The work arrives later in a `<task-notification>` with a `<result>`, which is where the subagent's report lives. Do not pass `run_in_background: false`: it blocks the whole session for the duration of the subagent (a deploy stack takes 45 min) and brings nothing the notification does not already bring. The headless `claude -p` path (`host-agent-driver.runClaudeCode`) is the FALLBACK, used only by standalone scripts with no LLM context of their own (`dispatch.ts`).
 
-**O argv headless, como o driver monta** (`skills/_shared/lib/host-agent-driver.ts`, conferido contra o `claude --help` do 2.1.296):
+**Headless argv, as the driver builds it** (`skills/_shared/lib/host-agent-driver.ts`, checked against `claude --help` on 2.1.296):
 
-- `runClaudeCode`: `claude -p --output-format json`, depois `--resume <id>` numa revisão, `--model <m>` e `--effort <level>` só quando quem chama ou o pin do usuário define, `--tools ""` numa chamada sem tools, `--allowedTools` quando quem chama lista tools ou a autonomia está desligada, e então um destes: o `--permission-mode` de quem chama, `--permission-mode acceptEdits` (autonomia desligada) ou `--dangerously-skip-permissions` (o padrão). Em seguida `--disallowedTools Task Agent Workflow` salvo com `allowSubagents`, `--max-budget-usd`, `--settings`, cada `--add-dir` e, por último, a diretiva como `--append-system-prompt <texto>` (ou `--append-system-prompt-file <caminho>` quando o CLI é chamado por um shell, para que uma diretiva longa nunca trunque o argv). O prompt vai pelo stdin.
-- `buildCall` (a entrada `claude-code` em `RUNTIMES`, usada pelo `callHostAgent` em judges e gates): `claude -p --no-session-persistence --output-format json`, `--dangerously-skip-permissions` com autonomia ligada, `--model` quando há pin, `--append-system-prompt <persona>`. A mensagem vai pelo stdin.
-- Ambiente do filho (`headlessClaudeEnv`): `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` salvo se o usuário definiu, e `CLAUDE_CODE_DISABLE_WORKFLOWS=1` para um worker que não pode abrir agentes.
+- `runClaudeCode`: `claude -p --output-format json`, then `--resume <id>` on a revise or `--session-id <uuid>` on a fresh run (an id the engine chose, so a run killed before its JSON is still resumable once its transcript exists), `--model <m>` and `--effort <level>` only when the caller or the user's pin sets them, `--tools ""` for a no-tools call, `--allowedTools` when the caller lists tools or autonomy is off, then one of: the caller's `--permission-mode`, `--permission-mode acceptEdits` (autonomy off), or `--dangerously-skip-permissions` (the default). After that `--disallowedTools Task Agent Workflow` unless `allowSubagents`, `--max-budget-usd`, `--settings`, each `--add-dir`, and the directive last as `--append-system-prompt <text>` (or `--append-system-prompt-file <path>` when the CLI is reached through a shell, so a long directive never truncates argv). The prompt goes on stdin.
+- `buildCall` (the `claude-code` entry in `RUNTIMES`, used by `callHostAgent` for judges and gates): `claude -p --no-session-persistence --output-format json`, `--dangerously-skip-permissions` when autonomy is on, `--model` when pinned, `--append-system-prompt <persona>`. The message goes on stdin.
+- Child environment (`headlessClaudeEnv`): `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` unless the user set it, `CLAUDE_CODE_DISABLE_WORKFLOWS=1` for a worker that may not open agents, and `CLAUDE_CODE_AUTO_COMPACT_WINDOW` from `execution.context_window`.
 
-A flag de bypass é o padrão porque um filho sem TTY não tem como responder a um pedido de aprovação: num `-p`, as chamadas que ainda pediriam aprovação são negadas. O modo em que o `claude -p` começa sem flag depende da sessão: `default` (exibido como `manual`) onde o CLI busca feature flags, `auto` em provedores terceiros ou com telemetria desligada desde o 2.1.285. O engine não depende de nenhum dos dois. As opções de `--permission-mode` que o help lista são `acceptEdits`, `auto`, `bypassPermissions`, `manual`, `dontAsk`, `plan`; `default` saiu da lista, mas ainda é aceito como `manual`. Um worker alcança qualquer pasta e roda qualquer comando que o brief dele precisa, com qualquer modelo. `NIRVANA_HEADLESS_SKIP_PERMISSIONS=0` desliga a autonomia em todos os runtimes (o `claude -p` cai em `--allowedTools` + `--permission-mode acceptEdits`, o mesmo caminho de `nrv dispatch --safe`).
+The bypass flag is the default because a child without a TTY cannot answer a prompt: in a `-p` run the calls that would still prompt are denied instead. Which mode `claude -p` starts in without a flag depends on the session: `default` (shown as `manual`) where the CLI fetches feature flags, `auto` on third-party providers or with telemetry off since 2.1.285. The engine does not rely on either. `--permission-mode` choices printed by help are `acceptEdits`, `auto`, `bypassPermissions`, `manual`, `dontAsk`, `plan`; `default` is no longer listed but still accepted as `manual`. A worker reaches any folder and runs any command its brief needs, on any model. `NIRVANA_HEADLESS_SKIP_PERMISSIONS=0` turns autonomy off on every runtime (`claude -p` falls back to `--allowedTools` + `--permission-mode acceptEdits`, the same path as `nrv dispatch --safe`).
 
-**Worker não abre agentes.** Negar `Task` e `Agent` não basta nos builds atuais: a tool `Workflow` roda workflows dinâmicos dentro do `claude -p`, o modo bypass aprova a chamada e uma execução pode abrir até 1.000 agentes. Os interruptores são `CLAUDE_CODE_DISABLE_WORKFLOWS=1`, `"disableWorkflows": true` nos settings ou uma regra deny em `Workflow`. O engine usa dois deles em todo worker, salvo quando quem chama passa `allowSubagents: true`: `--disallowedTools Task Agent Workflow` no argv e `CLAUDE_CODE_DISABLE_WORKFLOWS=1` no ambiente do filho.
+**Workers do not open agents.** Denying `Task` and `Agent` is not enough on current builds: the `Workflow` tool runs dynamic workflows inside `claude -p`, bypass mode approves the call, and one run may spawn up to 1,000 agents. Its off switches are `CLAUDE_CODE_DISABLE_WORKFLOWS=1`, `"disableWorkflows": true` in settings, or a deny rule on `Workflow`. The engine uses two of them for every worker unless the caller passes `allowSubagents: true`: `--disallowedTools Task Agent Workflow` on the argv (also in `orca-worker.ts`) and `CLAUDE_CODE_DISABLE_WORKFLOWS=1` in the child env.
 
-**Custo em resume.** Desde o 2.1.277, o `total_cost_usd` de uma sessão retomada inclui o gasto das execuções que ela restaurou, então somar resultados conta em dobro. O engine registra o custo da própria execução: guarda no run ledger o último total informado por session id (`claude-session-cost.ts`) e, numa execução retomada, registra a diferença. Sem total anterior conhecido, ou quando o valor informado é menor que ele (CLI anterior ao 2.1.277), o valor informado é mantido. O `--max-budget-usd` conta só o gasto da própria chamada.
+**Cost on resume.** Since 2.1.277 the `total_cost_usd` of a resumed session includes the spend of the runs it restored, so summing results double counts. The engine records the run's own cost: it keeps the last total reported per session id in the run ledger (`claude-session-cost.ts`) and, on a resumed run, records the difference. When no previous total is known, or the reported value is lower than it (a CLI older than 2.1.277), the reported value is kept. `--max-budget-usd` counts only the call's own spend.
 
-**`--bare`.** A documentação do CLI anuncia o `--bare` como futuro padrão do `-p`. Ele pula hooks, a descoberta de CLAUDE.md, OAuth e keychain (só API key ou `apiKeyHelper`), o que quebraria a autenticação por assinatura e o setup do `~/.nirvana`. O engine nunca passa essa flag.
+**`--bare`.** The CLI docs announce `--bare` as the future default for `-p`. It skips hooks, CLAUDE.md discovery, OAuth and keychain (API key or `apiKeyHelper` only), so it would break subscription auth and the `~/.nirvana` setup. The engine never passes it.
 
-**Para businesses (employees):** o adapter mapeia 1:1 — cada employee vira um subagent_type. CEO da business é o agent_type que tem `is_brief_intake: true`.
+**For businesses:** a business runs as ONE solo agent (`skills/harness/lib/business-solo.ts`) that plays the seats itself. It opens no subagent, no squad dispatch and no other business. Whether a reviewer checks the result is decided by `review.policy`.
 
-**Para squads (capabilities):** capability com `invoke.type: agent` mapeia para `Agent`; com `type: workflow` ou `type: task` pode rodar inline no escopo da skill.
+**For squads (capabilities):** a capability with `invoke.type: agent` maps to `Agent`; with `type: workflow` or `type: task` it can run inline in the skill's scope.
 
 ---
 
 ## 8. Memory storage
 
-| Camada | Path | Persistência |
+| Layer | Path | Persistence |
 |---|---|---|
-| Permanent (cross-session) | `~/.claude/memory/<topic>.md` indexada por `~/.claude/memory/MEMORY.md` | Manual ou auto via `auto memory` |
-| Project (per-cliente) | `<project>/.claude/memory/` + `<project>/CLAUDE.md` | Auto-load no start da sessão |
-| Session | Conversation context | Compactado pelo runtime |
-| Business permanent | `~/businesses/<biz>/memory/permanent.md` | Adapter persiste explicitly via Write |
-| Project (business) | `<project>/<biz>/<project_id>/memory/` | Isolation by construction (Business v1 §9) |
+| Permanent (cross-session) | `~/.claude/memory/<topic>.md` indexada por `~/.claude/memory/MEMORY.md` | Manual or automatic via `auto memory` |
+| Project (per-cliente) | `<project>/.claude/memory/` + `<project>/CLAUDE.md` | Auto-load at session start |
+| Session | Conversation context | Compacted by the runtime |
+| Business permanent | `~/businesses/<biz>/memory/permanent.md` | Adapter persists explicitly via Write |
+| Project (business) | `<project>/<biz>/<project_id>/memory/` | Isolation by construction (Business v2 §9) |
 
-> **Isolation guard (Harness §H10):** quando o adapter detecta tentativa de leitura de memory de outro `project_id`, emite `audit_event: isolation_violation` e bloqueia.
+> **Isolation guard (Harness §H10):** when the adapter detects an attempt to read another `project_id`'s memory, it emits `audit_event: isolation_violation` and blocks.
 
 ---
 
-## 9. Context window e compaction
+## 9. Context window and compaction
 
-- Janela: definida pelo modelo que o usuário roda. `claude --autocompact <auto|tokens>` (100k a 1M) ou `CLAUDE_CODE_AUTO_COMPACT_WINDOW` (100000 a 1000000; valores menores viram 100K) antecipam o ponto em que a compaction começa.
-- Compaction: automática quando perto do limit. `PreCompact` dispara antes (matcher `manual` ou `auto`), permitindo persistir state crítico, e `PostCompact` depois que ela termina.
-- Para businesses long-running: forçar checkpoint via `Skill: harness#checkpoint` ao atingir 70% do context.
+- Window: set by the model the user runs. The engine can lower the point where compaction starts with `execution.context_window`, passed to the child as `CLAUDE_CODE_AUTO_COMPACT_WINDOW` (the CLI accepts 100000 to 1000000; smaller values clamp to 100K). `claude --autocompact <auto|tokens>` sets the same window for one run.
+- Compaction: automatic near the limit. `PreCompact` fires before it (matcher `manual` or `auto`) so critical state can be persisted first, and `PostCompact` after it completes.
+- For long-running businesses: force a checkpoint via `Skill: harness#checkpoint` at 70% of the context.
 
 ---
 
 ## 10. Hook system
 
-Hooks são declarados por evento, como grupos com matcher que carregam cada um uma lista `hooks` de handlers (o JSON está na §6). O `type` do handler é `command`, `http`, `mcp_tool`, `prompt` ou `agent`. Eventos relevantes:
+Hooks are declared per event, as matcher groups that each carry a `hooks` list of handlers (§6 has the JSON). Handler `type` is `command`, `http`, `mcp_tool`, `prompt` or `agent`. Relevant events:
 
-| Hook | Trigger | Uso para protocolo |
+| Hook | Trigger | Protocol use |
 |---|---|---|
-| `PreToolUse` | Antes de cada tool call | Enforce permissions, dry-run cost |
-| `PostToolUse` | Depois de cada tool call | Turn counter, cost emission, audit |
-| `UserPromptSubmit` | Cada prompt do user | Injetar harness preamble |
-| `Stop` | Fim de turn | Persistir mention/ticket inbox |
-| `SubagentStop` | Um subagent termina | Recolher handoff artifacts |
-| `SessionStart` | Início de sessão | Carregar memory + verificar pending tickets |
-| `PreCompact` | Antes da compaction (manual ou auto) | Salvar state crítico (Business v1 §9.3) |
-| `PostCompact` | Depois que a compaction termina | Reinjetar o state que o resumo perdeu |
+| `PreToolUse` | Before each tool call | Enforce permissions, dry-run cost |
+| `PostToolUse` | After each tool call | Turn counter, cost emission, audit |
+| `UserPromptSubmit` | Each user prompt | Inject harness preamble |
+| `Stop` | End of turn | Persist mention/ticket inbox |
+| `SubagentStop` | A subagent finishes | Collect handoff artifacts |
+| `SessionStart` | Start of session | Load memory + check pending tickets |
+| `PreCompact` | Before compaction (manual or auto) | Save critical state (Business v2 §9.3) |
+| `PostCompact` | After compaction completes | Re-inject state the summary dropped |
 
-Configuração em `settings.json` (user, project ou local), no `hooks/hooks.json` de um plugin ou no frontmatter de skill e subagent. O `--bare` pula os hooks de settings e plugins. No `-p`, um settings que falha na validação é ignorado em silêncio. Ver `update-config` skill para syntax exata.
+Configured in `settings.json` (user, project or local), in plugin `hooks/hooks.json`, or in skill and subagent frontmatter. `--bare` skips hooks from settings and plugins. In `-p`, a settings file that fails validation is silently ignored. See the `update-config` skill for the exact syntax.
 
 ---
 
 ## 11. Invocation examples
 
-### Exemplo 1 — Squad capability (Squad v5)
+### Example 1: Squad capability (Squad v6)
 
 ```
 User: "transcrever vídeo do Instagram https://..."
@@ -280,7 +280,7 @@ Harness routing:
   → Skill({ skill: "instagram-intelligence", args: "video=https://..." })
 ```
 
-### Exemplo 2 — Business brief (Business v1)
+### Example 2: Business brief (Business v2)
 
 ```
 User: "Estamos lançando um produto novo, preciso de um plano completo de marketing."
@@ -288,18 +288,16 @@ User: "Estamos lançando um produto novo, preciso de um plano completo de market
 Harness routing:
   brief → match domains [marketing, strategy] + employee_count
   → match: nexus-council (score 0.78)
-  → AMBIGUOUS (precisa confirmar via AskUserQuestion ou abre business)
-  → Skill({ skill: "nexus-council" })
-  → Business CEO (is_brief_intake) recebe brief
-  → CEO delega via Agent({ subagent_type: "marketing-lead", ... })
-  → marketing-lead emite handoff artifact com self_score
-  → CEO consolida, retorna
+  → AMBIGUOUS (confirm via AskUserQuestion or open the business)
+  → harness dispatches the business as ONE solo agent (nexus-council)
+  → the agent plays the seats itself (marketing-lead, ...), opening each seat file as needed
+  → it consolidates and returns a one-page summary
 ```
 
-### Exemplo 3 — Mention entre employees
+### Example 3: Mention between employees
 
 ```
-Employee A produz handoff:
+Employee A produces a handoff:
 {
   "from_agent": "marketing-lead",
   "to_agent": "ceo",
@@ -307,71 +305,71 @@ Employee A produz handoff:
   "next_action": "review",
   "business_extensions": {
     "type": "mention",
-    "mention_text": "@alex-hormozi pode revisar o pricing?",
+    "mention_text": "@alex-hormozi can you review the pricing?",
     "self_score": { "clarity": 0.92, "passes_threshold": true }
   }
 }
 
-Adapter detecta `@alex-hormozi` → Agent({ subagent_type: "alex-hormozi", prompt: "...marketing-lead pediu para revisar pricing..." })
+Adapter detects `@alex-hormozi` → Agent({ subagent_type: "alex-hormozi", prompt: "...marketing-lead asked for a pricing review..." })
 ```
 
-### Exemplo 4 — Harness escalation (zero-human bridge)
+### Example 4: Harness escalation (zero-human bridge)
 
 ```
 Budget breach detected (Harness §H6):
   audit_event: budget_violation
   → emit HarnessNotification (severity: high)
   → AskUserQuestion({
-      question: "Budget excedido em 20%. Continuar?",
-      options: [{ label: "Aprovar overage" }, { label: "Abortar" }]
+      question: "Budget exceeded by 20%. Continue?",
+      options: [{ label: "Approve overage" }, { label: "Abort" }]
     })
   → audit_event: human_response_received
-  → resume ou abort conforme resposta
+  → resume or abort depending on the answer
 ```
 
 ---
 
 ## 12. Runtime-specific validators
 
-Além de `validators.ts/.py`, Claude Code requer:
+Besides `validators.ts/.py`, Claude Code requires:
 
-- **Subagent existence check**: cada `subagent_type` referenciado em employee `manages:` ou em mention deve existir como arquivo `~/.claude/agents/<name>.md` ou bundled na skill.
-- **Slash command collision**: se squad/business tem `slashPrefix`, não pode colidir com built-in (`/clear`, `/help`, `/config`, `/loop`, `/schedule`, etc.).
-- **Settings.json schema**: ao injetar permissions/hooks, validar contra schema do Claude Code (`update-config` skill conhece o schema).
+- **Subagent existence check**: every `subagent_type` referenced in an employee `manages:` or in a mention must exist as a file `~/.claude/agents/<name>.md` or bundled in the skill.
+- **Slash command collision**: if a squad/business has a `slashPrefix`, it must not collide with a built-in (`/clear`, `/help`, `/config`, `/loop`, `/schedule`, etc.).
+- **Settings.json schema**: when injecting permissions/hooks, validate against the Claude Code schema (the `update-config` skill knows the schema).
 
 ---
 
 ## 13. Known limitations
 
-1. **O engine não passa `--max-turns`.** O runtime impõe limite de turns (§6), mas o `max_turns` de um employee chega ao worker headless só como texto no prompt e como budget.
-2. **Sem broker de eventos.** Mentions/tickets dependem de file-system + memory; race conditions possíveis em multi-process. Para v1: single-process.
-3. **OTel não é built-in.** Requer config externa (`OTEL_EXPORTER_OTLP_ENDPOINT` env var) ou fallback jsonl.
-4. **Subagent context não tem quota explícita.** Cada `Agent` cria um fork novo; o budget é macroscópico (cost USD), não micro (tokens por sub).
-5. **Slash commands não aceitam args estruturados.** Adapter passa args como string única; validators recebem e parseiam.
-6. **Hooks rodam em shell**, não em JS — limitação para validações complexas. Workaround: hook chama um script Node/Python.
-7. **`ScheduleWakeup` é específico** do Claude Code (não portável). Harness deve degradar para cron externo em runtimes que não suportam.
-8. **Sem isolation forte por subagent.** Subagents compartilham fs/network do main process; isolation é por permissions, não por sandbox.
+1. **The engine does not pass `--max-turns`.** The runtime enforces turn limits (§6), but an employee's `max_turns` reaches a headless worker only as prompt text and budget.
+2. **No event broker.** Mentions/tickets depend on file-system + memory; race conditions are possible in multi-process. For v1: single-process.
+3. **OTel is not built-in.** Requires external config (`OTEL_EXPORTER_OTLP_ENDPOINT` env var) or the jsonl fallback.
+4. **Subagent context has no explicit quota.** Each `Agent` creates a new fork; the budget is macroscopic (cost USD), not micro (tokens per sub).
+5. **Slash commands do not accept structured args.** The adapter passes args as a single string; validators receive and parse them.
+6. **Hooks run in shell**, not JS, a limitation for complex validations. Workaround: the hook calls a Node/Python script.
+7. **`ScheduleWakeup` is Claude Code specific** (not portable). The harness must degrade to external cron on runtimes that do not support it.
+8. **No strong isolation per subagent.** Subagents share the main process's fs/network; isolation is by permissions, not by sandbox.
 
 ---
 
 ## 14. Source references
 
-- Claude Code public docs: https://code.claude.com/docs (headless: `/en/headless`, hooks: `/en/hooks`, permission modes: `/en/permission-modes`, workflows: `/en/workflows`, custo: `/en/agent-sdk/cost-tracking`)
-- Referência de implementação (caminhos relativos ao código do Claude Code):
-  - `Skill.md` — modelo de skill
-  - `src/tools/AgentTool/` — AgentTool, forkSubagent
-  - `src/tools/TaskCreateTool/prompt.ts` — TaskCreate
-  - `src/tools/TeamCreateTool/prompt.ts` — TeamCreate
-  - `src/coordinator/coordinatorMode.ts` — coordenação multi-agent
-- Squad Protocol v5: `~/.nirvana/skills/squads/SQUAD_PROTOCOL_V5.md`
-- Business Protocol v1: `~/.nirvana/skills/businesses/BUSINESS_PROTOCOL_V1.md`
-- Harness Protocol v1: `~/.nirvana/skills/harness/HARNESS_PROTOCOL_V1.md`
+- Claude Code public docs: https://code.claude.com/docs (headless: `/en/headless`, hooks: `/en/hooks`, permission modes: `/en/permission-modes`, workflows: `/en/workflows`, cost: `/en/agent-sdk/cost-tracking`)
+- Implementation reference (paths relative to the Claude Code code):
+  - `Skill.md`: skill model
+  - `src/tools/AgentTool/`: AgentTool, forkSubagent
+  - `src/tools/TaskCreateTool/prompt.ts`: TaskCreate
+  - `src/tools/TeamCreateTool/prompt.ts`: TeamCreate
+  - `src/coordinator/coordinatorMode.ts`: multi-agent coordination
+- Squad Protocol v6: `~/.nirvana/skills/squads/SQUAD_PROTOCOL_V6.md`
+- Business Protocol v2: `~/.nirvana/skills/businesses/BUSINESS_PROTOCOL_V2.md`
+- Harness protocol: `~/.nirvana/skills/harness/SKILL.md`
 
 ---
 
 ## 15. Version history
 
-| Versão | Data | Mudanças |
+| Version | Date | Changes |
 |---|---|---|
-| 1.0.0 | 2026-05-02 | Doc inicial — cobre Squad 5.0 + Business 1.0 + Harness 1.0 contra Claude Code 1.x (Opus 4.7) |
-| 1.1.0 | 2026-10-11 | Auditado contra o Claude Code 2.1.296 (Opus 5.5 como Opus padrão). Os eventos `PreCompact`/`PostCompact` substituem o inexistente `Compact`; o JSON de hook usa o schema `{matcher, hooks:[{type, command}]}`; `maxTurns`/`--max-turns` nativos e `error_max_turns`; modo de permissão inicial (`auto` em provedores terceiros ou com telemetria desligada desde o 2.1.285) e opções de `--permission-mode`; o argv headless real; a tool `Workflow` e a cerca do worker (`--disallowedTools Task Agent Workflow`, `CLAUDE_CODE_DISABLE_WORKFLOWS=1`); custo cumulativo em resume e a diferença registrada no ledger; `--bare` nunca passado; docs migrados para code.claude.com |
+| 1.0.0 | 2026-05-02 | Initial doc: covers Squad 5.0 + Business 1.0 + Harness 1.0 against Claude Code 1.x (Opus 4.7) |
+| 1.1.0 | 2026-10-11 | Audited against Claude Code 2.1.296 (Opus 5.5 default Opus). Hook events `PreCompact`/`PostCompact` replace the nonexistent `Compact`; hook JSON uses the `{matcher, hooks:[{type, command}]}` schema; native `maxTurns`/`--max-turns` and `error_max_turns`; starting permission mode (`auto` on third-party providers or telemetry off since 2.1.285) and `--permission-mode` choices; the real headless argv; `Workflow` tool and the worker fence (`--disallowedTools Task Agent Workflow`, `CLAUDE_CODE_DISABLE_WORKFLOWS=1`); cumulative resume cost and the ledger difference; `--bare` never passed; docs moved to code.claude.com |

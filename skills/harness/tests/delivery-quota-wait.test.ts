@@ -53,6 +53,7 @@ function baseArgs(oroot: string, over: Partial<DeliveryArgs> = {}): { args: Deli
     config: judgeOff(loadHarnessConfig(path.join(tmp, "no-config.yaml"))),
     audit: (event, payload) => calls.push({ event, payload }), gateScript: GATE, log: () => {}, warn: () => {},
     runHeadlessImpl: (() => { throw new Error("no runtime may run here"); }) as any,
+    claimsCheck: false,
     ...over,
   };
   return { args, calls };
@@ -63,6 +64,7 @@ function openTestRun(): { handle: runLedger.LedgerHandle; runId: string } {
   runLedger.markState(handle, row.run_id, "running");
   return { handle, runId: row.run_id };
 }
+const statusOf = (oroot: string) => JSON.parse(fs.readFileSync(path.join(oroot, "_STATUS.json"), "utf8"));
 const write = (file: string, text: string) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, text); };
 
 describe("a worker stopped on a spent quota waits for the reset", () => {
@@ -75,6 +77,7 @@ describe("a worker stopped on a spent quota waits for the reset", () => {
     const out = deliverAfterRuntimeError({ ...args, runtimeError: QUOTA });
     expect(out.exitCode).toBe(QUOTA_WAIT_EXIT);
     expect(out.judged).toBe(false);
+    expect(out.result?.state).toBe("quota_wait");
     expect(out.result?.quotaWait?.named).toBe(true);
     expect(runs).toBe(0);
     const events = calls.map(c => c.event);
@@ -86,6 +89,9 @@ describe("a worker stopped on a spent quota waits for the reset", () => {
     const reset = Date.parse(String(row.meta.quota_reset_at));
     expect(reset).toBeGreaterThan(Date.now());
     expect(new Date(reset).getMinutes()).toBe(21);
+    const status = statusOf(oroot);
+    expect(status).toMatchObject({ state: "quota_wait", gate: "skipped", exit_code: 75, quota_step: "worker" });
+    expect(status.quota_reset_at).toBe(row.meta.quota_reset_at);
     // The runtime is cooled down until the reset.
     expect(getCooldown(tmp, "codex")).not.toBeNull();
     // What the worker wrote stays on disk for the resume.
@@ -105,7 +111,7 @@ describe("a worker stopped on a spent quota waits for the reset", () => {
 describe("a correction whose runtime failed is not a round", () => {
   const failing = (error: string) => (opts: any) => ({ ok: false, runtime: opts.runtime, sessionId: null, result: "", costUsd: null, exitCode: 1, stderr: "", durationMs: 1, error });
 
-  test("a quota on the correction: no cold retry, not counted, the delivery waits", () => {
+  test("a quota on the correction: no cold retry, no no-progress, not counted, the delivery waits", () => {
     const oroot = path.join(tmp, "out");
     write(path.join(oroot, "dados.json"), INVALID_JSON);
     const led = openTestRun();
@@ -114,25 +120,29 @@ describe("a correction whose runtime failed is not a round", () => {
     const res = runDelivery(args);
     expect(runs).toBe(1);                         // no cold retry against the same limit
     expect(res.exitCode).toBe(QUOTA_WAIT_EXIT);
+    expect(res.state).toBe("quota_wait");
     expect(res.revisionsUsed).toBe(0);
     expect(res.quotaWait?.step).toBe("correction");
     const auto = calls.filter(c => c.event === "revision_auto");
     expect(auto).toHaveLength(1);
     expect(auto[0].payload).toMatchObject({ ok: false, counted: false, runtime_failure: "quota_exhausted" });
     expect(calls.some(c => c.event === "x_delivery_withheld")).toBe(false);
+    expect(calls.some(c => c.payload?.no_progress)).toBe(false);
     expect(runLedger.getRun(led.handle, led.runId)!.meta.stop_reason).toBe("quota");
+    expect(statusOf(oroot).state).toBe("quota_wait");
   }, spawnBudgetMs(3));
 
-  test("a transport failure on the correction ends the corrections without counting a round", () => {
+  test("a transport failure on the correction ends the corrections without counting a round or no-progress", () => {
     const oroot = path.join(tmp, "out");
     write(path.join(oroot, "dados.json"), INVALID_JSON);
     let runs = 0;
-    const { args, calls } = baseArgs(oroot, { maxRevisions: 1, gateExhaustedPolicy: "withhold", runHeadlessImpl: ((o: any) => { runs++; return failing("stream disconnected before completion: error sending request")(o); }) as any });
+    const { args, calls } = baseArgs(oroot, { maxRevisions: 1, runHeadlessImpl: ((o: any) => { runs++; return failing("stream disconnected before completion: error sending request")(o); }) as any });
     const res = runDelivery(args);
     expect(runs).toBe(1);
     expect(res.revisionsUsed).toBe(0);
-    expect(res.exitCode).toBe(2);                 // the failure of the real round 0 stands (strict policy)
+    expect(res.state).toBe("withheld");           // the serious finding of the real round 0 stands
     expect(calls.find(c => c.event === "revision_auto")?.payload).toMatchObject({ counted: false, runtime_failure: "transport" });
+    expect(calls.find(c => c.event === "x_delivery_withheld")?.payload.no_progress).toBeUndefined();
   }, spawnBudgetMs(3));
 });
 
@@ -163,6 +173,7 @@ describe("a judge on a spent quota says it could not judge", () => {
     const events = calls.map(c => c.event);
     expect(events).toContain("x_gate_unjudged_quota");
     for (const e of ["gate_passed", "gate_failed", "revision_auto", "delivered", "x_delivery_withheld"]) expect(events).not.toContain(e);
+    expect(statusOf(oroot)).toMatchObject({ state: "quota_wait", quota_step: "judge" });
   }, spawnBudgetMs(2));
 
   test("quality-gate reads a quota out of the judge's failed call", () => {

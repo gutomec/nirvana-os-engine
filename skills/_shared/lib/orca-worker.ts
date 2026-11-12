@@ -33,9 +33,10 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { createRequire } from "node:module";
 import { randomUUID } from "node:crypto";
-import { LEDGER_DEFAULT_TIMEOUT_MS, type RunHeadlessOpts, type RunHeadlessResult, type Runtime } from "./host-agent-driver.ts"; // cycle is safe: used at call time only
+import { contextWindowSetting, headlessClaudeEnv, LEDGER_DEFAULT_TIMEOUT_MS, SYNTHETIC_AGY_SID, type RunHeadlessOpts, type RunHeadlessResult, type Runtime } from "./host-agent-driver.ts"; // cycle is safe: used at call time only
 import { agyConversationFor, claudeTranscriptUsage, codexSessionFor, findClaudeTranscript } from "./session-capture.ts";
 import { estimateCostUsd } from "../../harness/lib/cost-estimator.ts";
+import { childDepth, DEPTH_ENV, ROLE_ENV } from "./dispatch-depth.ts";
 import { orcaJson, orcaFire, orcaWorkersActive, orcaWorkspaceSelector } from "./orca.ts";
 import { isEffortLevel, resolvePinnedEffort, resolveSystemModel } from "./system-model.ts";
 import { codexConfigPath } from "./codex-hooks.ts";
@@ -153,15 +154,14 @@ export function screenDialog(lines: unknown): ScreenDialog | null {
  *  trusted to have taken its task, and how often it is read. The 2026-10-15
  *  trust dialog was on screen within a second of the inject. */
 function postInjectWindowMs(): number {
-  const raw = process.env.NIRVANA_ORCA_POST_INJECT_MS;
-  const v = Number(raw);
-  return raw !== undefined && raw !== "" && Number.isFinite(v) && v >= 0 ? v : 6_000;
+  const v = Number(process.env.NIRVANA_ORCA_POST_INJECT_MS);
+  return Number.isFinite(v) && v >= 0 && process.env.NIRVANA_ORCA_POST_INJECT_MS !== "" && process.env.NIRVANA_ORCA_POST_INJECT_MS !== undefined ? v : 6_000;
 }
 const POST_INJECT_STEP_MS = 1_500;
 
 /** The reply the engine gives a worker that asks: the zero-human doctrine,
  *  stated once. */
-const ASK_REPLY = "Decide with professional defaults, record the assumption under a 'Premissas assumidas' (assumptions) section of the main deliverable, and continue. No human is in this loop.";
+const ASK_REPLY = "Decide with professional defaults, record the assumption under an 'Assumptions' section of the main deliverable (titled in its language), and continue. No human is in this loop.";
 
 export interface OrcaWorkerHooks {
   /** Test seam: canned `orca … --json` answers. */
@@ -187,10 +187,6 @@ function ledgerModule(): Ledger | null {
   try { return createRequire(import.meta.url)(path.join(import.meta.dir, "..", "..", "harness", "lib", "run-ledger.ts")) as Ledger; }
   catch { return null; }
 }
-
-/** The session a worker continues (`resume`) or starts under an id the engine
- *  chose (`assign`). */
-export interface WorkerSession { resume?: string; assign?: string }
 
 /**
  * The session id of a finished worker. The resumed or assigned one when the
@@ -219,6 +215,10 @@ function claudeWorkerCost(sessionId: string, sinceMs: number, hooks: Pick<OrcaWo
     return { costUsd, usage: read.usage, ...(read.model ? { model: read.model } : {}) };
   } catch { return null; }
 }
+
+/** The session a worker continues (`resume`) or starts under an id the engine
+ *  chose (`assign`). */
+export interface WorkerSession { resume?: string; assign?: string }
 
 /**
  * How each interactive CLI continues a session or starts one under a given id
@@ -271,11 +271,12 @@ export function interactiveArgv(opts: Pick<RunHeadlessOpts, "runtime" | "yolo" |
       else if (assign) a.push("--session-id", assign);
       if (model) a.push("--model", model);
       if (effort) a.push("--effort", effort);
-      // The project's own deny rules (run-workspace.ts), as headless.
+      // The run's deny rules (run-workspace.ts): the same fence as headless.
       if (opts.claudeSettings) a.push("--settings", opts.claudeSettings);
       // The headless runner's rule: a dispatched worker does not open its own
-      // agents (Task/Agent multiply inside one child and never pass through the
-      // engine's depth counter), nor a workflow, which can fan out to 1,000.
+      // agents (the runtime's subagent tool multiplies inside one child and
+      // never passes through the engine's depth counter).
+      // Workflow too: the dynamic-workflow tool can fan out to 1,000 agents.
       if (!opts.allowSubagents) a.push("--disallowedTools", "Task", "Agent", "Workflow");
       for (const d of dirs) a.push("--add-dir", d);
       return a;
@@ -285,16 +286,20 @@ export function interactiveArgv(opts: Pick<RunHeadlessOpts, "runtime" | "yolo" |
       const a = ["codex", ...(resume ? ["resume", resume] : []), ...(yolo ? ["--dangerously-bypass-approvals-and-sandbox"] : [])];
       if (model) a.push("-m", model);
       if (effort) a.push("-c", `model_reasoning_effort=${JSON.stringify(effort)}`);
+      // The context ceiling, as the headless runner passes it.
+      const window = contextWindowSetting();
+      if (window > 0) a.push("-c", `model_auto_compact_token_limit=${window}`);
       // The headless runner's rule: no subagents unless the caller orchestrates.
       if (!opts.allowSubagents) a.push("-c", "agents.enabled=false");
       for (const d of dirs) a.push("--add-dir", d);
       return a;
     }
-    case "antigravity-cli":
-      // The same resume the headless runner makes on this line: `--continue`,
-      // the most recent conversation of the folder, which is the run's own
-      // (a worker runs in its own run folder).
-      return ["agy", ...(yolo ? ["--dangerously-skip-permissions"] : []), ...(resume ? ["--continue"] : []), ...(model ? ["--model", model] : [])];
+    case "antigravity-cli": {
+      // A placeholder id names no agy conversation: the most recent one of the
+      // folder is the run's, as the headless runner resumes it.
+      const cont = resume ? (resume.startsWith(SYNTHETIC_AGY_SID) ? ["--continue"] : ["--conversation", resume]) : [];
+      return ["agy", ...(yolo ? ["--dangerously-skip-permissions"] : []), ...cont, ...(model ? ["--model", model] : [])];
+    }
     case "grok-cli":
       return ["grok", ...(yolo ? ["--always-approve"] : []), ...(resume ? ["-r", resume] : assign ? ["--session-id", assign] : []), ...(model ? ["-m", model] : [])];
     case "kimi-cli":
@@ -316,13 +321,29 @@ export function forwardedEnv(env: NodeJS.ProcessEnv = process.env, asRuntime?: s
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(env)) {
     if (v === undefined) continue;
-    if (/^NIRVANA_/.test(k) || k === "HARNESS_LOGS_DIR" || k === "MAESTRO_LOGS_DIR") out[k] = v;
+    if (/^NIRVANA_/.test(k) || k === "HARNESS_LOGS_DIR" || k === "MAESTRO_LOGS_DIR") {
+      // The command line is visible (Orca titles and shell history): a variable
+      // that carries a secret does not travel on it. NIRVANA_AUDIT_KEY is a
+      // PATH to the key file, not the key, so it stays.
+      if (/(?:SECRET|TOKEN|PASSWORD|API_?KEY)/i.test(k)) continue;
+      out[k] = v;
+    }
   }
   // The worker IS `asRuntime`, whatever this process is. Forwarding the
   // parent's own `NIRVANA_HOST_RUNTIME` would tell the worker it is the vendor
   // that launched it, and any `nrv` it runs would route back out of the
   // terminal the user is watching.
   if (asRuntime) out.NIRVANA_HOST_RUNTIME = asRuntime;
+  return out;
+}
+
+/** What the worker is, for the role and depth rules its own dispatches answer
+ *  to. Inheriting the parent's would make a squad worker look like the business
+ *  that started it: unrestricted, and one level shallower than it is. The
+ *  headless runner stamps the same two values on its child (driverSpawnSync). */
+export function workerRoleEnv(opts: Pick<RunHeadlessOpts, "dispatchRole">, env: NodeJS.ProcessEnv = process.env): Record<string, string> {
+  const out: Record<string, string> = { [DEPTH_ENV]: String(childDepth(env)) };
+  if (opts.dispatchRole) out[ROLE_ENV] = opts.dispatchRole;
   return out;
 }
 
@@ -406,7 +427,7 @@ function parsePayload(m: Message): Record<string, unknown> {
  * execution.stall_no_start_min, the stall guard's settings): no message, no
  * Orca heartbeat, no file written under the run's folders, no hook-recorded
  * tool activity and no live child run since the inject for that long ends it
- * as stalled. The 7-day ledger backstop does not apply here.
+ * as stalled. The 7-day ledger backstop no longer applies here.
  */
 export function runOrcaWorker(opts: RunHeadlessOpts, hooks: OrcaWorkerHooks = {}): RunHeadlessResult | null {
   const active = hooks.activeImpl ?? orcaWorkersActive;
@@ -423,6 +444,14 @@ export function runOrcaWorker(opts: RunHeadlessOpts, hooks: OrcaWorkerHooks = {}
   const session: WorkerSession = opts.sessionId ? { resume: opts.sessionId } : caps?.assign ? { assign: randomUUID() } : {};
   const argv = interactiveArgv(opts, session);
   if (!argv) return null;
+  // An interactive worker cannot honour an answer-only call (it needs its tools
+  // to report worker_done) nor an explicit tool allowlist. Running those as a
+  // worker would hand a decision step an unrestricted agent, so the headless
+  // child, which can say `--tools ""`, keeps them.
+  if (opts.noTools || opts.allowedTools !== undefined) {
+    emit("x_orca_transport_fallback", { stage: "restrictions", reason: "answer-only or tool-restricted call cannot be honoured by an interactive worker", runtime: opts.runtime, label: opts.label ?? null }, opts.cwd);
+    return null;
+  }
   const call = hooks.orcaJsonImpl ?? orcaJson;
   const fire = hooks.orcaFireImpl ?? orcaFire;
   const now = hooks.now ?? Date.now;
@@ -442,15 +471,15 @@ export function runOrcaWorker(opts: RunHeadlessOpts, hooks: OrcaWorkerHooks = {}
   };
 
   // The run's ledger row, when the dispatch has one: the terminal is recorded
-  // on it (so the stall guard and `nrv run-track close` can close it), and the
+  // on it (so `nrv run-track stop` and the stall guard can close it), and the
   // silence budget reads the run's folders, hooks and child runs from it.
   const ledger = opts.ledger?.runId ? ledgerModule() : null;
-  let ledgerHandle: ReturnType<Ledger["openLedger"]> | null = null;
-  try { ledgerHandle = ledger ? ledger.openLedger(opts.ledger!.dbPath) : null; } catch { ledgerHandle = null; }
-  const runRow = () => { try { return ledgerHandle && ledger ? ledger.getRun(ledgerHandle, opts.ledger!.runId) : null; } catch { return null; } };
+  let handle: ReturnType<Ledger["openLedger"]> | null = null;
+  try { handle = ledger ? ledger.openLedger(opts.ledger!.dbPath) : null; } catch { handle = null; }
+  const runRow = () => { try { return handle && ledger ? ledger.getRun(handle, opts.ledger!.runId) : null; } catch { return null; } };
   const recordWorker = (record: Record<string, unknown> | null) => {
-    if (!ledgerHandle || !ledger) return;
-    try { ledger.patchMeta(ledgerHandle, opts.ledger!.runId, { orca_worker: record }); } catch { /* the ledger never decides the transport */ }
+    if (!handle || !ledger) return;
+    try { ledger.patchMeta(handle, opts.ledger!.runId, { orca_worker: record }); } catch { /* the ledger never decides the transport */ }
   };
 
   // 1. The brief, by reference.
@@ -481,25 +510,30 @@ export function runOrcaWorker(opts: RunHeadlessOpts, hooks: OrcaWorkerHooks = {}
   const trusted = preTrustWorkspace(opts.runtime, cwd);
   // A confined worker carries its run folder, as the headless child does
   // (driverSpawnSync), so what it dispatches nests inside its run.
-  const workerEnv = forwardedEnv(process.env, opts.runtime);
+  const workerEnv = { ...forwardedEnv(process.env, opts.runtime), ...workerRoleEnv(opts), ...(opts.env ?? {}) };
+  if (opts.runtime === "claude-code") {
+    // Same environment the headless claude child gets: no background tasks that
+    // die with the session, and the configured context ceiling. A value the
+    // user set in their own environment is kept.
+    const seeded: Record<string, string | undefined> = {
+      CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS,
+      CLAUDE_CODE_AUTO_COMPACT_WINDOW: process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW,
+    };
+    for (const [k, v] of Object.entries(headlessClaudeEnv(seeded, { denySubagents: !opts.allowSubagents }))) if (v !== undefined) workerEnv[k] = v;
+  }
   if (opts.workspace) workerEnv[RUN_WORKSPACE_ENV] = cwd;
-  Object.assign(workerEnv, opts.env ?? {});
-  // The second workflow fence, as the headless claude child gets it
-  // (headlessClaudeEnv): forced over anything set above, unless the caller
-  // orchestrates.
-  if (opts.runtime === "claude-code" && !opts.allowSubagents) workerEnv.CLAUDE_CODE_DISABLE_WORKFLOWS = "1";
   const command = workerCommand(argv, cwd, workerEnv);
   // The terminal starts in the run folder (cwd); the worktree Orca files it
   // under is the project's, which is the caller's own cwd when the driver
   // moved the worker into its workspace.
   const term = call<any>(["terminal", "create", "--worktree", orcaWorkspaceSelector(opts.hostCwd ?? cwd), "--title", `${label} · ${agent}`, "--command", command], { timeoutMs: 30_000 });
   if (!term.ok) { failTask(); return fallback("terminal-create", term.error?.code ?? term.error?.message ?? "unknown"); }
-  const handle: string = term.result?.terminal?.handle;
-  if (!handle) { failTask(); return fallback("terminal-create", "no terminal handle in answer"); }
-  recordWorker({ terminal: handle, run_id: runId, task_id: taskId, dispatch_id: null, agent, opened_at: new Date(wallStarted).toISOString() });
+  const handleId: string = term.result?.terminal?.handle;
+  if (!handleId) { failTask(); return fallback("terminal-create", "no terminal handle in answer"); }
+  recordWorker({ terminal: handleId, run_id: runId, task_id: taskId, dispatch_id: null, agent, opened_at: new Date(wallStarted).toISOString() });
   let terminalClosed = false;
   const closeTerminal = () => {
-    fire(["terminal", "close", "--terminal", handle]);
+    fire(["terminal", "close", "--terminal", handleId]);
     terminalClosed = true;
   };
   // A terminal the engine closes before the worker took its task leaves no
@@ -508,19 +542,19 @@ export function runOrcaWorker(opts: RunHeadlessOpts, hooks: OrcaWorkerHooks = {}
 
   // 5. The TUI must be at its prompt before the preamble is typed into it —
   //    and "idle" is not "at its prompt": a trust dialog is idle too.
-  const ready = call<any>(["terminal", "wait", "--terminal", handle, "--for", "tui-idle", "--timeout-ms", String(TUI_READY_MS)], { timeoutMs: TUI_READY_MS + 15_000 });
+  const ready = call<any>(["terminal", "wait", "--terminal", handleId, "--for", "tui-idle", "--timeout-ms", String(TUI_READY_MS)], { timeoutMs: TUI_READY_MS + 15_000 });
   if (!ready.ok || ready.result?.wait?.satisfied !== true) {
     abandonTerminal();
     return fallback("tui-idle", ready.ok ? "agent did not reach its prompt" : (ready.error?.code ?? ready.error?.message ?? "unknown"));
   }
-  const screen = call<any>(["terminal", "read", "--terminal", handle, "--limit", "80"], { timeoutMs: 20_000 });
+  const screen = call<any>(["terminal", "read", "--terminal", handleId, "--limit", "80"], { timeoutMs: 20_000 });
   if (screen.ok && screenShowsTrustPrompt(screen.result?.terminal?.tail)) {
     abandonTerminal();
     return fallback("trust-prompt", `the ${agent} TUI asked to trust ${cwd}${trusted.length ? "" : " (no trust record known for this runtime)"}`);
   }
 
   // 6. Inject.
-  const disp = call<any>(["orchestration", "dispatch", "--run", runId, "--task", taskId, "--to", handle, "--inject"], { timeoutMs: INJECT_MS });
+  const disp = call<any>(["orchestration", "dispatch", "--run", runId, "--task", taskId, "--to", handleId, "--inject"], { timeoutMs: INJECT_MS });
   if (!disp.ok) {
     abandonTerminal();
     return fallback("inject", disp.error?.code ?? disp.error?.message ?? "unknown");
@@ -537,7 +571,7 @@ export function runOrcaWorker(opts: RunHeadlessOpts, hooks: OrcaWorkerHooks = {}
     const reads: string[] = [];
     let dialog: ScreenDialog | null = null;
     for (let waited = 0; ; waited += POST_INJECT_STEP_MS) {
-      const r = call<any>(["terminal", "read", "--terminal", handle, "--limit", "80"], { timeoutMs: 20_000 });
+      const r = call<any>(["terminal", "read", "--terminal", handleId, "--limit", "80"], { timeoutMs: 20_000 });
       if (r.ok) {
         const tail = r.result?.terminal?.tail;
         dialog = screenDialog(tail);
@@ -554,12 +588,12 @@ export function runOrcaWorker(opts: RunHeadlessOpts, hooks: OrcaWorkerHooks = {}
       return fallback(dialog ?? "prompt-not-accepted", dialog
         ? `the ${agent} TUI showed a ${dialog.replace("-", " ")} after the task was injected; the run continues as the headless child`
         : `the ${agent} TUI left the task unsent on a screen that did not move for ${Math.round(windowMs / 1000)}s; the run continues as the headless child`,
-        { after_inject: true, dispatch_id: dispatchId || null, terminal_handle: handle });
+        { after_inject: true, dispatch_id: dispatchId || null, terminal_handle: handleId });
     }
   }
   // From here on the worker owns the brief and this function returns a result, never null.
-  recordWorker({ terminal: handle, run_id: runId, task_id: taskId, dispatch_id: dispatchId || null, agent, opened_at: new Date(wallStarted).toISOString() });
-  emit("x_orca_worker_started", { run_id: runId, task_id: taskId, dispatch_id: dispatchId, terminal_handle: handle, agent, runtime: opts.runtime, label, brief_file: briefFile, trust_recorded_in: trusted }, cwd);
+  recordWorker({ terminal: handleId, run_id: runId, task_id: taskId, dispatch_id: dispatchId || null, agent, opened_at: new Date(wallStarted).toISOString() });
+  emit("x_orca_worker_started", { run_id: runId, task_id: taskId, dispatch_id: dispatchId, terminal_handle: handleId, agent, runtime: opts.runtime, label, brief_file: briefFile, trust_recorded_in: trusted }, cwd);
 
   // 7. Wait for worker_done, answering questions on the way, within the
   //    silence budget.
@@ -578,7 +612,7 @@ export function runOrcaWorker(opts: RunHeadlessOpts, hooks: OrcaWorkerHooks = {}
     if (!guard) return;
     const row = runRow();
     const t = now();
-    const wide = guard.latestWideActivity(ledgerHandle, row, guard.runFolders(row, [cwd]), t, Math.max(t - lastSignAt, 1_000));
+    const wide = guard.latestWideActivity(handle, row, guard.runFolders(row, [cwd]), t, Math.max(t - lastSignAt, 1_000));
     if (wide) noteSign(wide.at);
   };
   /** ms left before the silence budget runs out (Infinity when it is off). */
@@ -590,7 +624,7 @@ export function runOrcaWorker(opts: RunHeadlessOpts, hooks: OrcaWorkerHooks = {}
     return left.length ? Math.min(...left) : Number.POSITIVE_INFINITY;
   };
 
-  const warnings: string[] = [`orca: worker terminal ${handle} (dispatch ${dispatchId || "?"})`];
+  const warnings: string[] = [`orca: worker terminal ${handleId} (dispatch ${dispatchId || "?"})`];
   let outcome: "succeeded" | "failed" | null = null;
   let body = "";
   let subject = "";
@@ -609,8 +643,8 @@ export function runOrcaWorker(opts: RunHeadlessOpts, hooks: OrcaWorkerHooks = {}
     if (budgetLeft() > 0) return false;
     const verdict = guard?.stallVerdict({ startedAt: injectedAt, lastActivityAt: lastSignAt, everActive, now: now(), thresholds });
     if (!verdict) return false;
-    const signals = { orca_dispatch: dispatchId || null, orca_terminal: handle, last_sign_at: new Date(lastSignAt).toISOString(), ever_active: everActive };
-    const confirmed = ledgerHandle && guard ? guard.confirmStall(ledgerHandle, opts.ledger!.runId, verdict, { decidedBy: "orca-wait", signals }) : null;
+    const signals = { orca_dispatch: dispatchId || null, orca_terminal: handleId, last_sign_at: new Date(lastSignAt).toISOString(), ever_active: everActive };
+    const confirmed = handle && guard ? guard.confirmStall(handle, opts.ledger!.runId, verdict, { decidedBy: "orca-wait", signals }) : null;
     const recorded: Record<string, any> | null = confirmed ? guard!.confirmedStallOf(confirmed) as Record<string, any> | null : null;
     stalled = recorded ?? { confirmed_at: new Date().toISOString(), ...verdict, decided_by: "orca-wait", worker_pid: null, runtime: opts.runtime, signals };
     error = `stalled: ${guard!.stallReason(verdict)}`; outcome = "failed";
@@ -629,8 +663,8 @@ export function runOrcaWorker(opts: RunHeadlessOpts, hooks: OrcaWorkerHooks = {}
       // The stall guard ended the wait (it ends the `check` the dispatcher is
       // blocked on), or the app went away, or the Run with it: the worker may
       // still be typing, but nothing can carry its report back. Fail honestly.
-      const st = sidecarStall();
-      if (st) { stalled = st; error = `stalled: ${guard!.stallReason(st as never)}`; outcome = "failed"; break; }
+      const s = sidecarStall();
+      if (s) { stalled = s; error = `stalled: ${guard!.stallReason(s as never)}`; outcome = "failed"; break; }
       error = `orca check failed: ${batch.error?.code ?? batch.error?.message ?? "unknown"}`; outcome = "failed"; break;
     }
     const messages: Message[] = Array.isArray(batch.result?.messages) ? batch.result.messages : [];
@@ -669,8 +703,8 @@ export function runOrcaWorker(opts: RunHeadlessOpts, hooks: OrcaWorkerHooks = {}
       const beat = show.result?.dispatch?.lastHeartbeatAt ?? show.result?.dispatch?.last_heartbeat_at ?? show.result?.worker?.lastHeartbeatAt ?? null;
       const beatMs = typeof beat === "number" ? beat : typeof beat === "string" ? Date.parse(beat) : NaN;
       if (Number.isFinite(beatMs)) noteSign(beatMs);
-      const st = sidecarStall();
-      if (st) { stalled = st; error = `stalled: ${guard!.stallReason(st as never)}`; outcome = "failed"; break; }
+      const s = sidecarStall();
+      if (s) { stalled = s; error = `stalled: ${guard!.stallReason(s as never)}`; outcome = "failed"; break; }
     }
   }
 
@@ -698,14 +732,14 @@ export function runOrcaWorker(opts: RunHeadlessOpts, hooks: OrcaWorkerHooks = {}
   // on it. The transcript was archived above, so nothing is lost by closing.
   if (timedOut || stalled) {
     closeTerminal(); failTask();
-    warnings.push(`orca: terminal ${handle} closed after the ${stalled ? "stall" : "timeout"} (transcript kept)`);
+    warnings.push(`orca: terminal ${handleId} closed after the ${stalled ? "stall" : "timeout"} (transcript kept)`);
   } else if (process.env.NIRVANA_ORCA_KEEP_WORKERS === "1" || !ok) {
-    warnings.push(`orca: terminal ${handle} left open${ok ? " (NIRVANA_ORCA_KEEP_WORKERS=1)" : " for inspection"}`);
+    warnings.push(`orca: terminal ${handleId} left open${ok ? " (NIRVANA_ORCA_KEEP_WORKERS=1)" : " for inspection"}`);
   } else {
     closeTerminal();
   }
-  if (terminalClosed && ledgerHandle && ledger) {
-    try { ledger.patchMeta(ledgerHandle, opts.ledger!.runId, { orca_worker: { ...(runRow()?.meta?.orca_worker as object ?? {}), closed_at: new Date().toISOString() } }); } catch { /* bookkeeping only */ }
+  if (terminalClosed && handle && ledger) {
+    try { ledger.patchMeta(handle, opts.ledger!.runId, { orca_worker: { ...(runRow()?.meta?.orca_worker as object ?? {}), closed_at: new Date().toISOString() } }); } catch { /* bookkeeping only */ }
   }
 
   const result = [subject && `${subject}`, body, reportPath && `Report: ${reportPath}`].filter(Boolean).join("\n");

@@ -194,11 +194,11 @@ function padDescription(initial, squadName, squadDescription) {
   if (out.length >= minLen) return out;
   // Append squad context to fill.
   const fallback = squadDescription
-    ? `Workflow do squad ${squadName}: ${squadDescription}`
-    : `Workflow do squad ${squadName} (descrição não declarada)`;
+    ? `Squad ${squadName} workflow: ${squadDescription}`
+    : `Squad ${squadName} workflow (description not declared)`;
   out = out ? `${out} — ${fallback}` : fallback;
   if (out.length < minLen) {
-    out = `${out}.`.padEnd(minLen, ' execução de squad legacy.');
+    out = `${out}.`.padEnd(minLen, ' legacy squad execution.');
   }
   return out.slice(0, 500);
 }

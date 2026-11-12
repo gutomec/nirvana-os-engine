@@ -21,7 +21,11 @@
  *
  * Also emits `.routing-cards.md` (same directory): one short line per business
  * and squad, what it produces first, for the `cards` routing mode
- * (lib/routing-cards.ts).
+ * (lib/routing-cards.ts). The cards router sends that file in the SYSTEM prompt
+ * (buildCardsStatic in lib/cards-router.ts), the same bytes for every request,
+ * so the runtime reads it back from its prompt cache. Every rebuild changes the
+ * bytes (the `generated_at` header, the sorted lines) and costs one cache write
+ * on the next call, so the file is rebuilt only when it is stale.
  *
  * Also emits `.keyword-aliases.json` (same directory): cross-language alias
  * groups mined from business + capability `keywords` arrays, following the
@@ -50,6 +54,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { paths as nrvPaths, parseArgs, EXIT } from "../../_shared/lib/bun-helpers.ts";
 import { resolveScope } from "../../_shared/lib/scope.ts";
+import { cloneRegistryPath } from "../../_shared/lib/clone-resolver.ts";
 import { resolveSetting } from "../../_shared/lib/settings.ts";
 import { renderRoutingCards } from "../lib/routing-cards.ts";
 
@@ -89,7 +94,7 @@ export function resolveRoutingArtifactPaths(): RoutingArtifactPaths {
   return {
     businessesRegistry: nrvPaths.BUSINESSES_REGISTRY_PATH,
     squadsRegistry: nrvPaths.SQUADS_REGISTRY_PATH,
-    mindClonesRegistry: path.join(cloneDir, ".mind-clones-registry.json"),
+    mindClonesRegistry: cloneRegistryPath(),
     digest,
     cards: routingCardsPathFor(digest),
     // The same constant the router reads. Deriving it from the digest's

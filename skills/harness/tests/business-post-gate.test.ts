@@ -26,9 +26,9 @@ function fixture(overrides: Partial<BusinessPostGateInput> = {}, dependencyOverr
   const input: BusinessPostGateInput = {
     projectId: "proj-1", businessSlug: "example", runtime: "codex", projectDir: "/project/business",
     projectRoot: "/project", outputsRoot: "/project/deliverables", skillsRoot: "/skills",
-    employeePromptScript: "/skills/employee-prompt.ts", sessionFile: "/project/session.json",
+    sessionFile: "/project/session.json",
     sessionData: { zip_path: null }, rulesDirective: "rules", maxBudgetUsd: 5, timeoutMs: 1000,
-    yolo: true, wantPdf: true, skipHtml: false, offlineSnapshot: true, routingMode: "agentic", wantZip: true,
+    yolo: true, wantPdf: true, skipHtml: false, offlineSnapshot: true, wantZip: true,
     emit: (event, payload) => events.push({ event, payload }), log: () => {}, warn: warning => warnings.push(warning),
     dependencies, ...overrides,
   };
@@ -47,6 +47,13 @@ describe("Business post-gate boundary", () => {
     expect(fx.calls.some(call => call.args.includes("--deliverables-only"))).toBeTrue();
   });
 
+  test("a business with a publisher seat hands the publisher that seat's file", () => {
+    let prompt = "";
+    const fx = fixture({}, { runPublisher: (input) => { prompt = input.prompt; return { ok: true, sessionId: "s", durationMs: 1, costUsd: 0 } as any; } });
+    runBusinessPostGate(fx.input);
+    expect(prompt.startsWith("Work as the seat described in `/home/test/businesses/example/employees/report-publisher.md`")).toBeTrue();
+  });
+
   test("keeps publication failures non-fatal and does not claim ZIP success", () => {
     const fx = fixture({}, {
       exists: pathname => !pathname.endsWith("build-report-pdf.ts"),
@@ -55,7 +62,9 @@ describe("Business post-gate boundary", () => {
     const result = runBusinessPostGate(fx.input);
     expect(result.zipPath).toBeNull();
     expect(fx.input.sessionData.zip_path).toBeNull();
-    expect(fx.events).toEqual([]);
+    // Each failure is on the record, not only on the terminal.
+    expect(fx.events.map(entry => entry.event)).toEqual(["x_report_pdf_failed", "x_report_html_failed", "x_report_export_failed"]);
+    expect(fx.events[0].payload).toMatchObject({ trace_id: "proj-1", business_slug: "example", reason: "build-report-pdf.ts not found" });
     expect(fx.warnings).toEqual([
       "⚠ --pdf: build-report-pdf.ts not found; skipping PDF",
       "⚠ build-report-html failed (rc=1)",
@@ -63,10 +72,27 @@ describe("Business post-gate boundary", () => {
     ]);
   });
 
-  test("preserves the fast-mode HTML skip audit", () => {
-    const fx = fixture({ wantPdf: false, skipHtml: true, routingMode: "fast", wantZip: false });
-    expect(runBusinessPostGate(fx.input)).toEqual({ zipPath: null });
-    expect(fx.events.map(entry => entry.event)).toEqual(["report_skipped_fast"]);
-    expect(fx.calls).toEqual([]);
+  test("a step that THROWS is caught: the next steps still run and the function returns", () => {
+    const fx = fixture({}, {
+      spawn: (command, args) => {
+        fx.calls.push({ command, args });
+        if (args.some(argument => argument.endsWith("build-report-html.ts"))) throw new Error("spawn EACCES");
+        if (args.some(argument => argument.endsWith("build-report-pdf.ts"))) fx.files.set(args[args.indexOf("--output") + 1], "pdf");
+        return { status: 0, stdout: "", stderr: "" };
+      },
+    });
+    const result = runBusinessPostGate(fx.input);
+    expect(result.zipPath).toBe("/cwd/proj-1.zip");
+    expect(fx.events.map(entry => entry.event)).toEqual(["report_publisher_ran", "report_pdf_generated", "x_report_html_failed"]);
+    expect(fx.events[2].payload.reason).toBe("spawn EACCES");
+    expect(fx.warnings).toContain("⚠ html step failed: spawn EACCES");
+  });
+
+  test("a publisher that fails is recorded, and the publisher heartbeats the run's ledger row", () => {
+    let seen: any = null;
+    const fx = fixture({ ledger: { runId: "run-1" } }, { runPublisher: (input) => { seen = input; return { ok: false, sessionId: null, durationMs: 1, costUsd: 0, error: "quota" } as any; } });
+    runBusinessPostGate(fx.input);
+    expect(seen.ledger.runId).toBe("run-1");
+    expect(fx.events.find(entry => entry.event === "x_report_publisher_failed")?.payload.reason).toBe("quota");
   });
 });

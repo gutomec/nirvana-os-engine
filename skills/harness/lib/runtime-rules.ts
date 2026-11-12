@@ -1,9 +1,9 @@
 // runtime-rules.ts — per-runtime routing rules written by the USER in natural
 // language, in the .env:
 //
-//   USE_CODEX="Quando precisar gerar imagens ou refinar visuais"
-//   USE_ANTIGRAVITY="Quando for fazer deep research na internet"
-//   USE_HERMES="Quando precisar interagir com o usuário via mensageria"
+//   USE_CODEX="When you need to generate images or refine visuals"
+//   USE_ANTIGRAVITY="When doing deep research on the internet"
+//   USE_HERMES="When you need to interact with the user through messaging"
 //
 // A rule only picks the PREFERRED runtime (head of the queue) for the dispatch
 // exec; resilience (quota/budget/cooldown) remains LLM_CASCADE's job
@@ -24,10 +24,12 @@
 // there is no quota classifier nor session id for it in runHeadless. In fast,
 // if it wins, it degrades to the next in the ranking with a warn.
 import * as path from "node:path";
+import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { listRuntimes, retiredRuntimeMessage, runtimeAvailable, type Runtime } from "../../_shared/lib/host-agent-driver.ts";
 import { resolveSetting } from "../../_shared/lib/settings.ts";
 import { globalEnvFiles, readEnvFile, resolveCascadeRoot } from "./cascade.ts";
+import { parseWorkBrief, requestWords } from "./work-brief.ts";
 
 const require = createRequire(import.meta.url);
 const { buildIndex, query } = require("./bm25.js");
@@ -47,8 +49,9 @@ export interface RuntimeRule {
 export interface RuntimeDecision {
   runtime: Runtime;
   /** flag = CLI (--exec=<rt>/--runtime); brief = explicit mention in the brief
-   *  text ("use o agy para..."); rule = USE_*; default = session host. */
-  source: "flag" | "brief" | "rule" | "default";
+   *  text ("use o agy para..."); rule = USE_*; default = session host;
+   *  decision = a decision model picked it on the last rung (decision-runtime.ts). */
+  source: "flag" | "brief" | "rule" | "default" | "decision";
   rule?: RuntimeRule;
   method?: "bm25" | "agentic";
   score?: number;
@@ -180,6 +183,111 @@ export function detectCurrentHost(env: NodeJS.ProcessEnv = process.env): Runtime
   return null;
 }
 
+/** One process's parent and command line, or null when it cannot be read. */
+export type ProcessLookup = (pid: number) => { ppid: number; args: string } | null;
+
+/** POSIX: one `ps` per ancestor (cheap, and the chain is short). */
+const psLookup: ProcessLookup = (pid) => {
+  const r = spawnSync("ps", ["-o", "ppid=,args=", "-p", String(pid)], { encoding: "utf8", windowsHide: true });
+  const m = (r.stdout || "").trim().match(/^(\d+)\s+(.*)$/);
+  return m ? { ppid: Number(m[1]), args: m[2] } : null;
+};
+
+/** Parses `Get-CimInstance Win32_Process | ConvertTo-Json` output (an array, or
+ *  a bare object when there is exactly one process) into a pid table. */
+export function parseWindowsProcessTable(json: string): Map<number, { ppid: number; args: string }> {
+  const table = new Map<number, { ppid: number; args: string }>();
+  let rows: unknown;
+  try { rows = JSON.parse(json); } catch { return table; }
+  for (const row of Array.isArray(rows) ? rows : [rows]) {
+    const r = row as { ProcessId?: number; ParentProcessId?: number; CommandLine?: string | null } | null;
+    if (r && typeof r.ProcessId === "number") {
+      table.set(r.ProcessId, { ppid: Number(r.ParentProcessId) || 0, args: r.CommandLine || "" });
+    }
+  }
+  return table;
+}
+
+/** Windows: ONE query for the whole process table, then the walk happens in
+ *  memory. Spawning PowerShell per ancestor would cost a second or more each. */
+function windowsLookup(): ProcessLookup {
+  let table: Map<number, { ppid: number; args: string }> | null = null;
+  return (pid) => {
+    if (!table) {
+      const r = spawnSync("powershell", [
+        "-NoProfile", "-NonInteractive", "-Command",
+        "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CommandLine | ConvertTo-Json -Compress",
+      ], { encoding: "utf8", windowsHide: true, timeout: 10_000, maxBuffer: 32 * 1024 * 1024 });
+      table = r.status === 0 ? parseWindowsProcessTable(r.stdout || "") : new Map();
+    }
+    return table.get(pid) ?? null;
+  };
+}
+
+/** The first `limit` tokens of a command line, quotes removed, so
+ *  `"C:\\Program Files\\nodejs\\node.exe" C:\\x\\codex.js` keeps its spaces. */
+function commandTokens(args: string, limit: number): string[] {
+  const out: string[] = [];
+  for (const m of args.matchAll(/"([^"]*)"|'([^']*)'|(\S+)/g)) {
+    out.push(m[1] ?? m[2] ?? m[3]);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+/** A path's last segment, split on BOTH separators (a Windows path is not a
+ *  path to POSIX basename), lowercased, minus a launcher extension. */
+function cliBasename(token: string): string {
+  const last = token.split(/[\\/]/).pop() ?? token;
+  return last.toLowerCase().replace(/\.(?:exe|cmd|bat|ps1|js|mjs|cjs)$/, "");
+}
+
+/**
+ * The runtime whose CLI launched this process, found by walking the parent
+ * chain. Some hosts export no session marker (Antigravity's `agy` exports
+ * none), but `nrv` still runs as their descendant. The first two tokens of each
+ * ancestor's command line are matched by basename against the runtimes' CLIs,
+ * so `node /opt/homebrew/bin/codex` counts as codex. POSIX only; null when
+ * no ancestor is a known CLI.
+ */
+export function hostFromAncestors(lookup?: ProcessLookup, start: number = process.ppid): Runtime | null {
+  const look = lookup ?? (process.platform === "win32" ? windowsLookup() : psLookup);
+  const byCli = new Map(listRuntimes().map((r) => [r.cli.toLowerCase(), r.name]));
+  let pid = start;
+  for (let depth = 0; pid > 1 && depth < 12; depth++) {
+    const proc = look(pid);
+    if (!proc) return null;
+    const tokens = commandTokens(proc.args, 2);
+    for (const token of tokens) {
+      const hit = byCli.get(cliBasename(token));
+      if (hit) return hit;
+    }
+    // `node <pkg>\\grok-cli\\dist\\index.js`: the CLI is the package directory.
+    if (tokens[1]) {
+      for (const segment of tokens[1].toLowerCase().split(/[\\/]/)) {
+        const m = segment.match(/^(.+)-cli$/);
+        const hit = m ? byCli.get(m[1]) : undefined;
+        if (hit) return hit;
+      }
+    }
+    pid = proc.ppid;
+  }
+  return null;
+}
+
+/** The runtime hosting this session: env markers first (pure, cheap), then the
+ *  parent chain for hosts that export nothing. `NRV_HOST_ANCESTRY=0` turns the
+ *  process walk off (tests, sandboxes). THE one resolver every caller uses for
+ *  "which runtime is the user working in": `detectCurrentHost` alone misses
+ *  hosts without a marker and answers null, which is how a run ended up on
+ *  another vendor than the session. */
+export function detectSessionHost(env: NodeJS.ProcessEnv = process.env): Runtime | null {
+  const marked = detectCurrentHost(env);
+  if (marked) return marked;
+  if (env.NRV_HOST_ANCESTRY === "0" || process.env.NRV_HOST_ANCESTRY === "0") return null;
+  return hostFromAncestors();
+}
+
 /** Roster order, with the derivatives moved to the front: a derivative session
  *  (`qwen-code` forked the Gemini CLI) may export its parent's vars, so testing
  *  it last could answer with another runtime's name. */
@@ -197,7 +305,7 @@ export function canonicalRuntimeName(name: string): Runtime {
 
 /** Default exec runtime once flag, brief mention and rules are silent, in the order
  *  dispatch.ts applies: the session host, then NIRVANA_DEFAULT_RUNTIME, then the first
- *  runtime installed on PATH, then claude-code. Pure, so the dispatch and the Glance
+ *  runtime installed on PATH, then claude-code (only when nothing is installed or known). Pure, so the dispatch and the Glance
  *  execution runner cannot disagree about which runtime a child would pick. */
 export function resolveDefaultRuntime(input: {
   detectedHost: Runtime | null;
@@ -234,7 +342,7 @@ export interface RunRuntimeChoice extends RuntimeDecision {
  * that wins, provided it is installed here.
  *
  * It lives here because the rule was duplicated and drifted. `dispatch.ts`
- * resolved it properly while `chain.ts` (the business director, and therefore
+ * resolved it properly while the business director of the time (and therefore
  * every seat of every org chart) carried a literal `?? "claude-code"`: a client
  * working in Codex had the director run on a Claude Code session they never
  * use, which failed on a stale credential and dropped the whole business to
@@ -252,7 +360,7 @@ export function resolveRunRuntime(opts: {
   const env = opts.env ?? process.env;
   const available = opts.available ?? runtimeAvailable;
   const installed = listRuntimes().map((r) => r.name).filter(available);
-  const hostDetected = detectCurrentHost(env);
+  const hostDetected = detectSessionHost(env);
   let envDefault = "";
   try { envDefault = String(resolveSetting("execution.default_runtime").value ?? "").trim(); } catch { envDefault = ""; }
   const { runtime: hostDefault, from: defaultFrom } = resolveDefaultRuntime({
@@ -352,22 +460,83 @@ const MENTION_ALTERNATION = MENTION_PAIRS
   .map(([, frag]) => `(?:${frag})`)
   .sort((a, b) => b.length - a.length)
   .join("|");
+// The cue is an instruction VERB (optionally followed by a preposition), or a
+// preposition that only counts right after such a verb. Bare prepositions
+// ("com", "no", "with", "on") are NOT cues: "landing page com Claude Code como
+// assunto" and "using pi to 5 digits" are content, not an order.
 const MENTION_CUE = new RegExp(
-  "\\b(?:use|usa|usando|utilize|utilizando|rode|rodando|execute|executando|despache|via|pelo|pela|com|no|na"
-  + "|using|with|through|run(?:ning)? (?:it )?on|on)"
+  "\\b(?:"
+  + "(?:use|using|usa|usar|usando|utilize|utilizar|utilizando|rode|rodar|rodando|execute|executar|executando|despache|despachar)(?:\\s+(?:isso|it|this|tudo|esse|essa))?(?:\\s+(?:via|pelo|pela|com|no|na|em|on|with|through))?" // i18n-user-facing: PT cue data matched against user input
+  + "|run(?:ning)?(?:\\s+(?:it|this))?\\s+(?:on|with|through|via)"
+  + "|via|pelo|pela|through" // i18n-user-facing: PT cue data matched against user input
+  + ")"
   + `\\s+(?:o\\s+|a\\s+|the\\s+)?((?:${MENTION_ALTERNATION}))\\b`,
   "gi",
 );
+
+/** The user's own words: the "## Request (verbatim)" section when the text is a
+ *  work brief (everything else is engine-written context), else the whole text.
+ *  Backticked and quoted spans are dropped: a runtime named inside them is
+ *  being talked about, not asked for. */
+/** One `## <name>` section of a work brief, or null. */
+function briefSection(brief: string, name: string): string | null {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const m = brief.match(new RegExp(`^##\\s+${escaped}\\s*\\n([\\s\\S]*?)(?=^##\\s|(?![\\s\\S]))`, "im"));
+  return m ? m[1] : null;
+}
+
+/**
+ * Where a runtime request is read. A six-section brief is one part of a request
+ * the orchestrator split ("write the copy, and use codex for the html"): the
+ * user's verbatim words are copied into every part's brief, so they cannot say
+ * which part runs where. The orchestrator's own words for THIS part (Decisions,
+ * Your part) can. A raw brief (the shell path, no orchestrator) is the user's
+ * words: its Request section, or the whole text.
+ */
+function mentionScope(brief: string): string {
+  const parsed = parseWorkBrief(brief);
+  // A labelled brief (the slim template): Goal is this part, and the user's
+  // words are in the file its Request names.
+  if (parsed.format === "labels") {
+    if (parsed.sections.Goal !== undefined) return [parsed.sections.Decisions ?? "", parsed.sections.Goal].join("\n");
+    return requestWords(brief) ?? brief;
+  }
+  const part = briefSection(brief, "Your part");
+  if (part !== null) return [briefSection(brief, "Decisions") ?? "", part].join("\n");
+  return briefSection(brief, "Request (verbatim)") ?? brief;
+}
+
+function userWords(brief: string): string {
+  return mentionScope(brief)
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`[^`\n]*`/g, " ")
+    .replace(/"[^"\n]*"/g, " ")
+    .replace(/\u201c[^\u201d\n]*\u201d/g, " ");
+}
+
+/** `runtime <name>` in the brief's scope, the explicit form an orchestrator
+ *  writes under Decisions (like `squad <slug>` and `clone <slug>`). */
+function markedRuntime(brief: string): { runtime: RoutableRuntime; mention: string } | null {
+  const m = mentionScope(brief).match(/(?:^|\n)\s*(?:[-*]\s*)?runtime[\s:=]+`?([A-Za-z][A-Za-z0-9_-]*)`?/i);
+  if (!m) return null;
+  for (const [re, rt] of MENTION_NAMES) if (re.test(m[1])) return { runtime: rt, mention: m[0].trim() };
+  return null;
+}
 
 /** Detects an instrumental mention of a runtime in the brief. null when: none,
  *  or more than one distinct runtime named (ambiguous — no guessing). */
 export function detectRuntimeMention(brief: string): { runtime: RoutableRuntime; mention: string } | null {
   if (!brief?.trim()) return null;
+  const marked = markedRuntime(brief);
+  if (marked) return marked;
   const found = new Map<RoutableRuntime, string>();
-  for (const m of brief.matchAll(MENTION_CUE)) {
+  const words = userWords(brief);
+  for (const m of words.matchAll(MENTION_CUE)) {
     const name = m[1];
     for (const [re, rt] of MENTION_NAMES) {
-      if (re.test(name)) { if (!found.has(rt)) found.set(rt, m[0].trim()); break; }
+      if (re.test(name)) {
+        // "using pi to 5 digits": pi the number, not the CLI.
+        if (rt === "pi" && /^\s*(?:\S+\s+){0,2}?(?:\d|digits?\b|decimals?\b|d[ií]gitos?\b|casas\b|decimais\b)/i.test(words.slice((m.index ?? 0) + m[0].length))) break; if (!found.has(rt)) found.set(rt, m[0].trim()); break; }
     }
   }
   if (found.size !== 1) {
@@ -433,8 +602,10 @@ export function resolveRuntimeByRules(
   return { rule: top.rule, score: top.score, ranked };
 }
 
-/** Precedence flag > rule > default; degrades an unavailable runtime to the
- *  next in the ranking and, finally, to the default (= the user's current host). */
+/** Precedence flag > brief mention > rule > default. A runtime the user named
+ *  (flag or brief) that is not installed is returned marked `unavailable`; an
+ *  unavailable RULE target degrades to the next in the ranking and, finally,
+ *  to the default (= the user's current host). */
 export function decideRuntime(opts: {
   brief: string;
   explicitRuntime: Runtime | null;
@@ -465,7 +636,9 @@ export function decideRuntime(opts: {
     if (avail(mention.runtime as Runtime)) {
       return { runtime: mention.runtime as Runtime, source: "brief", mention: mention.mention };
     }
-    console.error(`[runtime-rules] the brief asks for ${mention.runtime} ("${mention.mention}"), but it is not on this machine — falling back to the rules/default.`);
+    // The user asked for it in their own words: same contract as the flag. Do
+    // not warn and serve it from another vendor; return it marked unavailable.
+    return { runtime: mention.runtime as Runtime, source: "brief", mention: mention.mention, unavailable: true };
   }
   // Vetoes (NOT_USE_*) matching this brief: they block the runtime both in the
   // positive-rule choice and in the default. Veto beats positive rule.
@@ -512,14 +685,14 @@ export function decideRuntime(opts: {
 export function formatRulesForRouterPrompt(rules: RuntimeRule[]): string {
   if (!rules.length) return "";
   const positives = rules.filter(r => !r.negate).map(r => `- ${r.envKey} (${r.runtime}): "${r.rule}"`);
-  const negatives = rules.filter(r => r.negate).map(r => `- ${r.envKey}: NUNCA use ${r.runtime} quando "${r.rule}"`);
+  const negatives = rules.filter(r => r.negate).map(r => `- ${r.envKey}: NEVER use ${r.runtime} when "${r.rule}"`);
   return [
-    "## REGRAS DE RUNTIME DO USUÁRIO",
-    ...(positives.length ? ["O usuário definiu em qual CLI agêntico cada tipo de tarefa deve rodar:", ...positives] : []),
-    ...(negatives.length ? ["VETOS (têm prioridade sobre as regras positivas):", ...negatives] : []),
-    'Se o brief casar claramente com uma regra, inclua o campo "runtime" no seu JSON de saída com o runtime canônico',
-    `(um de: ${EXEC_RUNTIMES.join(", ")}). NUNCA retorne um runtime vetado para este brief. hermes NUNCA é runtime de execução — tarefas de mensageria são DELEGADAS pelo maestro via \`hermes -z\`.`,
-    'Sem match claro, omita o campo "runtime".',
+    "## USER RUNTIME RULES",
+    ...(positives.length ? ["The user defined which agentic CLI each type of task must run on:", ...positives] : []),
+    ...(negatives.length ? ["VETOES (they take priority over the positive rules):", ...negatives] : []),
+    'If the brief clearly matches a rule, include the "runtime" field in your output JSON with the canonical runtime',
+    `(one of: ${EXEC_RUNTIMES.join(", ")}). NEVER return a vetoed runtime for this brief. hermes is NEVER an execution runtime: messaging tasks are DELEGATED by the maestro via \`hermes -z\`.`,
+    'With no clear match, omit the "runtime" field.',
   ].join("\n");
 }
 
@@ -527,12 +700,12 @@ export function formatRulesForRouterPrompt(rules: RuntimeRule[]): string {
  *  when DELEGATING sub-tasks (nrv dispatch ... --exec=<rt>; messaging via hermes -z). */
 export function formatRulesForDirective(rules: RuntimeRule[]): string {
   if (!rules.length) return "";
-  const lines = rules.filter(r => !r.negate).map(r => `- ${r.rule} → ${r.runtime === "hermes" ? "delegue via `hermes -z \"<prompt>\"`" : `use \`--exec=${r.runtime}\` ao despachar`}`);
+  const lines = rules.filter(r => !r.negate).map(r => `- ${r.rule} → ${r.runtime === "hermes" ? "delegate via `hermes -z \"<prompt>\"`" : `use \`--exec=${r.runtime}\` when dispatching`}`);
   return [
     "",
-    "REGRAS DE ROTEAMENTO DO USUÁRIO (obrigatórias ao delegar sub-tarefas):",
+    "USER ROUTING RULES (mandatory when delegating sub-tasks):",
     ...lines,
-    ...rules.filter(r => r.negate).map(r => `- ${r.rule} → NUNCA use ${r.runtime} (veto do usuário; prevalece sobre as regras acima)`),
-    "Sem match com regra, siga no runtime atual.",
+    ...rules.filter(r => r.negate).map(r => `- ${r.rule} → NEVER use ${r.runtime} (user veto; it prevails over the rules above)`),
+    "With no rule match, stay on the current runtime.",
   ].join("\n");
 }

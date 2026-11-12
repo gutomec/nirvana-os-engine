@@ -35,15 +35,16 @@ import * as os from "node:os";
 import * as path from "node:path";
 import YAML from "yaml";
 import { isProjectRoot, pinnedProjectRoot } from "./project-root.js";
+import { profileValue } from "./profiles.ts";
 import {
-  coerceText, getSettingSpec, SETTINGS_SCHEMA, validateSettingValue,
+  coerceText, getSettingSpec, retiredValue, SETTINGS_SCHEMA, validateSettingValue,
   type SettingKey, type SettingScope, type SettingSpec, type SettingValue, type SettingValueOf, type SettingsEnv,
 } from "./settings-schema.ts";
 
 export { SETTINGS, SETTINGS_SCHEMA, SETTING_KEYS, getSettingSpec, settingInfo, coerceText, validateSettingValue } from "./settings-schema.ts";
 export type { SettingInfo, SettingKey, SettingKind, SettingScope, SettingSpec, SettingValue, SettingValueOf, SettingsEnv } from "./settings-schema.ts";
 
-export type SettingSource = "env" | "project" | "global" | "engine-default" | "default";
+export type SettingSource = "env" | "project" | "global" | "profile" | "engine-default" | "default";
 
 export interface ResolvedSetting<T extends SettingValue = SettingValue> {
   key: string;
@@ -55,6 +56,8 @@ export interface ResolvedSetting<T extends SettingValue = SettingValue> {
   variable?: string;
   /** The variable's text (env). */
   raw?: string;
+  /** The profile the value came from (profile). */
+  profile?: string;
 }
 
 export interface ResolveOptions {
@@ -167,13 +170,11 @@ function readYamlFile(file: string): Mapping | null {
   let parsed: unknown;
   try { parsed = YAML.parse(fs.readFileSync(file, "utf8")); }
   catch (error) {
-    // i18n-user-facing
-    throw new SettingsError("invalid_file", `${file}: YAML inválido (${(error as Error).message.split("\n")[0]})`, { path: file });
+    throw new SettingsError("invalid_file", `${file}: invalid YAML (${(error as Error).message.split("\n")[0]})`, { path: file });
   }
   if (parsed === null || parsed === undefined) parsed = {};
   if (typeof parsed !== "object" || Array.isArray(parsed)) {
-    // i18n-user-facing
-    throw new SettingsError("invalid_file", `${file}: o conteúdo deve ser um mapeamento (seção: chave: valor)`, { path: file });
+    throw new SettingsError("invalid_file", `${file}: the content must be a mapping (section: key: value)`, { path: file });
   }
   const data = parsed as Mapping;
   cache.set(file, { mtimeMs: stat.mtimeMs, size: stat.size, data });
@@ -193,20 +194,25 @@ function rawFileValue(file: string, data: Mapping, key: string): unknown {
   const block = data[section];
   if (block === undefined || block === null) return undefined;
   if (typeof block !== "object" || Array.isArray(block)) {
-    // i18n-user-facing
-    throw new SettingsError("invalid_file", `${file}: "${section}" deve ser um mapeamento (chave: valor) para conter ${key}`, { path: file, key });
+    throw new SettingsError("invalid_file", `${file}: "${section}" must be a mapping (key: value) to hold ${key}`, { path: file, key });
   }
   const value = (block as Mapping)[name];
   return value === null ? undefined : value;
 }
 
-function layerValue(layer: Layer, spec: SettingSpec): SettingValue | undefined {
+function layerValue(layer: Layer, spec: SettingSpec, retired?: RetiredHit[]): SettingValue | undefined {
   if (!layer.data) return undefined;
   if (layer.source !== "engine-default" && !spec.scopes.includes(layer.source)) return undefined;
   const raw = rawFileValue(layer.path, layer.data, spec.key);
   if (raw === undefined) return undefined;
+  const old = retiredValue(spec, raw);
+  if (old) {
+    const scope = layer.source === "engine-default" ? null : layer.source;
+    retired?.push({ raw: String(raw), why: old.why, to: old.to, where: layer.path,
+      clear: scope ? `nrv config unset ${spec.key} --${scope}` : `remove ${spec.key} from ${layer.path}` });
+    return old.to ?? undefined;
+  }
   const checked = validateSettingValue(spec, raw);
-  // i18n-user-facing
   if (!checked.ok) throw new SettingsError("invalid_value", `${layer.path}: ${checked.message}`, { path: layer.path, key: spec.key });
   return checked.value;
 }
@@ -216,16 +222,22 @@ function layerValue(layer: Layer, spec: SettingSpec): SettingValue | undefined {
 export interface EnvReading { variable: string; raw: string; value: SettingValue }
 
 /** The variable that sets `spec` in `env`, decoded and validated; null when none does. */
-export function readSettingEnv(spec: SettingSpec, env: SettingsEnv = process.env): EnvReading | null {
+export function readSettingEnv(spec: SettingSpec, env: SettingsEnv = process.env, retired?: RetiredHit[]): EnvReading | null {
   if (!spec.env) return null;
   for (const variable of [spec.env, ...(spec.envAliases ?? [])]) {
     const raw = env[variable];
     if (raw === undefined || raw.trim() === "") continue;
     const candidate = spec.fromEnv ? spec.fromEnv(raw.trim(), variable) : coerceText(spec, raw);
     if (candidate === null) continue;
+    const old = retiredValue(spec, candidate);
+    if (old) {
+      retired?.push({ raw, why: old.why, to: old.to, where: `the variable ${variable}`,
+        clear: `unset ${variable} in your shell profile and in the project's .env` });
+      if (old.to === null) continue;
+      return { variable, raw, value: old.to };
+    }
     const checked = validateSettingValue(spec, candidate);
-    // i18n-user-facing
-    if (!checked.ok) throw new SettingsError("invalid_env", `${variable}=${raw} inválido para ${spec.key}; esperado ${spec.expects}`, { variable, raw, key: spec.key });
+    if (!checked.ok) throw new SettingsError("invalid_env", `${variable}=${raw} is invalid for ${spec.key}; expected ${spec.expects}`, { variable, raw, key: spec.key });
     return { variable, raw, value: checked.value };
   }
   return null;
@@ -233,7 +245,9 @@ export function readSettingEnv(spec: SettingSpec, env: SettingsEnv = process.env
 
 // ── resolution ──────────────────────────────────────────────────────────────
 
-interface Layers { env: SettingsEnv; files: Layer[] }
+interface Layers { env: SettingsEnv; files: Layer[]; profile: string }
+
+const PROFILE_KEY = "execution.profile";
 
 function loadLayers(opts: ResolveOptions): Layers {
   const env = opts.env ?? process.env;
@@ -247,23 +261,76 @@ function loadLayers(opts: ResolveOptions): Layers {
   if (globalPath) files.push({ source: "global", path: globalPath, data: readYamlFile(globalPath) });
   const enginePath = opts.enginePath === undefined ? engineConfigPath(env) : opts.enginePath;
   if (enginePath) files.push({ source: "engine-default", path: enginePath, data: readYamlFile(enginePath) });
-  return { env, files };
+  // The profile is resolved over the same layers, without a profile of its
+  // own, before any other key reads it.
+  const profile = String(resolveSpec(getSettingSpec(PROFILE_KEY)!, { env, files, profile: "none" }).value);
+  return { env, files, profile };
 }
 
+/** A retired value met while resolving a key (see `SettingSpec.retired`). */
+export interface RetiredHit { raw: string; why: string; to: SettingValue | null; where: string; clear: string }
+
+const retiredWarned = new Set<string>();
+
+/** One warning per process for each place a retired value was read from. */
+function warnRetired(spec: SettingSpec, hits: RetiredHit[], resolved: ResolvedSetting): void {
+  for (const hit of hits) {
+    const id = `${spec.key}\0${hit.where}\0${hit.raw}`;
+    if (retiredWarned.has(id)) continue;
+    retiredWarned.add(id);
+    const now = hit.to === null
+      ? `ignored; ${spec.key} is ${JSON.stringify(resolved.value)} (${describeSettingSource(resolved)})`
+      : `read as ${JSON.stringify(hit.to)}`;
+    console.error(`⚠ ${spec.key}: ${JSON.stringify(hit.raw)} in ${hit.where} was retired (${hit.why}); ${now}. Clear it: ${hit.clear}`);
+  }
+}
+
+/** Forget which retired values were already reported (tests). */
+export function _resetRetiredWarnings(): void {
+  retiredWarned.clear();
+}
+
+/** env > project > global > profile > engine default > schema default. The
+ *  profile sits below the user's own files, so a key the user set explicitly
+ *  wins, and above the engine defaults, which it exists to replace. */
 function resolveSpec(spec: SettingSpec, layers: Layers): ResolvedSetting {
-  const fromEnv = readSettingEnv(spec, layers.env);
+  const retired: RetiredHit[] = [];
+  const resolved = resolveSpecLayers(spec, layers, retired);
+  if (retired.length) warnRetired(spec, retired, resolved);
+  return resolved;
+}
+
+function resolveSpecLayers(spec: SettingSpec, layers: Layers, retired: RetiredHit[]): ResolvedSetting {
+  const fromEnv = readSettingEnv(spec, layers.env, retired);
   if (fromEnv) return { key: spec.key, value: fromEnv.value, source: "env", variable: fromEnv.variable, raw: fromEnv.raw };
+  let profileChecked = false;
+  const fromProfile = (): ResolvedSetting | null => {
+    profileChecked = true;
+    const preset = profileValue(layers.profile, spec.key);
+    if (preset === undefined) return null;
+    const checked = validateSettingValue(spec, preset);
+    // A preset that does not validate is an engine bug, caught by the profile tests; never a silent value.
+    if (!checked.ok) throw new SettingsError("invalid_value", `profile ${layers.profile}: ${checked.message}`, { key: spec.key });
+    return { key: spec.key, value: checked.value, source: "profile", profile: layers.profile };
+  };
   for (const layer of layers.files) {
-    const value = layerValue(layer, spec);
+    if (layer.source === "engine-default" && !profileChecked) {
+      const preset = fromProfile();
+      if (preset) return preset;
+    }
+    const value = layerValue(layer, spec, retired);
     if (value !== undefined) return { key: spec.key, value, source: layer.source, path: layer.path };
+  }
+  if (!profileChecked) {
+    const preset = fromProfile();
+    if (preset) return preset;
   }
   return { key: spec.key, value: spec.default, source: "default" };
 }
 
 export function requireSpec(key: string): SettingSpec {
   const spec = getSettingSpec(key);
-  // i18n-user-facing
-  if (!spec) throw new SettingsError("unknown_key", `chave desconhecida: ${key} (veja nrv config list)`, { key });
+  if (!spec) throw new SettingsError("unknown_key", `unknown key: ${key} (see nrv config list)`, { key });
   return spec;
 }
 
@@ -309,6 +376,7 @@ export function settingsEnvForChild(opts: ResolveOptions = {}): Record<string, s
 export function describeSettingSource(resolved: ResolvedSetting): string {
   if (resolved.source === "env") return `env ${resolved.variable}=${resolved.raw}`;
   if (resolved.source === "default") return "default";
+  if (resolved.source === "profile") return `profile ${resolved.profile}`;
   return `${resolved.source === "engine-default" ? "engine" : resolved.source} ${resolved.path}`;
 }
 
@@ -358,8 +426,7 @@ export function editYamlScalar(source: string, key: string, text: string | null)
   if (sectionLine !== -1) {
     const rest = lines[sectionLine].replace(sectionRe, "").trim();
     if (rest && !rest.startsWith("#")) {
-      // i18n-user-facing
-      throw new SettingsError("invalid_file", `"${section}:" está escrito em linha (${lines[sectionLine].trim()}); edite o arquivo manualmente para gravar ${key}`, { key });
+      throw new SettingsError("invalid_file", `"${section}:" is written inline (${lines[sectionLine].trim()}); edit the file by hand to store ${key}`, { key });
     }
   }
 
@@ -425,22 +492,22 @@ function storedScalar(file: string, key: string): SettingValue | null {
 export function configFileHeader(scope: SettingScope): string {
   const isGlobal = scope === "global";
   const banner = isGlobal
-    ? "Configuração GLOBAL do usuário. Sobrevive ao `nrv update` — o engine nunca\n# reescreve este arquivo."
-    : "Configuração DESTE PROJETO. Viaja com o repositório e vence a global.";
+    ? "GLOBAL user configuration. It survives `nrv update`: the engine never\n# rewrites this file."
+    : "THIS PROJECT's configuration. It travels with the repository and beats the global one.";
   return [
     "# Nirvana-OS — " + banner,
     "#",
-    "# Precedência, da mais forte para a mais fraca:",
-    "#   variável de ambiente  >  <projeto>/.nirvana/config.yaml  >  ~/.nirvana/config.yaml",
-    "#   >  config.yaml do engine (substituído a cada update)  >  padrão do schema",
+    "# Precedence, strongest to weakest:",
+    "#   environment variable  >  <project>/.nirvana/config.yaml  >  ~/.nirvana/config.yaml",
+    "#   >  engine config.yaml (replaced on every update)  >  schema default",
     "#",
-    "# Não edite à mão se não quiser: o comando escreve aqui e valida o valor.",
-    "#   nrv config list                  toda chave: valor efetivo, origem e padrão",
-    "#   nrv config explain <chave>       o que a chave faz, escopos e variável equivalente",
-    "#   nrv config set <chave> <valor> " + (isGlobal ? "--global" : "--project"),
-    "#   nrv config unset <chave> " + (isGlobal ? "--global" : "--project"),
+    "# No need to edit by hand: the command writes here and validates the value.",
+    "#   nrv config list                  every key: effective value, source and default",
+    "#   nrv config explain <key>       what the key does, scopes and the equivalent variable",
+    "#   nrv config set <key> <value> " + (isGlobal ? "--global" : "--project"),
+    "#   nrv config unset <key> " + (isGlobal ? "--global" : "--project"),
     "#",
-    "# Uma chave que o schema não conhece é ignorada, não é erro.",
+    "# A key the schema does not know is ignored, not an error.",
     "",
     "",
   ].join("\n");
@@ -487,20 +554,17 @@ export function defaultWriteScope(opts: ResolveOptions = {}): { scope: SettingSc
 
 function targetFile(spec: SettingSpec, opts: ChangeOptions): string {
   if (!spec.scopes.includes(opts.scope)) {
-    // i18n-user-facing
-    throw new SettingsError("scope", `${spec.key} só aceita escopo ${spec.scopes.join(" ou ")}; --${opts.scope} não vale para esta chave`, { key: spec.key, scope: opts.scope });
+    throw new SettingsError("scope", `${spec.key} only accepts scope ${spec.scopes.join(" or ")}; --${opts.scope} does not apply to this key`, { key: spec.key, scope: opts.scope });
   }
   const env = opts.env ?? process.env;
   if (opts.scope === "global") {
     const file = opts.globalPath === undefined ? globalConfigPath(env) : opts.globalPath;
-    // i18n-user-facing
-    if (!file) throw new SettingsError("scope", "a camada global está desativada nesta resolução", { key: spec.key, scope: "global" });
+    if (!file) throw new SettingsError("scope", "the global layer is disabled in this resolution", { key: spec.key, scope: "global" });
     return file;
   }
   const projectRoot = opts.projectRoot === undefined ? discoverProjectRoot(env, opts.cwd) : opts.projectRoot;
   if (!projectRoot) {
-    // i18n-user-facing
-    throw new SettingsError("no_project", `nenhum projeto Nirvana (diretório .nirvana/) encontrado a partir de ${opts.cwd ?? process.cwd()}; rode dentro do projeto ou use --global`, { key: spec.key, scope: "project" });
+    throw new SettingsError("no_project", `no Nirvana project (.nirvana/ directory) found from ${opts.cwd ?? process.cwd()}; run inside the project or use --global`, { key: spec.key, scope: "project" });
   }
   return projectConfigPath(projectRoot);
 }
@@ -509,8 +573,7 @@ function refuseWhenPinned(spec: SettingSpec, opts: ChangeOptions): void {
   if (opts.ignoreEnv) return;
   const pinned = readSettingEnv(spec, opts.env ?? process.env);
   if (!pinned) return;
-  // i18n-user-facing
-  throw new SettingsError("pinned_by_env", `${spec.key} está fixado pela variável ${pinned.variable}=${pinned.raw} no ambiente; o valor gravado no arquivo só valeria sem a variável. Remova a variável (ou rode com ela vazia) e repita`, { key: spec.key, variable: pinned.variable, raw: pinned.raw });
+  throw new SettingsError("pinned_by_env", `${spec.key} is pinned by the variable ${pinned.variable}=${pinned.raw} in the environment; the value stored in the file would only apply without the variable. Remove the variable (or run with it empty) and retry`, { key: spec.key, variable: pinned.variable, raw: pinned.raw });
 }
 
 /** Validates `input` (a typed value, or text as the CLI receives it) and writes it to the file of `scope`. */

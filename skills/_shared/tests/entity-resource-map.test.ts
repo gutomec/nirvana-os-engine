@@ -5,8 +5,6 @@
 // including the two asymmetries that exist on purpose: what each kind already
 // inlines, and the run state each kind calls by a different name.
 //
-// The prompt text asserted below is PT-BR because the dispatched model reads it;
-// these comments are English because whoever maintains this reads them.
 // Runs with: bun test skills/_shared/tests
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
@@ -30,8 +28,8 @@ function tree(spec: Record<string, string[]>): string {
   return root;
 }
 
-const BIZ = { kind: "businesses" as const, inlined: ["employees", "memory"], label: "ESTA EMPRESA", sourceNoun: "da empresa", outputsHint: "o `outputs_root` declarado nos caminhos do projeto" };
-const SQ = { kind: "squads" as const, inlined: ["agents", "tasks", "workflows"], label: "ESTE SQUAD", sourceNoun: "do squad" };
+const BIZ = { kind: "businesses" as const, inlined: ["employees", "memory"], label: "THIS BUSINESS", sourceNoun: "of the business", outputsHint: "the `outputs_root` declared in the project paths" };
+const SQ = { kind: "squads" as const, inlined: ["agents", "tasks", "workflows"], label: "THIS SQUAD", sourceNoun: "of the squad" };
 
 describe("the map names what the prompt does not carry", () => {
   test("business: playbooks, standards and rubrics appear; employees and memory do not", () => {
@@ -43,7 +41,7 @@ describe("the map names what the prompt does not carry", () => {
       rubrics: ["gate.md"],
     });
     const m = renderResourceMap(dir, BIZ);
-    expect(m).toContain("## O QUE MAIS ESTA EMPRESA CARREGA");
+    expect(m).toContain("## WHAT ELSE THIS BUSINESS CARRIES");
     expect(m).toContain("`playbooks/` — `reuse-vs-create.md`");
     expect(m).toContain("`standards/`");
     expect(m).toContain("`rubrics/`");
@@ -56,7 +54,7 @@ describe("the map names what the prompt does not carry", () => {
   test("squad: the same map, with a different inlined set", () => {
     const dir = tree({ agents: ["a.md"], tasks: ["t.md"], references: ["r.md"] });
     const m = renderResourceMap(dir, SQ);
-    expect(m).toContain("## O QUE MAIS ESTE SQUAD CARREGA");
+    expect(m).toContain("## WHAT ELSE THIS SQUAD CARRIES");
     expect(m).toContain("`references/`");
     expect(m).not.toContain("`agents/`");
   });
@@ -110,7 +108,7 @@ describe("the index ceiling", () => {
     const dir = tree({ employees: ["ceo.md"], data: many });
     const m = renderResourceMap(dir, BIZ);
     expect(m).toContain("`f-000.md`");
-    expect(m).toContain("e mais 80");
+    expect(m).toContain("and 80 more");
     expect(m).toContain("`ls`");
     expect(Buffer.byteLength(m, "utf8")).toBeLessThan(4_096);
   });
@@ -120,12 +118,12 @@ describe("the prose promises nothing it cannot keep", () => {
   test("it says which tree it means, and that the tree is read-only", () => {
     const dir = tree({ employees: ["ceo.md"], playbooks: ["p.md"] });
     const m = renderResourceMap(dir, BIZ);
-    expect(m).toContain("a fonte da empresa");
-    expect(m).toContain("**é somente leitura para você**");
+    expect(m).toContain("the source of the business");
+    expect(m).toContain("**it is read-only for you**");
     expect(m).toContain("outputs_root");
     expect(m).toContain(dir);
     // Nothing here was summarized: the index is names, the content is on disk.
-    expect(m).toContain("o arquivo em disco é o conteúdo");
+    expect(m).toContain("the file on disk is the content");
   });
 
   test("an unreadable directory does not take down the prompt", () => {

@@ -45,7 +45,7 @@ describe("ConversationService", () => {
     const root = temporaryRoot("conversation");
     const dbPath = path.join(root, ".nirvana", "control-plane.sqlite");
     let service = new ConversationService(dbPath);
-    service.create("prj_a", "Nova conversa", "cnv_a");
+    service.create("prj_a", "New conversation", "cnv_a");
     service.create("prj_b", "Other", "cnv_b");
     service.append({ conversationId: "cnv_a", projectId: "prj_a", role: "user", content: "Primeira mensagem" });
     service.append({ conversationId: "cnv_a", projectId: "prj_a", role: "assistant", content: "Resposta" });
@@ -54,6 +54,19 @@ describe("ConversationService", () => {
     service = new ConversationService(dbPath);
     expect(service.list("prj_a").map(item => item.conversation_id)).toEqual(["cnv_a"]);
     expect(service.messages("cnv_a").map(item => [item.sequence, item.content])).toEqual([[1, "Primeira mensagem"], [2, "Resposta"]]);
+    service.close();
+  });
+
+  test("the first user message names an untitled conversation, old and new default alike", () => {
+    const service = new ConversationService(path.join(temporaryRoot("title"), ".nirvana", "control-plane.sqlite"));
+    service.create("prj_a", undefined, "cnv_new");
+    service.create("prj_a", "Nova conversa", "cnv_old");
+    service.create("prj_a", "Kept", "cnv_named");
+    for (const id of ["cnv_new", "cnv_old", "cnv_named"]) {
+      service.append({ conversationId: id, projectId: "prj_a", role: "assistant", content: "hello" });
+      service.append({ conversationId: id, projectId: "prj_a", role: "user", content: "Plan the launch" });
+    }
+    expect(["cnv_new", "cnv_old", "cnv_named"].map(id => service.get(id)!.title)).toEqual(["Plan the launch", "Plan the launch", "Kept"]);
     service.close();
   });
 });

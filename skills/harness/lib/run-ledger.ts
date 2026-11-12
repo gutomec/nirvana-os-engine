@@ -47,7 +47,7 @@ import { createRequire } from "node:module";
 import { spawnSync } from "node:child_process";
 import { ensureDir } from "../../_shared/lib/ensure-dir.ts";
 import { quotaStop } from "./quota-detector.ts";
-import { descendants, processTable, processTreeCpuMs } from "./process-cpu.ts";
+import { CPU_ACTIVITY_MIN_MS, descendants, processCommands, processTable, processTreeCpuMs, type ProcCommand } from "./process-cpu.ts";
 
 // ── states ──────────────────────────────────────────────────────────────
 
@@ -56,8 +56,8 @@ export type RunState =
   | "running"      // headless child executing
   | "verifying"    // deliverable verification in progress
   | "gated"        // quality gate completed
-  | "delivered"    // TERMINAL — artifacts delivered (gate pass or indeterminate)
-  | "withheld"     // TERMINAL — artifacts exist but gate failed; delivery withheld
+  | "delivered"    // TERMINAL — artifacts delivered (gate pass, with reservations, or forced)
+  | "withheld"     // TERMINAL — artifacts exist but were not delivered (serious finding, strict policy, completeness ceiling, or nothing gateable)
   | "stalled"      // recoverable — supervisor exhausted retries, human notified
   | "failed"       // recoverable — run errored; supervisor may resume/redispatch
   | "abandoned";   // TERMINAL — only via abandon(runId, reason)
@@ -68,15 +68,17 @@ export const ACTIVE_STATES: readonly RunState[] = ["dispatched", "running", "ver
 // Legal transitions. `abandoned` is intentionally absent from every list:
 // it is reachable ONLY through abandon(), which demands a reason.
 //
-// `failed → verifying` is the runtime-error salvage path (see
-// delivery-pipeline.ts deliverAfterRuntimeError): a runtime can return an
-// error verdict — a usage/turn limit hit at the very end, typically — AFTER
-// the deliverables were already written. The run is honestly marked `failed`
-// with the runtime's verdict, and then recovers straight into verification
-// instead of being re-dispatched: the work already exists on disk and MUST be
-// judged (artifacts are never delivered, nor abandoned, without the gate).
-// `failed` is documented as recoverable, so this widens an existing recovery
-// edge rather than piercing the machine.
+// `failed → verifying` is the recovery edge of a run whose work is already on
+// disk: a run another process marked `failed` (a runtime error, a supervisor
+// verdict) and that `nrv revise` or the salvage then judges instead of
+// re-dispatching — artifacts are never delivered, nor abandoned, without the
+// gate. The runtime-error salvage itself (delivery-pipeline.ts
+// deliverAfterRuntimeError) no longer passes through `failed` when artifacts
+// exist: it walks `running → verifying` with the runtime's verdict as
+// last_error, because a transient `failed` fires the run's done-signal and a
+// waiter reads it as final while the recovery is still judging. `failed` is
+// documented as recoverable, so this edge widens an existing recovery path
+// rather than piercing the machine.
 //
 // `stalled → verifying` is the SUPERVISOR SALVAGE path (see
 // scripts/supervisor.ts salvageStalledRun): when the supervisor exhausts its
@@ -289,8 +291,13 @@ function backfillProjectRoots(db: Database): void {
 
 export function resolveLedgerDbPath(): string {
   if (process.env.NIRVANA_RUN_LEDGER_DB) return process.env.NIRVANA_RUN_LEDGER_DB;
-  const home = process.env.NIRVANA_HOME || os.homedir();
-  return path.join(home, ".nirvana", "run-ledger.sqlite");
+  if (process.env.NIRVANA_HOME) return path.join(process.env.NIRVANA_HOME, ".nirvana", "run-ledger.sqlite");
+  // Last rung before the user's home, the same floor state-db.js and
+  // log-paths.js have: a test that deletes NIRVANA_RUN_LEDGER_DB must not gain
+  // a path to the real ledger, nor to the run-signals written beside it.
+  // Set only by skills/test-preload.ts.
+  if (process.env.NIRVANA_TEST_LOGS_HOME) return path.join(path.resolve(process.env.NIRVANA_TEST_LOGS_HOME), "run-ledger.sqlite");
+  return path.join(os.homedir(), ".nirvana", "run-ledger.sqlite");
 }
 
 const _openCache = new Map<string, LedgerHandle>();
@@ -565,9 +572,8 @@ export function lookupChildPid(parentPid: number, excludePid?: number, timeoutMs
 
 /** Ends `pid` and what it started. Windows has no process groups: `process.kill`
  *  ends only that pid and leaves the CLI's own children running, so taskkill /T
- *  takes the tree. POSIX: every descendant is signalled by pid, from a snapshot
- *  taken before the first signal, and the group too when the pid leads one.
- *  Never pid 1, this process or its parent. */
+ *  takes the tree. POSIX: when the pid leads its own group, the group goes with
+ *  it, else the pid alone. Never pid 1, this process or its parent. */
 export function killProcessTree(pid: number, signal: NodeJS.Signals = "SIGTERM"): number[] {
   if (!Number.isFinite(pid) || pid <= 1) return [];
   if (pid === process.pid || pid === process.ppid) return [];
@@ -576,23 +582,15 @@ export function killProcessTree(pid: number, signal: NodeJS.Signals = "SIGTERM")
     if (r.status !== 0) { try { process.kill(pid, signal); } catch { /* already gone */ } }
     return [pid];
   }
+  // The group alone missed workers: a CLI launcher can start the real agent in
+  // a group of its own, and it then outlived a stop (seen with claude, a
+  // grandchild of the dispatcher). So every descendant is signalled by pid,
+  // from a snapshot taken before the first signal.
   const rows = processTable();
   const tree = [pid, ...(rows ? descendants(rows, pid) : [])].filter((p) => p !== process.pid && p !== process.ppid);
   try { process.kill(-pid, signal); } catch { /* not a group leader */ }
   for (const p of tree) { try { process.kill(p, signal); } catch { /* already gone */ } }
   return tree;
-}
-
-/** The dispatcher that runs this row (meta.dispatcher_pid) is alive and is
- *  still that dispatcher: the start time recorded beside its pid matches, or
- *  cannot be read ("cannot prove recycling" is not "recycled"). */
-export function dispatcherAlive(row: RunRow): boolean {
-  const pid = Number(row.meta?.dispatcher_pid) || 0;
-  if (pid <= 0 || !pidAlive(pid)) return false;
-  const recorded = typeof row.meta?.dispatcher_started_at === "string" ? row.meta.dispatcher_started_at as string : null;
-  if (!recorded) return true;
-  const current = processStartedAt(pid);
-  return current === null || current === recorded;
 }
 
 /** One file the sweep found newer than the mark it was given. */
@@ -615,6 +613,34 @@ export function quotaWaitOf(row: RunRow, now: number = Date.now()): { resetAt: s
   const q = quotaStop(row.last_error, (row.runtime as never) || null, since);
   if (!q) return null;
   return Date.parse(q.resetAt) > now ? { resetAt: q.resetAt, named: q.named, hint: q.hint } : null;
+}
+
+/**
+ * The live processes that work on this run although the row's pids no longer
+ * say so: a `revise.ts` started for its trace (by `nrv revise`, or by a sweep
+ * resuming it), and the sweep itself while it is recovering this row
+ * (meta.recovering, meta.recovered_by_pid with its start time). On 2026-10-14
+ * the row still named a dispatcher dead for five hours, `nrv run-track stop`
+ * printed "stopped (no live process)", and the sweep and its revise kept
+ * judging. Never this process or its parent. `table` is a test seam.
+ */
+export function runProcesses(row: RunRow, table: ProcCommand[] | null = processCommands()): number[] {
+  const out = new Set<number>();
+  const trace = row.trace_id || row.project_id;
+  if (trace && table) {
+    const token = new RegExp(`(?:^|[\\s"'])${trace.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=$|[\\s"'])`);
+    for (const p of table) {
+      if (p.pid === process.pid || p.pid === process.ppid) continue;
+      if (/\brevise\.ts\b/.test(p.command) && token.test(p.command)) out.add(p.pid);
+    }
+  }
+  const sweeper = Number(row.meta?.recovered_by_pid) || 0;
+  if (row.meta?.recovering === true && sweeper > 0 && sweeper !== process.pid && sweeper !== process.ppid && pidAlive(sweeper)) {
+    const recorded = typeof row.meta?.recovered_by_started_at === "string" ? row.meta.recovered_by_started_at as string : null;
+    const current = recorded ? processStartedAt(sweeper) : null;
+    if (!recorded || current === null || current === recorded) out.add(sweeper);
+  }
+  return [...out];
 }
 
 export interface TouchedFile { path: string; mtimeMs: number; sizeBytes: number }
@@ -995,6 +1021,22 @@ export function recordChildPid(handle: LedgerHandle, runId: string, pid: number,
   emitLedgerAudit("x_ledger_child_pid_recorded", { run_id: runId, child_pid: pid, started_at: startedAt }, row);
 }
 
+/** Forget the worker's pid once the worker has ended. The dispatcher goes on
+ *  verifying, gating and publishing after its child exits; a reader that finds
+ *  that pid dead (`nrv run-track status`) would otherwise report a live
+ *  delivery as killed. No state transition; a later worker (a correction run)
+ *  records its own pid through the heartbeat sidecar. */
+export function clearChildPid(handle: LedgerHandle, runId: string): void {
+  const row = getRun(handle, runId);
+  if (!row || row.child_pid == null) return;
+  const { child_pid_started_at: _startedAt, ...meta } = row.meta ?? {};
+  handle.db.run(
+    "UPDATE runs SET child_pid = NULL, meta = ?, updated_at = ? WHERE run_id = ?",
+    [JSON.stringify(meta), nowIso(), runId],
+  );
+  emitLedgerAudit("x_ledger_child_pid_cleared", { run_id: runId, child_pid: row.child_pid }, row);
+}
+
 /** Merge `patch` into the run's meta WITHOUT a state transition. The
  *  supervisor uses it to stamp salvage bookkeeping (meta.salvaged) on an
  *  escalated row before the salvage runs, so a crash mid-salvage can never
@@ -1067,6 +1109,53 @@ export function findExpired(handle: LedgerHandle, now?: Date | number, scope?: S
     .query(`SELECT * FROM runs WHERE state IN (${ACTIVE_IN}) AND (lease_expires_at IS NULL OR lease_expires_at < ?)${s.sql} ORDER BY created_at ASC`)
     .all(...ACTIVE_STATES, cutoff, ...s.params) as Record<string, unknown>[];
   return rows.map(r => parseRow(r)!);
+}
+
+/** The states in which a run's worker, or the dispatcher judging what it
+ *  wrote, is still expected to be at work in the run's folder. */
+export const WORKING_STATES: ReadonlySet<RunState> = new Set(["dispatched", "running", "verifying", "gated"]);
+
+/** The row's recorded worker pid is alive and is still that worker. A pid the
+ *  OS has handed to another process since (its start time no longer matches
+ *  the one recorded beside it) is not. A start time nobody can read counts as
+ *  alive: "cannot prove recycling" is not "recycled", the supervisor's rule. */
+export function workerPidAlive(row: RunRow): boolean {
+  const pid = row.child_pid;
+  if (!pid || !pidAlive(pid)) return false;
+  const recorded = typeof row.meta?.child_pid_started_at === "string" ? row.meta.child_pid_started_at as string : null;
+  if (!recorded) return true;
+  const current = processStartedAt(pid);
+  return current === null || current === recorded;
+}
+
+/** The dispatcher that runs this row is alive and is still that dispatcher
+ *  (the start time recorded beside its pid matches, or cannot be read). The
+ *  recorded worker pid is only the sidecar's best guess at the CLI child, and a
+ *  CLI launcher can leave it pointing at a short-lived process while the real
+ *  agent, its grandchild, works on: with the dispatcher alive the run is not
+ *  over, whatever the worker pid says. */
+export function dispatcherAlive(row: RunRow): boolean {
+  const pid = Number(row.meta?.dispatcher_pid) || 0;
+  if (pid <= 0 || !pidAlive(pid)) return false;
+  const recorded = typeof row.meta?.dispatcher_started_at === "string" ? row.meta.dispatcher_started_at as string : null;
+  if (!recorded) return true;
+  const current = processStartedAt(pid);
+  return current === null || current === recorded;
+}
+
+/** Whether something may still be writing in this row's folder: its worker
+ *  pid is alive, or, with no live pid, it sits in a working state under a
+ *  lease that has not expired (the dispatcher between its worker and the gate,
+ *  a worker the sidecar has not found yet, a pid-less agentic run). A failed
+ *  or stalled row has no worker unless a live pid says otherwise. Used by a
+ *  new dispatch into the same project and by `nrv clean` before either
+ *  touches that folder. */
+export function stillWorking(row: RunRow, now: number = Date.now()): boolean {
+  if (isTerminal(row.state)) return false;
+  if (workerPidAlive(row) || dispatcherAlive(row)) return true;
+  if (!WORKING_STATES.has(row.state)) return false;
+  const lease = Date.parse(row.lease_expires_at ?? "");
+  return Number.isFinite(lease) && lease > now;
 }
 
 /** Everything the supervisor needs to resume a run. */
@@ -1338,6 +1427,10 @@ const TOUCH_EVENTS_PER_TICK = 25;
  *  have starved of its own tick. */
 const HEARTBEAT_DISCOVERY_TIMEOUT_MS = 1500;
 
+/** How often a quiet tick samples the worker's CPU (see heartbeatMain). Tests
+ *  shorten it through NIRVANA_HEARTBEAT_CPU_SAMPLE_MS. */
+const CPU_SAMPLE_MS = Math.max(0, Number(process.env.NIRVANA_HEARTBEAT_CPU_SAMPLE_MS) || 60_000);
+
 /** How many child-pid lookups the sidecar makes before it stops trying —
  *  more than one, because the real CLI child can still be mid-spawn on the
  *  very first tick, and on Windows a lookup can time out on a loaded machine
@@ -1348,10 +1441,6 @@ const MAX_DISCOVERY_ATTEMPTS = 5;
 
 /** Least time between two lookups when the tick saw no activity. */
 const DISCOVERY_RETRY_MS = 2_000;
-
-/** How often a quiet tick samples the worker's CPU for the stall guard. Tests
- *  shorten it through NIRVANA_HEARTBEAT_CPU_SAMPLE_MS. */
-const CPU_SAMPLE_MS = Math.max(0, Number(process.env.NIRVANA_HEARTBEAT_CPU_SAMPLE_MS) || 60_000);
 
 function heartbeatArg(name: string): string | undefined {
   const i = process.argv.indexOf(name);
@@ -1403,16 +1492,10 @@ export function heartbeatMain(): void {
   const wideAfterMs = Math.min(stallMs, shortest / 2);
   const wideEveryMs = Math.max(intervalMs, Math.min(60_000, shortest / 6));
   const setupMs = Math.min(30_000, shortest / 10);
-  if (guardOn && getRun(handle, runId)) {
-    patchMeta(handle, runId, { stall_guard: { silence_ms: thresholds.silenceMs, no_start_ms: thresholds.noStartMs, sidecar_pid: process.pid, started_at: new Date(startedAt).toISOString() } });
+  if (guardOn) {
+    const opened = getRun(handle, runId);
+    if (opened) patchMeta(handle, runId, { stall_guard: { silence_ms: thresholds.silenceMs, no_start_ms: thresholds.noStartMs, sidecar_pid: process.pid, started_at: new Date(startedAt).toISOString() } });
   }
-  // CPU of the worker's tree: a CLI run headless prints once, at the end, and a
-  // model that reasons for an hour writes nothing meanwhile. A rate above
-  // STALL_CPU_MIN_MS_PER_MIN counts as a sign of life for the stall rule; an
-  // idle TUI polling its backend (~0.4 s a minute) does not.
-  let cpuBaseline: { root: number; ms: number; at: number } | null = null;
-  let cpuSampledAt = 0;
-  let workerPid = 0;
 
   // Identity discovery: the dispatcher recorded no child_pid (it can't know
   // one — it's about to block inside spawnSync, and spawnSync exposes the
@@ -1434,7 +1517,7 @@ export function heartbeatMain(): void {
   // nothing about the child, and the next one gets the standalone budget.
   // Each lookup runs last in its tick, after that tick's renewLease.
   //
-  // The stall guard's CPU sample waits until discovery is settled: on Windows
+  // The CPU sample waits until discovery is settled: on Windows
   // both are PowerShell + CIM queries, and a full-table CPU query stacked in
   // the same tick ahead of a 1.5 s lookup made the lookup time out on a loaded
   // runner (0.14.13 CI). Lost identity is not cosmetic: a row with no
@@ -1442,6 +1525,18 @@ export function heartbeatMain(): void {
   // beside the CLI still running, and nothing can stop that CLI by pid.
   let discoveryAttempts = 0;
   let childDiscovered = false;
+  let workerPid = 0;
+
+  // CPU as a sign of life: a headless CLI prints once, at the end, and a model
+  // that reasons for minutes writes no file meanwhile, so a worker can show no
+  // activity above for longer than its lease while it works. On a quiet tick,
+  // at most once a minute (a PowerShell spawn on Windows), the CPU of the
+  // worker's process tree is sampled; growth since the last quiet sample counts
+  // as activity. A worker blocked on a dead socket spends none. Any other
+  // activity resets the baseline, so CPU spent while it was writing never
+  // renews the lease after it stops.
+  let cpuBaseline: { root: number; ms: number; at: number } | null = null;
+  let cpuSampledAt = 0;
   let lastLookupAt = 0;
   let discoveryTimeoutMs = HEARTBEAT_DISCOVERY_TIMEOUT_MS;
   const discoveryPending = (): boolean => !childDiscovered && parentPid > 0 && discoveryAttempts < MAX_DISCOVERY_ATTEMPTS;
@@ -1462,35 +1557,37 @@ export function heartbeatMain(): void {
       ? scanDir(watchDir, lastMtime, { limit: Math.min(TOUCH_EVENTS_PER_TICK, touchBudget) })
       : { latestMs: 0, changed: [], omitted: 0 };
     const mtime = scan.latestMs;
-    const activity = bytes !== lastBytes || mtime > lastMtime;
+    const wrote = bytes !== lastBytes || mtime > lastMtime;
     lastBytes = bytes;
     if (mtime > lastMtime) lastMtime = mtime;
 
     const now = Date.now();
+    let thinking = false;
     let thinkingHard = false;
-    if (activity) cpuBaseline = null;
-    else if (guard && parentPid > 0 && !discoveryPending() && now - cpuSampledAt >= CPU_SAMPLE_MS) {
+    if (wrote) cpuBaseline = null;
+    else if (parentPid > 0 && !discoveryPending() && now - cpuSampledAt >= CPU_SAMPLE_MS) {
       cpuSampledAt = now;
+      // The discovered worker, or the dispatcher's tree without this sidecar:
+      // also when the discovered pid has exited, since it can be a CLI
+      // launcher whose agent keeps working as the dispatcher's grandchild.
       const root = workerPid && pidAlive(workerPid) ? workerPid : parentPid;
       const cpu = processTreeCpuMs(root, process.pid);
       if (cpu !== null) {
         const grew = cpuBaseline?.root === root ? cpu - cpuBaseline.ms : 0;
-        if (cpuBaseline?.root === root) thinkingHard = grew >= guard.STALL_CPU_MIN_MS_PER_MIN * Math.max(1, (now - cpuBaseline.at) / 60_000);
+        thinking = grew >= CPU_ACTIVITY_MIN_MS;
+        // The stall rule's bar is a rate, so an idle TUI polling its backend
+        // (~0.4 s a minute, measured on agy) never passes for a working one.
+        if (guard && cpuBaseline?.root === root) thinkingHard = grew >= guard.STALL_CPU_MIN_MS_PER_MIN * Math.max(1, (now - cpuBaseline.at) / 60_000);
         cpuBaseline = { root, ms: cpu, at: now };
       }
     }
-    if (activity || thinkingHard) { lastSignAt = now; everActive = true; }
-    if (thinkingHard && !activity) {
-      // Working without a word: the lease is renewed, so the supervisor does
-      // not read a long think as an orphan.
-      lastActivityAt = now;
-      stallRecorded = false;
-      renewLease(handle, runId, leaseSec, "cpu");
-    }
+    const activity = wrote || thinking;
+    if (wrote || thinkingHard) { lastSignAt = now; everActive = true; }
+
     if (activity) {
       lastActivityAt = now;
       stallRecorded = false;
-      renewLease(handle, runId, leaseSec);
+      renewLease(handle, runId, leaseSec, wrote ? undefined : "cpu");
       for (let i = 0; i < scan.changed.length; i++) {
         const f = scan.changed[i];
         // Always "modify": a poller sees that a file moved, never that it was
@@ -1513,7 +1610,7 @@ export function heartbeatMain(): void {
       }, row);
     }
 
-    if (guard && !activity && now - lastSignAt >= wideAfterMs) {
+    if (guard && !wrote && now - lastSignAt >= wideAfterMs) {
       // The wider signals: files anywhere under the run's folders, the run's
       // hook-recorded tool events, a live child run. Read when the run is quiet,
       // and once more right before a stall is confirmed.

@@ -86,7 +86,7 @@ function snapshot(): Snapshot {
 
   // active projects
   const roots = [
-    path.join(process.cwd(), "outputs"),            // novo default visível
+    path.join(process.cwd(), "outputs"),            // new visible default
     path.join(os.homedir(), ".nirvana/outputs"),
     path.join(process.cwd(), ".nirvana/outputs"),
   ];
@@ -163,7 +163,7 @@ function render(s: Snapshot): string {
   lines.push(c("lime", "├" + "─".repeat(W) + "┤"));
   lines.push(c("lime", "│") + c("magenta", "  ACTIVE PROJECTS").padEnd(W + 10) + c("lime", "│"));
   if (s.active_projects.length === 0) {
-    lines.push(c("lime", "│") + c("dim", "    (nenhum projeto ativo)").padEnd(W + 8) + c("lime", "│"));
+    lines.push(c("lime", "│") + c("dim", "    (no active project)").padEnd(W + 8) + c("lime", "│"));
   } else {
     for (const p of s.active_projects.slice(0, 12)) {
       const phaseColor: "green" | "yellow" | "cyan" | "red" =
@@ -184,7 +184,7 @@ function render(s: Snapshot): string {
   lines.push(c("lime", "├" + "─".repeat(W) + "┤"));
   lines.push(c("lime", "│") + c("magenta", "  RECENT EVENTS").padEnd(W + 10) + c("lime", "│"));
   if (s.recent_events.length === 0) {
-    lines.push(c("lime", "│") + c("dim", "    (sem eventos hoje)").padEnd(W + 8) + c("lime", "│"));
+    lines.push(c("lime", "│") + c("dim", "    (no events today)").padEnd(W + 8) + c("lime", "│"));
   } else {
     for (const e of s.recent_events) {
       const text = `    ${c("dim", e.ts)} ${c("cyan", e.event.padEnd(28))} ${c("dim", e.project)}`;

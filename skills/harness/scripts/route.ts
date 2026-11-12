@@ -1,6 +1,10 @@
 #!/usr/bin/env bun
 /**
- * route.ts — full pipeline (brief → routing decision → optional dispatch).
+ * route.ts — the keyword router's full pipeline on one brief, as a diagnostic.
+ *
+ * It prints what BM25 would match. It never dispatches and never decides who
+ * executes: `nrv dispatch --auto` routes with the cards or agentic router, and
+ * `nrv find` is the shortlist the orchestrator reads.
  */
 
 import * as path from "node:path";
@@ -9,6 +13,19 @@ import { preflightReindex } from "../lib/preflight-index.ts";
 
 const ROUTER = path.join(paths.CLAUDE_SKILLS_DIR, "harness", "lib", "router.js");
 const args = process.argv.slice(2);
+
+const ROUTE_HELP = [
+  'nrv route "<brief>" [--json] [--prefer business|squad|auto] [--no-amplify] [--force-amplify]',
+  "",
+  "Diagnostic: what the keyword router (BM25) matches for a brief, stage by stage.",
+  "It never decides who executes and never dispatches. `nrv dispatch --auto` routes",
+  "with the cards or agentic router; `nrv find` prints the shortlist the orchestrator reads.",
+].join("\n");
+
+if (args.length === 0 || args.includes("--help") || args.includes("-h")) {
+  console.log(ROUTE_HELP);
+  process.exit(args.length === 0 ? EXIT.INVALID_ARGS : EXIT.OK);
+}
 
 // Never route against a stale corpus (routing-360 Phase 2.5); <50ms when fresh.
 preflightReindex();

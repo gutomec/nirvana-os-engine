@@ -3,7 +3,7 @@
 //
 // Reuses volume-bounds.js for word counting (no reimplementation). It NEVER
 // fails the gate (passed is always true) — it surfaces overage so the maestro
-// keeps the summary bounded. The budget is a convention (HARNESS_PROTOCOL_V1
+// keeps the summary bounded. The budget is a convention (archived Harness Protocol v1
 // §6 / §7.4), made visible here, not a hard inline block.
 
 import * as os from "node:os";

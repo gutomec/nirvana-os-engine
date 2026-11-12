@@ -10,7 +10,11 @@
  * Re-running is safe (idempotent). Existing user settings are preserved.
  *
  * Usage:
- *   bun scripts/install.ts
+ *   bun scripts/install.ts [--profile=max|balanced|economy]
+ *
+ * The performance profile is asked once, in an interactive terminal, when no
+ * profile is recorded yet; --profile sets it without asking. A run with no
+ * terminal and no flag records none (the engine defaults hold).
  */
 
 import { cpSync, existsSync, mkdirSync, chmodSync, readdirSync, rmSync, writeFileSync, readFileSync, statSync, symlinkSync, lstatSync, renameSync } from "node:fs";
@@ -25,7 +29,7 @@ import { createRequire } from "node:module";
 // Resolves both from the repo and from an extracted release tarball: the
 // tarball ships scripts/install.ts next to the full skills/ tree.
 import { RUNTIME_TARGETS, SKILLS, RETIRED_SKILLS, RUNTIME_ENTRIES, ENGINE_INTERNAL_SKILLS, LEGACY_RUNTIME_SKILL_DIRS, COPY_MARKER } from "../skills/_shared/lib/runtime-dirs.ts";
-import { classifyRuntimeEntry, depsLinkFor, ensureDepsLink, findParkedBackup, foreignProvider, materializeRuntimeSkillCopy, parkedBackupPath, pruneDepsLinkInside } from "../skills/_shared/lib/runtime-install.ts";
+import { classifyRuntimeEntry, depsLinkFor, ensureDepsLink, findParkedBackup, foreignProvider, materializeRuntimeSkillCopy, parkedBackupPath, pruneDepsLinkInside, skillsShCopyOfOurs } from "../skills/_shared/lib/runtime-install.ts";
 import { RUN_STATE_EXCLUDES } from "../skills/_shared/lib/run-state.ts";
 import { patchHermesAllowlist, patchHermesAuditHooks, patchHermesExternalDirs, publishHermesJson, publishHermesYaml, readHermesYaml } from "../skills/_shared/lib/hermes-config.ts";
 
@@ -75,6 +79,7 @@ const FLAG_NO_HERMES_HOOKS = args.includes("--no-hermes-hooks");
 // Forces COPYING the skills into the runtime dirs instead of symlinking (Windows
 // already forces this automatically; useful on any FS/runtime that cannot resolve links).
 const FLAG_COPY_SKILLS = args.includes("--copy-skills");
+const FLAG_PROFILE = (args.find((a) => a.startsWith("--profile="))?.slice("--profile=".length) ?? "").trim().toLowerCase();
 
 function header(): void {
   console.log("Nirvana OS installer");
@@ -412,7 +417,18 @@ function linkRuntimes(): void {
       // .bak that `nrv doctor` then advises deleting (skills-litter.ts). Same
       // skill, same name: leave it, and say who provides it.
       if (foreignProvider(linkPath, s, NIRVANA_SKILLS)) {
-        console.log(`  ⓘ ${linkPath}: '${s}' provided by another installer (skills.sh), kept`);
+        // When it is this engine's own skill, the directory stays (the links
+        // point at it) and its files are brought to this engine's version.
+        const ours = skillsShCopyOfOurs(linkPath, s);
+        if (ours) {
+          try {
+            for (const f of readdirSync(ours)) rmSync(join(ours, f), { recursive: true, force: true });
+            cpSync(target, ours, { recursive: true, dereference: true, filter: (p) => !p.split(/[\\/]/).includes("node_modules") });
+            console.log(`  ✓ ${linkPath}: '${s}' from skills.sh, refreshed to this engine's version`);
+          } catch (e) { console.log(`  ! could not refresh ${linkPath}: ${(e as Error).message}`); }
+        } else {
+          console.log(`  ⓘ ${linkPath}: '${s}' provided by another installer (skills.sh), kept`);
+        }
         continue;
       }
       try {
@@ -1035,6 +1051,67 @@ async function offerHermesBridge(): Promise<boolean> {
   return healthy;
 }
 
+// ── Performance profile ────────────────────────────────────────────────────
+// Written through the INSTALLED engine (`config.ts set ... --global`), after
+// the dependencies are in place: the settings core needs them, and the global
+// file it writes (~/.nirvana/config.yaml) survives every later update.
+
+const PROFILES = ["max", "balanced", "economy"] as const;
+const PROFILE_HELP: Record<(typeof PROFILES)[number], string> = {
+  max: "highest quality, highest token use: xhigh effort, no context ceiling, every delivery reviewed, up to two correction rounds",
+  balanced: "recommended: high effort, a 400k context ceiling, review when a rule asks for it",
+  economy: "lowest token use: medium effort, a 200k context ceiling, review only on request",
+};
+
+function engineConfig(argv: string[]) {
+  // From HOME, which is never a project: the global file is the one read and written.
+  return spawnSync(process.execPath, [join(NIRVANA_SKILLS, "harness/scripts/config.ts"), ...argv], { cwd: HOME, encoding: "utf8" });
+}
+
+/** The profile recorded in the global config, or "" when there is none. */
+function recordedProfile(): string {
+  const r = engineConfig(["get", "execution.profile", "--json"]);
+  try {
+    const d = JSON.parse(r.stdout);
+    return d.source === "global" && d.value !== "none" ? String(d.value) : "";
+  } catch { return ""; }
+}
+
+async function promptProfile(): Promise<string> {
+  console.log();
+  console.log("[profile] How should Nirvana spend tokens? (change later: nrv config set execution.profile <name> --global)");
+  PROFILES.forEach((name, i) => console.log(`  ${i + 1}) ${name.padEnd(9)} ${PROFILE_HELP[name]}`));
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((done) => {
+    rl.question("Choose 1-3 [2]: ", (answer) => {
+      rl.close();
+      const a = answer.trim().toLowerCase();
+      const byNumber = PROFILES[Number(a) - 1];
+      done(byNumber ?? (PROFILES as readonly string[]).find((p) => p === a) ?? "balanced");
+    });
+  });
+}
+
+async function chooseProfile(): Promise<boolean> {
+  let profile = FLAG_PROFILE;
+  if (profile && !(PROFILES as readonly string[]).includes(profile)) {
+    console.log(`  ! --profile must be one of ${PROFILES.join(", ")}; no profile recorded.`);
+    return false;
+  }
+  if (!profile) {
+    if (recordedProfile()) return true;     // an update never asks again
+    if (!process.stdin.isTTY) return true;  // no terminal, no flag: the engine defaults hold
+    profile = await promptProfile();
+  }
+  const r = engineConfig(["set", "execution.profile", profile, "--global"]);
+  if (r.status !== 0) {
+    console.log(`  ! could not record the profile (${(r.stderr || r.stdout).trim().split("\n")[0]}); run: nrv config set execution.profile ${profile} --global`);
+    return false;
+  }
+  console.log(`  ✓ performance profile: ${profile} (${PROFILE_HELP[profile as (typeof PROFILES)[number]]})`);
+  return true;
+}
+
 function checkOnly(): void {
   console.log("=== Nirvana OS — install check ===");
   let allReady = true;
@@ -1117,18 +1194,18 @@ function summary(): void {
   console.log();
   console.log("Done.");
   console.log();
-  console.log("\x1b[1mStart every project with nrv init — this is the important part.\x1b[0m");
+  console.log("\x1b[1mStart a project with nrv init.\x1b[0m");
   console.log();
-  console.log("  nrv init ~/my-project     # creates the dir + the agent contract");
+  console.log("  nrv init ~/my-project     # creates the dir + a short note for your AI CLI");
   console.log("  cd ~/my-project           # then just talk to your AI CLI");
   console.log();
   console.log("  Already have a folder? Run it there:  cd ~/existing && nrv init .");
   console.log();
-  console.log("Why it matters: nrv init writes the contract (AGENTS.md / CLAUDE.md /");
-  console.log("GEMINI.md) that tells your AI CLI to orchestrate through Nirvana-OS.");
-  console.log("WITHOUT it, a brief is answered inline by a single agent — no dispatch");
-  console.log("to your businesses and squads, no quality gate, no audit trail. It still");
-  console.log("works; it just is not Nirvana-OS. Check any project with: nrv doctor");
+  console.log("Your AI CLI keeps working as usual. The note nrv init writes (AGENTS.md /");
+  console.log("CLAUDE.md / GEMINI.md) has it use Nirvana-OS when a request names it, asks for");
+  console.log("one of your businesses, squads or mind-clones, or asks for another runtime.");
+  console.log("To make Nirvana the orchestrator of every artifact in a project:");
+  console.log("  nrv init . --orchestrators=always");
   console.log();
   console.log("Verify this install:");
   console.log("  nrv install --check       # hooks wired");
@@ -1155,6 +1232,7 @@ async function main(): Promise<void> {
   // After the starter pack (so seeded content is in the index) and outside it
   // (so an engine-only install gets registries too — see buildRegistries).
   buildRegistries();
+  if (!await chooseProfile()) process.exitCode = 1;
   if (!await offerHermesBridge()) process.exitCode = 1;
   summary();
 }

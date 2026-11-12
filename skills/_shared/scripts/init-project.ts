@@ -3,8 +3,8 @@
  * init-project.ts — Materialize a Nirvana project skeleton in <target_dir>.
  *
  * Creates:
- *   <target>/.env (global default unless --scope=...)
- *   <target>/.env.example (full reference)
+ *   <target>/.nirvana/project.yaml (identity, scope, orchestration mode)
+ *   <target>/.env.example (environment reference; no .env is created)
  *   <target>/.gitignore
  *   <target>/AGENTS.md, CLAUDE.md, GEMINI.md (universal agent contract)
  *   <target>/.agents/skills/        (canonical, source-of-truth)
@@ -26,7 +26,7 @@
  * Usage:
  *   bun init-project.ts <target_dir>
  *   bun init-project.ts <target_dir> --scope=project
- *   bun init-project.ts <target_dir> --link    (re-link symlinks only, do not overwrite .env)
+ *   bun init-project.ts <target_dir> --link    (re-link skill symlinks only)
  *   bun init-project.ts <target_dir> --copy    (copy files instead of symlink)
  */
 
@@ -145,6 +145,23 @@ function ensureClaudeDenyRules(target: string): boolean {
   return true;
 }
 
+const LEGACY_SCOPE_LINE = /^NIRVANA_SCOPE=\s*["']?(global|project|merge)["']?\s*$/m;
+
+/** The NIRVANA_SCOPE a project's .env declares (the pre-manifest home of the scope), or null. */
+function readLegacyEnvScope(target: string): "global" | "project" | "merge" | null {
+  try { return (LEGACY_SCOPE_LINE.exec(fs.readFileSync(path.join(target, ".env"), "utf8"))?.[1] ?? null) as "global" | "project" | "merge" | null; }
+  catch { return null; }
+}
+
+/** Like readLegacyEnvScope, and removes the line: the manifest holds the scope from now on. */
+function takeLegacyEnvScope(target: string): "global" | "project" | "merge" | null {
+  const value = readLegacyEnvScope(target);
+  if (!value) return null;
+  const envPath = path.join(target, ".env");
+  fs.writeFileSync(envPath, fs.readFileSync(envPath, "utf8").replace(/^NIRVANA_SCOPE=.*\n?/m, ""), "utf8");
+  return value;
+}
+
 function appendWithMarker(src: string, dst: string, marker: string, label = "snippet"): boolean {
   if (!fs.existsSync(src)) {
     log.warn(`snippet missing: ${src}`);
@@ -230,12 +247,12 @@ function printHelp() {
 
 USAGE
   bun init-project.ts <target_dir>                    create project at <target_dir>
-  bun init-project.ts <target_dir> --scope=project    set NIRVANA_SCOPE=project in .env
-  bun init-project.ts <target_dir> --scope=merge      set NIRVANA_SCOPE=merge in .env
-  bun init-project.ts <target_dir> --orchestrators=always     Nirvana is the default orchestrator
-  bun init-project.ts <target_dir> --orchestrators=on-demand  Nirvana acts only when explicitly asked
-                                   (no flag + existing AGENTS/CLAUDE/GEMINI.md + TTY → you are asked,
-                                    on-demand recommended; non-interactive keeps "always")
+  bun init-project.ts <target_dir> --scope=project    scope in .nirvana/project.yaml: only the project's entities
+  bun init-project.ts <target_dir> --scope=merge      scope in .nirvana/project.yaml: project entities over the global ones
+  bun init-project.ts <target_dir> --orchestrators=on-demand  default: agents work as usual and use Nirvana only
+                                   when the request names it, asks for a business, squad or
+                                   mind-clone, or asks for another runtime
+  bun init-project.ts <target_dir> --orchestrators=always     Nirvana is the default orchestrator for every artifact
   bun init-project.ts <target_dir> --with-skills      symlink .agents/skills → ~/.nirvana/skills
   bun init-project.ts <target_dir> --copy             embed a snapshot of all skills (portable)
   bun init-project.ts <target_dir> --link             re-run skill linking (no-op without --with-skills)
@@ -245,14 +262,14 @@ USAGE
   bun init-project.ts -h | --help                     this message
 
 CREATES (default — minimal)
-  <target>/.env                  active config (commit it)
-  <target>/.env.example          full reference of every NIRVANA_* var
+  <target>/.nirvana/project.yaml identity, scope (global | project | merge), orchestration mode
+  <target>/.env.example          environment reference: copy into .env only what you need
   <target>/.gitignore            sensible defaults
   <target>/README.md             quickstart pointer
   <target>/AGENTS.md             universal agent contract (canonical)
   <target>/CLAUDE.md             same content — Claude Code reads this
   <target>/GEMINI.md             same content — Antigravity (agy) reads it beside AGENTS.md
-  <target>/.nirvana/             squads/ businesses/ mind-clones/ outputs/
+  <target>/.nirvana/             squads/ businesses/ mind-clones/
 
   Note: by default the project does NOT create .agents/skills/ or per-agent
   symlinks. Every modern agent runtime (Cursor, Codex, OpenCode,
@@ -272,9 +289,9 @@ ADDITIONALLY CREATED with --copy (portable, recipient-friendly)
 
 NEXT STEPS (after init)
   cd <target>
-  $EDITOR .env                                          # pick scope, configure
-  bun ~/.nirvana/skills/squads/scripts/index-squads.ts   # if scope=project, index local
-  bun ~/.nirvana/skills/harness/scripts/glance.ts        # see your project in cockpit
+  nrv config list                                       # settings and where they come from
+  nrv index                                             # if scope=project, index the local entities
+  nrv glance                                            # see your project in the cockpit
 
 WHEN TO USE EACH MODE
   default        → developing on your own machine; HOME has ~/.nirvana/skills
@@ -311,8 +328,11 @@ async function main() {
       process.exit(EXIT.INVALID_ARGS);
     }
     const projectService = new ProjectService();
-    const plan = projectService.planAdoption({ projectRoot: dir });
-    const project = projectService.adopt({ projectRoot: dir }, plan.plan_hash);
+    // The manifest outranks a legacy .env scope, so the one in force is carried
+    // into it; the .env itself stays untouched, as adoption promises.
+    const legacyScope = readLegacyEnvScope(dir);
+    const plan = projectService.planAdoption({ projectRoot: dir, ...(legacyScope ? { scope: legacyScope } : {}) });
+    const project = projectService.adopt({ projectRoot: dir, ...(legacyScope ? { scope: legacyScope } : {}) }, plan.plan_hash);
     log.ok(plan.creates.length
       ? `adopted: wrote ${plan.manifest_path} (${project.project_id}); nothing else was created or changed`
       : `already a Nirvana project: ${plan.manifest_path} (${project.project_id})`);
@@ -353,20 +373,6 @@ async function main() {
   ensureDir(target);
 
   if (!linkOnly) {
-    // The .env is a promised output — the final hint tells the user to edit it
-    // and --scope rewrites it. When the template is missing (one install
-    // shipped without it), the old flow warned, finished "[ok] done" and
-    // pointed the user at a file that did not exist; --scope crashed on the
-    // read. A generic fallback keeps the promise; the warn still names the
-    // missing template so the install can be repaired.
-    if (!copyFile(path.join(TEMPLATE_DIR, ".env"), path.join(target, ".env"), force)
-        && !fs.existsSync(path.join(target, ".env"))) {
-      fs.writeFileSync(path.join(target, ".env"),
-        "# Nirvana project config (generated fallback — template was missing).\n" +
-        "# Full reference: .env.example — scope: global | project | merge\n" +
-        "NIRVANA_SCOPE=global\n", "utf8");
-      log.ok(`wrote ${path.join(target, ".env")} (generated fallback)`);
-    }
     copyFile(path.join(TEMPLATE_DIR, ".env.example"), path.join(target, ".env.example"), true);
     copyFile(path.join(TEMPLATE_DIR, ".gitignore"), path.join(target, ".gitignore"), force);
     copyFile(path.join(TEMPLATE_DIR, "README.md"), path.join(target, "README.md"), force);
@@ -385,19 +391,17 @@ async function main() {
     const writingContractSnippet = path.join(SKILLS_ROOT, "_shared", "templates", "writing-contract-snippet.md");
     const onDemandSnippet = path.join(SKILLS_ROOT, "_shared", "templates", "on-demand-contract-snippet.md");
     const WRITING_CONTRACT_MARKER = "<!-- nirvana-os:writing-contract:v2 -->";
-    const INVOCATION_CONTRACT_MARKER = "<!-- nirvana-os:invocation-contract:v3 -->";
+    const INVOCATION_CONTRACT_MARKER = "<!-- nirvana-os:invocation-contract:v4 -->";
     // Markers of earlier contracts. A project initialised under one of them
     // kept the old text forever: the marker check made init skip the file, so
     // the fix that renamed the entry skill and added the discovery commands
     // reached new projects only. The block under an older marker (up to the
     // next nirvana-os marker, or the end of the file) is replaced by the
     // current template; the user's own lines above it and the other contracts
-    // below it stay where they are. v3 (invocation) and v2 (on-demand): the
-    // dependency text names the per-squad environments (~/.nirvana/envs/<squad>),
-    // not the shared store, and the on-demand note names the `nirvana` skill.
-    // A null template removes the block instead of replacing it.
-    const refreshManagedBlock = (dst: string, label: string, olderMarkers: string[], currentMarker: string, templatePath: string | null, endSentinel?: string): boolean => {
-      if (!fs.existsSync(dst) || (templatePath !== null && !fs.existsSync(templatePath))) return false;
+    // below it stay where they are. v4: the dependency section names the
+    // per-squad environments (~/.nirvana/envs/<squad>), not the shared store.
+    const refreshManagedBlock = (dst: string, label: string, olderMarkers: string[], currentMarker: string, templatePath: string, endSentinel?: string): boolean => {
+      if (!fs.existsSync(dst) || !fs.existsSync(templatePath)) return false;
       const existing = fs.readFileSync(dst, "utf8");
       const old = olderMarkers.find((m) => existing.includes(m));
       if (!old) return false;
@@ -413,7 +417,7 @@ async function main() {
       const end = Number.isFinite(cut) ? start + old.length + cut : existing.length;
       // A snippet may open with a separator (`---`) before its marker; the
       // block replaced here starts at the marker, so drop that lead-in.
-      const template = templatePath === null ? "" : fs.readFileSync(templatePath, "utf8").replace(/^[\s\S]*?(?=<!-- nirvana-os:)/, "").replace(/\s*$/, "\n");
+      const template = fs.readFileSync(templatePath, "utf8").replace(/^[\s\S]*?(?=<!-- nirvana-os:)/, "").replace(/\s*$/, "\n");
       let tail = existing.slice(end).replace(/^\s*/, "");
       // A second copy of the old block (an earlier init appended one it did not
       // recognise) goes with it: same bounds, same rule.
@@ -427,104 +431,58 @@ async function main() {
         const dupEnd = Number.isFinite(c2) ? dupAt + old.length + c2 : tail.length;
         tail = (tail.slice(0, dupAt).replace(/\s*(---\s*)?$/, "\n") + tail.slice(dupEnd).replace(/^\s*/, "\n")).replace(/^\s*/, "");
       }
-      if (templatePath === null) {
-        const head = existing.slice(0, start).replace(/\s*(---\s*)?$/, "\n");
-        fs.writeFileSync(dst, head + (tail ? "\n" + tail : ""));
-        log.ok(`removed ${label} (${old.match(/v\d+/)![0]}), already present as ${currentMarker.match(/v\d+/)![0]}: ${dst}`);
-        return true;
-      }
       fs.writeFileSync(dst, existing.slice(0, start) + template + (tail ? "\n" + tail : ""));
       log.ok(`refreshed ${label} (${old.match(/v\d+/)![0]} → ${currentMarker.match(/v\d+/)![0]}): ${dst}`);
       return true;
     };
     const refreshInvocationContract = (dst: string) =>
-      refreshManagedBlock(dst, "invocation contract", ["<!-- nirvana-os:invocation-contract:v1 -->", "<!-- nirvana-os:invocation-contract:v2 -->"], INVOCATION_CONTRACT_MARKER, agentsTemplate);
+      refreshManagedBlock(dst, "invocation contract", ["<!-- nirvana-os:invocation-contract:v1 -->", "<!-- nirvana-os:invocation-contract:v2 -->", "<!-- nirvana-os:invocation-contract:v3 -->"], INVOCATION_CONTRACT_MARKER, agentsTemplate);
     const refreshWritingContract = (dst: string) =>
       refreshManagedBlock(dst, "writing contract", ["<!-- nirvana-os:writing-contract:v1 -->"], WRITING_CONTRACT_MARKER, writingContractSnippet, "Gate flags = build fails. No auto-rewrite.");
-    const ON_DEMAND_MARKER = "<!-- nirvana-os:on-demand-contract:v2 -->";
-    // The v1 note is the last block init appends, so lines the user wrote after
-    // it end at its own last line, not at the end of the file.
-    const refreshOnDemandContract = (dst: string) =>
-      refreshManagedBlock(dst, "on-demand contract", ["<!-- nirvana-os:on-demand-contract:v1 -->"], ON_DEMAND_MARKER, onDemandSnippet, "`nrv glance`.");
-
-    // Blocks the 0.15 line writes: its invocation contract v4, its on-demand
-    // note v3, and the invocation contract v3 of 0.15.0-beta.1 to beta.5, which
-    // shares this line's v3 marker and is told apart by its heading. Going back
-    // from the beta, this init did not know them and appended its own contract
-    // beside them: two contradictory sets of instructions in one file. Each is
-    // now replaced in place by this line's block for the chosen mode, or removed
-    // when that block is already in the file (an earlier init appended it). The
-    // user's lines around it stay: each ends at its own last line.
-    const LATER_BLOCKS: Array<{ marker: string; end: string; is?: (rest: string) => boolean }> = [
-      { marker: "<!-- nirvana-os:on-demand-contract:v3 -->", end: "never invoke Nirvana again." },
-      { marker: "<!-- nirvana-os:invocation-contract:v4 -->", end: "user's own lines." },
-      { marker: INVOCATION_CONTRACT_MARKER, end: "user's own lines.", is: (rest) => /^\s*# Project guidelines \(any agent runtime\)/.test(rest) },
-    ];
-    const replaceLaterBlocks = (dst: string, label: string, currentMarker: string, templatePath: string) => {
-      for (const block of LATER_BLOCKS) {
-        if (!fs.existsSync(dst)) return;
-        const text = fs.readFileSync(dst, "utf8");
-        const at = text.indexOf(block.marker);
-        if (at < 0 || (block.is && !block.is(text.slice(at + block.marker.length)))) continue;
-        // A copy of this line's block elsewhere in the file is the one kept. The
-        // beta's v3 shares this line's marker: replacing it also drops any later
-        // copy, so it is always replaced.
-        const rest = text.slice(0, at) + text.slice(at + block.marker.length);
-        const keepCurrent = block.marker !== currentMarker && rest.includes(currentMarker);
-        refreshManagedBlock(dst, label, [block.marker], currentMarker, keepCurrent ? null : templatePath, block.end);
-      }
+    const ON_DEMAND_MARKER = "<!-- nirvana-os:on-demand-contract:v3 -->";
+    const INVOCATION_MARKERS = ["<!-- nirvana-os:invocation-contract:v1 -->", "<!-- nirvana-os:invocation-contract:v2 -->", "<!-- nirvana-os:invocation-contract:v3 -->", INVOCATION_CONTRACT_MARKER];
+    const ON_DEMAND_MARKERS = ["<!-- nirvana-os:on-demand-contract:v1 -->", "<!-- nirvana-os:on-demand-contract:v2 -->", ON_DEMAND_MARKER];
+    // An on-demand note is the last block init appends, so it ends at its own
+    // last line: lines the user wrote after it (0.14's note included) are not
+    // part of it. The invocation contracts are followed by the writing contract.
+    const blockEnd = (marker: string): string | undefined =>
+      marker === ON_DEMAND_MARKERS[0] ? "`nrv glance`." : ON_DEMAND_MARKERS.includes(marker) ? "never invoke Nirvana again." : undefined;
+    /** The first older block found is replaced, as with one call over the list,
+     *  each with its own end. */
+    const refreshFirst = (dst: string, label: string, olderMarkers: string[], currentMarker: string, templatePath: string) => {
+      for (const m of olderMarkers) if (refreshManagedBlock(dst, label, [m], currentMarker, templatePath, blockEnd(m))) return;
     };
 
-    // How Nirvana behaves in THIS project is the owner's call, and it matters
-    // most exactly when the project already has instruction files: appending
-    // the invocation contract to a pre-existing AGENTS.md turns Nirvana into
-    // the default orchestrator for every agent in the repo — a significant,
-    // silent behavior change for a project that was already configured.
+    // How Nirvana behaves in THIS project:
     //
-    //   always    → Nirvana is the default orchestrator (the full contract)
-    //   on-demand → Nirvana acts only when explicitly asked ("use o Nirvana
-    //               para X"); instruction files gain one short marked note and
-    //               nothing else
+    //   on-demand (default) → the agent works as it would without Nirvana and
+    //               reaches for it only when the request names Nirvana, asks
+    //               for a business, a squad or a mind-clone, or asks for work
+    //               on another runtime; instruction files carry one short note
+    //   always    → Nirvana is the default orchestrator: every concrete
+    //               artifact is dispatched (the full contract)
     //
-    // Interactive TTY with pre-existing instruction files and no flag: ask,
-    // recommending on-demand. Non-interactive without a flag keeps the
-    // historical default (always) so CI and scripts do not change behavior.
-    const preexisting = ["AGENTS.md", "CLAUDE.md", "GEMINI.md"].filter((n) => fs.existsSync(path.join(target, n)));
-    if (!orchestrators && preexisting.length && process.stdin.isTTY && process.stdout.isTTY) {
-      const readline = require("node:readline/promises");
-      const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-      const answer = (await rl.question(
-        `\nThis project already has ${preexisting.join(", ")}.\n` +
-        `How should Nirvana's orchestrators behave here?\n` +
-        `  [1] on-demand (recommended for existing projects) — act only when explicitly asked\n` +
-        `  [2] always — Nirvana becomes the default orchestrator for every agent\n` +
-        `Choice [1/2, default 1]: `)).trim();
-      rl.close();
-      orchestrators = answer === "2" ? "always" : "on-demand";
-    }
-    if (!orchestrators) {
-      orchestrators = "always";
-      if (preexisting.length) {
-        log.info(`pre-existing instruction files found; using --orchestrators=always (the historical default). Pass --orchestrators=on-demand to keep Nirvana opt-in here.`);
-      }
-    }
-
+    // Re-running init switches a project to the mode it is given, so a project
+    // that got "always" from the old default becomes on-demand unless
+    // --orchestrators=always is passed.
+    if (!orchestrators) orchestrators = "on-demand";
     if (orchestrators === "on-demand") {
-      // Structure and global skills stay available; instruction files gain ONE
-      // short marked note telling agents Nirvana exists and acts only on
-      // explicit request. No invocation contract, no writing contract — the
-      // project's configured behavior stays its own.
+      // Structure and global skills stay available; instruction files carry ONE
+      // short marked note (the on-demand contract). A full invocation contract
+      // an earlier init wrote is replaced by it, in place; the user's own lines
+      // and the writing contract stay.
       for (const name of ["AGENTS.md", "CLAUDE.md", "GEMINI.md"]) {
-        replaceLaterBlocks(path.join(target, name), "on-demand contract", ON_DEMAND_MARKER, onDemandSnippet);
-        refreshOnDemandContract(path.join(target, name));
-        appendWithMarker(onDemandSnippet, path.join(target, name), ON_DEMAND_MARKER, "on-demand contract");
+        const dst = path.join(target, name);
+        refreshFirst(dst, "on-demand contract", [...INVOCATION_MARKERS, ...ON_DEMAND_MARKERS.slice(0, -1)], ON_DEMAND_MARKER, onDemandSnippet);
+        appendWithMarker(onDemandSnippet, dst, ON_DEMAND_MARKER, "on-demand contract");
       }
     } else if (fs.existsSync(agentsTemplate)) {
       for (const name of ["AGENTS.md", "CLAUDE.md", "GEMINI.md"]) {
         const dst = path.join(target, name);
+        // An on-demand note becomes the full contract when the project opts in.
+        refreshFirst(dst, "invocation contract", ON_DEMAND_MARKERS, INVOCATION_CONTRACT_MARKER, agentsTemplate);
         // Phase 0: a contract written by an earlier engine is brought to the
         // current text, in place.
-        replaceLaterBlocks(dst, "invocation contract", INVOCATION_CONTRACT_MARKER, agentsTemplate);
         refreshInvocationContract(dst);
         refreshWritingContract(dst);
         // Phase 1: only copy the base if the file is absent (never overwrite
@@ -556,20 +514,6 @@ async function main() {
     // before the folder is trusted, to Read and to the shell alike. A layer,
     // not the guarantee: file ownership and the child-env allowlist are.
     ensureClaudeDenyRules(target);
-
-    if (scope && scope !== "global") {
-      const envPath = path.join(target, ".env");
-      if (!fs.existsSync(envPath)) {
-        // Unreachable while the fallback above holds, but --scope crashing
-        // with a raw ENOENT stack was how the missing template surfaced.
-        log.fail(`cannot set scope: ${envPath} does not exist`);
-        process.exit(EXIT.FAILURES);
-      }
-      let env = fs.readFileSync(envPath, "utf8");
-      env = env.replace(/^NIRVANA_SCOPE=.*$/m, `NIRVANA_SCOPE=${scope}`);
-      fs.writeFileSync(envPath, env);
-      log.ok(`set NIRVANA_SCOPE=${scope} in .env`);
-    }
   }
 
   // Canonical source-of-truth dir — OPT-IN ONLY.
@@ -613,7 +557,7 @@ async function main() {
           else fs.copyFileSync(src, dst);
         } catch (err: any) {
           // Fail-closed: swallowing here left a half-done project exiting 0.
-          log.fail(`falha ao copiar ${src}: ${err.message}`);
+          log.fail(`failed to copy ${src}: ${err.message}`);
           process.exit(EXIT.FAILURES);
         }
       }
@@ -677,12 +621,26 @@ async function main() {
   copyFile(path.join(TEMPLATE_DIR, ".nirvana", "README.md"), path.join(target, ".nirvana", "README.md"), force);
   if (!linkOnly) {
     const projectService = new ProjectService();
-    const project = projectService.create({
+    // A project created before the manifest kept its scope in .env. The value
+    // in force moves into the manifest (an explicit --scope wins) and the line
+    // leaves the .env, so the scope lives in one place.
+    const legacyScope = takeLegacyEnvScope(target);
+    const wanted = (scope || legacyScope) as "global" | "project" | "merge" | null;
+    let project = projectService.create({
       projectRoot: target,
-      scope: (scope as "global" | "project" | "merge" | null) || "global",
+      scope: wanted || "global",
       orchestrationMode: orchestrators as "always" | "on-demand",
     });
-    log.ok(`project manifest: ${path.join(target, ".nirvana", "project.yaml")} (${project.project_id})`);
+    if (wanted && project.scope !== wanted) project = projectService.setScope(target, wanted);
+    if (project.orchestration_mode !== orchestrators) {
+      const was = project.orchestration_mode;
+      project = projectService.setOrchestrationMode(target, orchestrators as "always" | "on-demand");
+      log.ok(`orchestration: ${was} → ${orchestrators}` + (orchestrators === "on-demand"
+        ? " (agents work as usual and use Nirvana only when the request asks for it; --orchestrators=always restores the old default)"
+        : " (Nirvana is the default orchestrator here)"));
+    }
+    if (legacyScope) log.ok(`moved NIRVANA_SCOPE=${legacyScope} from .env into .nirvana/project.yaml`);
+    log.ok(`project manifest: ${path.join(target, ".nirvana", "project.yaml")} (${project.project_id}, scope ${project.scope})`);
   }
 
   // Per-agent symlinks (or copies) — only when withSkills is on.
@@ -712,7 +670,7 @@ async function main() {
     log.ok(`done. project relies on the user's $HOME skills (~/.nirvana/skills).`);
     log.info(`Pass --with-skills (or --copy) to embed a local copy when the project may be opened from another HOME (deliveries, CI, recipients without ~/.nirvana/skills).`);
   }
-  log.info(`Next: $EDITOR ${path.join(target, ".env")}  →  pick scope, then drop skills/squads in.`);
+  log.info(`Next: the scope lives in ${path.join(target, ".nirvana", "project.yaml")} (\`nrv init --scope=<global|project|merge>\`); settings: \`nrv config list\`.`);
   // Verify hooks are installed in the user's agent settings.
   try {
     const result = require("node:child_process").spawnSync("bun", [path.join(SKILLS_ROOT, "_shared", "scripts", "install.ts"), "--check"], { windowsHide: true, encoding: "utf8" });

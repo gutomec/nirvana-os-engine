@@ -30,7 +30,7 @@ const PRICE_TABLE: Record<string, Price> = {
   "claude-opus-5-5":       [ 4.00, 20.00, 0.20],
   "claude-sonnet-5-5":     [ 2.00, 10.00, 0.10],
   "claude-haiku-5-5":      [ 0.10,  0.50, 0.01],
-  "claude-opus-4-7":       [15.00, 75.00],
+  "claude-opus-4-7":      [15.00, 75.00],
   "claude-sonnet-4-6":     [ 3.00, 15.00],
   "claude-haiku-4-5":      [ 0.80,  4.00],
   "opus":                  [15.00, 75.00],
@@ -130,7 +130,9 @@ export function estimateCostUsd(runtime: Runtime, model: string | null, r: RunHe
     return r.costUsd;
   }
   // For the other runtimes (and claude-code when costUsd is null), estimate via tokens.
-  const price = priceFor(model);
+  // The model the runner itself passed (agy: its `--model`) when the caller
+  // had none, e.g. a cascade entry without a model and a pinned system model.
+  const price = priceFor(model ?? r.model ?? null);
   if (!price) return null;
   const [inUsd, outUsd, cachedUsd] = price;
   // The CLI's own usage object wins over scraping the text: it carries the

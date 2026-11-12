@@ -106,8 +106,8 @@ const walkEnv = (dir: string): void => {
     if (e.isDirectory()) { if (e.name !== "node_modules") walkEnv(full); continue; }
     if (!/^\.env(\..+)?$/.test(e.name) || e.name === ".env.example") continue;
     const rel = full.slice(STAGE.length + 1);
-    if (rel !== ENV_ALLOWED) { envLeaks.push(`${rel} (não permitido)`); continue; }
-    if (SECRET_RX.test(readFileSync(full, "utf8"))) envLeaks.push(`${rel} (padrão de segredo no template!)`);
+    if (rel !== ENV_ALLOWED) { envLeaks.push(`${rel} (not allowed)`); continue; }
+    if (SECRET_RX.test(readFileSync(full, "utf8"))) envLeaks.push(`${rel} (secret pattern in the template!)`);
   }
 };
 walkEnv(STAGE);

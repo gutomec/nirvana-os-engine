@@ -25,8 +25,8 @@ aliases:
   - brand-kit
   - site
 description: |
-  Avalia design (assumindo HTML/CSS gerado ou descrição estruturada do
-  Figma). WCAG 2.2 AA é hard gate de acessibilidade.
+  Evaluates design (assuming generated HTML/CSS or a structured Figma
+  description). WCAG 2.2 AA is the accessibility hard gate.
 ---
 
 # Design Rubric
@@ -43,33 +43,33 @@ description: |
 ## Criteria
 
 1. **brief_fidelity** (weight 20)  
-   Layout entrega o solicitado. Seções pedidas presentes. CTA hierárquico.
+   The layout delivers what was requested. Requested sections present. CTA with clear hierarchy.
 
-2. **wcag_2_2_AA** (weight 20) **[HARD GATE — falha individual reprova]**  
-   Contraste de cor ≥ 4.5:1 para texto. Foco visível. Tamanho mínimo de
-   toque 44×44. Labels para todos os inputs. Alt-text em imagens.
+2. **wcag_2_2_AA** (weight 20) **[HARD GATE — individual failure fails the artifact]**  
+   Text color contrast ≥ 4.5:1. Visible focus. Minimum touch target
+   44×44. Labels for all inputs. Alt text on images.
 
 3. **visual_hierarchy** (weight 15)  
-   Eye traveling claro: hero → benefício → social proof → CTA. Sem
-   "wall of text". Headlines escaláveis (mobile/desktop).
+   Clear eye travel: hero → benefit → social proof → CTA. No
+   "wall of text". Scalable headlines (mobile/desktop).
 
 4. **typography_system** (weight 10)  
-   Escala consistente. Line-height legível (1.4-1.6 body). Pareamento
-   serif/sans respeitado.
+   Consistent scale. Readable line-height (1.4-1.6 body). Serif/sans
+   pairing respected.
 
 5. **color_palette_discipline** (weight 10)  
-   Cores derivam de tokens, não hardcoded random. Estados (hover/active/
-   disabled) coerentes. Modo escuro funcional se aplicável.
+   Colors derive from tokens, not hardcoded at random. States (hover/active/
+   disabled) coherent. Working dark mode if applicable.
 
 6. **spacing_rhythm** (weight 10)  
-   Escala de espaçamento consistente (4/8/16/24/32...). Sem padding aleatório.
+   Consistent spacing scale (4/8/16/24/32...). No random padding.
 
 7. **responsive** (weight 10)  
-   Mobile-first ou ao menos breakpoints declarados. Sem overflow horizontal.
+   Mobile-first or at least declared breakpoints. No horizontal overflow.
 
 8. **performance_hints** (weight 5)  
-   Imagens com lazy loading; fontes com font-display: swap; sem assets
-   gigantes hardcoded.
+   Images with lazy loading; fonts with font-display: swap; no huge
+   hardcoded assets.
 
 ## Output schema
-Padrão. Falha em WCAG = severity:high obrigatório.
+Default. A WCAG failure requires severity:high.

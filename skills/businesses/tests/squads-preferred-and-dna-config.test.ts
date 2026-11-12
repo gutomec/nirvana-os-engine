@@ -3,7 +3,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { preferredSquads } from "../lib/employee-prompt.ts";
+import { preferredSquads } from "../../harness/lib/business-solo.ts";
 import { renderCloneCard } from "../../_shared/lib/clone-resolver.ts";
 
 const dirs: string[] = [];

@@ -245,8 +245,9 @@ function batchExit(reports: VerifyReport[], strict: boolean, refused: boolean): 
 
 async function runBatch(mode: "all" | "pack", targets: Array<{ module: KindModule; slug: string; dir: string }>, opts: BatchOptions, persist: boolean): Promise<BatchReport> {
   // Load the clone registry once for the whole batch (the module caches one
-  // BM25 index per registry object).
-  if (opts.retrieval !== false && !opts.cloneRegistry && targets.some((t) => t.module.kind === "mind-clone")) {
+  // BM25 index and one grouping by person per registry object). The library
+  // batch needs it without retrieval too: the name checks group clones by person.
+  if ((opts.retrieval !== false || mode === "all") && !opts.cloneRegistry && targets.some((t) => t.module.kind === "mind-clone")) {
     try { const { loadCloneRegistry } = await import("../clone-resolver.ts"); opts = { ...opts, cloneRegistry: loadCloneRegistry() }; } catch { /* no registry: registry_absent per entity */ }
   }
   const baselineFile = opts.baselinePath === null ? null : (opts.baselinePath ?? defaultBaselinePath());

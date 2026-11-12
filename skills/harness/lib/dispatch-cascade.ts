@@ -17,10 +17,10 @@
 //
 // Router transport failure (ok:false) ladder (planRouteWithFallback):
 //   retry once → agent-x with a loud warning.
-//   Config routing.on_router_failure: "agent-x-only" (default) skips straight
-//   to agent-x — BM25 never runs unless the caller explicitly asked for
-//   --mode=fast; "cascade" tries a fast BM25 route before agent-x (the old
-//   default); "fail" gives up and dispatches nothing.
+//   Config routing.on_router_failure: "agent-x-only" (default) goes to
+//   agent-x; "fail" gives up and dispatches nothing. BM25 is never a rung: the
+//   old "cascade" policy (a BM25 pick before agent-x) was retired on
+//   2026-10-13 and a stored "cascade" reads as "agent-x-only".
 //
 // The agent-x rung itself (persona resolution + headless run + audit) also
 // lives here — it is the bottom of the cascade.
@@ -35,6 +35,9 @@ import { runWithCascade } from "./cascade-runner.ts";
 import type { RouterFailurePolicy } from "./harness-config.ts";
 import { scopeBoundary, scopeGuard } from "../../_shared/lib/scope-guard.ts";
 import { briefExcerpt } from "../../_shared/lib/brief-excerpt.ts";
+import { loadCloneRegistry, resolveClonePersona } from "../../_shared/lib/clone-resolver.ts";
+import { missingVoiceNotice, selectVoices, unsettledVoiceNotice } from "./clone-voices.ts";
+import { cloneNamesOf } from "./clone-names.ts";
 
 export type DispatchStepKind = "business" | "squad" | "agent-x";
 
@@ -57,7 +60,6 @@ export type DispatchPlanSource =
   | "ambiguous-chosen"
   | "ambiguous-autopicked"
   | "no-match"
-  | "router-failure-bm25"
   | "router-failure-agent-x";
 
 export interface DispatchPlan {
@@ -106,7 +108,7 @@ function defaultChoose(candidates: RouteCandidate[]): number | null {
   try {
     const lines = candidates.map((c, i) => `  ${i + 1}. [${c.type}] ${c.target} — ${c.reason}`).join("\n");
     const answer = (globalThis as any).prompt?.(
-      `Rota ambígua — escolha o alvo:\n${lines}\nNúmero [1-${candidates.length}] (Enter = 1):`);
+      `Ambiguous route, choose the target:\n${lines}\nNumber [1-${candidates.length}] (Enter = 1):`);
     const n = parseInt(String(answer ?? "").trim(), 10);
     if (Number.isFinite(n) && n >= 1 && n <= candidates.length) return n - 1;
   } catch { /* fall back */ }
@@ -229,8 +231,6 @@ export async function resolveDispatchPlan(decision: AgenticRouteDecision, opts: 
 export interface PlanRouteOpts extends ResolvePlanOpts {
   /** Re-run the agentic router (the one retry). */
   routeOnce: () => Promise<AgenticRouteDecision> | AgenticRouteDecision;
-  /** Fast BM25 business pick; null when BM25 cannot decide either. */
-  fastRoute?: () => Promise<string | null> | string | null;
   /** Config routing.on_router_failure (default "agent-x-only"). */
   onRouterFailure?: RouterFailurePolicy;
 }
@@ -239,12 +239,7 @@ export interface PlanRouteOpts extends ResolvePlanOpts {
  * Resolve a plan from a FIRST router decision, riding the failure ladder when
  * the router fails at the transport level: retry once → then, per
  * `routing.on_router_failure`:
- *   "agent-x-only" (default) — straight to agent-x, loudly. BM25 never runs;
- *                              it fires only when the caller explicitly asked
- *                              for --mode=fast, never as a silent substitute
- *                              for a dead runtime.
- *   "cascade"                — the old default: try a fast BM25 route first,
- *                              agent-x only if BM25 also can't decide.
+ *   "agent-x-only" (default) — straight to agent-x, loudly. BM25 never runs.
  *   "fail"                   — short-circuits the ladder after the retry;
  *                              nothing is dispatched.
  */
@@ -276,29 +271,12 @@ export async function planRouteWithFallback(first: AgenticRouteDecision, opts: P
     };
   }
 
-  // cascade: BM25 first (opt-in only — the default policy skips this block
-  // entirely so BM25 never fires without an explicit --mode=fast)…
-  if (policy === "cascade") {
-    const bm25Slug = opts.fastRoute ? await opts.fastRoute() : null;
-    if (bm25Slug) {
-      warn(`agentic router ${failed} — falling back to fast BM25 route: ${bm25Slug}`);
-      emit("x_router_failure_cascade", { stage: "bm25", picked: bm25Slug, error: decision.error ?? null });
-      return {
-        ok: true,
-        steps: [{ kind: "business", slug: bm25Slug, reason: "BM25 fallback after agentic router transport failure" }],
-        ...planBase("router-failure-bm25"),
-      };
-    }
-  }
-
-  // …then agent-x, loudly.
-  warn(policy === "cascade"
-    ? `agentic router ${failed} AND BM25 could not decide — dispatching agent-x (generalist fallback). Review the routing setup: this brief got NO specialist.`
-    : `agentic router ${failed} — dispatching agent-x (generalist fallback), never BM25. Review the routing setup: this brief got NO specialist.`);
+  // agent-x, loudly.
+  warn(`agentic router ${failed} — dispatching agent-x (generalist fallback), never BM25. Review the routing setup: this brief got NO specialist.`);
   emit("x_router_failure_cascade", { stage: "agent-x", error: decision.error ?? null, policy });
   return {
     ok: true,
-    steps: [{ kind: "agent-x", reason: "router transport failure — cascade bottom (BM25 also undecided)" }],
+    steps: [{ kind: "agent-x", reason: "router transport failure — cascade bottom" }],
     ...planBase("router-failure-agent-x"),
   };
 }
@@ -355,8 +333,44 @@ export interface RunAgentXArgs {
   ledger?: { runId: string; watchDir?: string };
   audit: (event: string, payload: Record<string, any>) => void;
   agentsDir?: string;
+  /** Clones the router chose for this request; offered when the request names none. */
+  suggestedClones?: string[];
+  /** Test seam: the clone library (slug → display name, and where a persona lives). */
+  cloneLibrary?: { names: Array<{ slug: string; name: string }>; dirOf: (slug: string) => string | null };
   /** Test seam: canned cascade runner (zero-token tests). */
   runWithCascadeImpl?: typeof runWithCascade;
+}
+
+/**
+ * The voices the generalist is offered: the ones the request asks for, else the
+ * ones the router chose. Never the library search: a request that reached the
+ * generalist is one no specialist recognised, and a clone found by its words
+ * would be a guess (measured 2026-10-13: half of out-of-domain requests drew one).
+ */
+export function agentXVoices(args: Pick<RunAgentXArgs, "brief" | "suggestedClones" | "cloneLibrary" | "projectDir">): { lines: string[]; dirs: string[]; slugs: string[] } {
+  let lib = args.cloneLibrary;
+  if (!lib) {
+    try {
+      const reg = loadCloneRegistry({ cwd: args.projectDir }) as Record<string, any>;
+      lib = {
+        names: cloneNamesOf(reg),
+        dirOf: (slug) => resolveClonePersona(slug, { depth: "reference", cwd: args.projectDir })?.source ?? null,
+      };
+    } catch { return { lines: [], dirs: [], slugs: [] }; }
+  }
+  const dirOf = lib.dirOf;
+  const sel = selectVoices({ brief: args.brief, names: lib.names, installed: (s) => dirOf(s) !== null, search: () => [], suggested: args.suggestedClones, limit: 3 });
+  const lines: string[] = [];
+  const dirs: string[] = [];
+  for (const v of sel.voices) {
+    const dir = dirOf(v.slug)!;
+    dirs.push(dir);
+    lines.push(`- \`${v.slug}\`${v.name && v.name !== v.slug ? ` (${v.name})` : ""}: \`${dir}\`, AGENT.md and SOUL.md inside · ${v.why}`);
+  }
+  if (sel.missing.length) lines.push(`- ${missingVoiceNotice(sel.missing)}`);
+  const unsettled = unsettledVoiceNotice(sel);
+  if (unsettled) for (const l of unsettled.split("\n")) lines.push(`- ${l}`);
+  return { lines, dirs, slugs: sel.voices.map((v) => v.slug) };
 }
 
 export interface AgentXResult {
@@ -372,7 +386,7 @@ export interface AgentXResult {
 }
 
 /** Dispatch the generalist fallback: persona from _shared/agents +
- * the enriched brief, run through the LLM cascade. Emits dispatch_agent_x
+ * the enriched brief (its file, or its text when the file differs), run through the LLM cascade. Emits dispatch_agent_x
  * (closed-enum event) + agent_executed. */
 export function runAgentX(args: RunAgentXArgs): AgentXResult {
   const emit = args.audit;
@@ -383,6 +397,14 @@ export function runAgentX(args: RunAgentXArgs): AgentXResult {
     "to end, autonomously, with professional defaults. Never ask a human.",
   ].join("\n");
 
+  // One copy of the brief: the file when it holds the brief (the case for every
+  // dispatch, and the better one for a long brief the worker re-reads), the text
+  // only when the file cannot be read or says something else.
+  const fileBrief = (() => { try { return fs.readFileSync(args.briefPath, "utf8"); } catch { return null; } })();
+  const briefInFile = fileBrief !== null && fileBrief.trim() === args.brief.trim();
+  const summaryFile = path.join(args.outputsRoot, "_SUMMARY.md");
+  const voices = agentXVoices(args);
+
   const prompt = [
     persona,
     "",
@@ -391,20 +413,25 @@ export function runAgentX(args: RunAgentXArgs): AgentXResult {
     `- trace_id: ${args.projectId}`,
     `- project_dir: ${args.projectDir}`,
     `- output_path: ${args.outputsRoot}`,
-    `- enriched brief file: ${args.briefPath}`,
+    `- brief file: ${args.briefPath}${briefInFile ? " (read it first; it is the whole brief)" : ""}`,
     `- cascade reason: ${args.reason}`,
-    "",
-    "## Enriched brief",
-    args.brief,
+    ...(briefInFile ? [] : ["", "## Brief", args.brief]),
+    ...(voices.lines.length ? [
+      "",
+      "## Voices",
+      "To write in a clone's voice, open its persona files first; never claim a voice you did not load.",
+      ...voices.lines,
+    ] : []),
     "",
     "## Output",
     `Write every final deliverable as a file under: ${args.outputsRoot}`,
     "When the brief's work lives in another folder (a project to review or fix, a new project to create), do that work there and list every path you created or changed.",
     "Earlier runs beside this one are not your input unless the brief points to them.",
-    "Do not print a summary of what you would do — deliver files. Record",
-    'assumptions under "## Premissas assumidas" in the main deliverable.',
-    scopeBoundary("en"),
-    scopeGuard("en"),
+    `End with ${summaryFile}: one page at most with what you delivered and where, the decisions you took, what is still open and the out-of-scope notes.`,
+    "Do not print a summary to stdout in place of files. Record",
+    'assumptions under "## Assumptions" (titled in the deliverable\'s language) in the main deliverable.',
+    scopeBoundary(),
+    scopeGuard(),
   ].join("\n");
 
   emit("dispatch_agent_x", {
@@ -414,6 +441,7 @@ export function runAgentX(args: RunAgentXArgs): AgentXResult {
     // Parity with dispatch_squad: the proof-of-dispatch event carries what the
     // generalist was asked to do, bounded — see brief-excerpt.ts for the cap.
     brief_excerpt: briefExcerpt(args.brief), brief_chars: args.brief.length,
+    voices: voices.slugs,
   });
 
   const cascadeImpl = args.runWithCascadeImpl ?? runWithCascade;
@@ -422,7 +450,7 @@ export function runAgentX(args: RunAgentXArgs): AgentXResult {
     // inherited its parent's role, which let it dispatch as the operator or,
     // under a seat, as that employee.
     dispatchRole: "agent-x",
-    runtime: args.runtime, prompt, cwd: args.projectRoot, addDirs: [args.projectDir, args.outputsRoot],
+    runtime: args.runtime, prompt, cwd: args.projectRoot, addDirs: [args.projectDir, args.outputsRoot, ...voices.dirs],
     appendSystemPrompt: args.appendSystemPrompt,
     maxBudgetUsd: args.maxBudgetUsd, timeoutMs: args.timeoutMs, yolo: args.yolo,
     brief: args.brief, projectRoot: args.projectRoot, outputsRoot: args.outputsRoot,

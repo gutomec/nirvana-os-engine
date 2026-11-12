@@ -1,85 +1,85 @@
 # Adapter · Grok Build CLI (xAI Grok)
 
-> Runtime adapter para Squad Protocol v5 + Business Protocol v1 + Harness Protocol v1.
-> Cobre os 3 protocolos em um único doc. Seções canônicas conforme Squad v4 §18.5.
-> Identidade + capabilities do sistema (o que o Nirvana-OS é e pode fazer): ver `../NIRVANA-OS.md` (fonte única).
-> Dispatch por sub-process, mesma família do `codex.md` / `kimi-cli.md`. Toda flag abaixo foi lida do `grok --help` ou de `~/.grok/docs/user-guide/` do `grok 1.0.44`; o que o engine não passa está marcado.
+> Runtime adapter for Squad Protocol v6 + Business Protocol v2 + Harness Protocol v1.
+> Covers the 3 protocols in a single doc. Canonical sections per Squad Protocol v6 §18.5.
+> System identity + capabilities (what Nirvana-OS is and can do): see `../NIRVANA-OS.md` (single source).
+> Sub-process dispatch, same family as `codex.md` / `kimi-cli.md`. Every flag below was read from `grok --help` or `~/.grok/docs/user-guide/` of `grok 1.0.44`; anything the engine does not pass is marked as such.
 
 ---
 
-## 1. Metadados do adapter
+## 1. Adapter metadata
 
-| Campo | Valor |
+| Field | Value |
 |---|---|
 | `runtime` | `grok-cli` |
 | `vendor` | xAI |
-| `min_version` | Não pinada. O argv do driver exige `--prompt-file`, `--output-format json` e `--always-approve`; `--trust` é opcional (build que rejeita a flag é re-executado sem ela, §7). Builds antigos caem para `-p` e para saída `plain`. |
-| `tested_against` | `grok 1.0.44 (5b807183dd79)`, lançado em 2026-09-28, auditado em 2026-10-11. Última versão publicada: 1.0.50 (2026-10-06), não instalada na máquina da auditoria. |
-| `default_model` | Herdado do runtime. O engine NUNCA define model; vem da entrada `grok-cli:<model>` do `LLM_CASCADE` (ou de `opts.model`). Passe model só quando o usuário pedir explicitamente. `grok models` lista o que a conta pode usar. |
-| `config_paths` | `~/.grok/config.toml`, `~/.grok/trusted_folders.toml` (folder trust), `~/.grok/sandbox.toml`, `~/.grok/sessions/`, `<project>/.grok/`, `<project>/AGENTS.md`. `GROK_HOME` move a árvore `~/.grok` inteira. |
-| `skills_root` | `./.grok/skills`, `<repo>/.grok/skills`, `~/.grok/skills`, mais `.agents/skills` em cada nível e `~/.claude/skills` / `./.claude/skills` (compatibilidade Claude, ligada por padrão). Skills de projeto só carregam em pasta confiável. |
-| `agents_root` | Nativo: `--agent <NOME ou arquivo>`, `--agents <JSON>` e personas no config (`16-subagents.md`). O engine não usa nenhum deles; a persona vai no arquivo de prompt. |
-| `memory_root` | `<project>/AGENTS.md` (só em pasta confiável); memória cross-session experimental, desligada por padrão (`13-memory.md`). |
-| `audit_log` | Grok: `~/.grok/sessions/<encoded-cwd>/<session-id>/`, legível com `grok export` e `grok usage <SESSION_ID>`. Engine: jsonl em `~/.harness-logs/` via `runGrok`. |
-| `protocol_versions` | Squad 5.0, Business 1.0, Harness 1.0 (com gaps registrados em §13) |
+| `min_version` | Not pinned. The driver's argv needs `--prompt-file`, `--output-format json` and `--always-approve`; `--trust` is optional (a build that rejects it is retried without it, §7). Older builds fall back to `-p` and to `plain` output. |
+| `tested_against` | `grok 1.0.44 (5b807183dd79)`, released 2026-09-28, audited 2026-10-11. Latest published: 1.0.50 (2026-10-06), not installed on the audit machine. |
+| `default_model` | Inherited from the runtime. The engine NEVER sets a model; it comes from the `grok-cli:<model>` entry of `LLM_CASCADE` (or `opts.model`). Pass a model only when the user explicitly asks. `grok models` lists what the account can use. |
+| `config_paths` | `~/.grok/config.toml`, `~/.grok/trusted_folders.toml` (folder trust), `~/.grok/sandbox.toml`, `~/.grok/sessions/`, `<project>/.grok/`, `<project>/AGENTS.md`. `GROK_HOME` moves the whole `~/.grok` tree. |
+| `skills_root` | `./.grok/skills`, `<repo>/.grok/skills`, `~/.grok/skills`, plus `.agents/skills` at each tier and `~/.claude/skills` / `./.claude/skills` (Claude compatibility, on by default). Project skills load only in a trusted folder. |
+| `agents_root` | Native: `--agent <NAME or file>`, `--agents <JSON>` and personas in config (`16-subagents.md`). The engine uses none of them; the persona travels in the prompt file. |
+| `memory_root` | `<project>/AGENTS.md` (trusted folder only); experimental cross-session memory, off by default (`13-memory.md`). |
+| `audit_log` | Grok: `~/.grok/sessions/<encoded-cwd>/<session-id>/`, readable with `grok export` and `grok usage <SESSION_ID>`. Engine: jsonl under `~/.harness-logs/` via `runGrok`. |
+| `protocol_versions` | Squad 5.0, Business 1.0, Harness 1.0 (with gaps recorded in §13) |
 
 ---
 
-## 2. Matriz de suporte
+## 2. Feature support matrix
 
-`✓` = nativo · `~` = workaround/parcial · `✗` = não suportado. "Engine" é o que o `runGrok` passa hoje.
+`✓` = native · `~` = workaround/partial · `✗` = not supported. "Engine" means what `runGrok` passes today.
 
-| Feature (Business v1 §6) | Squad v5 | Business v1 | Harness v1 | Notas |
+| Feature (Business v2 §6.5) | Squad v6 | Business v2 | Harness v1 | Notes |
 |---|---|---|---|---|
-| `max_turns` | ~ | ~ | ~ | O CLI tem `--max-turns <N>` (só headless). O engine **não** passa; `RunHeadlessOpts` não tem `maxTurns`. O único limite é o `timeoutMs` opcional do chamador. |
-| `tool_whitelist` | ~ | ~ | ~ | O CLI tem `--tools` (allowlist) e `--disallowed-tools` (denylist), ambos só headless, e regras repetíveis `--allow` / `--deny` (`--allowedTools` / `--disallowedTools` são aliases de compatibilidade). O engine não passa nenhuma; `allowedTools` e `noTools` são ignorados no grok. |
-| `subagent_spawning` | ✓ | ✓ | ✓ | `spawn_subagent` nativo, profundidade máxima 1. Para desligar: `--no-subagents`, `GROK_SUBAGENTS=0`, `--disallowed-tools Agent`. O engine não passa nenhum, então um worker grok pode abrir os próprios subagents. |
-| `audit_trail` | ✓ | ✓ | ✓ | Transcripts de sessão em disco (`grok export`), hooks em toda tool call (§10), mais o jsonl do engine. |
-| `scheduled_invocation` | ~ | ~ | ~ | Scheduler dentro da sessão (`/loop`, `scheduler_create`, `20-background-tasks.md`). Um run headless termina quando o turno acaba, então o harness continua usando cron externo. |
-| `event_bus` | ~ | ~ | ~ | Mentions/tickets via file system; sem broker. |
-| `hooks` | ✓ | ✓ | ✓ | `PreToolUse`, `PostToolUse`, `SessionStart`, `Stop`, `SubagentStop` e outros (§10). |
-| `sandboxing` | ✓ | ✓ | ✓ | `--sandbox <PROFILE>` / `GROK_SANDBOX` (`workspace`, `read-only`, `strict`, `devbox`, custom). No macOS usa Seatbelt desde a 1.0.44. O engine não passa profile, nem no `--safe`. |
-| `session_memory` | ✓ | ✓ | ✓ | Contexto por sessão; retomável com `-r` (§7). |
-| `project_memory` | ✓ | ✓ | ✓ | `AGENTS.md` / `CLAUDE.md` lidos nativamente, condicionados ao folder trust. |
-| `global_memory` | ~ | ~ | ~ | Memória cross-session experimental, desligada por padrão (`GROK_MEMORY=0` força desligada); regras de `~/.claude/` entram pela compatibilidade Claude. |
-| `handoff_artifacts` | ✓ | ✓ | ✓ | `--output-format json` devolve um objeto (§7). `--json-schema <SCHEMA>` restringe o shape; o engine não passa. |
-| `fork_context` | ✓ | ✓ | ✓ | `--fork-session` com `-r` / `-c` cria a continuação com um novo session id. O engine não usa. |
-| `teammate_primitive` | ✗ | ✗ | ✗ | Sem `TeamCreate`; o pai pode mandar mensagem aos subagents, mas team continua sendo convenção via file system. |
-| `telemetry_otel` | ✓ | ✓ | ✓ | `GROK_EXTERNAL_OTEL=1` mais as variáveis padrão `OTEL_*` de exporter (`24-monitoring-usage.md`). |
-| `mcp` | ✓ | ✓ | ✓ | `grok mcp`; MCP servers de projeto só carregam em pasta confiável. |
+| `max_turns` | ~ | ~ | ~ | The CLI has `--max-turns <N>` (headless only). The engine does **not** pass it; `RunHeadlessOpts` has no `maxTurns`. The only bound is the caller's optional `timeoutMs`. |
+| `tool_whitelist` | ~ | ~ | ~ | The CLI has `--tools` (allowlist) and `--disallowed-tools` (denylist), both headless only, plus repeatable `--allow` / `--deny` rules (`--allowedTools` / `--disallowedTools` are compat aliases). The engine passes none of them; `allowedTools` and `noTools` are ignored for grok. |
+| `subagent_spawning` | ✓ | ✓ | ✓ | Native `spawn_subagent`, max depth 1. Off switches: `--no-subagents`, `GROK_SUBAGENTS=0`, `--disallowed-tools Agent`. The engine passes none, so a grok worker can open its own subagents. |
+| `audit_trail` | ✓ | ✓ | ✓ | Session transcripts on disk (`grok export`), hooks on every tool call (§10), plus the engine's jsonl. |
+| `scheduled_invocation` | ~ | ~ | ~ | In-session scheduler (`/loop`, `scheduler_create`, `20-background-tasks.md`). A headless run exits when its turn ends, so the harness still uses external cron. |
+| `event_bus` | ~ | ~ | ~ | Mentions/tickets via file system; no broker. |
+| `hooks` | ✓ | ✓ | ✓ | `PreToolUse`, `PostToolUse`, `SessionStart`, `Stop`, `SubagentStop` and more (§10). |
+| `sandboxing` | ✓ | ✓ | ✓ | `--sandbox <PROFILE>` / `GROK_SANDBOX` (`workspace`, `read-only`, `strict`, `devbox`, custom). macOS uses Seatbelt since 1.0.44. The engine passes no profile, even on `--safe`. |
+| `session_memory` | ✓ | ✓ | ✓ | Per-session context; resumable with `-r` (§7). |
+| `project_memory` | ✓ | ✓ | ✓ | `AGENTS.md` / `CLAUDE.md` read natively, gated by folder trust. |
+| `global_memory` | ~ | ~ | ~ | Experimental cross-session memory, off by default (`GROK_MEMORY=0` forces it off); `~/.claude/` rules are read through Claude compatibility. |
+| `handoff_artifacts` | ✓ | ✓ | ✓ | `--output-format json` returns one object (§7). `--json-schema <SCHEMA>` constrains the shape; the engine does not pass it. |
+| `fork_context` | ✓ | ✓ | ✓ | `--fork-session` with `-r` / `-c` forks into a new session id. Not used by the engine. |
+| `teammate_primitive` | ✗ | ✗ | ✗ | No `TeamCreate`; the parent can message its subagents, but a team is a file-system convention. |
+| `telemetry_otel` | ✓ | ✓ | ✓ | `GROK_EXTERNAL_OTEL=1` plus the standard `OTEL_*` exporter variables (`24-monitoring-usage.md`). |
+| `mcp` | ✓ | ✓ | ✓ | `grok mcp`; project MCP servers load only in a trusted folder. |
 
-> **Nota fora da matriz canônica:** os diferenciais do Grok para o Nirvana são as **tools de mídia embutidas no Build CLI** (`image_gen` / `image_edit` / `image_to_video`) e a **rota assinatura de custo marginal $0** (§8). O Grok também não tem teto de gasto próprio: limites no estilo `--max-budget` não existem no CLI.
+> **Note outside the canonical matrix:** Grok's differentiators for Nirvana are the **media tools built into the Build CLI** (`image_gen` / `image_edit` / `image_to_video`) and the **subscription route with $0 marginal cost** (§8). Grok also has no spend cap of its own: `--max-budget` style limits do not exist in the CLI.
 
 ---
 
-## 3. Mapeamento de conceitos
+## 3. Concept mapping
 
-| Conceito (Protocolo) | Equivalente Grok Build CLI | Implementação |
+| Concept (Protocol) | Grok Build CLI equivalent | Implementation |
 |---|---|---|
-| Squad / Business | Diretório de skills + AGENTS.md | `<project>/.agents/skills/<name>/` + `AGENTS.md` do CWD, ambos carregados só em pasta confiável (`--trust`) |
-| Capability | Workflow file | `<skill>/capabilities/<id>.md`, lido pelo agente a partir das instruções do prompt |
-| Employee | Persona no arquivo de prompt | Persona-núcleo + DNA no arquivo passado por `--prompt-file`. Profiles nativos via `--agent` existem, mas não são usados. |
-| `is_brief_intake: true` | Persona default quando o skill está ativo | Montada no prompt / `AGENTS.md` do skill |
-| `is_antagonist: true` | Sub-process separado | Uma segunda chamada `grok --prompt-file ...` com a persona antagonista |
-| Handoff artifact | JSON no stdout | Campo `text` do envelope json, persistido em `<project>/.handoffs/` |
-| Mention `@employee` | Convenção no handoff | O adapter detecta → novo sub-process |
-| Ticket | Arquivo persistido | `<project>/.tickets/<TICKET_ID>.json` |
-| Escalation trigger | Wrapper script + chamada ao harness | O wrapper checa a condição → emite notification para o harness |
-| Permanent memory | `<project>/AGENTS.md` + arquivos custom | Memória nativa experimental existe, desligada por padrão |
-| Project memory | `<project>/AGENTS.md` | Nativo, só em pasta confiável |
-| Session memory | Sessão em `~/.grok/sessions/` | Retomada com `-r <sessionId>` no revise |
-| Routing decision (harness) | Lookup table pré-spawn | BM25 sobre `capabilities[].examples[]` em wrapper Bun |
+| Squad / Business | Skills directory + AGENTS.md | `<project>/.agents/skills/<name>/` + the CWD's `AGENTS.md`, both loaded only in a trusted folder (`--trust`) |
+| Capability | Workflow file | `<skill>/capabilities/<id>.md`, read by the agent from the prompt's instructions |
+| Employee (seat) | Persona in the prompt file | A business runs as ONE solo agent (`skills/harness/lib/business-solo.ts`) that plays the seats itself; persona + DNA go in the prompt file. Native `--agent` profiles exist but are not used. |
+| `is_brief_intake: true` | Default persona when the skill is active | Built in the prompt / the skill's `AGENTS.md` |
+| `is_antagonist: true` | Separate sub-process | A second `grok --prompt-file ...` call with the antagonist persona |
+| Handoff artifact | JSON on stdout | `text` field of the json envelope, persisted in `<project>/.handoffs/` |
+| Mention `@employee` | Convention in the handoff | The adapter detects it → new sub-process |
+| Ticket | Persisted file | `<project>/.tickets/<TICKET_ID>.json` |
+| Escalation trigger | Wrapper script + harness call | The wrapper checks the condition → emits a notification to the harness |
+| Permanent memory | `<project>/AGENTS.md` + custom files | Experimental native memory exists but is off by default |
+| Project memory | `<project>/AGENTS.md` | Native, trusted folder only |
+| Session memory | Session under `~/.grok/sessions/` | Resumed with `-r <sessionId>` on revise |
+| Routing decision (harness) | Pre-spawn lookup table | BM25 over `capabilities[].examples[]` in a Bun wrapper |
 
 ---
 
-## 4. Mapeamento de frontmatter
+## 4. Frontmatter mapping
 
-### Squad v5 / Business v1 → AGENTS.md
+### Squad v6 / Business v2 → AGENTS.md
 
-O Grok lê `AGENTS.md`, `CLAUDE.md`, `Claude.md` e `CLAUDE.local.md` nativamente (`12-project-rules.md`), mas só depois que a pasta é confiável. O adapter mantém a mesma tática de dois arquivos do Codex/Kimi:
+Grok reads `AGENTS.md`, `CLAUDE.md`, `Claude.md` and `CLAUDE.local.md` natively (`12-project-rules.md`), but only after the folder is trusted. The adapter keeps the same two-file tactic as Codex/Kimi:
 
 ```yaml
-# AGENTS.md (head do projeto/skill)
+# AGENTS.md (head of the project/skill)
 You are an AI agent operating under the Squad/Business Protocol.
 
 Available capabilities: [media.video.analyze, media.transcript.extract, ...]
@@ -87,100 +87,101 @@ Default tools: [Read, Write, Bash]
 ```
 
 ```yaml
-# .agents/manifest.yaml (auxiliar: lido por wrapper, não pelo Grok)
+# .agents/manifest.yaml (auxiliary: read by a wrapper, not by Grok)
 name: nexus-council
 protocol: 1.0
 employees: [ceo, marketing-lead, ...]
 operation_mode: zero_human
 ```
 
-### Employee → arquivo de prompt
+### Employee → prompt file
 
-O engine grava um arquivo temporário e o passa com `--prompt-file`. O `withPreamble` coloca a diretiva de modo autônomo (`appendSystemPrompt`) no topo desse arquivo, separada por `---`; ela chega como texto do turno do usuário, não como system prompt. O `--rules <TEXT>` do Grok (acrescenta ao system prompt) e o `--system-prompt-override` (substitui) existem, e o engine não usa nenhum dos dois.
+The engine writes one temp file and passes it with `--prompt-file`. `withPreamble` puts the autonomous-mode directive (`appendSystemPrompt`) at the top of that file, separated by `---`; it is user-turn text, not system text. Grok's `--rules <TEXT>` (append to the system prompt) and `--system-prompt-override` (replace it) exist, and the engine uses neither.
 
 ```
-<diretiva de modo autônomo (appendSystemPrompt)>
+<autonomous-mode directive (appendSystemPrompt)>
 ---
-<persona-núcleo do employee (frontmatter → topo)>
-<DNA do mind-clone: injectMindClones().combined_prompt>
+<employee core persona (frontmatter → top)>
+<mind-clone DNA: injectMindClones().combined_prompt>
 ## Brief
-<brief enriquecido>
-## Tools permitidos
+<enriched brief>
+## Allowed tools
 <tool whitelist>
-## Contrato de saída
-Responda SOMENTE com um único objeto JSON: {...}
+## Output contract
+Reply ONLY with a single JSON object: {...}
 ```
 
-> Para `type: mind_clone`, o adapter **prepende** `(DISCLOSURE: AI-generated persona, not a real person.)` na persona, igual ao Codex.
+> For `type: mind_clone`, the adapter **prepends** `(DISCLOSURE: AI-generated persona, not a real person.)` to the persona, same as Codex.
 
 ---
 
-## 5. Mecânica de tool whitelist
+## 5. Tool whitelist mechanics
 
-O CLI impõe limites de tool; o engine ainda não usa nenhum.
+The CLI enforces tool limits; the engine does not use them yet.
 
-- `--tools <a,b,c>`: allowlist de tools built-in (só headless). As meta-tools de MCP continuam disponíveis, a menos que negadas.
-- `--disallowed-tools <a,b,c>`: denylist (só headless). Aceita `Agent`, `Agent(explore)`, `Agent(explore, plan)` para bloquear subagents. Com as duas flags, a denylist vence.
-- `--allow <RULE>` / `--deny <RULE>`, repetíveis, no TUI e no headless: `Bash(...)`, `Edit(...)`, `Write(...)`, `Read(...)`, `Grep(...)`, `WebFetch(...)`, `MCPTool(...)` com glob. Deny vence allow. Elas controlam a execução; não removem a tool.
-- `--permission-mode default|acceptEdits|auto|dontAsk|bypassPermissions|plan`. `bypassPermissions` equivale a `--always-approve`. Regras de deny, hooks e travas de admin continuam valendo sob always-approve.
-- `--disable-web-search` remove web search e fetch.
+- `--tools <a,b,c>`: allowlist of built-in tools (headless only). MCP meta-tools stay available unless denied.
+- `--disallowed-tools <a,b,c>`: denylist (headless only). Accepts `Agent`, `Agent(explore)`, `Agent(explore, plan)` to block subagents. When both flags are given, the denylist wins.
+- `--allow <RULE>` / `--deny <RULE>`, repeatable, TUI and headless: `Bash(...)`, `Edit(...)`, `Write(...)`, `Read(...)`, `Grep(...)`, `WebFetch(...)`, `MCPTool(...)` with glob patterns. Deny beats allow. They gate execution; they do not remove the tool.
+- `--permission-mode default|acceptEdits|auto|dontAsk|bypassPermissions|plan`. `bypassPermissions` equals `--always-approve`. Deny rules, hooks and admin locks still apply under always-approve.
+- `--disable-web-search` removes web search and fetch.
 
-Os nomes de tool são ids internos, não os nomes portáveis: `read_file`, `grep`, `list_dir`, `search_replace`, `web_search`, `web_fetch` e a tool de shell (`run_terminal_cmd` em `14-headless-mode.md`, `run_terminal_command` em `10-hooks.md`; a documentação diverge, então leia a lista real com `grok inspect --json` ou na linha `system/init` do `streaming-messages-json`). Mapeamento portável: `read` → `read_file`, `edit`/`write` → `search_replace` e a tool de escrita, `grep` → `grep`, `bash` → a tool de shell, `web_fetch` → `web_fetch`, `web_search` → `web_search`. Tools MCP mantêm o prefixo `mcp__<server>__`.
+Tool names are internal ids, not the portable names: `read_file`, `grep`, `list_dir`, `search_replace`, `web_search`, `web_fetch`, and the shell tool (`run_terminal_cmd` in `14-headless-mode.md`, `run_terminal_command` in `10-hooks.md`; the docs disagree, so read the real list from `grok inspect --json` or from the `system/init` line of `streaming-messages-json`). Portable mapping (Squad v6 §10.7): `read` → `read_file`, `edit`/`write` → `search_replace` and the write tool, `grep` → `grep`, `bash` → the shell tool, `web_fetch` → `web_fetch`, `web_search` → `web_search`. MCP tools keep the `mcp__<server>__` prefix.
 
-O que o engine faz hoje: no caminho autônomo passa `--always-approve` e nenhuma allowlist. No `--safe` (`yolo: false`) não passa `--always-approve` nem `--trust`, e também nenhum `--tools`, `--permission-mode` ou `--sandbox`; a restrição é apenas "o modo de aprovação padrão do CLI num run headless". O bloco "## Tools permitidos" da persona é um limite brando.
+What the engine does today: on the autonomous path it passes `--always-approve` and no allowlist. On `--safe` (`yolo: false`) it passes neither `--always-approve` nor `--trust`, and no `--tools`, `--permission-mode` or `--sandbox` either, so the restriction is "the CLI's default approval mode in a headless run". The persona's "## Allowed tools" block is a soft limit only.
 
-Mídia embutida: `image_gen` / `image_edit` (chave `features.image_gen`) e `image_to_video` são tools nativas, disponíveis quando a persona pede.
+Built-in media: `image_gen` / `image_edit` (toggle `features.image_gen`) and `image_to_video` are native tools, reachable when the persona asks for them.
 
 ---
 
-## 6. Mecânica de max-turns
+## 6. Max-turns mechanics
 
-O CLI expõe `--max-turns <N>`, só no headless. Quando o teto é atingido, o turno termina com o hook `StopCancelled`, um evento `max_turns_reached` no `streaming-json` ou o subtype `error_max_turns` no `streaming-messages-json`. O `num_turns` do envelope json conta rodadas de modelo do agente principal (chamadas de subagents não entram).
+The CLI exposes `--max-turns <N>`, headless only. When the cap hits, the turn ends with a `StopCancelled` hook, a `max_turns_reached` event in `streaming-json`, or the `error_max_turns` subtype in `streaming-messages-json`. The json envelope's `num_turns` counts main-agent model rounds (subagent calls are not counted).
 
-**O engine não passa `--max-turns`.** O `runGrok` não tem entrada de turnos (`RunHeadlessOpts` não carrega `maxTurns`), então o `maxTurns` do employee não chega ao grok. O único limite é `opts.timeoutMs` → timeout do `spawnSync`, que por padrão não existe (sem teto). Um filho que estoura o timeout é morto por sinal e o driver registra exit code 124.
+**The engine does not pass `--max-turns`.** `runGrok` has no turn input (`RunHeadlessOpts` carries no `maxTurns`), so an employee's `maxTurns` does not reach grok. The only bound is `opts.timeoutMs` → `spawnSync` timeout, which is unset by default (uncapped). A timed-out child is killed by signal and the driver records exit code 124.
 
-O Grok não tem teto de gasto: o guia headless diz que o subtype `error_max_budget_usd` nunca é emitido porque o grok não tem recurso de budget. Um `maxBudgetUsd` do engine não é passado ao grok e não teria para onde ir.
+Grok has no spend cap: the headless guide says `error_max_budget_usd` "is never emitted, because grok has no budget feature". An engine `maxBudgetUsd` is not passed to grok and cannot be.
 
 ---
 
 ## 7. Subagent spawning
 
-### Argv do dispatch (o que o `runGrok` executa de fato)
+### Dispatch argv (what `runGrok` actually runs)
 
 ```bash
-grok --prompt-file <arquivo-tmp> --output-format json --cwd <cwd> \
-  [-r <sessionId>]        # só ao retomar (opts.sessionId definido, ex.: nrv revise)
-  [--always-approve]      # caminho autônomo; sai no --safe
-  [--trust]               # caminho autônomo; sai no --safe
-  [-m <model>]            # só quando opts.model ou o cascade resolve um
+grok --prompt-file <tmp-file> --output-format json --cwd <cwd> \
+  [-r <sessionId>]        # only when resuming (opts.sessionId set, e.g. nrv revise)
+  [--always-approve]      # autonomous path; dropped under --safe
+  [--trust]               # autonomous path; dropped under --safe
+  [-m <model>]            # only when opts.model or the cascade resolves one
 ```
 
-- `--prompt-file <PATH>`: prompt single-turn a partir de arquivo, sem perda em qualquer tamanho. O arquivo temporário é apagado depois do run.
-- `--output-format json`: um objeto no stdout ao fim do run.
-- `--cwd <dir>`: diretório de trabalho (o cwd do processo filho é o mesmo).
-- `-r <id>`: retoma a sessão `opts.sessionId`. Sem ele, cada chamada é uma conversa nova.
-- `--always-approve`: aprova toda tool call. Sem ela, um run headless fica esperando aprovações que não vão chegar. `--yolo` é alias documentado no guia headless, mas não aparece no `--help`; o engine usa a flag documentada.
-- `--trust`: flag oculta (fora do `--help`; `grok --trust --version` é aceito na 1.0.44). Concede folder trust, e assim carregam o `AGENTS.md` do projeto, skills de projeto em `.agents/skills`, hooks de projeto, MCP/LSP de projeto e regras de permissão de projeto. Sem ela, a inicialização headless com essas fontes exige `--trust` ou uma concessão anterior, e uma pasta de run nova não tem concessão anterior.
-- `-m <model>`: de `opts.model` ou `resolveSystemModel("grok-cli")`; nunca hardcoded.
+- `--prompt-file <PATH>`: single-turn prompt from a file, lossless at any size. The temp file is deleted after the run.
+- `--output-format json`: one object on stdout after the run.
+- `--cwd <dir>`: working directory (the child's process cwd is the same dir).
+- `-r <id>`: resume the session `opts.sessionId`.
+- `--session-id <uuid>`: a fresh run is started under an id the engine chose, so a run that dies before printing its envelope still has one. A build that rejects the flag is retried without it.
+- `--always-approve`: auto-approve every tool call. Without it a headless run waits for approvals it cannot get. `--yolo` is a documented alias in the headless guide but absent from `--help`; the engine uses the documented flag.
+- `--trust`: hidden flag (not in `--help`; `grok --trust --version` parses on 1.0.44). It grants folder trust, so project `AGENTS.md`, project skills under `.agents/skills`, project hooks, project MCP/LSP and project permission rules load. Without it, "headless startup with these sources requires `--trust` or a prior grant", and a fresh run folder has no prior grant.
+- `-m <model>`: from `opts.model` or `resolveSystemModel("grok-cli")`; never hardcoded.
 
-Retentativas, nesta ordem, cada uma só com prova de que a leitura do argv recusou a flag antes de qualquer chamada ao modelo (`argvRejectedFlag`): exit 2 (o código de erro de uso do clap), stderr citando aquela flag numa mensagem `unexpected argument` / opção desconhecida / valor inválido, e nenhum objeto JSON no stdout. Qualquer outra falha, sejam quais forem as palavras, é um turno que rodou: é reportada como falha e nunca disparada de novo.
-1. `--trust` recusada → roda de novo, uma vez, sem `--trust`.
-2. `--prompt-file` recusada → roda de novo com `-p <prompt>` no argv (inseguro para ARG_MAX com prompt grande; só para builds muito antigos).
-3. `--output-format` recusada → roda de novo sem `--output-format` (texto puro no stdout).
+Retries, in order, each only on proof that argv parsing refused the flag before any model call (`argvRejectedFlag`): exit 2 (clap's usage-error code), stderr naming that flag in an `unexpected argument` / unknown-option / invalid-value message, and no JSON object on stdout. Any other failure, whatever words it uses, is a turn that ran and is reported as failed, never spawned again.
+1. `--trust` refused → rerun once without `--trust`.
+2. `--prompt-file` refused → rerun with `-p <prompt>` on argv (ARG_MAX-unsafe for large prompts; only for very old builds).
+3. `--output-format` refused → rerun without `--output-format` (plain text on stdout).
 
-Não passados hoje: `-s/--session-id`, `--effort`, `--no-subagents`, `--max-turns`, `--rules`, `--tools`, `--disallowed-tools`, `--permission-mode`, `--sandbox`, `--json-schema`. O grok não está em `EFFORT_CAPABLE`, então um effort pedido gera um aviso único e é descartado. Não há flag de concessão de diretório (equivalente a `--add-dir`): `addDirs` extras geram um warning.
+Not passed today: `--effort`, `--no-subagents`, `--max-turns`, `--rules`, `--tools`, `--disallowed-tools`, `--permission-mode`, `--sandbox`, `--json-schema`. Grok is not in `EFFORT_CAPABLE`, so a requested effort is warned about once and dropped. There is no directory-grant flag (`--add-dir` equivalent): extra `addDirs` produce a warning.
 
-### Camada leve (entrada `grok-cli` de `RUNTIMES`)
+### Light layer (`RUNTIMES` entry `grok-cli`)
 
 ```bash
-grok --prompt-file <arquivo-tmp> [--always-approve --trust]
+grok --prompt-file <tmp-file> [--always-approve --trust]
 ```
 
-Persona e mensagem do usuário vão juntas em um arquivo. `--always-approve --trust` só entram quando `headlessSkipPermissions()` está ligado (setting `execution.headless_skip_permissions`). Sem `--output-format`, o stdout vem em texto puro; o parser ainda tenta as chaves JSON `text`, `response`, `result`, `output`.
+Persona and user message are merged into one file. `--always-approve --trust` are added only when `headlessSkipPermissions()` is on (setting `execution.headless_skip_permissions`). No `--output-format`, so stdout is plain; the parser still tries JSON keys `text`, `response`, `result`, `output`.
 
-### Envelope de resultado
+### Result envelope
 
-Sucesso (`--output-format json`):
+Success (`--output-format json`):
 
 ```json
 {"text":"...","stopReason":"end_turn","sessionId":"...","requestId":"...",
@@ -188,182 +189,178 @@ Sucesso (`--output-format json`):
  "total_cost_usd":0.0127,"total_cost_usd_ticks":126890500}
 ```
 
-`total_cost_usd` só aparece quando o servidor reportou um custo completo. Quando faltou custo em alguma chamada, vem `cost_is_partial: true` e todos os floats de custo são omitidos; `usage_is_incomplete: true` faz o mesmo. Um prompt que nunca chegou ao modelo não tem campos de gasto.
+`total_cost_usd` appears only when the server reported a complete cost. When some calls lacked cost, `cost_is_partial: true` and every cost float is omitted; `usage_is_incomplete: true` does the same. A prompt that never reached the model has no spend fields.
 
-Falha: `{"type":"error","message":"..."}` com exit diferente de zero (130 em SIGINT, 143 em SIGTERM, 1 nos demais casos).
+Failure: `{"type":"error","message":"..."}` with a non-zero exit (130 on SIGINT, 143 on SIGTERM, 1 otherwise).
 
-Como o `runGrok` lê: texto do resultado de `response`, `result`, `output` ou `text`; session id de `session_id`, `sessionId`, `conversation_id` ou `session.id` (com fallback para o id recebido ou um UUID novo); custo de `total_cost_usd`, senão `costUnavailable`. Falha é `exit != 0`, um campo `is_error` / `error`, ou o envelope `{"type":"error","message"}`, cuja `message` vira o erro do run (o stderr só entra quando nenhum envelope diz o motivo). `cost_is_partial`, `usage_is_incomplete`, `num_turns` e `total_cost_usd_ticks` não são lidos.
+How `runGrok` reads it: result text from `response`, `result`, `output` or `text`; session id from `session_id`, `sessionId`, `conversation_id` or `session.id` (falling back to the id it was given or a fresh UUID); cost from `total_cost_usd`, else `costUnavailable`. Failure is `exit != 0`, an `is_error` / `error` field, or the `{"type":"error","message"}` envelope, whose `message` becomes the run's error (stderr is the fallback only when no envelope says why). `cost_is_partial`, `usage_is_incomplete`, `num_turns` and `total_cost_usd_ticks` are not read.
 
-### Sessões
+### Sessions
 
-- `-s, --session-id <UUID>`: nomeia só uma sessão **nova** (UUID válido e ainda não usado). Não retoma.
-- `-r, --resume [<ID_OU_TÍTULO>]`: retoma por id, ou por título no diretório atual; a mais recente se omitido. Scripts devem passar id.
-- `-c, --continue`: sessão mais recente do cwd.
-- `--fork-session`: com `-r` / `-c`, continua sob um session id novo (que o `-s` pode nomear).
-- `--restore-code`: também restaura o snapshot do repositório ao retomar.
+- `-s, --session-id <UUID>`: names a **new** session only (must be a valid, unused UUID). It does not resume.
+- `-r, --resume [<ID_OR_TITLE>]`: resume by id, or by title in the current directory; most recent if omitted. Scripts should pass ids.
+- `-c, --continue`: most recent session for the cwd.
+- `--fork-session`: with `-r` / `-c`, continue under a new session id (which `-s` may name).
+- `--restore-code`: also restore the repository snapshot on resume.
 - `grok sessions list|search|delete`, `grok export`, `grok usage <SESSION_ID> [TURN]`.
 
-### Subagents nativos
+### Native subagents
 
-O agente principal chama `spawn_subagent`; os tipos built-in são `general-purpose`, `explore` e `plan`, e agentes de projeto ou de usuário podem adicionar ou sobrepor tipos. A profundidade é fixa em um: um subagent não abre outro. `--agents <JSON>` define subagents inline (só headless), `--agent <NOME>` escolhe o profile do agente. Como o engine não passa `--no-subagents`, um worker grok pode delegar dentro do próprio run; workers Claude têm o padrão oposto (`--disallowedTools Task Agent`, salvo `allowSubagents`).
+The main agent calls `spawn_subagent`; built-in types are `general-purpose`, `explore` and `plan`, and project or user agents can add or shadow types. Depth is fixed at one: a subagent cannot spawn another. `--agents <JSON>` defines subagents inline (headless only), `--agent <NAME>` picks the agent profile. Because the engine passes no `--no-subagents`, a grok worker can delegate inside its own run; Claude workers get the opposite default (`--disallowedTools Task Agent` unless `allowSubagents`).
 
-**Para mention `@x`:** o adapter detecta no handoff retornado e abre um novo sub-process para `x`. **Fan-out paralelo** entre employees continua no nível do OS: sub-processes `grok --prompt-file` independentes.
+**For a mention `@x`:** the adapter detects it in the returned handoff and opens a new sub-process for `x`. **Parallel fan-out** between employees stays at the OS level: independent `grok --prompt-file` sub-processes.
 
 ---
 
-## 8. Armazenamento de memória
+## 8. Memory storage
 
-| Camada | Path | Persistência |
+| Layer | Path | Persistence |
 |---|---|---|
-| Permanent (cross-session) | `<project>/AGENTS.md` + arquivos custom; memória nativa opcional (`topics/` por escopo, desligada por padrão) | Manual / experimental |
-| Project | `<project>/AGENTS.md` | Nativo, só em pasta confiável |
-| Session | `~/.grok/sessions/<encoded-cwd>/<session-id>/` | Persistida pelo grok; retomada com `-r` |
-| Business permanent | `~/businesses/<biz>/memory/permanent.md` | Adapter persiste |
+| Permanent (cross-session) | `<project>/AGENTS.md` + custom files; optional native memory (`topics/` per scope, off by default) | Manual / experimental |
+| Project | `<project>/AGENTS.md` | Native, trusted folder only |
+| Session | `~/.grok/sessions/<encoded-cwd>/<session-id>/` | Persisted by grok; resumed with `-r` |
+| Business permanent | `~/businesses/<biz>/memory/permanent.md` | Adapter persists |
 | Project (business) | `<project>/<biz>/<project_id>/memory/` | Isolation by construction |
 
-> **Isolation guard:** o Grok não impõe o isolamento de memória do Nirvana. O adapter monta o prompt com APENAS a memória relevante ao `project_id` antes do spawn, caso contrário `audit_event: isolation_violation`. Se a memória nativa for ligada, o escopo de workspace é compartilhado por clones e worktrees do mesmo repositório.
+> **Isolation guard:** Grok does not enforce Nirvana's memory isolation. The adapter builds the prompt with ONLY the memory relevant to the `project_id` before spawning, otherwise `audit_event: isolation_violation`. If native memory is ever turned on, its workspace scope is shared by clones and worktrees of the same repo.
 
-**Autenticação em dois trilhos.** O model vem SÓ da entrada `grok-cli:<model>` do cascade. A credencial vem de uma de duas rotas:
+**Authentication: two tracks.** The model comes ONLY from the `grok-cli:<model>` cascade entry. The credential comes from one of two routes:
 
-- **Assinatura via `grok login`**: conta xAI. **Custo marginal $0**; nessa rota o envelope em geral omite `total_cost_usd` (o guia diz que caminhos pool/OAuth costumam omitir), então o driver reporta `costUsd: null` + `costUnavailable`. É a rota que o squad **`grok-studio-nirvana`** usa.
-- **API xAI via `XAI_API_KEY` (paga)**: pay-per-token; o custo é carimbado para tráfego com API key e chega em `total_cost_usd`.
-
----
-
-## 9. Janela de contexto e compaction
-
-- Janela: depende do modelo escolhido via `LLM_CASCADE`. Desde a 1.0.44 um modelo pode anunciar vários tamanhos de janela (`/context-window <tamanho>` no TUI); o primeiro listado é o padrão. O engine não fixa número.
-- Compaction: automática em 85% da janela (`[session] auto_compact_threshold_percent`), manual com `/compact`. Os hooks `PreCompact` / `PostCompact` disparam em volta; o `streaming-json` pode emitir eventos `auto_compact_*`.
-- Quando o brief pede artefato visual, `image_gen` / `image_edit` / `image_to_video` rodam na mesma sessão.
+- **Subscription via `grok login`**: an xAI account. **$0 marginal cost**; the envelope usually omits `total_cost_usd` on this route ("pool/OAuth paths often omit it"), so the driver reports `costUsd: null` + `costUnavailable`. This is the route the **`grok-studio-nirvana`** squad uses.
+- **xAI API via `XAI_API_KEY` (paid)**: pay-per-token; cost is stamped for API-key traffic and lands in `total_cost_usd`.
 
 ---
 
-## 10. Sistema de hooks
+## 9. Context window and compaction
 
-O Grok tem um sistema de hooks completo (`10-hooks.md`). Fontes, todas mescladas:
+- Window: depends on the model chosen via `LLM_CASCADE`. Since 1.0.44 a model can advertise several window sizes (`/context-window <size>` in the TUI); the first listed size is the default. The engine does not pin a number.
+- Compaction: automatic at 85% of the window (`[session] auto_compact_threshold_percent`), manual with `/compact`. Hooks `PreCompact` / `PostCompact` fire around it; `streaming-json` may emit `auto_compact_*` events.
+- When the brief asks for a visual artifact, `image_gen` / `image_edit` / `image_to_video` run in the same session.
 
-| Escopo | Path | Confiável? |
+---
+
+## 10. Hook system
+
+Grok has a full hook system (`10-hooks.md`). Sources, all merged:
+
+| Scope | Path | Trusted? |
 |---|---|---|
-| Global | `~/.grok/hooks/*.json`, `~/.grok/config.toml` | Sempre |
-| Global | `~/.claude/settings.json` (+ `settings.local.json`) | Sempre (compatibilidade Claude, ligada por padrão) |
-| Global | `~/.cursor/hooks.json` | Sempre (compatibilidade Cursor) |
-| Projeto | `<project>/.grok/hooks/*.json`, `<project>/.claude/settings.json`, `<project>/.cursor/hooks.json` | Exige folder trust |
-| Organização | `managed_config.toml`, `requirements.toml` | Sempre |
-| Plugin | Empacotados em plugins instalados | Por plugin |
+| Global | `~/.grok/hooks/*.json`, `~/.grok/config.toml` | Always |
+| Global | `~/.claude/settings.json` (+ `settings.local.json`) | Always (Claude compatibility, on by default) |
+| Global | `~/.cursor/hooks.json` | Always (Cursor compatibility) |
+| Project | `<project>/.grok/hooks/*.json`, `<project>/.claude/settings.json`, `<project>/.cursor/hooks.json` | Folder trust required |
+| Org | `managed_config.toml`, `requirements.toml` | Always |
+| Plugin | Bundled in installed plugins | Per plugin |
 
-Eventos: `SessionStart`, `SessionEnd`, `UserPromptSubmit` (pode bloquear), `PreToolUse` (pode negar), `PostToolUse` (pode trocar o output que o modelo vê), `PostToolUseFailure`, `PermissionDenied`, `Stop` (pode bloquear), `StopFailure`, `StopCancelled`, `Notification`, `SubagentStart`, `SubagentStop` (pode bloquear), `PreCompact`, `PostCompact`. Desde a 1.0.49 (release notes, versão ausente na máquina da auditoria) os prompts de permissão de hook aparecem em todo modo de aprovação.
+Events: `SessionStart`, `SessionEnd`, `UserPromptSubmit` (can block), `PreToolUse` (can deny), `PostToolUse` (can replace the output the model sees), `PostToolUseFailure`, `PermissionDenied`, `Stop` (can block), `StopFailure`, `StopCancelled`, `Notification`, `SubagentStart`, `SubagentStop` (can block), `PreCompact`, `PostCompact`. Since 1.0.49 (release notes, not on the audit machine) hook permission prompts appear in every approval mode.
 
-Consequência para o Nirvana: como o `~/.claude/settings.json` é sempre carregado, os hooks de auditoria que o `nrv setup` instala ali (`audit-emit-from-hook.ts pre|post`, sem argumento de agente) também disparam dentro dos filhos grok. O script então os rotula como `claude-code-hook`, e os nomes de tool do grok (`search_replace`, a tool de shell) diferem dos do Claude. Para desligar, `[compat.claude] hooks = false` em `~/.grok/config.toml`; um arquivo de hook nativo do grok em `~/.grok/hooks/` levaria o rótulo certo. Nenhum dos dois existe hoje.
+Consequence for Nirvana: because `~/.claude/settings.json` is always loaded, the audit hooks that `nrv setup` installs there (`audit-emit-from-hook.ts pre|post`, no agent argument) also fire inside grok children. The script then labels them `claude-code-hook`, and grok's tool names (`search_replace`, the shell tool) differ from Claude's. Turning this off is `[compat.claude] hooks = false` in `~/.grok/config.toml`; a grok-native hook file under `~/.grok/hooks/` would carry the right label. Neither exists today.
 
-| Hook desejado | Grok |
+| Desired hook | Grok |
 |---|---|
-| `PreToolUse` | `PreToolUse` nativo (pode negar) |
-| `PostToolUse` | `PostToolUse` nativo |
-| `UserPromptSubmit` | `UserPromptSubmit` nativo (pode bloquear) |
-| `Stop` | `Stop` / `StopFailure` / `StopCancelled` nativos |
-| `SessionStart` | `SessionStart` nativo |
-| `Compact` | `PreCompact` / `PostCompact` nativos |
+| `PreToolUse` | Native `PreToolUse` (can deny) |
+| `PostToolUse` | Native `PostToolUse` |
+| `UserPromptSubmit` | Native `UserPromptSubmit` (can block) |
+| `Stop` | Native `Stop` / `StopFailure` / `StopCancelled` |
+| `SessionStart` | Native `SessionStart` |
+| `Compact` | Native `PreCompact` / `PostCompact` |
 
 ---
 
-## 11. Exemplos de invocação
+## 11. Invocation examples
 
-### Exemplo 1: Squad capability (caminho autônomo)
+### Example 1: Squad capability (autonomous path)
 
 ```bash
 # User: "gerar key visual do lançamento e um teaser vertical"
-# O que o runGrok executa (o prompt é gravado antes num arquivo temporário):
-grok --prompt-file <arquivo-tmp> --output-format json --cwd <run-dir> \
+# What runGrok runs (prompt written to a temp file first):
+grok --prompt-file <tmp-prompt-file> --output-format json --cwd <run-dir> \
   --always-approve --trust -m <model>
 # stdout: {"text":"...","sessionId":"0199...","total_cost_usd":...}
 ```
 
-### Exemplo 2: Business brief com handoff em pipeline, depois um revise
+### Example 2: Business brief, then a revise
 
 ```bash
-# CEO recebe o brief
-grok --prompt-file <persona-ceo+brief> --output-format json --cwd <run-dir> --always-approve --trust \
-  > .handoffs/ceo-1.json
+# First dispatch: the business runs as ONE solo agent that plays the seats
+grok --prompt-file <brief-file> --output-format json --cwd <run-dir> --always-approve --trust \
+  > .handoffs/nexus-1.json
 
-# Adapter detecta `next_action: delegate to marketing-lead`
-grok --prompt-file <persona-marketing+contexto-ceo> --output-format json --cwd <run-dir> --always-approve --trust \
-  > .handoffs/marketing-1.json
+# nrv revise <project> "<change>": same session, resumed by id
+grok --prompt-file <revision-file> --output-format json --cwd <run-dir> \
+  -r <sessionId-from-nexus-1> --always-approve --trust
 
-# Adapter detecta mention `@alex-hormozi`
-grok --prompt-file <persona-alex+DNA+contexto> --output-format json --cwd <run-dir> --always-approve --trust \
+# A stand-alone sub-process is only spawned for an explicit mention `@alex-hormozi`
+grok --prompt-file <alex-persona-file> --output-format json --cwd <run-dir> --always-approve --trust \
   > .handoffs/alex-1.json
-
-# nrv revise <project> "<mudança>": mesma sessão, retomada pelo id
-grok --prompt-file <arquivo-revisão> --output-format json --cwd <run-dir> \
-  -r <sessionId-do-ceo-1> --always-approve --trust
 ```
 
-### Exemplo 3: dispatch `--safe`
+### Example 3: `--safe` dispatch
 
 ```bash
-# nrv dispatch --safe: sem auto-approve, sem concessão de folder trust
-grok --prompt-file <arquivo-brief> --output-format json --cwd <run-dir>
+# nrv dispatch --safe: no auto-approve, no folder-trust grant
+grok --prompt-file <brief-file> --output-format json --cwd <run-dir>
 ```
 
-### Exemplo 4: Harness escalation
+### Example 4: Harness escalation
 
 ```bash
-# Wrapper detecta budget_violation (timeout)
+# Wrapper detects budget_violation (timeout)
 echo '{"type":"human_escalation_required","trigger_id":"budget","severity":"high",...}' \
   > .harness/notifications/$(date +%s).json
-# Harness orchestrator (em outro runtime ou interativo) consome o arquivo
+# The harness orchestrator (in another runtime or interactive) consumes the file
 ```
 
-Flags que existem no CLI e que um comando montado à mão pode acrescentar (o engine não acrescenta): `--max-turns <N>`, `--effort <none|minimal|low|medium|high|xhigh|max>` (alias de `--reasoning-effort`), `--no-subagents`, `--rules "<texto>"`, `--tools <lista>`, `--disallowed-tools <lista>`, `--sandbox <profile>`, `--json-schema '<schema>'`, `--output-format streaming-json|streaming-messages-json` (+ `--include-partial-messages`).
+Flags that exist in the CLI and that a hand-built command may add (the engine does not): `--max-turns <N>`, `--effort <none|minimal|low|medium|high|xhigh|max>` (alias of `--reasoning-effort`), `--no-subagents`, `--rules "<text>"`, `--tools <list>`, `--disallowed-tools <list>`, `--sandbox <profile>`, `--json-schema '<schema>'`, `--output-format streaming-json|streaming-messages-json` (+ `--include-partial-messages`).
 
 ---
 
-## 12. Validadores específicos do runtime
+## 12. Runtime-specific validators
 
-- **Binário**: `grok --version` responde. Confira para qual arquivo o `grok` resolve: o instalador também cria `~/.grok/bin/agent` apontando para o grok, o que encobre o binário `agent` do Cursor CLI quando `~/.grok/bin` vem antes no `PATH`.
-- **Credencial presente**: `grok login` feito, ou `XAI_API_KEY` no ambiente. Sem nenhuma das duas, o dispatch falha.
-- **Model resolvível**: o `grok-cli:<model>` do cascade aparece em `grok models`.
-- **Folder trust**: sem `--trust` (caminho `--safe`), `AGENTS.md`, skills, hooks e MCP de projeto só carregam se a pasta já estiver em `~/.grok/trusted_folders.toml`, ou se `GROK_FOLDER_TRUST=0` desligar a trava. Um checkout git aninhado é um workspace separado. `grok inspect --json` na pasta do run mostra o que o grok de fato descobre.
-- **MCP server reachability**: se a persona referencia `mcp__<server>__*`, confira em `grok mcp` que o server existe.
-
----
-
-## 13. Limitações conhecidas
-
-1. **Sem teto de turnos vindo do engine.** `--max-turns` existe, mas o `runGrok` não tem entrada para ele; só um timeout de relógio opcional limita o run.
-2. **Sem teto de gasto em lugar nenhum.** O Grok não tem recurso de budget, e a rota assinatura em geral não reporta custo (`costUnavailable`).
-3. **Limites de tool não estão ligados.** `--tools`, `--disallowed-tools`, `--allow`, `--deny`, `--permission-mode` e `--sandbox` existem; o engine não passa nenhum, e o `--safe` só tira `--always-approve` e `--trust`.
-4. **Workers podem abrir subagents.** `--no-subagents` existe e não é passado, então a regra de profundidade do engine não vale para o grok.
-5. **Effort é descartado.** `--effort` existe e funciona no headless; o grok não está em `EFFORT_CAPABLE`.
-6. **A diretiva é texto de usuário.** A diretiva autônoma é prependida ao arquivo de prompt em vez de ir por `--rules`.
-7. **Envelope de erro lido.** `{"type":"error","message"}` faz o run falhar (mesmo com exit 0) e a mensagem dele é o erro exibido.
-8. **Atribuição de auditoria.** O Grok executa os hooks de `~/.claude/settings.json`, então os eventos de tool dele chegam rotulados como Claude (§10).
-9. **`--trust` não aparece no `--help`.** É aceito na 1.0.44 e está no guia do usuário; um build que remova a flag cai para o run sem trust (retentativa do §7), o que perde em silêncio o `AGENTS.md` e as skills de projeto numa pasta de run nova.
-10. **Sem `TeamCreate`** → teams são convenção em file system.
-11. **Colisão do binário `agent`** (`~/.grok/bin/agent`), ver §12.
-12. **Stdin no headless.** A 1.0.44 não lê stdin via pipe como prompt (`--prompt-file` é o canal); as release notes dizem que a 1.0.50 roda um `grok` sem argumentos com stdin via pipe em modo headless. O engine não depende de nenhum dos dois.
-
-**Vantagem compensatória:** geração de mídia embutida, rota assinatura de custo marginal $0, hooks/subagents/sandbox/OTel nativos, store de sessões retomável e um envelope json com detalhe de tokens e custo.
+- **Binary**: `grok --version` answers. Check which file `grok` resolves to: the installer also creates `~/.grok/bin/agent` pointing at grok, which shadows the Cursor CLI's `agent` binary when `~/.grok/bin` comes first on `PATH`.
+- **Credential present**: `grok login` done, or `XAI_API_KEY` in the environment. With neither, dispatch fails.
+- **Resolvable model**: the cascade's `grok-cli:<model>` appears in `grok models`.
+- **Folder trust**: without `--trust` (the `--safe` path), project `AGENTS.md`, skills, hooks and MCP load only if the folder is already in `~/.grok/trusted_folders.toml`, or if `GROK_FOLDER_TRUST=0` turns the gate off. A nested git checkout is a separate workspace. `grok inspect --json` in the run folder shows what grok actually discovers.
+- **MCP server reachability**: if the persona references `mcp__<server>__*`, check `grok mcp` for that server.
 
 ---
 
-## 14. Referências
+## 13. Known limitations
+
+1. **No turn cap from the engine.** `--max-turns` exists, but `runGrok` has no input for it; only an optional wall-clock timeout bounds a run.
+2. **No spend cap anywhere.** Grok has no budget feature, and the subscription route usually reports no cost (`costUnavailable`).
+3. **Tool limits are not wired.** `--tools`, `--disallowed-tools`, `--allow`, `--deny`, `--permission-mode` and `--sandbox` exist; the engine passes none, and `--safe` only drops `--always-approve` and `--trust`.
+4. **Workers can open subagents.** `--no-subagents` exists and is not passed, so the engine's depth rule does not hold for grok.
+5. **Effort is dropped.** `--effort` exists and works headless; grok is not in `EFFORT_CAPABLE`.
+6. **Directive is user text.** The autonomous directive is prepended to the prompt file instead of going through `--rules`.
+7. **Error envelope parsed.** `{"type":"error","message"}` fails the run (even on exit 0) and its message is the error shown.
+8. **Audit attribution.** Grok runs the `~/.claude/settings.json` hooks, so its tool events arrive labelled as Claude (§10).
+9. **`--trust` is undocumented in `--help`.** It parses on 1.0.44 and is in the user guide; a build that drops it falls back to running without trust (retry in §7), which silently loses `AGENTS.md` and project skills in a fresh run folder.
+10. **No `TeamCreate`** → teams are a file-system convention.
+11. **`agent` binary collision** (`~/.grok/bin/agent`), see §12.
+12. **Headless stdin.** 1.0.44 does not read piped stdin into the prompt (`--prompt-file` is the channel); release notes say 1.0.50 runs a bare `grok` with piped stdin headless. The engine does not rely on either.
+
+**Compensating advantage:** built-in media generation, a $0-marginal subscription route, native hooks/subagents/sandbox/OTel, a resumable session store, and a json envelope with token and cost detail.
+
+---
+
+## 14. Source references
 
 - `grok --help`, `grok agent --help`, `grok sessions --help`, `grok inspect --help`, `grok usage --help`, `grok --trust --version` (local, `grok 1.0.44`, 2026-10-11).
 - `~/.grok/docs/user-guide/`: `08-skills.md`, `10-hooks.md`, `12-project-rules.md`, `13-memory.md`, `14-headless-mode.md`, `16-subagents.md`, `17-sessions.md`, `18-sandbox.md`, `20-background-tasks.md`, `22-permissions-and-safety.md`, `24-monitoring-usage.md`.
-- `~/.grok/CHANGELOG.md` (1.0.44: sandbox Seatbelt, tamanhos de janela de contexto).
-- Mirror de releases para 1.0.45 a 1.0.50: https://releases.sh/xai/grok-build-releases.md (a página oficial https://x.ai/build/changelog devolveu 403 ao fetcher).
-- Driver: `skills/_shared/lib/host-agent-driver.ts` (`runGrok`; entrada `grok-cli` de `RUNTIMES`), re-exportado por `skills/harness/lib/host-agent-driver.ts`.
-- Squad de referência (rota assinatura): `grok-studio-nirvana`.
-- Squad Protocol v5: `~/.nirvana/skills/squads/SQUAD_PROTOCOL_V5.md`
-- Business Protocol v1: `~/.nirvana/skills/businesses/BUSINESS_PROTOCOL_V1.md`
-- Harness Protocol v1: `~/.nirvana/skills/harness/HARNESS_PROTOCOL_V1.md`
+- `~/.grok/CHANGELOG.md` (1.0.44 Seatbelt sandbox, context window sizes).
+- Release mirror for 1.0.45 to 1.0.50: https://releases.sh/xai/grok-build-releases.md (official https://x.ai/build/changelog returned 403 to the fetcher).
+- Driver: `skills/_shared/lib/host-agent-driver.ts` (`runGrok`; `RUNTIMES` entry `grok-cli`), re-exported by `skills/harness/lib/host-agent-driver.ts`.
+- Reference squad (subscription route): `grok-studio-nirvana`.
+- Squad Protocol v6: `~/.nirvana/skills/squads/SQUAD_PROTOCOL_V6.md`
+- Business Protocol v2: `~/.nirvana/skills/businesses/BUSINESS_PROTOCOL_V2.md`
+- Harness protocol: `~/.nirvana/skills/harness/SKILL.md`
 
 ---
 
-## 15. Histórico de versões
+## 15. Version history
 
-| Versão | Data | Mudanças |
+| Version | Date | Changes |
 |---|---|---|
-| 1.0.0 | 2026-07-20 | Doc inicial: cobre Squad 5.0 + Business 1.0 + Harness 1.0 contra Grok Build CLI (`grok 0.2.103`), família Grok (`grok-code` / `grok-4` / `grok-4-fast`). Dispatch via `grok -p --output-format json --always-approve --cwd`. |
-| 1.1.0 | 2026-10-11 | Reescrito contra o `grok 1.0.44` (última 1.0.50). Argv real do driver (`--prompt-file`, `-r` ao retomar, `--trust` no caminho autônomo com retentativa sem trust). Documenta subagents nativos, hooks (inclusive `~/.claude/settings.json`), `--tools` / `--allow` / `--deny`, folder trust, sandbox, effort, sessões, os envelopes json e de erro, a ausência de teto de gasto e a colisão do binário `agent`. Remove as alegações falsas de que o driver passa `--max-turns` e de que o grok não tem resume, subagents e hooks. |
+| 1.0.0 | 2026-07-20 | Initial doc: covers Squad 5.0 + Business 1.0 + Harness 1.0 against Grok Build CLI (`grok 0.2.103`), Grok family (`grok-code` / `grok-4` / `grok-4-fast`). Dispatch via `grok -p --output-format json --always-approve --cwd`. |
+| 1.1.0 | 2026-10-11 | Rewritten against `grok 1.0.44` (latest 1.0.50). Real driver argv (`--prompt-file`, `-r` on resume, `--trust` on the autonomous path with a no-trust retry). Documents native subagents, hooks (incl. `~/.claude/settings.json`), `--tools` / `--allow` / `--deny`, folder trust, sandbox, effort, sessions, the json and error envelopes, the absence of a budget cap and the `agent` binary collision. Removes the false claims that the driver passes `--max-turns` and that grok lacks resume, subagents and hooks. |

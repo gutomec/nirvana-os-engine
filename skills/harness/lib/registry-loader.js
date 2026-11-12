@@ -75,7 +75,7 @@ function loadSquads() {
         continue;
       }
       if (p !== PATHS.SQUADS_REGISTRY_PATH) {
-        warnings.push(`scope: usando squads registry de ${p} (registry do escopo primário ausente/vazio)`);
+        warnings.push(`scope: using squads registry from ${p} (primary scope registry missing/empty)`);
       }
       return {
         registry: {
@@ -130,7 +130,7 @@ function loadBusinesses() {
       continue;
     }
     if (p !== PATHS.BUSINESSES_REGISTRY_PATH) {
-      warnings.push(`scope: usando businesses registry de ${p} (escopo primário ausente/vazio)`);
+      warnings.push(`scope: using businesses registry from ${p} (primary scope missing/empty)`);
     }
     return {
       registry: {

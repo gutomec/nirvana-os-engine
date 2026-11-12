@@ -29,7 +29,7 @@ process.env.NIRVANA_NO_DESKTOP_NOTIFY = "1";
 
 import { sweep, type RecoveryResult, type SalvageVerdict } from "../scripts/supervisor.ts";
 import { openLedger, openAgenticRun, openRun, getRun, markState, findNonTerminal, normalizeRoot, type LedgerHandle, type RunRow } from "../lib/run-ledger.ts";
-import { SCOPE_GUARD_PT_BR } from "../../_shared/lib/scope-guard.ts";
+import { SCOPE_GUARD_EN } from "../../_shared/lib/scope-guard.ts";
 import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 let dbSeq = 0;
@@ -125,7 +125,7 @@ describe("brief-squad opens the ledger run by itself", () => {
     // The brief file the executor is handed carries the scope guard.
     const briefFile = r.stdout.match(/Brief file:\s+(.+)/)?.[1]?.trim();
     expect(briefFile).toBeTruthy();
-    expect(fs.readFileSync(briefFile!, "utf8")).toContain(SCOPE_GUARD_PT_BR);
+    expect(fs.readFileSync(briefFile!, "utf8")).toContain(SCOPE_GUARD_EN);
 
     // Scoped to the child's project, not to this test process's own: the
     // ledger file is shared, the visibility is not.

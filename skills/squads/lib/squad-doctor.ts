@@ -182,15 +182,15 @@ export function applyAutofixes(squadDir: string): { applied: string[]; manual: s
   const manual: string[] = [];
   const mf = path.join(squadDir, "squad.yaml");
   let raw = "";
-  try { raw = fs.readFileSync(mf, "utf8"); } catch { return { applied, manual: ["squad.yaml ilegível"] }; }
+  try { raw = fs.readFileSync(mf, "utf8"); } catch { return { applied, manual: ["squad.yaml unreadable"] }; }
   const fid = checkFidelity(squadDir, loadManifest(squadDir));
   const validatedCount = (raw.match(/status:\s*validated/g) || []).length;
   if (fid.length > 0 && validatedCount > 0 && fid.length === validatedCount) {
-    const fixed = raw.replace(/status:\s*validated/g, "status: experimental  # auto-rebaixado pelo squad-doctor: validated sem eval-results comprovado");
+    const fixed = raw.replace(/status:\s*validated/g, "status: experimental  # auto-downgraded by squad-doctor: validated without proven eval-results");
     fs.writeFileSync(mf, fixed, "utf8");
-    applied.push(`fidelity: ${validatedCount} capability(ies) rebaixada(s) validated → experimental`);
+    applied.push(`fidelity: ${validatedCount} capability(ies) downgraded validated → experimental`);
   } else if (fid.length > 0) {
-    manual.push(`fidelity: ${validatedCount} 'validated' no arquivo mas ${fid.length} flagado(s) — rebaixe manualmente só os flagados (o auto-fix não toca para não rebaixar um validated legítimo)`);
+    manual.push(`fidelity: ${validatedCount} 'validated' in the file but ${fid.length} flagged; downgrade only the flagged ones by hand (auto-fix does not touch them so it never downgrades a legitimate validated)`);
   }
   for (const f of checkPortability(squadDir)) manual.push(`${f.where}: ${f.problem} → ${f.fix}`);
   return { applied, manual };

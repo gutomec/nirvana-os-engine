@@ -105,14 +105,14 @@ describe("a runtime named in the brief is a weaker signal than a flag", () => {
     expect(choice.source).toBe("brief");
   });
 
-  test("an uninstalled one falls back to the session, warned, instead of blocking the run", () => {
+  test("an uninstalled one is refused like a flag: the user's own words are not substituted", () => {
     const choice = resolveRunRuntime({
       brief: "use o qwen para isso", env: { CLAUDECODE: "1" },
       available: only("claude-code"),
     });
-    expect(choice.runtime).toBe("claude-code");
-    expect(choice.source).not.toBe("brief");
-    expect(choice.unavailable).toBeUndefined();
+    expect(choice.runtime).toBe("qwen-code");
+    expect(choice.source).toBe("brief");
+    expect(choice.unavailable).toBe(true);
   });
 
   test("the same runtime as a FLAG is refused — that is the difference", () => {
@@ -120,25 +120,6 @@ describe("a runtime named in the brief is a weaker signal than a flag", () => {
       explicit: "qwen-code", env: { CLAUDECODE: "1" }, available: only("claude-code"),
     });
     expect(choice.unavailable).toBe(true);
-  });
-});
-
-describe("the chain no longer carries a vendor literal", () => {
-  const chain = fs.readFileSync(path.join(import.meta.dir, "..", "scripts", "chain.ts"), "utf8");
-
-  test("chain.ts resolves the runtime instead of defaulting to one", () => {
-    expect(chain).toContain("resolveRunRuntime");
-    // The only surviving mention is the comment recording what the line was.
-    const code = chain.split("\n").filter((l) => !l.trim().startsWith("//") && !l.trim().startsWith("*"));
-    expect(code.join("\n")).not.toContain('"claude-code"');
-  });
-
-  test("it refuses a named runtime that is not installed", () => {
-    expect(chain).toContain("unavailableRuntimeMessage");
-  });
-
-  test("the plan records WHICH runtime decided, so a reader can tell", () => {
-    expect(chain).toContain("runtime: runtimeChoice.runtime");
   });
 });
 

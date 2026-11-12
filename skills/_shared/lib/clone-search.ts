@@ -7,8 +7,9 @@
 // brief against it. Drives the "if not requested, search for a useful clone"
 // step of the resolution order.
 
+import * as fs from "node:fs";
 import * as path from "node:path";
-import { loadCloneRegistry } from "./clone-resolver.ts";
+import { cloneRegistryPath, loadCloneRegistry } from "./clone-resolver.ts";
 
 // Reuse the canonical BM25 engine the router uses (same tokenizer + scoring).
 const bm25 = require(path.join(import.meta.dir, "..", "..", "harness", "lib", "bm25.js"));
@@ -74,7 +75,7 @@ function cloneDoc(c: any) {
   // lobo, couto).
   //
   // The fix is removing the name from here: BY-NAME search has its own path
-  // and runs BEFORE BM25 (the team-orchestrator's REQUESTED step), so in this
+  // and runs BEFORE BM25 (a clone requested by name), so in this
   // corpus, which exists for discovery by NEED, the name is noise.
   //
   // It cannot be done yet: as long as a clone lacks a `routing:` block, the
@@ -90,8 +91,21 @@ function cloneDoc(c: any) {
     Array.isArray(m.domains) ? m.domains.join(" ") : "",
     m.serves || m.when_to_use || "",
   ].filter(Boolean).join(" ");
+  // The same text without the person's name: what the clone DECLARES it does.
+  // Coverage is counted on it, so a surname that is also a common word ("rocha",
+  // "filho", "porto") cannot carry a clone over the gate. Names have their own
+  // path (harness/lib/clone-names.ts); here they only help ranking.
+  const needText = [
+    tags.join(" "),
+    c.pack_category || "",
+    c.manifest_category || "",
+    m.one_liner || "",
+    Array.isArray(m.domains) ? m.domains.join(" ") : "",
+    m.serves || m.when_to_use || "",
+  ].filter(Boolean).join(" ");
   return {
     text,
+    needText,
     slug: c.slug,
     display_name: c.display_name || c.slug,
     one_liner: m.one_liner || null,
@@ -115,8 +129,9 @@ export function buildCloneCorpus(opts: { cwd?: string } = {}): Array<ReturnType<
 
 function toHit(h: any, briefTokens: string[]): CloneHit {
   // Same coverage implementation as the router's Stage 3 gate — extracted to
-  // bm25.coverage precisely so this file and router.js cannot drift.
-  const cov = bm25.coverage(briefTokens, new Set(bm25.tokenize(h.doc.text)));
+  // bm25.coverage precisely so this file and router.js cannot drift. Counted
+  // on what the clone declares, never on its name (see cloneDoc).
+  const cov = bm25.coverage(briefTokens, new Set(bm25.tokenize(h.doc.needText ?? h.doc.text)));
   return {
     slug: h.doc.slug,
     display_name: h.doc.display_name,
@@ -132,25 +147,66 @@ function toHit(h: any, briefTokens: string[]): CloneHit {
   };
 }
 
+/** The corpus of one registry file, parsed once per content: a dispatch asks
+ *  for clones several times (the seat voices, the search, each part), and
+ *  parsing 657 clones and indexing them took ~100 ms a time. Keyed by the
+ *  file's path and a hash of its bytes, so a rewritten registry is never served
+ *  stale, whatever the file system's mtime resolution. */
+type LoadedCorpus = { hash: string; docs: Array<ReturnType<typeof cloneDoc>>; indexes: Map<string, unknown> };
+const corpora = new Map<string, LoadedCorpus>();
+/** Past this many `only` subsets per registry the oldest index is dropped. */
+const MAX_INDEXES_PER_REGISTRY = 64;
+
+function loadedCorpus(cwd?: string): LoadedCorpus | null {
+  const file = cloneRegistryPath({ cwd });
+  let raw: string;
+  try { raw = fs.readFileSync(file, "utf8"); } catch { return null; }
+  const hash = String(Bun.hash(raw));
+  const hit = corpora.get(file);
+  if (hit && hit.hash === hash) return hit;
+  let reg: Record<string, any> = {};
+  try { reg = JSON.parse(raw).mind_clones || {}; } catch { /* unreadable: an empty corpus */ }
+  const entry: LoadedCorpus = { hash, docs: Object.values(reg).map(cloneDoc), indexes: new Map() };
+  corpora.set(file, entry);
+  return entry;
+}
+
+/** The BM25 index over the whole corpus, or over `only` (a business's seat voices). Null when empty. */
+function cloneIndex(cwd: string | undefined, only?: string[]): unknown | null {
+  const corpus = loadedCorpus(cwd);
+  if (!corpus) return null;
+  const key = only ? [...new Set(only)].sort().join("\n") : "*";
+  let idx = corpus.indexes.get(key);
+  if (idx === undefined) {
+    const keep = only ? new Set(only) : null;
+    const docs = corpus.docs.filter((d) => !keep || keep.has(d.slug));
+    idx = docs.length ? bm25.buildIndex(docs) : null;
+    if (corpus.indexes.size >= MAX_INDEXES_PER_REGISTRY) corpus.indexes.delete(corpus.indexes.keys().next().value!);
+    corpus.indexes.set(key, idx);
+  }
+  return idx as unknown | null;
+}
+
 /** Rank clones by usefulness for a brief. Returns up to `limit` hits, each
  *  annotated with the router-mirroring coverage gate (`coverage` +
- *  `below_gate`) — injection consumers (team-orchestrator, employee-prompt)
+ *  `below_gate`) — injection consumers (the squad runner)
  *  must skip `below_gate` hits, so an out-of-domain brief injects NOTHING.
  *  The ranked list itself still surfaces below-gate hits (agentic-override /
  *  diagnostic display); `minNormalized` is kept for callers that filter by
  *  normalized score. Empty array when registry is empty or brief is blank. */
 export function findCloneForTask(
   brief: string,
-  opts: { limit?: number; minNormalized?: number; cwd?: string } = {},
+  opts: { limit?: number; minNormalized?: number; cwd?: string; gateQuery?: string; only?: string[] } = {},
 ): CloneHit[] {
-  const reg = loadCloneRegistry({ cwd: opts.cwd });
-  const docs = Object.values(reg).map(cloneDoc);
-  if (!docs.length || !brief) return [];
-
-  const idx = bm25.buildIndex(docs);
+  if (!brief) return [];
+  const idx = cloneIndex(opts.cwd, opts.only);
+  if (!idx) return [];
   const hits = bm25.query(idx, brief, { topK: opts.limit || 8 });
   const minNorm = opts.minNormalized != null ? opts.minNormalized : 0;
-  const briefTokens = bm25.tokenize(brief);
+  // `gateQuery`: the text coverage is measured against when it is narrower than
+  // the ranking query (the run's own part, without the business description
+  // that only helps the ranking).
+  const briefTokens = bm25.tokenize(opts.gateQuery || brief);
 
   return hits.filter((h: any) => h.normalized >= minNorm).map((h: any) => toHit(h, briefTokens));
 }

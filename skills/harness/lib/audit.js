@@ -82,7 +82,7 @@ const ALLOWED_EVENTS = new Set([
   // the writer half of Phase 7 (chunk-writer.ts, chunk_emitted) shipped, no
   // caller ever implemented a per-chunk gate. Removed, plan cut 5.
   // routing-360 Phase 4 — dispatch-side lifecycle events. These were already
-  // emitted for real by dispatch.ts / team-orchestrator.ts / squad-exec.ts /
+  // emitted for real by dispatch.ts / squad-exec.ts /
   // delivery-pipeline.ts via raw appenders; converting the dispatch side to
   // this canonical writer makes them first-class instead of x_-renamed.
   'delivered',                 // artifacts delivered (gate pass or fail-forced)

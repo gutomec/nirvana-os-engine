@@ -109,7 +109,7 @@ function machine(name: string, packs: string[]): string {
   const home = path.join(root, name);
   const skills = path.join(home, ".nirvana", "skills");
   const w = (rel: string, text: string) => { fs.mkdirSync(path.dirname(path.join(skills, rel)), { recursive: true }); fs.writeFileSync(path.join(skills, rel), text); };
-  w("VERSION", "0.14.11\n");
+  w("VERSION", "0.15.0-beta.7\n");
   for (const rel of [["harness", "scripts", "index.ts"], ["_shared", "scripts", "install-content.ts"], ["_shared", "scripts", "license.ts"]]) w(path.join(...rel), "");
   const manifests = path.join(home, ".nirvana", "packs");
   fs.mkdirSync(manifests, { recursive: true });

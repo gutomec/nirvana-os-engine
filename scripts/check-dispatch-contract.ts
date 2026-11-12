@@ -54,7 +54,6 @@ const REQUIRED: { file: string; label: string; test: RegExp }[] = [
   // dispatch carried a garbled result and no file on disk; minutes later the
   // same dispatch notified again, clean and complete. Reading the first as
   // final would have condemned a delivery that was still arriving.
-  { file: "skills/harness/SKILL.md", label: "a notification may not be the last one", test: /not always the last one/i },
   { file: "skills/harness/SKILL.md", label: "<result> is a report, not proof", test: /is a report, not proof/i },
   { file: "skills/harness/SKILL.md", label: "an honest failure is not retried blindly", test: /honest failure is the system working/i },
 ];

@@ -57,36 +57,31 @@ P7 Runtime Neutrality — Core spec has no runtime-specific values.
 P8 Technical Honesty — never sell enforcement that doesn't exist.
 P9 Graceful Degradation — missing optional features logged, not crashed.
 P10 Namespaced Extensions — runtime config under `runtimes.{id}.*`.
-P11 Output Humanization — human-facing outputs pass through humanization before the final return (Squad v5 §27, Business v1 §10.7).
+P11 Output Humanization — human-facing outputs pass through humanization before the final return (`SQUAD_PROTOCOL_V6.md` §27; Business v1 §10.7, archived).
 
 ## Protocol Source
 
-Sources of truth, in resolution order:
-
-- `SQUAD_PROTOCOL_V6.md` (v6.0 delta over v5, PT-BR): §28 workflow document, §29 acceptance, §30 evaluator, §31 composition, §32 execution binding, §33 `not_for` ≤25, §34 admission, §35 migration, App-G/H.
-- `SQUAD_PROTOCOL_V5.md` (v5.0 delta over v4): §22 capabilities, §23 registry, §24 discovery, §25 routing, §26 telemetry, §27 humanization, App-C/D/E/F/Z.
-- `SQUAD_PROTOCOL_V4.md` (21 sections, runtime-agnostic) — unchanged base that v5 extends.
-- `SQUAD_PROTOCOL.md` (v2.0, deprecated, kept for legacy squads).
+Source of truth: `SQUAD_PROTOCOL_V6.md`, the complete and self-contained Squad Protocol, in English: §1-§21 package, agents, tasks, tools, memory, security and runtime compatibility; §22-§27 capabilities, registry and discovery; §28 workflow document, §29 acceptance, §30 evaluator, §31 composition, §32 execution binding, §33 `not_for` ≤25, §34 admission, §35 migration, §36 tasks at outcome altitude; appendices A-H and Z. The working guides are `references/*.md`, the templates and the validators. The earlier versions (v2, v4, v5) are archived in the repository's `docs/legacy/protocols/`, not installed.
 
 Schemas in `~/.nirvana/skills/_shared/schemas/{capability,business,core-schemas}.json`.
 Adapters in `~/.nirvana/skills/_shared/adapters/{claude-code,codex,antigravity-cli,hermes}.md` (cover squads + businesses + harness).
-Read sections on demand via TOC. NEVER load the full ~1600-line v4 protocol plus the v5 delta into context.
+Read sections of the protocol on demand, by number. Do not load the whole document into context.
 
 ## Squad Roots & Project Scoping
 
-Three scope modes resolved from `<project>/.env`:
+Three scope modes, `scope` in `<project>/.nirvana/project.yaml`, set with `nrv init --scope=<mode>`:
 
 ```
-NIRVANA_SCOPE=global   # ~/squads/* only (default — backward compat)
-NIRVANA_SCOPE=project  # <project>/.nirvana/squads/* only (full isolation)
-NIRVANA_SCOPE=merge    # both, project overrides global by slug (directory name)
+global   # ~/squads/* only (default)
+project  # <project>/.nirvana/squads/* only (full isolation)
+merge    # both, project overrides global by slug (directory name)
 ```
 
 In project mode, the squads registry, activation state, and logs persist under `<project>/.nirvana/` — never `$HOME`. Two scope=project projects on the same machine never collide. Full contract: `~/.nirvana/skills/_shared/SCOPE_CONTRACT.md`.
 
 Discovery via the scope-aware loaders:
 ```bash
-bun ~/.nirvana/skills/squads/scripts/list-squads.ts             # honors NIRVANA_SCOPE
+bun ~/.nirvana/skills/squads/scripts/list-squads.ts             # honors the project's scope
 bun ~/.nirvana/skills/_shared/lib/scope.ts --explain            # debug current scope
 bun ~/.nirvana/skills/_shared/scripts/init-project.ts <dir>     # bootstrap a new scoped project
 ```
@@ -135,10 +130,7 @@ All squad outputs write to a **standard workspace** inside the project:
 ```
 ~/.nirvana/skills/squads/
 ├── SKILL.md                    ← this file
-├── SQUAD_PROTOCOL_V6.md        ← v6 delta (§28-35 + App-G/H), PT-BR
-├── SQUAD_PROTOCOL_V5.md        ← v5 delta (§22-27 + appendices)
-├── SQUAD_PROTOCOL_V4.md        ← v4 base (§1-21) that v5 extends
-├── SQUAD_PROTOCOL.md           ← v2 deprecated (kept for legacy squads)
+├── SQUAD_PROTOCOL_V6.md        ← the complete protocol (§1-§36 + appendices), English
 ├── references/01..11-*.md      ← loaded on demand by intent
 ├── templates/*.tmpl            ← agent/task/workflow/squad templates
 ├── lib/*.js                    ← output-resolver, adapter-loader, etc.
@@ -153,7 +145,7 @@ All squad outputs write to a **standard workspace** inside the project:
 
 ## First Invocation
 
-1. Verify `SQUAD_PROTOCOL_V6.md` and `SQUAD_PROTOCOL_V5.md` exist alongside this SKILL.md.
+1. Verify `SQUAD_PROTOCOL_V6.md` exists alongside this SKILL.md.
 2. Check node>=18, python3>=3.8 (validators).
 3. Create `${SQUADS_DIR}/` if missing: `mkdir -p ${SQUADS_DIR}`. Default `${SQUADS_DIR}` resolves to `~/squads`.
 4. Report: `Squad Protocol Engine v6.0.0 ready. Default protocol for new squads: 6.0. Roots: ${SQUADS_DIR} (N), ./squads (M).`
@@ -231,8 +223,8 @@ and whether the user must approve the fix first.
 | Category | Purpose |
 |---|---|
 | `system` | CLIs (ffmpeg, git, uv) — checked then installed via brew/apt/choco per OS |
-| `python` | pip / uv packages → the squad's own venv `~/.nirvana/envs/<slug>/.venv` |
-| `node` | packages → the squad's own environment `~/.nirvana/envs/<slug>/`, versions as declared, squad dir linked to it best-effort (`global: true` = a command on PATH, installed by npm) |
+| `python` | pip / uv packages → the squad's own venv, `~/.nirvana/envs/<slug>/.venv` |
+| `node` | packages → the squad's own environment, `~/.nirvana/envs/<slug>/`, versions as declared; the squad dir gets only a `node_modules` link to it (`global: true` = a command on PATH, installed by npm) |
 | `services` | Long-lived daemons cloned from git (Pixelle, ComfyUI, Ollama) — installed but NOT started |
 | `custom_nodes` | ComfyUI custom node repos cloned to `~/comfyui/custom_nodes/` |
 | `models` | HuggingFace / URL downloads. Items with `size_gb > 1` require explicit consent |
@@ -291,7 +283,7 @@ When creating a NEW squad, ALWAYS:
 11. Declare output schemas in `contracts:` for chained tasks.
 12. Declare how the output is judged: `acceptance[]` on the capability (v6 §29), or a `## Acceptance Criteria` section in the task it invokes. There is no `humanize` field — the writing contract lives in the runtime memory files and reaches every dispatched agent.
 13. Set memory GC policy if persistent memory is used.
-13b. Host-side dependencies go in `dependencies.yaml`: `system:` programs, `env_vars:` credentials (with `required:` and a `description:`), and `mcps:` MCP servers (`name`, `purpose`, `required`). A squad never runs an MCP server: the runtime that executes it does, from its own configuration; the declaration is what lets `nrv activate`, `nrv doctor` and the dispatch preflight tell the operator what to configure (v4 §9.3, revised in 6.1.1).
+13b. Host-side dependencies go in `dependencies.yaml`: `system:` programs, `env_vars:` credentials (with `required:` and a `description:`), and `mcps:` MCP servers (`name`, `purpose`, `required`). A squad never runs an MCP server: the runtime that executes it does, from its own configuration; the declaration is what lets `nrv activate`, `nrv doctor` and the dispatch preflight tell the operator what to configure (`SQUAD_PROTOCOL_V6.md` §9.3).
 14. Validate with the admission gate: `nrv validate squad <slug|path>` (add `--fix` for the mechanical repairs). The validator it runs is Zod, in `~/.nirvana/skills/_shared/validators/validators.ts`.
 15. **Routing metadata, contract-complete** — every capability MUST carry the discovery fields per `~/.nirvana/skills/_shared/ROUTING_METADATA_CONTRACT.md`: `description` in canonical English, concrete and front-loaded (§1); `produces` as artifact-type slugs (§3); `keywords` as multilingual synonym groups — EN + PT (+ES where natural), accented AND unaccented forms (§4); `example_briefs` ≥3 with at least one EN and one PT, symptom-phrased, covering conjugated and infinitive verb forms (§5); `not_for` as short token lists of 2-4 content words, never sentences (§6). Empty or truncated metadata is a creation defect, not a stylistic choice.
 16. **Self-retrieval gate (blocking) — creation is NOT done until it passes.** After indexing, run:
@@ -343,7 +335,7 @@ You are a {specific role} for {domain}. You {primary action}. You {boundary}.
 
 NEVER:
 - Guess squad structure — always read squad.yaml first.
-- Load full SQUAD_PROTOCOL_V4.md or V5.md into context — use TOC, read sections on demand.
+- Load the full SQUAD_PROTOCOL_V6.md into context: read the sections you need, by number.
 - Create agents without `maxTurns` — runtime may loop infinitely.
 - Create tasks with `owner:` field — use workflow binding instead.
 - Use runtime-specific tool names in portable `tools:` field — use semantic names.

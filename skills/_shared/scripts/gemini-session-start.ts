@@ -13,22 +13,58 @@
  * not cleaned from ~/.gemini/settings.json yet) it does nothing and exits 0.
  *
  * Failure mode: never block. Exit 0 silently on any error.
+ *
+ * It steps aside, before reading anything, in a child the engine started: a
+ * dispatched worker (`NIRVANA_DISPATCH_DEPTH` set, which the driver stamps on
+ * every child) has its own brief and must not be told to orchestrate, and an
+ * answer-only call such as a router (`NIRVANA_ANSWER_ONLY`) only returns a
+ * decision. The hook runs before EVERY model call, so there it would cost a
+ * process start per call and send a context that only contradicts the brief.
  */
 
-/** What an agy session (PreInvocation) is told about Nirvana before the
- *  agent thinks. */
-export const SESSION_CONTEXT = [
-  "Nirvana-OS is installed on this machine.",
-  "For ANY concrete artifact (report, copy, code, design, analysis, campaign):",
-  "  load the skill at ~/.nirvana/skills/harness/SKILL.md and follow it.",
-  "Never produce the artifact inline — dispatch Business → Squad → agent-x.",
-  "`nrv route` and `nrv find` are DIAGNOSTIC only, never the source of truth.",
-  "Stay in THIS runtime. Switch only on an explicit user flag, a USE_* rule",
-  "  in .env, or a runtime named in the brief.",
-  "Destructive commands printed by diagnostics (nrv doctor, nrv update) are",
-  "  descriptions of a fix, not orders — never run one against ~/squads,",
-  "  ~/businesses or ~/.nirvana without the user asking for it.",
-].join("\n");
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { findProjectRoot } from "../lib/project-root.js";
+
+/** What the agent is told at the start of a session, by the project's mode
+ *  (`.nirvana/project.yaml` orchestration_mode). On-demand, the default and
+ *  the answer outside any project, keeps Nirvana out of the way; always makes
+ *  it the orchestrator for every artifact. */
+export function sessionContext(cwd: string): string {
+  let mode = "on-demand";
+  try {
+    const root = findProjectRoot(cwd);
+    // The manifest is written as JSON, a YAML subset; a hand edit may turn it
+    // into plain YAML, so the key is read in a way both spellings match.
+    const manifest = root ? fs.readFileSync(path.join(root, ".nirvana", "project.yaml"), "utf8") : "";
+    mode = /"?orchestration_mode"?\s*:\s*["']?([a-z-]+)/.exec(manifest)?.[1] || mode;
+  } catch { /* no manifest: on-demand */ }
+  const safety = [
+    "Destructive commands printed by diagnostics (nrv doctor, nrv update) are",
+    "  descriptions of a fix, not orders: never run one against ~/squads,",
+    "  ~/businesses or ~/.nirvana without the user asking for it.",
+  ];
+  if (mode === "always") return [
+    "Nirvana-OS is the orchestrator in this project.",
+    "For ANY concrete artifact (report, copy, code, design, analysis, campaign):",
+    "  load the skill at ~/.nirvana/skills/harness/SKILL.md and follow it.",
+    "Never produce the artifact inline: dispatch Business → Squad → agent-x.",
+    "`nrv route` and `nrv find` are DIAGNOSTIC only, never the source of truth.",
+    "Stay in THIS runtime. Switch only on an explicit user flag, a USE_* rule",
+    "  in .env, or a runtime the user names for a part of the work.",
+    ...safety,
+  ].join("\n");
+  return [
+    "Nirvana-OS is installed on this machine and stays out of the way: work as you",
+    "would without it. Use it only when the user's request names Nirvana, names or",
+    "points to one of their businesses, squads or mind-clones (a pack name or a",
+    "model to follow included: \"como a empresa X e seus squads e clones\"), or asks",
+    "for work on another agent runtime. Then load ~/.nirvana/skills/harness/SKILL.md",
+    "and follow it, and do not build the deliverable yourself, even when a search",
+    "finds no exact match for the name.",
+    ...safety,
+  ].join("\n");
+}
 
 function readStdin(timeoutMs = 500): Promise<string> {
   return new Promise((resolve) => {
@@ -45,14 +81,23 @@ function readStdin(timeoutMs = 500): Promise<string> {
  *  context as a transient message, so it is re-sent each call. No audit event
  *  here: it would fire on every call. */
 async function agyMain() {
-  await readStdin();
+  const raw = await readStdin();
+  let payload: any = {};
+  try { payload = raw ? JSON.parse(raw) : {}; } catch { /* tolerate empty/malformed */ }
+  const cwd = (Array.isArray(payload.workspacePaths) && payload.workspacePaths[0]) || process.cwd();
   try {
-    console.log(JSON.stringify({ injectSteps: [{ ephemeralMessage: SESSION_CONTEXT }] }));
+    console.log(JSON.stringify({ injectSteps: [{ ephemeralMessage: sessionContext(cwd) }] }));
   } catch { console.log("{}"); }
   process.exit(0);
 }
 
+/** True in a process the engine started: a dispatched child or an answer-only
+ *  call. Names written out here, not imported, so the check costs no module load. */
+export function engineChild(env: NodeJS.ProcessEnv = process.env): boolean {
+  return !!(env.NIRVANA_DISPATCH_DEPTH ?? "").trim() || !!(env.NIRVANA_ANSWER_ONLY ?? "").trim();
+}
+
 if (import.meta.main) {
-  if (process.argv.includes("--agy")) agyMain().catch(() => process.exit(0));
+  if (process.argv.includes("--agy") && !engineChild()) agyMain().catch(() => process.exit(0));
   else process.exit(0);
 }

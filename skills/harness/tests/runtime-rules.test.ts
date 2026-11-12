@@ -185,8 +185,8 @@ describe("vetos NOT_USE_* (regras negativas)", () => {
   });
 
   test("formatadores incluem os vetos como NUNCA", () => {
-    expect(formatRulesForRouterPrompt(WITH_VETO)).toContain("NUNCA use kimi-cli");
-    expect(formatRulesForDirective(WITH_VETO)).toContain("NUNCA use kimi-cli");
+    expect(formatRulesForRouterPrompt(WITH_VETO)).toContain("NEVER use kimi-cli");
+    expect(formatRulesForDirective(WITH_VETO)).toContain("NEVER use kimi-cli");
   });
 });
 
@@ -198,7 +198,7 @@ describe("menção de runtime no brief (detectRuntimeMention)", () => {
   test("variações PT/EN de cue", () => {
     expect(detectRuntimeMention("faça o site usando o codex")?.runtime).toBe("codex");
     expect(detectRuntimeMention("rode pelo kimi a análise")?.runtime).toBe("kimi-cli");
-    expect(detectRuntimeMention("build this with claude code")?.runtime).toBe("claude-code");
+    expect(detectRuntimeMention("build this using claude code")?.runtime).toBe("claude-code");
     expect(detectRuntimeMention("despache via antigravity cli")?.runtime).toBe("antigravity-cli");
     expect(detectRuntimeMention("rode via pi o refactor do módulo")?.runtime).toBe("pi");
   });
@@ -223,14 +223,42 @@ describe("menção de runtime no brief (detectRuntimeMention)", () => {
     const df = decideRuntime({ brief: "Use o agy para pesquisar na internet", explicitRuntime: "claude-code", defaultRuntime: "claude-code", rules: withVeto, mode: "fast", available: () => true });
     expect(df.source).toBe("flag");
   });
-  test("runtime citado indisponível → cai nas regras/default", () => {
+  test("runtime citado indisponível → decisão marcada unavailable, sem trocar de vendor", () => {
     const d = decideRuntime({ brief: "Use o agy para pesquisar na internet", explicitRuntime: null, defaultRuntime: "claude-code", rules: RULES, mode: "fast", available: (r) => r === "claude-code" });
-    expect(d.runtime).toBe("claude-code");
+    expect(d.runtime).toBe("antigravity-cli");
+    expect(d.source).toBe("brief");
+    expect(d.unavailable).toBe(true);
+  });
+  test("preposição solta e menção fora do pedido do usuário não disparam", () => {
+    expect(detectRuntimeMention("landing page com Claude Code como assunto")).toBeNull();
+    expect(detectRuntimeMention("using pi to 5 digits")).toBeNull();
+    expect(detectRuntimeMention("use o codex para revisar")?.runtime).toBe("codex");
+    expect(detectRuntimeMention("rode no agy")?.runtime).toBe("antigravity-cli");
+    expect(detectRuntimeMention("use `codex` como exemplo")).toBeNull();
+    const brief = "## Context\nuse o codex na etapa anterior\n\n## Request (verbatim)\nescreva o post\n\n## Done when\nuse o kimi\n";
+    expect(detectRuntimeMention(brief)).toBeNull();
+    expect(detectRuntimeMention("## Request (verbatim)\nrode no agy\n## Done when\nx\n")?.runtime).toBe("antigravity-cli");
   });
   test("hermes citado no brief → não vira exec (segue fluxo normal)", () => {
     const d = decideRuntime({ brief: "use o hermes para avisar o cliente", explicitRuntime: null, defaultRuntime: "claude-code", rules: [], mode: "fast", available: () => true });
     expect(d.runtime).toBe("claude-code");
     expect(d.source).toBe("default");
+  });
+});
+
+describe("a runtime request in a split brief belongs to its part", () => {
+  const six = (req: string, dec: string, part: string) => `## Request (verbatim)\n${req}\n\n## Decisions\n${dec}\n\n## Your part\n${part}\n`;
+  const REQ = "Crie a copy de venda e use o kimi para criar o html";
+  test("the user's words travel in every part's brief and choose no runtime there", () => {
+    expect(detectRuntimeMention(six(REQ, "- squad copywriting-infoprodutos", "Entregar a copy."))).toBeNull();
+  });
+  test("the orchestrator's words for this part choose it: a marker or an instruction", () => {
+    expect(detectRuntimeMention(six(REQ, "- runtime kimi\n- squad brandcraft", "Construir o HTML."))?.runtime).toBe("kimi-cli");
+    expect(detectRuntimeMention(six("x", "- None.", "Use o kimi para construir o HTML."))?.runtime).toBe("kimi-cli");
+  });
+  test("a raw brief, with no orchestrator in between, is the user's words", () => {
+    expect(detectRuntimeMention("use o codex para revisar o código")?.runtime).toBe("codex");
+    expect(detectRuntimeMention("## Request (verbatim)\nrode no agy a análise\n")?.runtime).toBe("antigravity-cli");
   });
 });
 
@@ -254,7 +282,7 @@ describe("formatadores de prompt", () => {
     expect(s).toContain("USE_CODEX");
     expect(s).toContain("Quando precisar gerar imagens ou refinar visuais");
     expect(s).toContain('"runtime"');
-    expect(s).toContain("hermes NUNCA");
+    expect(s).toContain("hermes is NEVER");
   });
   test("directive inclui delegação hermes -z e --exec por runtime", () => {
     const s = formatRulesForDirective(RULES);

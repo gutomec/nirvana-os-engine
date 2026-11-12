@@ -3,40 +3,40 @@
 //
 // Resumes the SAME runtime conversation (claude --resume <session_id>) so the
 // agent has full context of what it produced, applies the change, then re-runs
-// verify + gate + (re)export. State lives in the run's session file:
-//   <project>/businesses/<slug>/session.json   a business run (dispatch.ts)
-//   <project>/squads/<slug>/session.json       a squad-only run
-//   <project>/agent-x/session.json             an agent-x run
-// (run-session.ts finds all three.)
+// verify + gate + (re)export. State lives in the session.json `nrv dispatch
+// --exec` leaves beside the worker's scaffold (lib/run-session.ts):
+// <run>/businesses/<slug>/, <run>/squads/<slug>/ or <run>/agent-x/, and in the
+// run's ledger row.
+//
+// The revision continues the ORIGINAL worker: the same role (a business runs
+// as one `solo` worker with the solo directive, a squad as `squad`, the
+// generalist as `agent-x`; none of them may open anything), on the runtime that
+// finished the run, pinned when the owner chose it (flag or brief), from the
+// folder the session was started in.
 //
 // When there is no conversation to continue (a run whose runtime returned no
-// id, a run from before squad and agent-x runs recorded one, a session the
-// runtime pruned, or `--runtime` naming another runtime), the revision does
-// not fail: it runs a FRESH session seeded with the run's brief, its
-// deliverables as the work to revise, the gate's reservations and the change,
-// and says so on screen and in the audit (`x_revise_fresh_session`, with the
-// reason). A route of several squads has no single worker to continue and is
-// refused (exit 4).
-//
-// The revision's worker runs under the run ledger, so the heartbeat sidecar's
-// stall guard (stall-guard.ts) ends a worker that hangs: exit 76.
+// id, a run from before runs recorded one, a session the runtime pruned, or
+// `--runtime` naming another runtime), the revision does not fail: it runs a
+// FRESH session seeded with the run's brief, its deliverables as the work to
+// revise, the gate's findings and the change, and says so on screen and in
+// the audit (`x_revise_fresh_session`, with the reason). A route of several
+// squads has no single worker to continue and is refused (exit 4).
 //
 // Usage:
 //   nrv revise <project_id> "<change request>"
 //   nrv revise --last [<business|squad|agent-x>] "<change>"   the newest run (of that worker)
-//   nrv revise <project_id> "<change>" --zip --max-budget=10 --timeout=20 --runtime=<rt> --safe
+//   nrv revise <project_id> "<change>" --zip --max-budget=10 --timeout=20 --runtime=<rt>
 //
 // Exit codes (SAME TABLE as dispatch.ts — BREAKING, see CHANGELOG):
-//   0 = revised + DELIVERED (gate pass)
+//   0 = revised + DELIVERED (gate pass, or with reservations for findings
+//       that are not serious)
 //   1 = failed (runtime error, or no verifiable deliverable on disk)
-//   2 = delivery WITHHELD — gate FAILED after the revision budget
+//   2 = delivery WITHHELD — a serious finding after the corrections (in the
+//       supervisor's sweep, any gate failure)
 //   3 = delivery INDETERMINATE — zero gateable artifacts; nothing was judged
-//   4 = invalid args (EXIT.INVALID_ARGS per SCRIPT_CONTRACT; was 2)
+//   4 = invalid args, or a run this command cannot continue (EXIT.INVALID_ARGS)
 //  75 = waiting on quota — the revision, a correction or the judge met a spent
 //       quota; nothing more ran, and the run resumes at or after the reset
-//  76 = STALLED — the worker showed no activity for execution.stall_timeout_min
-//       (or never started within execution.stall_no_start_min); it was ended,
-//       nothing was judged
 //
 // 0 means DELIVERED, and only that. This script used to exit 0 whenever the
 // text-only gate had nothing to chew on, while emitting `delivered` with
@@ -46,22 +46,28 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { spawnSync } from "node:child_process";
-import { runHeadless, runtimeAvailable, AUTONOMOUS_DIRECTIVE, type Runtime } from "../lib/host-agent-driver.ts";
+import { runtimeAvailable, AUTONOMOUS_DIRECTIVE, type Runtime } from "../lib/host-agent-driver.ts";
 import { onLedgerStall } from "../../_shared/lib/host-agent-driver.ts";
-import { looksLikeMissingSession } from "../../_shared/lib/session-capture.ts";
 import { reportStall, STALLED_EXIT } from "../lib/stall-guard.ts";
 import { findRunSessions, latestRunSession, runRoots as projectRunRoots, type RunSessionFile } from "../lib/run-session.ts";
+import { looksLikeMissingSession } from "../../_shared/lib/session-capture.ts";
 import { detectExecutionRuntime } from "../lib/control-plane/execution-runner.ts";
-import * as runLedger from "../lib/run-ledger.ts";
+import { GATE_FINDINGS_FILE } from "../lib/delivery-pipeline.ts";
+import { resolveCascadeRoot } from "../lib/cascade.ts";
+import { formatRulesForDirective, loadRuntimeRules } from "../lib/runtime-rules.ts";
+import { paths } from "../../_shared/lib/bun-helpers.ts";
+import { runWithCascade } from "../lib/cascade-runner.ts";
+import { squadRunEnv } from "../../_shared/lib/squad-env.ts";
+import { soloDirective } from "../lib/business-solo.ts";
 import { runDelivery, deliverAfterRuntimeError, type DeliveryArgs, type DeliveryResult } from "../lib/delivery-pipeline.ts";
+import * as runLedger from "../lib/run-ledger.ts";
+import type { DispatchRole } from "../../_shared/lib/dispatch-depth.ts";
 import { loadHarnessConfig } from "../lib/harness-config.ts";
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
 import { scopeGuard } from "../../_shared/lib/scope-guard.ts";
 import { stamp } from "../../_shared/lib/audit-provenance.ts";
-import { squadRunEnv } from "../../_shared/lib/squad-env.ts";
-import { briefWorkDirs } from "../../_shared/lib/brief-work-dirs.ts";
-import { paths } from "../../_shared/lib/bun-helpers.ts";
-import type { DispatchRole } from "../../_shared/lib/dispatch-depth.ts";
+import { briefWorkDirs, workElsewhereRule } from "../../_shared/lib/brief-work-dirs.ts";
+import { briefWithRequest } from "../lib/work-brief.ts";
 
 const ANSI = { reset: "\x1b[0m", bold: "\x1b[1m", dim: "\x1b[2m", green: "\x1b[32m", red: "\x1b[31m", yellow: "\x1b[33m", cyan: "\x1b[36m", lime: "\x1b[38;5;154m" };
 const noColor = process.argv.includes("--no-color") || !process.stdout.isTTY;
@@ -90,7 +96,9 @@ const positional: string[] = [];
 // `--last [<target>]`: the change is the last positional; a target before it
 // narrows the search to that worker's runs.
 const wantLast = process.argv.includes("--last");
-const lastPick = wantLast ? latestRunSession({ target: positional.length >= 2 ? positional[0] : null }) : null;
+const lastPick = wantLast
+  ? latestRunSession({ target: positional.length >= 2 ? positional[0] : null })
+  : null;
 const projectId = wantLast ? lastPick?.projectId : positional[0];
 const change = wantLast ? positional[positional.length - 1] : positional[1];
 const runtimeFlag = arg("--runtime");
@@ -125,9 +133,14 @@ function readIfExists(p: string): string | null {
   try { return fs.existsSync(p) ? fs.readFileSync(p, "utf8") : null; } catch { return null; }
 }
 
+/** The run folders a project id can live in, nearest first (run-session.ts). */
+function runRoots(pid: string): string[] {
+  return projectRunRoots(pid);
+}
+
 /** The session files of the run, from the nearest run folder that holds any. */
 function findSessions(pid: string): RunSessionFile[] {
-  for (const root of projectRunRoots(pid)) {
+  for (const root of runRoots(pid)) {
     const found = findRunSessions(root);
     if (found.length) return found;
   }
@@ -151,7 +164,7 @@ const ledger = (() => {
 function sessionlessKind(pid: string): "squad" | "agent-x" | null {
   const kind = ledger?.row?.target_kind;
   if (kind === "squad" || kind === "agent-x") return kind;
-  for (const root of projectRunRoots(pid)) {
+  for (const root of runRoots(pid)) {
     if (fs.existsSync(path.join(root, "squads"))) return "squad";
     if (fs.existsSync(path.join(root, "agent-x"))) return "agent-x";
   }
@@ -162,10 +175,10 @@ function sessionlessKind(pid: string): "squad" | "agent-x" | null {
  *  before those runs wrote one): its one worker folder, read from the run
  *  folder, with no id. The revision then runs fresh and seeded, and the file is
  *  written when the new session comes back. */
-function legacySession(pid: string): (RunSessionFile & { legacy: Record<string, unknown> }) | null {
+function legacySession(pid: string): RunSessionFile | null {
   const kind = sessionlessKind(pid);
   if (!kind) return null;
-  for (const root of projectRunRoots(pid)) {
+  for (const root of runRoots(pid)) {
     const dirs = kind === "agent-x" ? (fs.existsSync(path.join(root, "agent-x")) ? ["agent-x"] : [])
       : (() => { try { return fs.readdirSync(path.join(root, "squads"), { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name); } catch { return []; } })();
     if (dirs.length !== 1) continue;
@@ -177,9 +190,9 @@ function legacySession(pid: string): (RunSessionFile & { legacy: Record<string, 
       runtime: ledger?.row?.runtime ?? null, session_id: null, project_dir: projectDir,
       project_root: ledger?.row?.project_root ?? meta.project_root ?? process.cwd(),
       outputs_root: meta.outputs_root ?? (fs.existsSync(deliverables) ? deliverables : root),
-      workspace: null, manifest: null, created_at: new Date().toISOString(),
+      workspace: root, manifest: null, created_at: new Date().toISOString(),
     };
-    return { file: path.join(projectDir, "session.json"), kind, slug: data.target_slug, legacy: data };
+    return { file: path.join(projectDir, "session.json"), kind, slug: data.target_slug, legacy: data } as RunSessionFile & { legacy: Record<string, unknown> };
   }
   return null;
 }
@@ -189,19 +202,23 @@ if (!sessions.length) {
   const legacy = legacySession(projectId);
   if (legacy) sessions = [legacy];
   else {
-    console.error(c("red", `✗ no run '${projectId}' with a session to continue was found (looked for businesses/<slug>/, squads/<slug>/ and agent-x/session.json under ${projectRunRoots(projectId).join(", ")}).`));
-    console.error("  Was this project created with 'nrv run' / 'nrv dispatch --exec'?");
+    console.error(c("red", `✗ no run '${projectId}' with a session to continue was found (looked for businesses/<slug>/, squads/<slug>/ and agent-x/session.json under ${runRoots(projectId).join(", ")}).`));
     process.exit(1);
   }
 }
 if (sessions.length > 1) {
   console.error(c("red", `✗ '${projectId}' ran ${sessions.length} workers (${sessions.map(s => s.kind === "agent-x" ? "agent-x" : `${s.kind} ${s.slug}`).join(", ")}), and nrv revise continues one worker's own session.`));
-  console.error("  A change to that run is a new dispatch to the worker it concerns.");
+  console.error("  This run has no single conversation to continue: a change to it is a new dispatch.");
   process.exit(4);
 }
 const { file: sessionFile, kind } = sessions[0];
 const legacyData = (sessions[0] as RunSessionFile & { legacy?: Record<string, unknown> }).legacy;
 const session: Record<string, any> = legacyData ? { ...legacyData } : JSON.parse(fs.readFileSync(sessionFile, "utf8"));
+const meta: Record<string, unknown> = ledger?.row?.meta ?? {};
+const metaStr = (key: string): string | null => {
+  const v = meta[key] ?? session[key];
+  return typeof v === "string" && v ? v : null;
+};
 // The runtime that owns the session: the conversation can be resumed only
 // there. The ledger's runtime is the fallback for a session that never named one.
 const sessionRuntime = ((session.runtime as string) || ledger?.row?.runtime || "") as Runtime;
@@ -211,9 +228,14 @@ const slug = ((kind === "business" ? session.business_slug : session.target_slug
 const projDir = session.project_dir as string;
 const projectRoot = session.project_root as string;
 const oroot = session.outputs_root as string;
-// A squad and agent-x keep their stamp: they may open nothing. A business
-// revision keeps the unstamped call it always made.
-const role: DispatchRole | undefined = kind === "squad" ? "squad" : kind === "agent-x" ? "agent-x" : undefined;
+
+// The original worker's role, never the operator's: a business runs as one
+// solo worker, a squad as `squad`, the generalist as `agent-x`. Each may open
+// nothing, and the revision carries the same stamp.
+const role: DispatchRole = kind === "business" ? "solo" : kind;
+// The owner chose this runtime (a flag, or a mention in the brief): the
+// revision stays on it and never hands off to another vendor.
+const pinned = ["flag", "brief"].includes(metaStr("runtime_source") ?? "") || !!runtimeFlag;
 
 // ── continue, or start fresh and say why ───────────────────────────────────
 //
@@ -221,15 +243,15 @@ const role: DispatchRole | undefined = kind === "squad" ? "squad" : kind === "ag
 // revision is not refused: it runs in a fresh session seeded with what the
 // original worker knew (freshPrompt below). The reasons, as audited:
 //   legacy_run          the run predates session files
-//   no_session_id       the runtime returned no id
+//   no_session_id       the runtime returned no id (an Orca worker before 0.15, qwen, opencode)
 //   runtime_changed     --runtime names another runtime than the session's
-//   runtime_unavailable the session's runtime is not installed, and nobody named one
+//   runtime_unavailable the session's runtime is not installed, and nobody pinned it
 //   resume_failed       the runtime no longer knows the session (pruned, deleted)
 let freshReason: string | null = legacyData ? "legacy_run" : !sessionId ? "no_session_id" : null;
 let rt: Runtime = sessionRuntime;
 if (runtimeFlag && runtimeFlag !== sessionRuntime) { rt = runtimeFlag as Runtime; freshReason ??= "runtime_changed"; }
-if (!rt) rt = detectExecutionRuntime().runtime;
-if (!runtimeAvailable(rt) && !runtimeFlag) {
+if (!rt) { rt = detectExecutionRuntime().runtime; }
+if (!runtimeAvailable(rt) && !pinned) {
   const fallback = detectExecutionRuntime();
   if (fallback.available && fallback.runtime !== rt) { rt = fallback.runtime; freshReason ??= "runtime_unavailable"; }
 }
@@ -241,50 +263,65 @@ const FRESH_WHY: Record<string, string> = {
   resume_failed: `${sessionRuntime} no longer knows session ${sessionId}`,
 };
 
-/** The squads whose environments (squad-env.ts) the run worked with: a
- *  business's mandatory squads, each under `<outputs_root>/_squads/<slug>`, or
- *  the squad itself. */
+/** The brief the run answered: where the run recorded it, else the run's
+ *  scaffold root (`<run>/brief.md`, two levels above businesses/<slug> or
+ *  squads/<slug>; `<run>/brief-enriched.md`, one level above agent-x), else
+ *  beside the session. Never the project root, which holds no brief. */
+function readBrief(): string | null {
+  const scaffoldRoot = metaStr("scaffold_root") ?? (kind === "agent-x" ? path.dirname(projDir) : path.resolve(projDir, "..", ".."));
+  const briefName = kind === "agent-x" ? "brief-enriched.md" : "brief.md";
+  for (const file of [metaStr("brief_path"), path.join(scaffoldRoot, briefName), path.join(projDir, "brief.md")]) {
+    if (!file) continue;
+    const text = readIfExists(file);
+    if (text?.trim()) return text;
+  }
+  return null;
+}
+const brief = readBrief();
+
+/** The squad's own folder, as squad-exec granted it to the run; none for a business or agent-x. */
+function squadDirs(): string[] {
+  if (kind !== "squad") return [];
+  const dir = path.join(paths.SQUADS_DIR, slug);
+  return fs.existsSync(dir) ? [dir] : [];
+}
+
+/** The squads whose environments (squad-env.ts) the run worked with: the
+ *  squad itself, or those a business run had cards for. */
 function envSquads(): string[] {
   if (kind === "squad") return [slug];
+  if (kind !== "business") return [];
   try {
-    return fs.readdirSync(path.join(oroot, "_squads"), { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name);
+    return fs.readdirSync(path.join(projDir, "cards")).map((f) => /^squad-(.+)\.md$/.exec(f)?.[1]).filter((x): x is string => !!x);
   } catch { return []; }
 }
-const reviseEnv = squadRunEnv(envSquads());
 
 console.log("");
 console.log(c("lime", "▶") + c("bold", ` nrv revise — ${projectId} (${rt})`));
-if (freshReason) console.log(c("yellow", `  FRESH session: ${FRESH_WHY[freshReason]}. Seeded with the brief, the deliverables and the gate's reservations.`));
+if (freshReason) console.log(c("yellow", `  FRESH session: ${FRESH_WHY[freshReason]}. Seeded with the brief, the deliverables and the gate findings.`));
 else console.log(c("dim", `  resume session: ${sessionId}`));
 
 if (!runtimeAvailable(rt)) {
-  console.error(c("red", `✗ runtime '${rt}' is not on the PATH${runtimeFlag ? " (named with --runtime, so no other runtime takes the revision)" : ""}.`));
+  console.error(c("red", `✗ runtime '${rt}' is not on the PATH${pinned ? " (pinned by the owner, so no other runtime takes the revision)" : ""}.`));
   process.exit(1);
 }
-
-/** The brief the run answered: the run's scaffold root keeps it (`<run>/brief.md`,
- *  two levels above businesses/<slug> or squads/<slug>; agent-x's is
- *  `<run>/brief-enriched.md`, one level above agent-x/). */
-const scaffoldRoot = path.resolve(projDir, kind === "agent-x" ? ".." : "../..");
-const brief = readIfExists(path.join(projectRoot, "brief.md"))
-  ?? readIfExists(path.join(scaffoldRoot, kind === "agent-x" ? "brief-enriched.md" : "brief.md"));
 
 // The ledger row this revision moves. A live row (the supervisor marked it
 // `running` before spawning us, or a run a human picks up mid-way) is carried
 // on; a finished one is history, so the revision opens a new attempt of the
-// same trace, which `nrv run-track status <trace>` then reports. A run the
-// ledger never saw gets its first row here. The worker runs under it, so the
-// heartbeat sidecar's stall guard covers the revision.
+// same trace, which `nrv run-track status <trace>` then reports.
 const ledgerRun: { handle: runLedger.LedgerHandle; runId: string } | null = (() => {
-  if (!ledger) return null;
+  if (!ledger?.row) return null;
   const { handle, row } = ledger;
-  const mine = { dispatcher_pid: process.pid, dispatcher_started_at: runLedger.processStartedAt(process.pid) };
   try {
-    if (row && !runLedger.isTerminal(row.state)) {
-      // This process now drives the row: the stall decision is its own while it
-      // lives (stall-guard.ts dispatcherOwnsStall). The earlier values come
-      // back on exit, while the row is still ours.
+    if (!runLedger.isTerminal(row.state)) {
+      // This process now drives the row: `nrv run-track stop` must reach it.
+      // Left on the dead dispatcher's pid (the supervisor's resume, a run whose
+      // dispatcher died), stop found "no live process" while this revision
+      // and its judge kept running (2026-10-14). The earlier values come back
+      // on exit, while the row is still ours.
       const previous = { dispatcher_pid: row.meta?.dispatcher_pid ?? null, dispatcher_started_at: row.meta?.dispatcher_started_at ?? null };
+      const mine = { dispatcher_pid: process.pid, dispatcher_started_at: runLedger.processStartedAt(process.pid) };
       runLedger.patchMeta(handle, row.run_id, mine);
       process.on("exit", () => {
         try {
@@ -292,8 +329,9 @@ const ledgerRun: { handle: runLedger.LedgerHandle; runId: string } | null = (() 
           if (now && !runLedger.isTerminal(now.state) && Number(now.meta?.dispatcher_pid) === process.pid) runLedger.patchMeta(handle, row.run_id, previous);
         } catch { /* the ledger is closing with the process */ }
       });
-      // `verifying` and `gated` have no direct edge back to `running`: the hop
-      // goes through `failed`, as the supervisor's own resume does.
+      // `verifying` and `gated` have no direct edge back to `running`: the
+      // hop goes through `failed`, as the supervisor's own resume does, instead
+      // of throwing and leaving the revision untracked.
       if (row.state !== "running") {
         if (!runLedger.canTransition(row.state, "running")) runLedger.markState(handle, row.run_id, "failed", { error: "taken over by nrv revise" });
         runLedger.markState(handle, row.run_id, "running");
@@ -301,11 +339,11 @@ const ledgerRun: { handle: runLedger.LedgerHandle; runId: string } | null = (() 
       return { handle, runId: row.run_id };
     }
     const fresh = runLedger.openRun(handle, {
-      traceId: projectId, projectId, targetSlug: row?.target_slug ?? slug, targetKind: kind, runtime: rt,
-      meta: { ...(row?.meta ?? {}), ...(row ? { revision_of: row.run_id } : {}), ...mine,
-        project_dir: projDir, project_root: projectRoot, outputs_root: oroot,
-        scaffold_root: (row?.meta?.scaffold_root as string | undefined) ?? scaffoldRoot,
-        mode: "revise" },
+      traceId: projectId, projectId, projectRoot: row.project_root, targetSlug: row.target_slug ?? slug, targetKind: kind, runtime: rt,
+      // This process is the revision's dispatcher: `nrv run-track stop` ends it
+      // with its worker, instead of the earlier run's pid the copied meta carries.
+      sessionId: freshReason ? null : sessionId, meta: { ...row.meta, revision_of: row.run_id, dispatch_role: role,
+        dispatcher_pid: process.pid, dispatcher_started_at: runLedger.processStartedAt(process.pid) },
     });
     runLedger.markState(handle, fresh.run_id, "running");
     return { handle, runId: fresh.run_id };
@@ -325,35 +363,40 @@ onLedgerStall((stall, result, opts) => {
   process.exit(STALLED_EXIT);
 });
 
-// The folders the brief places the work in: a revision works there too, and is
-// never told to move that work under the outputs root (2026-10-14, a resumed
-// worker copied the whole project it was fixing into its deliverables).
+const solo = role === "solo";
+// The user's USE_* rules, as the dispatch handed them to the worker.
+const rulesDirective = formatRulesForDirective(loadRuntimeRules(resolveCascadeRoot(projectRoot || process.cwd())));
+// The folders the brief places the work in: a revision works there too, and
+// is never told to move that work under the outputs root.
 const workDirs = briefWorkDirs(brief, oroot);
 const revisePrompt = [
-  "INSTRUÇÃO DE REVISÃO (mesma sessão — você tem o contexto completo do que produziu):",
+  "REVISION INSTRUCTION (same session: you have the full context of what you produced):",
   "",
   change,
   "",
-  `Reescreva/atualize os entregáveis nos lugares que o brief indica. Os entregáveis escritos sob ${oroot} continuam lá; o trabalho que o brief coloca em outra pasta (um projeto a revisar ou corrigir, um projeto novo a criar) é feito lá, no lugar, e nunca copiado para dentro de ${oroot}.${workDirs.length ? ` O brief coloca trabalho em: ${workDirs.join(", ")}.` : ""}`,
-  scopeGuard("pt-BR"),
-  'Não imprima resumo: entregue os arquivos atualizados. Atualize a seção "## Premissas assumidas" se algo mudou.',
+  `Rewrite or update the deliverables in the places the brief names. ${workElsewhereRule(oroot, workDirs)}`,
+  solo
+    ? `Then update ${path.join(oroot, "_SUMMARY.md")} and ${path.join(oroot, "_CLAIMS.json")} so they describe the revised delivery; each claim's evidence names a file that exists under ${oroot}${workDirs.length ? ` or under ${workDirs.join(", ")}` : ""}, never a file under _work/ or _review/ (run state does not count as proof).`
+    : `Then update ${path.join(oroot, "_SUMMARY.md")} so it describes the revised delivery.`,
+  scopeGuard(),
+  'Do not print a summary: deliver the updated files. Update the assumptions section ("## Assumptions" or its equivalent in the language of the deliverable) if anything changed.',
 ].join("\n");
 
 /** The prompt of a revision that cannot continue the conversation: what the
  *  original worker knew, rebuilt from disk, then the change. */
 function freshPrompt(reason: string): string {
-  const reservationsFile = path.join(oroot, "_QA-RESERVATIONS.md");
-  const reservations = readIfExists(reservationsFile)?.trim();
-  const capped = reservations && reservations.length > 8000 ? `${reservations.slice(-8000)}\n(older text cut; the whole file is ${reservationsFile})` : reservations;
+  const findingsFile = path.join(oroot, GATE_FINDINGS_FILE);
+  const findings = readIfExists(findingsFile)?.trim();
+  const capped = findings && findings.length > 8000 ? `${findings.slice(-8000)}\n(older rounds cut; the whole file is ${findingsFile})` : findings;
   return [
     `REVISION INSTRUCTION (NEW session: ${FRESH_WHY[reason] ?? reason}, so you do not have the conversation that produced this work).`,
     "",
     "The brief this work answered:",
     "",
-    brief?.trim() || "(the run recorded no brief; the deliverables below are the whole record)",
+    (brief?.trim() ? briefWithRequest(brief, { baseDirs: [projectRoot] }).trim() : "") || "(the run recorded no brief; the deliverables below are the whole record)",
     "",
     `The delivered work is in ${oroot}${workDirs.length ? ` and in ${workDirs.join(", ")}` : ""}. Read it before you change anything: it is the input of this revision, not a draft to redo. Change what the request below asks and keep the rest as it is.`,
-    ...(capped ? ["", `The quality gate's reservations on that work (${reservationsFile}):`, "", capped] : []),
+    ...(capped ? ["", `The quality gate's findings on that work (${findingsFile}):`, "", capped] : []),
     "",
     "The change requested:",
     "",
@@ -362,7 +405,7 @@ function freshPrompt(reason: string): string {
 }
 
 appendAudit({ event: "revision_requested", trace_id: projectId, project_id: projectId, business_slug: kind === "business" ? slug : null,
-  target_kind: kind, target_slug: slug, runtime: rt, session_id: freshReason ? null : sessionId,
+  target_kind: kind, target_slug: slug, runtime: rt, session_id: freshReason ? null : sessionId, dispatch_role: role, pinned,
   ...(freshReason ? { fresh_session: freshReason } : {}) }, projectRoot);
 
 function auditFresh(reason: string): void {
@@ -371,27 +414,27 @@ function auditFresh(reason: string): void {
 }
 if (freshReason) auditFresh(freshReason);
 
-/** A squad's own tree, granted again as the run granted it: its resource map
- *  names files under it, and claude-code and agy refuse an ungranted path. */
-const squadTree = kind === "squad" && fs.existsSync(path.join(paths.SQUADS_DIR, slug)) ? [path.join(paths.SQUADS_DIR, slug)] : [];
-
-const runRevision = (resume: string | undefined, prompt: string) => runHeadless({
+const runRevision = (resume: string | undefined, prompt: string) => runWithCascade({
   runtime: rt,
   prompt,
   cwd: projectRoot,
-  addDirs: [projDir, oroot, ...squadTree, ...workDirs],
+  // A squad's own tree, granted again as the run granted it: its resource map
+  // names files under it, and claude-code and agy refuse an ungranted path.
+  addDirs: [projDir, oroot, ...workDirs, ...squadDirs()],
   // The folder the session was started in (absent on runs from before runs
   // had one): claude resumes a session only from its own folder.
   workspace: session.workspace || undefined,
   // The same squad packages and Python the run had, on the revision's child only.
-  env: reviseEnv,
+  env: squadRunEnv(envSquads()),
   sessionId: resume,
-  appendSystemPrompt: AUTONOMOUS_DIRECTIVE,
-  ...(role ? { dispatchRole: role } : {}),
+  appendSystemPrompt: solo ? soloDirective(rulesDirective) : AUTONOMOUS_DIRECTIVE + rulesDirective,
+  dispatchRole: role,
+  pinned,
   maxBudgetUsd: maxBudget ? parseFloat(maxBudget) : undefined,
   timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
   yolo,
   label: `revise ${projectId}`,
+  brief: brief ?? change, projectRoot, outputsRoot: oroot, taskHint: `revise ${projectId}`, projectId,
   ...(ledgerRun ? { ledger: { runId: ledgerRun.runId, watchDir: oroot } } : {}),
 });
 let res = freshReason ? runRevision(undefined, freshPrompt(freshReason)) : runRevision(sessionId!, revisePrompt);
@@ -400,29 +443,32 @@ let res = freshReason ? runRevision(undefined, freshPrompt(freshReason)) : runRe
 // not this, and is reported as it is.
 if (!freshReason && !res.ok && looksLikeMissingSession([res.error, res.stderr, res.result].filter(Boolean).join("\n"))) {
   freshReason = "resume_failed";
-  console.error(c("yellow", `⚠ The session did not resume (${FRESH_WHY.resume_failed}): the revision runs in a FRESH session, seeded with the brief, the deliverables and the gate's reservations.`));
+  console.error(c("yellow", `⚠ The session did not resume (${FRESH_WHY.resume_failed}): the revision runs in a FRESH session, seeded with the brief, the deliverables and the gate findings.`));
   auditFresh(freshReason);
   res = runRevision(undefined, freshPrompt(freshReason));
 }
+// A run that was not pinned may have been handed to another runtime; the
+// session it came back with belongs to that one.
+const finalRuntime = (res.finalRuntime ?? rt) as Runtime;
 
 // claude --resume can mint a fresh session id, and a fresh revision has a new
 // one; persist whatever we got back, so the next revision continues it.
-if ((res.sessionId && res.sessionId !== sessionId) || rt !== sessionRuntime) {
+if ((res.sessionId && res.sessionId !== sessionId) || finalRuntime !== sessionRuntime) {
   if (res.sessionId) session.session_id = res.sessionId;
-  session.runtime = rt;
+  session.runtime = finalRuntime;
   fs.mkdirSync(path.dirname(sessionFile), { recursive: true });
   fs.writeFileSync(sessionFile, JSON.stringify(session, null, 2));
 }
 if (ledgerRun && res.sessionId) {
   try { runLedger.recordSession(ledgerRun.handle, ledgerRun.runId, res.sessionId); } catch { /* the session file has it */ }
 }
-// The runtime ran the revision in another conversation (agy's `--continue`
-// with nothing to continue): the change was applied blind to the run's work.
+// The runtime ran the revision in a NEW conversation (agy on an id it no longer
+// knows): the change was applied blind to what the run produced before.
 if (res.resumeLost) {
   console.error(c("yellow", "⚠ The revision did NOT resume the run's conversation: it ran without the previous context."));
   for (const w of res.warnings ?? []) console.error(c("dim", `  ${w}`));
   appendAudit({ event: "x_resume_lost", trace_id: projectId, project_id: projectId, business_slug: kind === "business" ? slug : null,
-    target_kind: kind, runtime: rt, requested_session_id: sessionId, session_id: res.sessionId, revision: true }, projectRoot);
+    target_kind: kind, runtime: finalRuntime, requested_session_id: sessionId, session_id: res.sessionId, revision: true }, projectRoot);
 }
 console.log(c("dim", `  ${res.durationMs}ms${res.costUsd != null ? ` · $${res.costUsd.toFixed(4)}` : ""}`));
 
@@ -438,13 +484,15 @@ console.log(c("dim", `  ${res.durationMs}ms${res.costUsd != null ? ` · $${res.c
 // users to (`nrv revise <pid> "<fix>"`) kept it open.
 //
 // Revision budget: `nrv revise` is the human's own iteration loop, so the
-// config budget applies — EXCEPT when the SUPERVISOR spawned us (NRV_IN_SWEEP=1,
-// set by supervisor.ts defaultResume). An unattended sweep (`watch`'s loop or
-// a lazy background trigger) runs with nobody watching; a revision loop there
-// spends LLM money and can re-trigger on the next sweep. There the gate
-// verdict goes straight back to the supervisor, which withholds and escalates
-// to a human. Do NOT raise this number to "make recovery work": deliberate
-// iteration is the human's call.
+// config budget applies, and the owner's rule A with it (a serious finding
+// gets extra rounds and is withheld if it stays; anything else ships with
+// reservations) — EXCEPT when the SUPERVISOR spawned us (NRV_IN_SWEEP=1, set
+// by supervisor.ts defaultResume). An unattended sweep (`watch`'s loop or a
+// lazy background trigger) runs with nobody watching; a revision loop there
+// spends LLM money and can re-trigger on the next sweep. There no correction
+// runs, and any gate failure goes straight back to the supervisor, which
+// withholds and escalates to a human. Do NOT raise this number to "make
+// recovery work": deliberate iteration is the human's call.
 const inSweep = process.env.NRV_IN_SWEEP === "1";
 const config = loadHarnessConfig();
 const zipWanted = Boolean(session.zip_path) || wantZip;
@@ -455,17 +503,16 @@ function rezip(): string | null {
   if (!zipWanted) return null;
   const exportScript = path.join(SKILLS, "harness/scripts/export.ts");
   const out = (session.zip_path as string | null) || path.resolve(`./${projectId}.zip`);
-  const z = spawnSync("bun", [exportScript, projectId!, "--format=zip", "--deliverables-only", `--output=${out}`], { windowsHide: true, encoding: "utf8", stdio: "inherit" });
+  const z = spawnSync("bun", [exportScript, projectId, "--format=zip", "--deliverables-only", `--output=${out}`], { windowsHide: true, encoding: "utf8", stdio: "inherit" });
   if (z.status !== 0) return null;
   session.zip_path = out;
-  fs.writeFileSync(sessionFile, JSON.stringify(session, null, 2));
+  fs.writeFileSync(sessionFile!, JSON.stringify(session, null, 2));
   return out;
 }
 
 const deliveryArgs: DeliveryArgs = {
-  // Only widens the deliverable floor for files named explicitly (see
-  // delivery-pipeline briefNamedFiles); the change request is the closest
-  // thing to a brief this script has when the project has no brief.md.
+  // The run's own brief: the claims check reads its "Done when", and the judge
+  // grades against it. The change request stands in only when the run kept none.
   brief: brief ?? change,
   outputsRoot: oroot,
   // The dispatch records its --manifest in session.json, so a revision keeps
@@ -473,36 +520,30 @@ const deliveryArgs: DeliveryArgs = {
   // Older sessions predate the field: null there, and verify degrades as before.
   manifest: (typeof session.manifest === "string" && session.manifest) ? session.manifest : null,
   pid: projectId,
-  slug: kind === "agent-x" ? null : slug,
+  slug: kind === "business" ? slug : null,
   targetKind: kind,
-  ...(role ? { producerRole: role } : {}),
-  runtime: rt,
+  runtime: finalRuntime,
+  producerRole: role,
+  rulesDirective,
   projectDir: projDir,
   projectRoot,
   workingDir: process.cwd(),
   // A fresh revision's corrections continue the fresh session, never the lost one.
   sessionId: (session.session_id as string | null) ?? (freshReason ? null : sessionId),
   maxRevisions: inSweep ? 0 : config.quality_gate.max_revisions,
-  // nrv revise is the DELIBERATE iteration tool: one revision per invocation,
-  // a human (or the sweep, via NRV_IN_SWEEP) reading the verdict. Its 0/2/3
-  // exit contract stays strict — the accept-with-reservations default applies
-  // to the dispatch pipeline's autonomous loop, not to the tool the
-  // reservations note tells you to reach for.
-  gateExhaustedPolicy: "withhold",
+  // Unattended, strict: the supervisor reads exit 2 and escalates. A human's
+  // revision follows rule A like any delivery.
+  ...(inSweep ? { gateExhaustedPolicy: "withhold" as const } : {}),
   maxBudgetUsd: maxBudget ? parseFloat(maxBudget) : undefined,
   timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
   yolo,
   config,
-  // The revision's ledger row: its correction rounds run under it too (so the
-  // stall guard covers them), and the verdict closes it.
-  ledger: ledgerRun ? { handle: ledgerRun.handle, runId: ledgerRun.runId } : null,
-  env: reviseEnv,                       // its gate revision rounds continue the same work
+  ledger: ledgerRun,
   audit: (event, payload) => appendAudit({ event, ...payload, revision: true }, projectRoot),
   afterGate: () => ({ zipPath: rezip() }),
   onSession: (sid) => {
     session.session_id = sid;
-    fs.mkdirSync(path.dirname(sessionFile), { recursive: true });
-    fs.writeFileSync(sessionFile, JSON.stringify(session, null, 2));
+    fs.writeFileSync(sessionFile!, JSON.stringify(session, null, 2));
   },
   verifyScript: path.join(SKILLS, "businesses/scripts/verify-deliverable.ts"),
   gateScript: path.join(SKILLS, "harness/scripts/quality-gate.ts"),
@@ -516,10 +557,14 @@ function printOutcome(result: DeliveryResult): void {
   if (result.quotaWait) {
     console.log(c("yellow", `⏸ Waiting on quota (exit ${result.exitCode}): ${result.quotaWait.hint}. Nothing more ran; nothing was delivered.`));
     console.log(c("dim", `  Resets: ${result.quotaWait.resetAt}${result.quotaWait.named ? "" : " (estimated)"}.`));
-  } else if (result.exitCode === 0) {
+  } else if (result.state === "delivered") {
     console.log(c("green", "✓ Revision applied and delivered."));
+  } else if (result.state === "delivered_with_reservations") {
+    console.log(c("yellow", "✓ Revision applied and delivered WITH RESERVATIONS (nothing serious left)."));
+    if (result.reservations) console.log(c("dim", `  Reservations: ${result.reservations}`));
   } else if (result.exitCode === 2) {
-    console.log(c("yellow", "⚠ Revision applied, delivery WITHHELD — the quality gate failed (exit 2)."));
+    console.log(c("yellow", "⚠ Revision applied, delivery WITHHELD (exit 2)."));
+    for (const s of result.serious) console.log(c("dim", `  serious: ${s}`));
     console.log(c("dim", "  The files stay on disk; nothing was marked as delivered."));
   } else if (result.exitCode === 3) {
     console.log(c("yellow", "⚠ Delivery INDETERMINATE — no artifact the gate knows how to judge (exit 3)."));
@@ -535,22 +580,13 @@ function printOutcome(result: DeliveryResult): void {
 if (!res.ok) {
   const runtimeError = `revision run: ${res.error || res.stderr || `exit ${res.exitCode}`}`;
   console.error(c("red", `✗ revision failed (exit ${res.exitCode}): ${res.error || res.stderr || "unknown"}`));
-  appendAudit({ event: "revision_failed", trace_id: projectId, project_id: projectId, business_slug: kind === "business" ? slug : null,
-    target_kind: kind, exit_code: res.exitCode, error: res.error || res.stderr }, projectRoot);
+  appendAudit({ event: "revision_failed", trace_id: projectId, project_id: projectId, business_slug: kind === "business" ? slug : null, target_kind: kind, exit_code: res.exitCode, error: res.error || res.stderr }, projectRoot);
   // A failed revision does NOT mean nothing changed on disk: the usual case is
   // a limit hit after the edits were written. Judge what exists instead of
   // abandoning it — same policy the dispatch path applies (deliverAfterRuntimeError).
   // No artifacts -> the historical exit 1 stands.
   const outcome = deliverAfterRuntimeError({ ...deliveryArgs, runtimeError, errorContext: { revision: true } });
-  if (!outcome.result) {
-    if (ledgerRun) {
-      try {
-        const now = runLedger.getRun(ledgerRun.handle, ledgerRun.runId);
-        if (now && !runLedger.isTerminal(now.state) && now.state !== "failed") runLedger.markState(ledgerRun.handle, ledgerRun.runId, "failed", { error: runtimeError });
-      } catch { /* the audit has it */ }
-    }
-    process.exit(1);
-  }
+  if (!outcome.result) process.exit(1);
   printOutcome(outcome.result!);
   process.exit(outcome.exitCode);
 }

@@ -207,12 +207,21 @@ describe("standard dispatch publishes a canonical Run", () => {
     expect(fx.audit().some(entry => entry.event === "agent_exec_failed")).toBe(true);
   }, 90000);
 
-  test("a scaffold-only run (no --exec) creates no Run and keeps exit 3", () => {
+  test("a --scaffold-only run creates no Run and keeps exit 3", () => {
     const fx = fixture();
-    const result = fx.dispatch(["--agent-x", "--brief-file", fx.briefFile, "--project", "proj-scaffold"]);
+    const result = fx.dispatch(["--agent-x", "--brief-file", fx.briefFile, "--project", "proj-scaffold", "--scaffold-only"]);
     expect(result.status, result.stdout + result.stderr).toBe(3);
     expect(fs.existsSync(path.join(fx.projectRoot, "outputs", "proj-scaffold", "brief-enriched.md"))).toBe(true);
     expect(fs.existsSync(fx.dispatchKernel("proj-scaffold"))).toBe(false);
+    expect(fs.existsSync(fx.projectKernel)).toBe(false);
+  }, 60000);
+
+  test("without --exec and without --scaffold-only the dispatch refuses (exit 4) and creates nothing", () => {
+    const fx = fixture();
+    const result = fx.dispatch(["--agent-x", "--brief-file", fx.briefFile, "--project", "proj-refused"]);
+    expect(result.status, result.stdout + result.stderr).toBe(4);
+    expect(result.stderr).toContain("--project proj-refused --exec");
+    expect(fs.existsSync(path.join(fx.projectRoot, "outputs", "proj-refused"))).toBe(false);
     expect(fs.existsSync(fx.projectKernel)).toBe(false);
   }, 60000);
 });

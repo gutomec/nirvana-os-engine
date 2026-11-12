@@ -1,8 +1,10 @@
 /**
  * scope.ts — Project/global/merge scope resolver for Nirvana.
  *
- * Reads NIRVANA_SCOPE from <cwd>/.env (walking up to find it, stopping at
- * the first .env or .nirvana/ or .git found). Returns ordered path lists for
+ * The mode comes from the project's manifest (`scope` in .nirvana/project.yaml,
+ * project-root.js resolveScopeMode); an explicit NIRVANA_SCOPE in the
+ * environment overrides it, and a NIRVANA_SCOPE line in a legacy project's .env
+ * is read only when the manifest has none. Returns ordered path lists for
  * squads, businesses and mind-clones. The first hit per slug wins, so when
  * mode = "merge" the project copy automatically overrides the global one.
  *
@@ -12,7 +14,6 @@
  *   "merge"   → project first, global second; project overrides by slug
  *
  * Reads (all optional, .env-style KEY=VALUE):
- *   NIRVANA_SCOPE                       global | project | merge
  *   NIRVANA_PROJECT_ROOT                explicit override (else auto-detect)
  *   NIRVANA_PROJECT_SQUADS_DIR          default: <project>/.nirvana/squads
  *   NIRVANA_PROJECT_BUSINESSES_DIR      default: <project>/.nirvana/businesses
@@ -20,13 +21,13 @@
  *   NIRVANA_GLOBAL_INCLUDE_ONLY         CSV — when set, only these slugs from global
  *   NIRVANA_GLOBAL_EXCLUDE              CSV — exclude these slugs from global
  *
- * CLI override: --scope=project|global|merge wins over .env.
+ * CLI override: --scope=project|global|merge wins over everything.
  */
 
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { paths } from "./bun-helpers.ts";
-import { resolveProjectRoot as sharedResolveProjectRoot, outputsBaseDir } from "./project-root.js";
+import { resolveProjectRoot as sharedResolveProjectRoot, outputsBaseDir, resolveScopeMode } from "./project-root.js";
 
 export type ScopeMode = "global" | "project" | "merge";
 
@@ -112,12 +113,7 @@ export function resolveScope(opts: { cwd?: string; explicitMode?: ScopeMode } = 
   const dotenv = projectRoot ? loadDotenv(path.join(projectRoot, ".env")) : {};
   const cfg = (k: string) => process.env[k] ?? dotenv[k];
 
-  const cliMode = cliScope();
-  const envMode = (cfg("NIRVANA_SCOPE") || "").toLowerCase();
-  const mode: ScopeMode =
-    opts.explicitMode ??
-    cliMode ??
-    (envMode === "project" || envMode === "merge" || envMode === "global" ? envMode as ScopeMode : "global");
+  const mode: ScopeMode = opts.explicitMode ?? cliScope() ?? (resolveScopeMode(projectRoot, process.env, dotenv) as ScopeMode);
 
   // Defensive — the "ran from inside the skill dir" footgun. Scope detection
   // walks UP from cwd; if a loader is invoked after `cd`-ing into the skill

@@ -1,10 +1,11 @@
-// run-workspace.test.ts — a worker starts in its own run folder, and no folder
-// is denied to it.
+// run-workspace.test.ts — a worker starts in its own run folder, and the run
+// folders beside it are fenced off.
 //
-// The run folders beside it used to be fenced off with Read/Edit deny rules,
-// and a brief that told the worker to reuse an earlier run's screenshots had
-// that folder refused: the worker redid 62 of them. A worker must reach any
-// folder its brief needs; only the project's own deny rules travel.
+// Measured before this existed: a worker started in the project root (or HOME
+// outside a project), a finished run of the same brief sat one `ls ../` away,
+// and a headless claude asked to summarize "the notes a previous run left"
+// read that run's deliverable and quoted it. With the deny rules below the
+// same read comes back in `permission_denials`.
 import { afterAll, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -118,14 +119,6 @@ describe("fenceSettings", () => {
     fs.writeFileSync(path.join(p.root, ".claude", "settings.json"), JSON.stringify({ permissions: { deny: ["Read(./.env)"] } }));
     const root = claudeAbsolutePattern(p.root)!;
     expect(fenceSettings(p.mine, p.root)!.permissions.deny).toEqual([`Read(${root}/.env)`]);
-  });
-
-  test("the directive points the worker at its run, never forbids another folder", () => {
-    const p = project("fence-directive");
-    const line = workspaceDirective(p.mine);
-    expect(line).toContain("not your input unless your instruction points to them");
-    expect(line).toContain("any other folder your work needs is yours to read and write");
-    expect(line).not.toContain("do not list, read, copy or edit");
   });
 });
 

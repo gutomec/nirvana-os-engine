@@ -4,12 +4,13 @@
  *
  * This exists because of a measurement, not a hunch. The agentic router — the
  * default — reads the digest and reasons, so it does not care what language an
- * entity is declared in. `fast` mode is BM25, which matches tokens: a brief and
- * an entity written in different languages share none and never meet. On this
- * library, 20 held-out paraphrase pairs reached the same destination in
- * Portuguese and English 25% of the time.
+ * entity is declared in. The BM25 shortlist (`nrv find`, the clone search; the
+ * retired `fast` mode used it to decide) matches tokens: a brief and an entity
+ * written in different languages share none and never meet. On this library,
+ * 20 held-out paraphrase pairs reached the same destination in Portuguese and
+ * English 25% of the time.
  *
- * So the fix for `fast` is one language across the corpus, and getting there is
+ * So the fix for the shortlist is one language across the corpus, and getting there is
  * gradual work. That needs two things this module provides: a number that says
  * how far along it is, and a queue that says what to do next.
  *

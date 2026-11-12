@@ -54,7 +54,6 @@ describe("OpenClaw gating", () => {
 describe("the dispatch path OpenClaw can actually run", () => {
   test("the protocol names the scripted path for runtimes with no subagent", () => {
     const h = read("skills/harness/SKILL.md");
-    expect(h).toMatch(/no in-process subagent/i);
     expect(h).toMatch(/bash background:true/);
     expect(h).toMatch(/process poll/);
   });
@@ -75,7 +74,7 @@ describe("the dispatch path OpenClaw can actually run", () => {
   });
 
   test("the adapter is honest that no project contract file exists there", () => {
-    expect(read("skills/_shared/adapters/openclaw.md")).toMatch(/não existe.*equivalente a `CLAUDE\.md`|reads NO project|não lê nenhum/i);
+    expect(read("skills/_shared/adapters/openclaw.md")).toMatch(/there is no.*equivalent of `CLAUDE\.md`|reads no project/i);
   });
 });
 

@@ -61,12 +61,12 @@ function projectConfig(yaml: string): void { fs.writeFileSync(path.join(project,
 describe("each reader: global, project over global, variable over both", () => {
   test("routing.mode (routing-mode.ts), with an explicit --mode over everything", () => {
     expect(resolveRoutingMode()).toBe("agentic");
-    globalConfig("routing:\n  mode: fast\n");
-    expect(resolveRoutingMode()).toBe("fast");
+    globalConfig("routing:\n  mode: cards\n");
+    expect(resolveRoutingMode()).toBe("cards");
     projectConfig("routing:\n  mode: agentic\n");
     expect(resolveRoutingMode()).toBe("agentic");
-    process.env.NIRVANA_ROUTING_MODE = "fast";
-    expect(resolveRoutingMode()).toBe("fast");
+    process.env.NIRVANA_ROUTING_MODE = "cards";
+    expect(resolveRoutingMode()).toBe("cards");
     expect(resolveRoutingMode("agentic")).toBe("agentic");
   });
 
@@ -100,7 +100,7 @@ describe("each reader: global, project over global, variable over both", () => {
     expect(parseExecutionOptions(["--gauntlet-intensity=balanced"]).intensity).toBe("balanced");
     delete process.env.NIRVANA_EXECUTION_MODE;
     projectConfig("gauntlet:\n  default_mode: forever\n");
-    expect(() => parseExecutionOptions([])).toThrow(/gauntlet\.default_mode: valor inválido "forever"/);
+    expect(() => parseExecutionOptions([])).toThrow(/gauntlet\.default_mode: invalid value "forever"/);
   });
 
   test("execution.headless_skip_permissions (host-agent-driver.ts)", () => {

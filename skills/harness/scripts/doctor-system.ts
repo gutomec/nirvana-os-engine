@@ -20,12 +20,14 @@
 //   1 = some warnings
 //   2 = critical failures
 
+import { jevDoctorLine } from "../../_shared/lib/typesafe-client.ts";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { execSync, spawnSync } from "node:child_process";
 import { paths as nrvPaths } from "../../_shared/lib/bun-helpers.ts";
 import { resolveScope, enumerate } from "../../_shared/lib/scope.ts";
+import { cloneRegistryPath } from "../../_shared/lib/clone-resolver.ts";
 import { RUNTIME_TARGETS, RUNTIME_SKILL_DIRS, PROJECT_CONTRACT_FILES, RUNTIME_ENTRIES, SKILLS as SKILL_NAMES } from "../../_shared/lib/runtime-dirs.ts";
 import { classifyRuntimeEntry, foreignProvider } from "../../_shared/lib/runtime-install.ts";
 import { listRuntimes, whichSync } from "../../_shared/lib/host-agent-driver.ts";
@@ -39,6 +41,7 @@ import { expandEnv, findTempNrvEntries, readUserPath, tempRoots } from "../../_s
 import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
 import { GENESIS_EDITION, genesisProvenancePath, legacyProvenancePath, packProvenancePath } from "../../_shared/lib/license-store.ts";
 import { resolveProjectRoot, undeclaredProjectState } from "../../_shared/lib/project-root.js";
+import { resolveActiveTemplate, templateProblems } from "../lib/brief-templates.ts";
 import {
   describeSettingSource, discoverProjectRoot, engineConfigPath, globalConfigPath, projectConfigPath, resolveAllSettings, resolveSetting,
 } from "../../_shared/lib/settings.ts";
@@ -757,8 +760,8 @@ if (fs.existsSync(agentsSkillsDir)) {
 // "before touching the project, regardless of skill activation". A working
 // directory with none of them still orchestrates — the skill carries the
 // protocol, and since 2026-08-13 the dispatch instruction carries the build and
-// writing rules — but nothing tells the runtime to reach for the skill in the
-// first place. That is a real degradation and it should be visible, not
+// writing rules — but nothing tells the runtime that Nirvana is here when a
+// request asks for it. That is a real degradation and it should be visible, not
 // inferred. Checked only when the cwd looks like a working project, so running
 // the doctor from a home directory is not scolded.
 {
@@ -771,7 +774,7 @@ if (fs.existsSync(agentsSkillsDir)) {
     add("project: contract", "PASS", `${found.join(", ")} present`);
   } else {
     add("project: contract", "WARN",
-      `no ${PROJECT_CONTRACT_FILES.join(" / ")} in ${cwd.replace(HOME, "~")} — the runtime has no instruction to invoke Nirvana, so a brief may be answered inline instead of dispatched. Fix: nrv init .`);
+      `no ${PROJECT_CONTRACT_FILES.join(" / ")} in ${cwd.replace(HOME, "~")} — the runtime is not told Nirvana is here, so a request that names it or asks for a business, squad or mind-clone may not reach it. Fix: nrv init .`);
   }
 }
 
@@ -793,6 +796,24 @@ if (fs.existsSync(agentsSkillsDir)) {
   }
 }
 
+// Brief template: the one the orchestrator writes with here, and where it
+// comes from (project, global or the engine). An unknown name fails every
+// `nrv brief template`, and a deprecated briefing.altitude is named.
+{
+  try {
+    const active = resolveActiveTemplate({ cwd: process.cwd() });
+    if (!active.template) add("brief: template", "FAIL", active.note ?? `no template named ${active.name}`);
+    else {
+      const problems = templateProblems(active.template);
+      const where = `${active.template.origin} ${active.template.path.replace(HOME, "~")}`;
+      add("brief: template", problems.length || active.note ? "WARN" : "PASS",
+        [`${active.name} (${where}; ${active.source})`, active.note, ...problems].filter(Boolean).join(" · "));
+    }
+  } catch (e) {
+    add("brief: template", "WARN", `could not be resolved: ${(e as Error).message.slice(0, 80)}`);
+  }
+}
+
 // SECTION 3: REGISTRIES — same path resolution as the indexer (scope-aware via
 // bun-helpers). The fixed path $HOME/.squads-registry.json was the LEGACY spot
 // from before the ~/.nirvana migration: the doctor said "missing" right after a
@@ -805,10 +826,7 @@ const bizReg = nrvPaths.BUSINESSES_REGISTRY_PATH;
 // days while squads/businesses were flagged.
 const clonesReg = (() => {
   try {
-    const scope = resolveScope();
-    return scope.projectRoot
-      ? path.join(scope.projectRoot, ".nirvana", ".mind-clones-registry.json")
-      : path.join(HOME, ".nirvana", ".mind-clones-registry.json");
+    return cloneRegistryPath();
   } catch {
     return path.join(HOME, ".nirvana", ".mind-clones-registry.json");
   }
@@ -1133,6 +1151,15 @@ try {
   add("routing: aliases", "WARN", `cannot read alias groups: ${(e as Error).message}`);
 }
 
+// TypeSafe's Jev, the optional first step of --auto (lib/jev-router.ts):
+// informative only. Without a key it is off and nothing changes; with one,
+// the request text goes to TypeSafe unless routing.jev is off.
+try {
+  add("routing: jev", "PASS", jevDoctorLine());
+} catch (e) {
+  add("routing: jev", "WARN", `cannot read the jev state: ${(e as Error).message}`);
+}
+
 // Invocation keys nothing reads. `triggers:` and `trigger_threshold:` name a
 // command (`*full-tutoring`, `*wiki`) and how many must match before a workflow
 // fires — a convention from before the agentic router, and one NO version of
@@ -1181,13 +1208,13 @@ if (fs.existsSync(homeSquads)) {
   }
 }
 
-// Corpus language, because it decides how good `fast` mode can be.
+// Corpus language, because it decides how good the BM25 shortlist can be.
 //
-// The agentic router (the default) reads the digest and reasons, so it routes a
-// brief in any language against an entity declared in any other. `fast` is BM25:
-// it matches tokens, and a brief and an entity in different languages share
-// none. Measured on 20 held-out paraphrase pairs, cross-language parity in fast
-// mode was 25%.
+// The routers read the digest or the cards and reason, so they route a brief in
+// any language against an entity declared in any other. The shortlist (`nrv
+// find`, the clone search) is BM25: it matches tokens, and a brief and an
+// entity in different languages share none. Measured on 20 held-out paraphrase
+// pairs, cross-language parity of the keyword match was 25%.
 //
 // So this is a progress bar, not an error. A mixed corpus is not broken — it is
 // partway to one language, and this says how far.
@@ -1198,12 +1225,12 @@ try {
   const mix = corpusMix(req(path.join(SKILLS, "harness", "lib", "registry-loader.js")).loadAll());
   if (!mix) add("corpus: language", "PASS", "no content library — nothing to weigh");
   else if (mix.minorityPct < 10) {
-    add("corpus: language", "PASS", `${mix.enPct}% English / ${mix.ptPct}% Portuguese — fast mode is on solid ground`);
+    add("corpus: language", "PASS", `${mix.enPct}% English / ${mix.ptPct}% Portuguese — the keyword shortlists match in either language`);
   } else {
     add("corpus: language", "WARN",
       `${mix.enPct}% English / ${mix.ptPct}% Portuguese · ${mix.queue.length} entities still to translate. `
-      + `The agentic default is unaffected; 'fast' mode routes by token match, so a brief in one language `
-      + `can miss entities declared in the other.`);
+      + `The routers read, so the language does not decide who executes; the keyword shortlists (nrv find, `
+      + `the clone search) match by token, so a request in one language can miss entities declared in the other.`);
   }
 } catch (e) {
   add("corpus: language", "WARN", `could not weigh the corpus: ${(e as Error).message}`);
@@ -1223,7 +1250,6 @@ const keyFiles: [string, string][] = [
   [path.join(SKILLS, "_shared/lib/handoff.js"), "F1: updateHandoffPhase"],
   [path.join(SKILLS, "businesses/scripts/verify-deliverable.ts"), "F2: verify-deliverable"],
   [path.join(SKILLS, "businesses/lib/loader-cli.py"), "F4: loader-cli wrapper"],
-  [path.join(SKILLS, "businesses/lib/employee-prompt.ts"), "F8: DNA injection helper"],
   [path.join(SKILLS, "harness/scripts/quality-gate.ts"), "F9: quality-gate driver"],
   [path.join(SKILLS, "harness/scripts/validate-chain.ts"), "F3 enforcer: validate-chain"],
 ];

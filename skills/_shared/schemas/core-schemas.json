@@ -2,13 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://nirvana-protocol/v1/schemas/core-schemas.json",
   "title": "Core Schemas Bundle",
-  "description": "Bundled schemas for Squad v5 + Business v1 + Harness v1 protocols. Each definition is referenceable via $ref: '#/definitions/{name}'",
+  "description": "Bundled schemas for Squad v6 + Business v2 + Harness v1 protocols. Each definition is referenceable via $ref: '#/definitions/{name}'",
 
   "definitions": {
 
     "employee": {
       "title": "Employee Frontmatter (employees/{name}.md)",
-      "description": "Business Protocol v1 §7 employee frontmatter (YAML inside Markdown)",
+      "description": "Business Protocol v2 §7 employee frontmatter (YAML inside Markdown)",
       "type": "object",
       "required": ["name", "role", "type", "description", "maxTurns", "reports_to", "self_score_contract"],
       "additionalProperties": false,
@@ -30,7 +30,7 @@
         },
         "tools": {
           "type": "array",
-          "description": "Semantic tool names from Squad v5 §10.7 portable whitelist. Adapter translates to runtime-native names. Free-form string accepted (validators warn on unknown values).",
+          "description": "Semantic tool names from Squad Protocol v6 §10.7 portable whitelist. Adapter translates to runtime-native names. Free-form string accepted (validators warn on unknown values).",
           "items": { "type": "string" }
         },
         "model": { "enum": ["haiku", "sonnet", "opus", "inherit"] },
@@ -126,7 +126,7 @@
 
     "org_chart": {
       "title": "Org Chart (org-chart.yaml)",
-      "description": "Business Protocol v1 §8 hierarchy + reporting + routing",
+      "description": "Business Protocol v2 §8 hierarchy + reporting + routing",
       "type": "object",
       "required": ["chart"],
       "additionalProperties": false,
@@ -181,7 +181,7 @@
 
     "routing": {
       "title": "Routing rules (routing.yaml)",
-      "description": "Business Protocol v1 §13 brief routing rules + mention/ticket intake",
+      "description": "Business Protocol v2 §13 brief routing rules (mention/ticket intake retired, §22)",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -246,7 +246,7 @@
     },
 
     "ticket": {
-      "title": "Ticket (Business Protocol v1 §10.2)",
+      "title": "Ticket (retired, Business Protocol v2 §10)",
       "description": "Persistent work item handed off between employees",
       "type": "object",
       "required": ["ticket_id", "schemaVersion", "type", "from", "to", "project_id", "business", "subject", "body", "status", "created_at"],
@@ -291,7 +291,7 @@
     },
 
     "mention": {
-      "title": "Mention (Business Protocol v1 §10.1)",
+      "title": "Mention (retired, Business Protocol v2 §10)",
       "description": "Lightweight in-content handoff",
       "type": "object",
       "required": ["schemaVersion", "type", "from", "to", "mention_text"],
@@ -311,7 +311,7 @@
 
     "escalation_trigger": {
       "title": "Escalation Trigger",
-      "description": "Business Protocol v1 §12.2 condition for human or upward escalation",
+      "description": "Business Protocol v2 §12 condition for human or upward escalation (retired, §22)",
       "type": "object",
       "required": ["id", "condition", "severity"],
       "additionalProperties": false,
@@ -330,7 +330,7 @@
     },
 
     "self_score": {
-      "title": "Self-Score (Business Protocol v1 §11)",
+      "title": "Self-Score (retired, Business Protocol v2 §11)",
       "description": "Producer's self-evaluation against declared criteria, attached to every handoff",
       "type": "object",
       "additionalProperties": true,
@@ -345,7 +345,7 @@
     },
 
     "handoff_artifact": {
-      "title": "Handoff Artifact (Squad v4 §9 + Business v1 §10.6 extensions)",
+      "title": "Handoff Artifact (Squad Protocol v6 §9 + Business v2 §10 extensions, retired)",
       "description": "Structured data passed between agents/employees on handoff",
       "type": "object",
       "required": ["schemaVersion", "from_agent", "to_agent", "summary", "next_action"],
@@ -394,7 +394,7 @@
     },
 
     "approval_chain": {
-      "title": "Approval Chain (Business Protocol v1 §14.3)",
+      "title": "Approval Chain (retired, Business Protocol v2 §10)",
       "description": "Sequence of employees who must approve a deliverable",
       "type": "object",
       "required": ["chain"],

@@ -106,12 +106,15 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { notifyDesktop } from "../lib/os-notify.ts";
 import { resolveRunRuntime } from "../lib/runtime-rules.ts";
+import { runFolderOf } from "../../_shared/lib/run-workspace.ts";
+import type { DispatchRole } from "../../_shared/lib/dispatch-depth.ts";
 
 /** The runtime to resume a run whose ledger row never recorded one (a legacy
  *  row, or a row written before the runtime was decided). It used to be the
  *  literal `"claude-code"`, which silently resumed a stranger's work on a
  *  vendor the owner may not even be signed into. The session's own runtime is
- *  the honest answer, and the resolver falls through to what is installed. */
+ *  the honest answer (resolveRunRuntime asks detectSessionHost, then falls
+ *  through to what is installed). */
 let _recoveryRuntime: ReturnType<typeof resolveRunRuntime>["runtime"] | null = null;
 function recoveryRuntime() {
   if (!_recoveryRuntime) _recoveryRuntime = resolveRunRuntime({}).runtime;
@@ -142,6 +145,7 @@ import {
   type RunRow,
   type RunState,
   resolveLedgerDbPath,
+  killProcessTree,
   quotaWaitOf,
 } from "../lib/run-ledger.ts";
 import { acquireLockSync } from "../../_shared/lib/file-lock.ts";
@@ -183,9 +187,6 @@ function lazyDelivery(): typeof import("../lib/delivery-pipeline.ts") {
 }
 function lazyConfig(): typeof import("../lib/harness-config.ts") {
   return requireCjs("../lib/harness-config.ts");
-}
-function lazyCooldowns(): typeof import("../lib/cooldown-registry.ts") {
-  return requireCjs("../lib/cooldown-registry.ts");
 }
 
 /** A row's events land in the swept project's own audit (row.project_root),
@@ -271,8 +272,7 @@ export interface SweepSummary {
 }
 
 function defaultKill(pid: number): void {
-  if (!Number.isFinite(pid) || pid <= 1) return; // never signal init/invalid
-  try { process.kill(pid, "SIGTERM"); } catch { /* already gone */ }
+  killProcessTree(pid);
 }
 
 /** Why the salvage landed where it landed, in one human-readable clause. */
@@ -340,7 +340,7 @@ function defaultNotify(row: RunRow, message: string, verdict?: SalvageVerdict | 
 }
 
 function defaultPing(row: RunRow, elapsedMin: number): void {
-  notifyDesktop("Nirvana-OS", `${row.target_kind ?? "run"}/${row.target_slug ?? row.run_id}: em andamento há ${elapsedMin} min (${row.state})`);
+  notifyDesktop("Nirvana-OS", `${row.target_kind ?? "run"}/${row.target_slug ?? row.run_id}: running for ${elapsedMin} min (${row.state})`);
 }
 
 /** Move a run to `running` regardless of which active state it crashed in.
@@ -469,21 +469,7 @@ function defaultResume(h: LedgerHandle, row: RunRow): RecoveryResult {
   // 0 delivered · 2 withheld (gate FAIL) · 3 indeterminate (nothing judged) ·
   // anything else failed. Read the CODE — the previous version grepped stdout
   // for "gate FAIL", and prose is not a control-flow signal.
-  // revise.ts runs without the ledger here, so a revision that stopped on a
-  // spent quota (exit 75) cannot record the reset on the row itself. It cooled
-  // the runtime down until that reset: the row takes it from there, and the
-  // next sweep waits for it instead of resuming into the same limit.
-  if (r.status === 75) recordResumeQuota(h, row, info.meta);
   return resumeOutcome(r.status);
-}
-
-function recordResumeQuota(h: LedgerHandle, row: RunRow, meta: Record<string, unknown>): void {
-  try {
-    const projectRoot = typeof meta.project_root === "string" ? meta.project_root as string : reviseCwdFor(meta);
-    const cooldown = lazyCooldowns().getCooldown(projectRoot, (row.runtime || recoveryRuntime()) as never);
-    const until = cooldown && Date.parse(cooldown.until_iso) > Date.now() ? cooldown.until_iso : new Date(Date.now() + 30 * 60_000).toISOString();
-    patchMeta(h, row.run_id, { stop_reason: "quota", quota_reset_at: until, quota_reset_named: !!cooldown, quota_step: "worker" });
-  } catch { /* the next sweep reads last_error instead */ }
 }
 
 /** revise.ts exit code → recovery outcome. Exported so the mapping is pinned by
@@ -589,8 +575,14 @@ export function redispatchRun(h: LedgerHandle, row: RunRow, overrides: Redispatc
   }
   const runCascade = runCascadeImpl ?? lazyCascade().runWithCascade;
   const { AUTONOMOUS_DIRECTIVE } = lazyDriver();
+  const role = restoredDispatchRole(row);
   const res = runCascade({
     runtime: (row.runtime as any) || recoveryRuntime(),
+    // The original worker's restrictions, not the supervisor's own.
+    ...(role ? { dispatchRole: role } : {}),
+    label: restoredLabel(row),
+    workspace: runFolderOf(projectDir, projectRoot) ?? undefined,
+    pinned: restoredPinned(row),
     prompt,
     cwd: projectRoot,
     addDirs: [projectDir, outputsRoot],
@@ -637,6 +629,39 @@ export function redispatchRun(h: LedgerHandle, row: RunRow, overrides: Redispatc
 
 // ── the supervisor's two doors into the delivery pipeline ─────────────────
 
+const DISPATCH_ROLES: ReadonlySet<string> = new Set(["business", "employee", "squad", "agent-x", "planner", "exec", "solo"]);
+
+/** What the worker of this ledger row WAS, so a restarted worker is as
+ *  restricted as the original. Without it the redispatch carried no role and
+ *  inherited the supervisor's (the operator's: unrestricted, may open agents).
+ *  The row's own `meta.dispatch_role` wins; rows written before it existed are
+ *  read from what they recorded: a business run as one agent is `solo`, a
+ *  squad is `squad`, the generalist is `agent-x`. null when nothing says. */
+export function restoredDispatchRole(row: RunRow): DispatchRole | null {
+  const meta = row.meta || {};
+  const recorded = metaStr(meta, "dispatch_role");
+  if (recorded && DISPATCH_ROLES.has(recorded)) return recorded as DispatchRole;
+  if (row.target_kind === "squad") return "squad";
+  if (row.target_kind === "agent-x") return "agent-x";
+  if (row.target_kind === "business" && (meta.mode === "solo" || meta.mode === "single")) return "solo";
+  return null;
+}
+
+/** The tab label the host shows for this row's worker. */
+function restoredLabel(row: RunRow): string {
+  if (row.target_kind === "squad") return `squad ${row.target_slug ?? "?"}`;
+  if (row.target_kind === "business") return `business/${row.target_slug ?? "?"}`;
+  return "agent-x";
+}
+
+/** True when the owner chose this row's runtime (flag or brief mention), as
+ *  the dispatch recorded in `meta.runtime_source`: a restarted run is then
+ *  pinned to it and never hands off to another vendor. */
+function restoredPinned(row: RunRow): boolean {
+  const source = metaStr(row.meta || {}, "runtime_source");
+  return source === "flag" || source === "brief";
+}
+
 function metaStr(meta: Record<string, unknown>, key: string): string | null {
   const v = meta[key];
   return typeof v === "string" && v ? v : null;
@@ -657,6 +682,8 @@ function baseDeliveryArgs(h: LedgerHandle, row: RunRow, brief: string, outputsRo
     slug: kind === "business" ? row.target_slug : null,
     targetKind: kind,
     runtime: (row.runtime as DeliveryArgs["runtime"]) || recoveryRuntime(),
+    // The revision calls the pipeline makes run as the same kind of worker.
+    ...(restoredDispatchRole(row) ? { producerRole: restoredDispatchRole(row)! } : {}),
     projectDir: metaStr(meta, "project_dir") ?? outputsRoot,
     projectRoot: metaStr(meta, "project_root") ?? outputsRoot,
     workingDir: reviseCwdFor(meta),
@@ -879,9 +906,9 @@ function sweepOne(h: LedgerHandle, row: RunRow, now: number, deps: SweepDeps, su
   // One owner per phase: while its dispatcher is alive, the dispatcher's own
   // stall guard (stall-guard.ts) decides whether the run is stuck, with every
   // signal the run has, and ends it with exit 76 when it is. The lease alone
-  // would kill healthy runs that were silent 47 to 72 minutes. The supervisor
-  // steps in only when the run has shown no sign of life for longer than the
-  // stall threshold plus a grace: a wedged dispatcher or sidecar.
+  // would have killed healthy runs that were silent 47 to 72 minutes. The
+  // supervisor steps in only when the run has shown no sign of life for longer
+  // than the stall threshold plus a grace: a wedged dispatcher or sidecar.
   if (dispatcherOwnsStall(row, now)) {
     if (row.meta?.dispatcher_owned_noted !== row.lease_expires_at) {
       patchMeta(h, row.run_id, { dispatcher_owned_noted: row.lease_expires_at });
@@ -984,7 +1011,7 @@ function sweepOne(h: LedgerHandle, row: RunRow, now: number, deps: SweepDeps, su
     toRunning(h, row.run_id, "supervisor redispatch attempt");
     emitAudit("x_ledger_redispatched", { run_id: row.run_id, attempt: fresh.retries + 1, prev_pid: pid }, row);
     summary.redispatched++;
-    const res = (deps.redispatchImpl ?? ((r: RunRow) => redispatchRun(h, r)))(getRun(h, row.run_id)!);
+    const res = recovering(h, row.run_id, () => (deps.redispatchImpl ?? ((r: RunRow) => redispatchRun(h, r)))(getRun(h, row.run_id)!));
     finalize(h, row.run_id, res, summary);
     return;
   }
@@ -995,8 +1022,17 @@ function sweepOne(h: LedgerHandle, row: RunRow, now: number, deps: SweepDeps, su
   toRunning(h, row.run_id, "supervisor auto-resume attempt");
   emitAudit("x_ledger_auto_resumed", { run_id: row.run_id, attempt: row.retries + 1, session_id: row.session_id }, row);
   summary.resumed++;
-  const res = (deps.resumeImpl ?? ((r: RunRow) => defaultResume(h, r)))(getRun(h, row.run_id)!);
+  const res = recovering(h, row.run_id, () => (deps.resumeImpl ?? ((r: RunRow) => defaultResume(h, r)))(getRun(h, row.run_id)!));
   finalize(h, row.run_id, res, summary);
+}
+
+/** Run a recovery with the row saying which process is recovering it, so
+ *  `nrv run-track stop` can reach this sweep and what it spawned
+ *  (run-ledger.ts runProcesses) while the pids on the row are stale. */
+function recovering<T>(h: LedgerHandle, runId: string, fn: () => T): T {
+  try { patchMeta(h, runId, { recovering: true, recovered_by_pid: process.pid, recovered_by_started_at: processStartedAt(process.pid) }); } catch { /* bookkeeping only */ }
+  try { return fn(); }
+  finally { try { if (getRun(h, runId)) patchMeta(h, runId, { recovering: false }); } catch { /* bookkeeping only */ } }
 }
 
 function finalize(h: LedgerHandle, runId: string, res: RecoveryResult, summary: SweepSummary): void {
@@ -1253,9 +1289,6 @@ function sweepStoppable(args: string[]): void {
   const child = spawn(process.execPath, [SUPERVISOR_PATH, "sweep", "--inner", ...args.filter(a => a !== "--inner")], {
     windowsHide: true,
     stdio: "inherit",
-    // Its own process group on POSIX, so the whole tree can be signalled at
-    // once; Windows has none, and taskkill /T takes the tree there.
-    detached: process.platform !== "win32",
     env: { ...process.env, NRV_IN_SWEEP: "1" },
   });
   let stopping = false;
@@ -1278,30 +1311,6 @@ function sweepStoppable(args: string[]): void {
   }
   child.on("exit", () => { if (!stopping) process.exit(0); });
   child.on("error", (e) => { console.error(`[supervisor] sweep could not start: ${e.message}`); process.exit(0); });
-}
-
-/** `pid` and every process under it, from one snapshot taken before any
- *  signal (a child re-parented to init loses its link to the sweep). Returns
- *  the pids signalled. Windows: taskkill /T takes the tree. */
-function killProcessTree(pid: number, signal: NodeJS.Signals = "SIGTERM"): number[] {
-  if (!Number.isFinite(pid) || pid <= 1 || pid === process.pid) return [];
-  if (process.platform === "win32") {
-    spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { windowsHide: true, encoding: "utf8" });
-    return [pid];
-  }
-  const tree = [pid];
-  try {
-    const r = spawnSync("ps", ["-A", "-o", "pid=,ppid="], { encoding: "utf8" });
-    const children = new Map<number, number[]>();
-    for (const line of (r.stdout || "").trim().split("\n")) {
-      const [p, pp] = line.trim().split(/\s+/).map(Number);
-      if (Number.isFinite(p) && Number.isFinite(pp) && p !== pp) children.set(pp, [...(children.get(pp) ?? []), p]);
-    }
-    for (let i = 0; i < tree.length; i++) for (const c of children.get(tree[i]) ?? []) if (!tree.includes(c)) tree.push(c);
-  } catch { /* no ps: the group signal below still reaches most of it */ }
-  try { process.kill(-pid, signal); } catch { /* not a group leader */ }
-  for (const p of tree) { if (p === process.pid || p === process.ppid) continue; try { process.kill(p, signal); } catch { /* already gone */ } }
-  return tree;
 }
 
 function argValue(name: string, fallback?: string): string | undefined {

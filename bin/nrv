@@ -140,6 +140,8 @@ case "$cmd" in
     exec "$BUN_BIN" "$SKILLS/harness/scripts/route.ts" "$@" --prefer business ;;
   use-squads|squad|squads)
     exec "$BUN_BIN" "$SKILLS/harness/scripts/route.ts" "$@" --prefer squad ;;
+  decide)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/decide.ts" "$@" ;;
   find)
     exec "$BUN_BIN" "$SKILLS/harness/scripts/find.ts" "$@" ;;
   validate|verify)
@@ -171,8 +173,8 @@ case "$cmd" in
     # nrv uninstall --engine   → remove the engine (skills+CLI+links+hooks); keeps content
     # nrv uninstall --hooks    → remove only the audit hooks
     if [[ -n "${1:-}" && "${1:0:1}" != "-" ]]; then
-      # Pack pago (Trilha A: ~/.nirvana/packs/<slug>.json) tem precedência sobre
-      # o asset registry (Trilha B), e --kind=pack força.
+      # A paid pack (Track A: ~/.nirvana/packs/<slug>.json) takes precedence over
+      # the asset registry (Track B), and --kind=pack forces it.
       if [ -f "$HOME/.nirvana/packs/${1}.json" ] || [[ " $* " == *" --kind=pack "* ]]; then
         exec "$BUN_BIN" "$SKILLS/_shared/scripts/uninstall-pack.ts" "$@"
       fi
@@ -232,8 +234,10 @@ case "$cmd" in
     esac ;;
   dispatch)
     exec "$BUN_BIN" "$SKILLS/harness/scripts/dispatch.ts" "$@" ;;
-  team)
-    exec "$BUN_BIN" "$SKILLS/harness/scripts/chain.ts" "$@" ;;
+  brief)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/brief.ts" "$@" ;;
+  cards)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/cards.ts" "$@" ;;
   audit-where)
     exec "$BUN_BIN" "$SKILLS/harness/scripts/audit-where.ts" "$@" ;;
   audit-tail)
@@ -254,7 +258,7 @@ case "$cmd" in
     exec "$BUN_BIN" "$SKILLS/harness/scripts/clean-project.ts" "$@" ;;
   update|self-update|upgrade)
     # nrv update            → atualiza o ENGINE (git pull / re-fetch do release)
-    # nrv update <slug>     → atualiza um PACK pago instalado (--check só compara)
+    # nrv update <slug>     → updates an installed paid PACK (--check only compares)
     if [[ -n "${1:-}" && "${1:0:1}" != "-" ]]; then
       exec "$BUN_BIN" "$SKILLS/_shared/scripts/update-pack.ts" "$@"
     fi

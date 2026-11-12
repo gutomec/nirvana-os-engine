@@ -2,7 +2,7 @@
 """
 businesses skill · registry
 
-Indexer que escaneia ~/businesses/ (e diretórios extras) e gera
+Indexer that scans ~/businesses/ (and extra directories) and generates
 ~/.businesses-registry.json. Schema: core-schemas.json#/registry_businesses.
 
 Use:
@@ -23,7 +23,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from loader import load_business, ValidationError  # type: ignore[import-not-found]
 
-# Importa validators centralizados (para validar o registry final)
+# Import the centralized validators (to validate the final registry)
 SHARED_VALIDATORS = os.path.expanduser('~/.claude/skills/_shared/validators')
 if SHARED_VALIDATORS not in sys.path:
     sys.path.insert(0, SHARED_VALIDATORS)
@@ -73,8 +73,8 @@ def _sha256_file(path: Path) -> str:
 
 
 def _is_business_dir(d: Path) -> bool:
-    """True se o diretório parece ser uma business (contem business.yaml).
-    Pula diretórios reservados como _library, _shared, .git, etc.
+    """True if the directory looks like a business (contains business.yaml).
+    Skips reserved directories such as _library, _shared, .git, etc.
     """
     if d.name.startswith('.') or d.name.startswith('_'):
         return False
@@ -82,8 +82,8 @@ def _is_business_dir(d: Path) -> bool:
 
 
 def _normalize_auto_routes(routes: object) -> list[dict]:
-    """Normaliza uma lista de auto_routes para {pattern, route_to, ...}.
-    route_to aceita as chaves route_to | employee | capability (nessa ordem).
+    """Normalize a list of auto_routes to {pattern, route_to, ...}.
+    route_to accepts the keys route_to | employee | capability (in that order).
     """
     if not isinstance(routes, list):
         return []
@@ -109,16 +109,16 @@ def _normalize_auto_routes(routes: object) -> list[dict]:
 
 
 def _read_routing(child: Path) -> list[dict]:
-    """Lê auto_routes normalizadas de <biz>/business.yaml E <biz>/routing.yaml.
+    """Read normalized auto_routes from <biz>/business.yaml AND <biz>/routing.yaml.
 
-    business.yaml auto_routes é a fonte canônica do manifest (CLAUDE.md §3);
-    routing.yaml é mantido por compatibilidade. Faz merge das duas fontes,
-    deduplicando por (pattern, route_to). Vazio se nenhuma declarar auto_routes.
+    business.yaml auto_routes is the manifest's canonical source (CLAUDE.md §3);
+    routing.yaml is kept for compatibility. Merges both sources,
+    deduplicating by (pattern, route_to). Empty if neither declares auto_routes.
     """
     import yaml  # type: ignore[import-not-found]
     collected: list[dict] = []
 
-    # Fonte 1: business.yaml auto_routes (canônica)
+    # Source 1: business.yaml auto_routes (canonical)
     biz_path = child / 'business.yaml'
     if biz_path.is_file():
         try:
@@ -127,7 +127,7 @@ def _read_routing(child: Path) -> list[dict]:
         except Exception:
             pass
 
-    # Fonte 2: routing.yaml (top-level auto_routes OU routing.auto_routes)
+    # Source 2: routing.yaml (top-level auto_routes OR routing.auto_routes)
     routing_path = child / 'routing.yaml'
     if routing_path.is_file():
         try:
@@ -152,7 +152,7 @@ def _read_routing(child: Path) -> list[dict]:
 
 
 def scan_roots(roots: list[str | Path]) -> list[dict]:
-    """Escaneia roots, retorna lista de business descriptors carregados."""
+    """Scan roots, return the list of loaded business descriptors."""
     items: list[dict] = []
     seen_slugs: set[str] = set()
     for root in roots:
@@ -175,12 +175,12 @@ def scan_roots(roots: list[str | Path]) -> list[dict]:
 
             slug = biz.manifest.name
             if slug in seen_slugs:
-                # collision: log e mantém primeiro
+                # collision: log and keep the first
                 items.append({
                     'slug': slug,
                     'path': str(child),
                     'invalid': True,
-                    'error': f'Slug collision com entrada anterior do registry',
+                    'error': f'Slug collision with an earlier registry entry',
                 })
                 continue
             seen_slugs.add(slug)
@@ -205,7 +205,7 @@ def scan_roots(roots: list[str | Path]) -> list[dict]:
                     else None
                 ),
                 'auto_routes': _read_routing(child),
-                # Agentic-discovery metadata (Business Protocol v1 — optional fields).
+                # Agentic-discovery metadata (Business Protocol v2 §6.9, optional fields).
                 # Read from manifest model (extra=allow on Pydantic; getattr falls back to None).
                 'produces': list(getattr(biz.manifest, 'produces', None) or []),
                 'example_briefs': list(getattr(biz.manifest, 'example_briefs', None) or []),
@@ -215,7 +215,7 @@ def scan_roots(roots: list[str | Path]) -> list[dict]:
 
 
 def build_registry(roots: list[str | Path]) -> dict:
-    """Builds o JSON do registry conforme RegistryBusinesses schema."""
+    """Build the registry JSON per the RegistryBusinesses schema."""
     items = scan_roots(roots)
     valid_items = [i for i in items if not i['invalid']]
     invalid_items = [i for i in items if i['invalid']]
@@ -257,12 +257,12 @@ def build_registry(roots: list[str | Path]) -> dict:
     }
 
     if invalid_items:
-        # Estende com extra (não-schema) — não interfere com validação
+        # Extend with extras (non-schema); does not interfere with validation
         registry['_invalid_entries'] = invalid_items
 
     if business_routing:
-        # Extra (não-schema) consumido pelo harness Stage 2 buildMatchDocs.
-        # Permite roteamento de briefs para business employees via pattern matching
+        # Extra (non-schema) consumed by harness Stage 2 buildMatchDocs.
+        # Allows routing briefs to business employees via pattern matching
         # sobre business.routing.auto_routes (ver harness/lib/router.js).
         registry['_business_routing'] = business_routing
 
@@ -270,16 +270,16 @@ def build_registry(roots: list[str | Path]) -> dict:
 
 
 def write_registry(registry: dict, path: str | Path = DEFAULT_REGISTRY_PATH) -> Path:
-    """Grava registry como JSON pretty. Valida contra schema antes."""
+    """Write the registry as pretty JSON. Validates against the schema first."""
     out = Path(os.path.expanduser(str(path)))
     out.parent.mkdir(parents=True, exist_ok=True)
 
-    # Validar contra schema (sem invalid_entries — esse campo é nosso, não do schema)
+    # Validate against the schema (without invalid_entries: that field is ours, not the schema's)
     to_validate = {k: v for k, v in registry.items() if not k.startswith('_')}
     try:
         RegistryBusinesses.model_validate(to_validate)
     except Exception as exc:
-        raise ValidationError(f'Registry resultante inválido: {exc}') from exc
+        raise ValidationError(f'Resulting registry is invalid: {exc}') from exc
 
     out.write_text(json.dumps(registry, ensure_ascii=False, indent=2), encoding='utf-8')
     return out
@@ -287,7 +287,7 @@ def write_registry(registry: dict, path: str | Path = DEFAULT_REGISTRY_PATH) -> 
 
 def rebuild(roots: list[str | Path] | None = None,
             output: str | Path = DEFAULT_REGISTRY_PATH) -> tuple[Path, dict]:
-    """Scan + build + write em uma chamada."""
+    """Scan + build + write in one call."""
     roots = roots or DEFAULT_ROOTS
     registry = build_registry(roots)
     path = write_registry(registry, output)
@@ -298,14 +298,14 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description='businesses registry indexer')
     sub = parser.add_subparsers(dest='cmd', required=True)
 
-    rb = sub.add_parser('rebuild', help='Reindexa businesses')
+    rb = sub.add_parser('rebuild', help='Reindex businesses')
     rb.add_argument('--roots', nargs='+', default=DEFAULT_ROOTS,
-                    help='Diretórios para escanear (default: ~/businesses)')
+                    help='Directories to scan (default: ~/businesses)')
     rb.add_argument('--output', default=DEFAULT_REGISTRY_PATH,
-                    help='Caminho do registry JSON (default: ~/.businesses-registry.json)')
+                    help='Registry JSON path (default: ~/.businesses-registry.json)')
     rb.add_argument('--quiet', action='store_true')
 
-    sh = sub.add_parser('scan', help='Apenas escaneia sem gravar')
+    sh = sub.add_parser('scan', help='Scan only, without writing')
     sh.add_argument('--roots', nargs='+', default=DEFAULT_ROOTS)
 
     args = parser.parse_args(argv[1:])

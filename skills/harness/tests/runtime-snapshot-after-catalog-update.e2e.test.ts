@@ -296,7 +296,7 @@ describe("nrv multi-target run freezes the coordinator's runtime snapshot", () =
     writeCatalog(setup.catalogDir, descriptor({ catalog: fresh(), models: [] }));
     const blocked = setup.run("proj-blocked");
     expect(blocked.status).toBe(1);
-    expect(blocked.stderr).toContain("incompatível");
+    expect(blocked.stderr).toContain("incompatible");
     expect(fs.existsSync(setup.spawnLog)).toBeFalse();
     const blockedRun = setup.kernelEvents("proj-blocked");
     expect(blockedRun.run?.state).toBe("rolled_back");

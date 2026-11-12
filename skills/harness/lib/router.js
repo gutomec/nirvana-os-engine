@@ -29,7 +29,6 @@ const bm25 = require('./bm25');
 const registryLoader = require('./registry-loader');
 const budget = require('./budget');
 const nrvPaths = require('../../_shared/lib/paths.js');
-const contextBudget = require('./context-budget');
 
 // Lazy-loaded host-agent-driver (used only by Stage -2 amplifier when WEAK).
 // host-agent-driver.js already delegates to the canonical .ts under Bun and
@@ -1223,7 +1222,7 @@ function stage3Decide(matches, opts) {
     if (cov.matched <= 1 && cov.total >= 3) {
       return {
         signal: 'NO_MATCH',
-        reason: `coverage: vencedor casa ${cov.matched} de ${cov.total} tokens de conteúdo do brief`,
+        reason: `coverage: winner matches ${cov.matched} of ${cov.total} content tokens of the brief`,
         alternatives: exposeAlternatives(matches),
         thresholds: thr,
       };
@@ -1232,7 +1231,7 @@ function stage3Decide(matches, opts) {
       return {
         signal: 'AMBIGUOUS',
         alternatives: exposeAlternatives(matches),
-        reason: `coverage: vencedor casa só 2 de ${cov.total} tokens de conteúdo — confirmação necessária`,
+        reason: `coverage: winner matches only 2 of ${cov.total} content tokens, confirmation required`,
         thresholds: thr,
       };
     }
@@ -1248,7 +1247,7 @@ function stage3Decide(matches, opts) {
       return {
         signal: 'AMBIGUOUS',
         alternatives: exposeAlternatives(matches),
-        reason: `coverage: vencedor casa ${cov.matched} de 2 tokens de conteúdo — confirmação necessária`,
+        reason: `coverage: winner matches ${cov.matched} of 2 content tokens, confirmation required`,
         thresholds: thr,
       };
     }
@@ -1300,7 +1299,7 @@ function stage3Decide(matches, opts) {
       return {
         signal: 'AMBIGUOUS',
         alternatives: exposeAlternatives(matches),
-        reason: `coverage: vencedor casa ${cov.matched} de ${cov.total} tokens de conteúdo (metade ou menos do brief) e há ${distinctDestinations.size} destinos possíveis — confirmação necessária`,
+        reason: `coverage: winner matches ${cov.matched} of ${cov.total} content tokens (half or less of the brief) and there are ${distinctDestinations.size} possible destinations, confirmation required`,
         thresholds: thr,
       };
     }
@@ -1342,7 +1341,7 @@ function stage3Decide(matches, opts) {
         signal: 'HIGH',
         target: top,
         alternatives: cluster.slice(1, EXPOSED_ALTERNATIVES_MAX),
-        reason: `${cluster.length} candidatos, destino único ${[...destinos][0]}`,
+        reason: `${cluster.length} candidates, single destination ${[...destinos][0]}`,
         thresholds: thr,
       };
     }
@@ -1770,8 +1769,8 @@ const META_INTENT_KEYWORDS = [
   'todo o projeto', 'projeto inteiro', 'projeto completo',
   'audita portfolio', 'audita o portfolio', 'auditar portfolio',
   'cria empresa', 'criar business', 'cria business', 'criar squad', 'criar uma business',
-  'preciso de uma business', 'preciso de uma squad', 'preciso de business',
-  'tudo o que', 'completo com', 'consolidar outputs',
+  'preciso de uma business', 'preciso de uma squad', 'preciso de business', // i18n-user-facing: PT keyword data
+  'tudo o que', 'completo com', 'consolidar outputs', // i18n-user-facing: PT keyword data
   'lance um produto', 'lance produto', 'lance o produto', 'lança produto',
   'operacao completa', 'operação completa', 'projeto multi',
   // user saying "use suas melhores empresas" → the Maestro must intercept
@@ -2285,7 +2284,7 @@ async function route(brief, ctx) {
           signal: 'HIGH',
           target: targetMatch,
           alternatives: [],
-          reason: `explicit mention: você nomeou o ${mention.type === 'squad' ? 'squad' : 'a empresa'} "${mention.slug}"`,
+          reason: `explicit mention: you named the ${mention.type === 'squad' ? 'squad' : 'business'} "${mention.slug}"`,
           thresholds: DEFAULT_THRESHOLDS,
           route_tier: 'explicit_mention',
         };
@@ -2300,7 +2299,6 @@ async function route(brief, ctx) {
           stage3: decision,
           stage4: await stage4BudgetCheck(targetMatch, context.budget),
           stage5: stage5Invoke(targetMatch, brief, context),
-          context_budget: contextBudget.estimateContextBudget(),
           warnings: registries.warnings || [],
         };
       }
@@ -2334,7 +2332,6 @@ async function route(brief, ctx) {
         stage3: decision,
         stage4: await stage4BudgetCheck(metaMatch, context.budget),
         stage5: stage5Invoke(metaMatch, brief, context),
-        context_budget: contextBudget.estimateContextBudget(),
         warnings: registries.warnings || [],
       };
     }
@@ -2530,7 +2527,6 @@ async function route(brief, ctx) {
     stage3: decision,
     stage4: budgetCheck,
     stage5: invocationPlan,
-    context_budget: contextBudget.estimateContextBudget(),
     warnings: registries.warnings || [],
   };
 }
@@ -2555,6 +2551,7 @@ module.exports = {
   buildAliasMap,
   loadKeywordAliases,
   resolveDestination,
+  detectTargetMention,
   exposeAlternatives,
   STAGE2_TOPK,
   EXPOSED_ALTERNATIVES_MAX,
@@ -2658,20 +2655,6 @@ if (require.main === module) {
           });
         }
       } catch {}
-      // Audit: context budget warning (only when crossing threshold)
-      try {
-        const cb = result.context_budget;
-        if (cb && (cb.warning || cb.critical)) {
-          audit.emit('context_budget_warning', {
-            threshold_pct: cb.threshold_pct,
-            estimated_tokens: cb.estimated_tokens,
-            window_tokens: cb.window_tokens,
-            warning: cb.warning,
-            critical: cb.critical,
-            recommendation: cb.recommendation,
-          });
-        }
-      } catch {}
       // Audit: routing decision
       try {
         const s3 = result.stage3 || {};
@@ -2697,13 +2680,6 @@ if (require.main === module) {
         process.stdout.write(`intent:   ${s1.intent || s1.kind || '?'} (${(s1.confidence ?? 0).toFixed?.(2) ?? '?'})\n`);
         process.stdout.write(`signal:   ${s3.signal || '?'}\n`);
         if (s3.route_tier) process.stdout.write(`tier:     ${s3.route_tier} (prefer=${s3.prefer || 'auto'})\n`);
-        const cb = result.context_budget;
-        if (cb) {
-          const pct = (cb.threshold_pct * 100).toFixed(1);
-          const flag = cb.critical ? ' ⚠ CRITICAL' : (cb.warning ? ' ⚠ WARNING' : '');
-          process.stdout.write(`context:  ${pct}% of ${cb.window_tokens} tokens (${cb.estimated_tokens} estimated, threshold=${(cb.threshold_warning_pct * 100).toFixed(0)}%)${flag}\n`);
-          if (cb.recommendation) process.stdout.write(`recommend: ${cb.recommendation}\n`);
-        }
         if (s3.target) {
           const tk = s3.target.meta?.type || s3.target.kind || 'target';
           const ts = s3.target.slug || s3.target.id || '?';

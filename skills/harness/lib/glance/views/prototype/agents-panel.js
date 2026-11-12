@@ -30,8 +30,8 @@ export function AgentsPanel() {
   useSignalEffect(() => { ensureStream(); });
   return html`
     <${Panel} title="Agentes ao vivo" hint="SSE real de /api/agents/live">
-      <p class="text-[10px] text-[var(--text-tertiary)] mb-2">pulsos recebidos nesta sessão: ${pulses.value}</p>
-      ${agents.value.length === 0 && html`<p class="text-sm text-[var(--text-tertiary)]">nenhum agente ativo agora</p>`}
+      <p class="text-[10px] text-[var(--text-tertiary)] mb-2">pulses received this session: ${pulses.value}</p>
+      ${agents.value.length === 0 && html`<p class="text-sm text-[var(--text-tertiary)]">no active agents right now</p>`}
       <ul class="flex flex-col gap-1 max-h-64 overflow-auto">
         ${agents.value.map(a => html`
           <li key=${a.trace_id} class="text-sm px-2 py-1.5 rounded-[var(--radius-sm)] bg-[var(--surface-2)]">

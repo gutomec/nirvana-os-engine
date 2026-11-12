@@ -129,8 +129,10 @@ describe("a dispatch whose outputs root is outside the project", () => {
   test("squad --exec: one audit log for the whole trace, the child runs in the project, the outputs root stays writable", () => {
     const fx = fixture();
     const pid = "proj-outside";
+    // --no-judge: the gate's LLM judge (it reads .html reports by default) is one more call of
+    // the fake runtime, and it would overwrite the squad child's record this test reads.
     const result = fx.dispatch(["--squad", "fixture-squad", "--brief-file", fx.briefFile, "--exec", "--project", pid,
-      "--outputs-root", fx.outputs, "--max-revisions", "0"]);
+      "--outputs-root", fx.outputs, "--max-revisions", "0", "--no-judge"]);
     expect(result.status, result.stdout + result.stderr).toBe(0);
 
     // No write regression: the child still delivered into the outputs root, and it was

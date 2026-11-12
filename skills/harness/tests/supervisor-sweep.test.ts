@@ -18,11 +18,12 @@ process.env.NIRVANA_SKILLS_DIR = path.resolve(import.meta.dir, "..", "..");
 process.env.NIRVANA_RUN_LEDGER_DB = path.join(TMP, "maybe-sweep.sqlite");
 
 import {
-  sweep, maybeSweep, salvageStalledRun, redispatchRun, resumeOutcome, renderEscalationNotice,
+  sweep, maybeSweep, salvageStalledRun, redispatchRun, restoredDispatchRole, resumeOutcome, renderEscalationNotice,
   type RecoveryResult, type RedispatchOverrides, type SalvageVerdict,
 } from "../scripts/supervisor.ts";
 import { openLedger, openRun, getRun, markState, pidAlive, setSupervisorMeta, type LedgerHandle, type RunRow } from "../lib/run-ledger.ts";
 import { spawnBudgetMs } from "./helpers/test-budgets.ts";
+import { isRunStateFile } from "../../_shared/lib/run-plumbing.ts";
 
 let dbSeq = 0;
 function freshLedger(): LedgerHandle {
@@ -226,11 +227,14 @@ function stubVerify(exitCode: number): string {
 }
 
 /** Every file under dir as path → content, for the read-only proof. */
+/** The deliverables under `dir`, by content. Run-state files the pipeline writes
+ *  (`_STATUS.json` on every exit) are not deliverables and are left out. */
 function snapshot(dir: string): Record<string, string> {
   const out: Record<string, string> = {};
   const walk = (d: string) => {
     for (const e of fs.readdirSync(d, { withFileTypes: true })) {
       const full = path.join(d, e.name);
+      if (isRunStateFile(path.relative(dir, full))) continue;
       if (e.isDirectory()) walk(full);
       else out[full] = fs.readFileSync(full, "utf8");
     }
@@ -603,6 +607,27 @@ function quietDelivery(revisionCalls: unknown[] = []): RedispatchOverrides {
     log: () => {}, warn: () => {},
   };
 }
+
+describe("supervisor redispatch — the restarted worker keeps its original restrictions", () => {
+  const capture = (h: LedgerHandle, opts: Parameters<typeof redispatchCase>[2]) => {
+    const { row } = redispatchCase(h, { "a.md": "x" }, opts);
+    const seen: any[] = [];
+    redispatchRun(h, row, { ...quietDelivery(), runCascadeImpl: ((a: any) => { seen.push(a); return { ok: false, error: "stop" }; }) as any });
+    return seen[0];
+  };
+  test("kind decides the role, with workspace, label and the pinned flag restored", () => {
+    const h = freshLedger();
+    expect(capture(h, { targetKind: "squad", targetSlug: "copy" })).toMatchObject({ dispatchRole: "squad", label: "squad copy", pinned: false });
+    expect(capture(h, { targetKind: "agent-x" }).dispatchRole).toBe("agent-x");
+    const solo = capture(h, { targetKind: "business", targetSlug: "acme", meta: { mode: "solo", runtime_source: "flag" } });
+    expect(solo).toMatchObject({ dispatchRole: "solo", label: "business/acme", pinned: true });
+    expect(typeof solo.workspace === "string" || solo.workspace === undefined).toBe(true);
+  });
+  test("a recorded meta.dispatch_role wins over the inference", () => {
+    expect(restoredDispatchRole({ target_kind: "squad", meta: { dispatch_role: "employee" } } as any)).toBe("employee");
+    expect(restoredDispatchRole({ target_kind: "business", meta: {} } as any)).toBeNull();
+  });
+});
 
 describe("supervisor redispatch — the outcome goes through the delivery pipeline", () => {
   test("THE FAIL-OPEN, CLOSED: only non-gateable artifacts → INDETERMINATE, never delivered", () => {

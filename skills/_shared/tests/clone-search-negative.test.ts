@@ -50,7 +50,7 @@ afterAll(restoreScopeOverride);
 
 // Out-of-domain briefs: no clone in the library owns this vocabulary. Every
 // returned hit must carry below_gate=true, so injection consumers
-// (team-orchestrator squadCloneInjection, employee-prompt resolveClonesByPriority)
+// (squad-exec squadCloneInjection)
 // inject NOTHING and fall through to "PADRÃO — nenhum clone útil".
 const OUT_OF_DOMAIN = [
   "consertar a bomba hidráulica do trator",

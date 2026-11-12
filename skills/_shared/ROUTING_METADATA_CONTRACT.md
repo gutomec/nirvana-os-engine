@@ -180,7 +180,7 @@ save money on the path that is already the cheap one:
 - The default router is agentic. It reads for meaning, and a more accurate,
   more complete description is strictly better for it. There is no budget being
   spent that a shorter description would save.
-- `fast` is BM25 and **indexes one document per capability** (`buildMatchDocs`).
+- The BM25 shortlist (`nrv find`) **indexes one document per capability** (`buildMatchDocs`).
   A squad with 18 capabilities produces 19 documents. Declaring another one does
   not dilute the others — they never shared a length budget.
 

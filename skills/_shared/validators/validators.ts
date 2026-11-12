@@ -1,7 +1,7 @@
 /**
  * Nirvana Protocol Validators (TypeScript / Zod)
  *
- * Fail-closed validators for Squad Protocol v5/v6, Business Protocol v1/v2, and Harness Protocol v1.
+ * Fail-closed validators for Squad Protocol v6, Business Protocol v1/v2, and Harness Protocol v1.
  *
  * Used by:
  * - skills/squads (squad.yaml validation, capability validation)
@@ -94,7 +94,7 @@ const Feature = z.enum([
 ])
 
 // ──────────────────────────────────────────────────────────────────────
-// Squad Protocol v5
+// Squad Protocol v6 §22 (capabilities and the manifest)
 // ──────────────────────────────────────────────────────────────────────
 
 export const CapabilitySchema = z.object({
@@ -267,7 +267,7 @@ export const WorkflowSchema = z.object({
 }).strict()
 
 // ──────────────────────────────────────────────────────────────────────
-// Business Protocol v1
+// Business Protocol v1/v2
 // ──────────────────────────────────────────────────────────────────────
 
 export const SelfScoreContractSchema = z.object({
@@ -403,9 +403,9 @@ export const BusinessManifestSchema = z.object({
   example_briefs: z.array(z.string().min(20).max(LIMITS.business_example_briefs_item_max!)).max(LIMITS.business_example_briefs_max!).optional(),
   keywords: z.array(z.string().min(2).max(60)).max(LIMITS.business_keywords_max!).optional(),
   squads_authorized: z.array(z.string().regex(KEBAB_CASE)).optional().nullable(),
-  // Business Protocol v2 (accepted, not yet read): open preference list, routing
-  // fences and a per-run budget. The manifest is passthrough, so `not_for`
-  // stays as loose as it already was; the others are new keys.
+  // Business Protocol v2: an open preference list (the solo worker gets a card
+  // for each), routing fences and a per-run budget. The manifest is
+  // passthrough, so `not_for` stays as loose as it already was.
   squads_preferred: z.array(z.string().regex(KEBAB_CASE)).optional(),
   // Business Protocol 2.0 §6.9. Bounded like a fence, not like prose: the
   // router fires an entry <=25 chars by substring and a longer one by >=60%
@@ -414,6 +414,9 @@ export const BusinessManifestSchema = z.object({
   // entry is a sentence; the count ceiling is configurable.
   not_for: z.array(z.string().min(5).max(80)).max(LIMITS.business_not_for_max!).optional(),
   run_budget_usd: z.number().min(0).optional(),
+  // `required` makes every delivery of this business reviewed under
+  // review.policy "rule" (harness/lib/solo-review.ts).
+  review: z.enum(['required']).optional(),
   operation_mode: z.enum(['zero_human', 'hybrid', 'human_in_loop']).default('zero_human'),
   output: z.object({
     base_dir: z.string().default('default'),
@@ -501,7 +504,7 @@ export const OrgChartSchema = z.object({
 }, { message: 'Org chart must have exactly one employee with reports: []' })
 
 // ──────────────────────────────────────────────────────────────────────
-// Handoff Artifact (Squad v4 §9 + Business v1 §10.6)
+// Handoff Artifact (Squad Protocol v6 §9 + Business v2 §10, retired)
 // ──────────────────────────────────────────────────────────────────────
 
 // Fix (2026-05): regex aligned with SelfScoreCriterion.id (accepts non-initial digits).
@@ -650,7 +653,7 @@ export const HarnessNotificationSchema = z.object({
 }).strict()
 
 // ──────────────────────────────────────────────────────────────────────
-// Routing (Business Protocol v1 §13)
+// Routing (Business Protocol v2 §13)
 // ──────────────────────────────────────────────────────────────────────
 
 export const RoutingSchema = z.object({
@@ -679,7 +682,7 @@ export const RoutingSchema = z.object({
 }).strict()
 
 // ──────────────────────────────────────────────────────────────────────
-// Mention (Business Protocol v1 §10.1)
+// Mention (retired, Business Protocol v2 §10)
 // ──────────────────────────────────────────────────────────────────────
 
 export const MentionSchema = z.object({
@@ -695,7 +698,7 @@ export const MentionSchema = z.object({
 }).strict()
 
 // ──────────────────────────────────────────────────────────────────────
-// Approval Chain (Business Protocol v1 §14.3)
+// Approval Chain (retired, Business Protocol v2 §10)
 // ──────────────────────────────────────────────────────────────────────
 
 export const ApprovalChainSchema = z.object({
@@ -712,7 +715,7 @@ export const ApprovalChainSchema = z.object({
 }).strict()
 
 // ──────────────────────────────────────────────────────────────────────
-// Registries (Squad v5 §23)
+// Registries (Squad Protocol v6 §23)
 // ──────────────────────────────────────────────────────────────────────
 
 export const RegistrySquadsSchema = z.object({
@@ -805,7 +808,7 @@ export const RegistryBusinessesSchema = z.object({
       operation_mode: z.enum(['zero_human', 'hybrid', 'human_in_loop']).optional(),
       authority_level: z.enum(['tier-1', 'tier-2', 'tier-3']).optional(),
       legacy_paperclip_id: z.string().uuid().optional(),
-      // Agentic-discovery metadata (Business Protocol v1 — optional).
+      // Agentic-discovery metadata (Business Protocol v2 §6.9, optional).
       produces: z.array(z.string()).optional(),
       example_briefs: z.array(z.string()).optional(),
       keywords: z.array(z.string()).optional(),
@@ -818,7 +821,7 @@ export const RegistryBusinessesSchema = z.object({
 }).strict()
 
 // ──────────────────────────────────────────────────────────────────────
-// Cross-protocol cross-checks (BP7, BP9, etc.)
+// Cross-protocol cross-checks (BP7, etc.)
 // ──────────────────────────────────────────────────────────────────────
 
 export interface BusinessLoadContext {
@@ -996,6 +999,10 @@ export const MindCloneManifestSchema = z.object({
     compiled_by: z.string().optional(),
     compilation_method: z.string().optional(),
     source: z.string().optional(),
+    // Name recognition (harness/lib/clone-names.ts): other names the person goes
+    // by, and the slug a person with several role slugs resolves to.
+    aliases: z.array(z.string().min(2).max(80)).optional(),
+    canonical: z.union([z.boolean(), z.string().regex(KEBAB_CASE)]).optional(),
   }).loose(),
   routing: MindCloneRoutingSchema.optional(),
   artifacts: z.union([
@@ -1053,7 +1060,7 @@ if (typeof process !== 'undefined' && process.argv[2] === 'test') {
     description: 'Analyze video file with multimodal LLM. Extracts transcript, on-screen text, key frames, hook analysis.',
     domains: ['media', 'content'],
     invoke: { type: 'task', ref: 'tasks/analyze.md' },
-    examples: ['transcrever vídeo do Instagram'],
+    examples: ['transcribe Instagram video'],
   }
   const result = CapabilitySchema.safeParse(sampleCapability)
   console.log('Capability validation:', result.success ? 'OK' : result.error)

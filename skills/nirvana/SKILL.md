@@ -1,6 +1,6 @@
 ---
 name: nirvana
-description: "Nirvana-OS entry point: the user's own operating system of businesses (empresas), squads and mind-clones. Use it to list or inspect them ('quais são minhas empresas', 'quais squads eu tenho', 'what businesses/squads do I have', 'liste minhas empresas', 'quais mind-clones eu tenho', 'o que o nirvana pode fazer'), whenever the user invokes the system by name ('use o nirvana-os', 'via nirvana', 'pelo nirvana', 'orquestre via nirvana', 'manda o nirvana', 'use minhas empresas/squads', 'use Nirvana-OS to…'), for any concrete artifact asked for through it (book, video, report, design, code, campaign, any deliverable), and to create, validate, inspect or migrate a business or a squad ('crie uma empresa', 'valide o squad X'). Discovery runs the `nrv` CLI; production hands the brief to the harness orchestrator; lifecycle goes to the businesses and squads protocols. When the engine is missing, this skill installs it first."
+description: "Nirvana-OS entry point: the user's own system of businesses (empresas), squads and mind-clones. Use it ONLY when the request calls for it: it names Nirvana or nirvana-os ('use o nirvana-os', 'via nirvana', 'pelo nirvana'); names or points to one of the user's businesses, squads or mind-clones, by name, by kind, by pack name or as the model to follow ('use minhas empresas/squads', 'o squad de copy', 'com a voz do Hormozi', 'como a empresa X e seus squads e clones'); asks for the work, or a part of it, to run on another agent runtime ('use o codex para revisar'); asks what they have ('quais são minhas empresas', 'quais squads eu tenho', 'o que o nirvana pode fazer'); asks to change its settings ('modo economia', 'máxima qualidade'); or asks to create, validate or migrate a business or a squad. Otherwise do not use it: work as you normally would. Discovery runs the `nrv` CLI, production goes to the harness orchestrator, lifecycle to the protocols; a missing engine is installed first."
 compatibility: "Needs Bun and the `nrv` CLI. If they are absent it installs them on first use with the user's go-ahead: Bun in user space, the engine into ~/.nirvana, `nrv` into ~/.local/bin. Runtime-agnostic, no dependency on any specific agent CLI. Network is required for that first install only; everything after it runs locally."
 tools: [Bash, Read]
 license: SUL-1.0
@@ -21,8 +21,8 @@ to the registries, and the `harness` skill is the orchestrator that turns a brie
 into dispatched work with an audit trail.
 
 You are at the entry point: decide whether the engine is here, whether this is
-discovery or production, and who executes. Always answer in the user's language
-(default PT-BR). Never invent the name of a business, a squad or a mind-clone.
+discovery or production, and who executes. Always answer in the language of the
+request. Never invent the name of a business, a squad or a mind-clone.
 Report only what `nrv` actually prints.
 
 ## 1. Is the engine here?
@@ -35,8 +35,10 @@ Found: go to section 2. Not found: install it, then come back.
 
 **What the install changes.** Bun in user space (`~/.bun`) if it is missing; the
 engine in `~/.nirvana`; the `nrv` launcher in `~/.local/bin` plus one PATH line
-in the user's shell rc; audit hooks in the settings of the agent runtimes it
-finds (`~/.claude`, `~/.codex`, `~/.gemini/config` for Antigravity); the empty content
+in the user's shell rc; audit hooks in the agent runtimes it finds
+(`~/.claude/settings.json`, `~/.gemini/config/hooks.json` for Antigravity,
+`~/.codex/hooks.json`); the
+`nirvana` skill linked into their skills folders; the empty content
 roots `~/squads`, `~/businesses`, `~/businesses/_library/dna`. Network once, no
 project code touched, no sudo, idempotent, reversible with `nrv uninstall --engine`.
 
@@ -85,11 +87,16 @@ say exactly that and stop. A Nirvana answer with no engine behind it is fiction.
 | consult one mind-clone | `nrv ask <slug> "<pergunta>"` |
 | "o que o nirvana pode fazer sobre X" | `nrv search "<topic>"` |
 | which entity fits a need | `nrv find "<need>"` |
+| decision models: what is configured, can this machine host JEV-27B | `nrv decide status` |
+| use a local JEV-27B the user already started | `nrv config set decision.local_url http://localhost:8000 --global` |
+| turn the decision models off | `nrv config set decision.provider off --global` |
+| the user asks the engine to choose the runtime (never by default: the session host runs the work) | `nrv dispatch ... --runtime auto` |
 | the cockpit | `nrv glance` |
 | anything else | `nrv --help` |
 
 Run it with your shell tool and summarize the real output. Add `--format=json`
-only when you need to parse it.
+only when you need to parse it. Discovery answers a question about the library;
+it never stands in for a request to make something (section 3).
 
 ## 3. Production: hand the brief to the harness
 
@@ -99,6 +106,14 @@ skill. It surveys the three registries, can mobilize several businesses and
 squads in parallel, runs the quality gate and verifies the result. **Do not
 produce the artifact yourself.** Pass the brief verbatim; the harness handles
 amplification and clarifying questions.
+
+A request that names or points to one of the user's businesses, squads or
+mind-clones is production too, whatever words it uses for them: a slug, a kind,
+a pack or product name, or the model to follow ("como a empresa Motion Design
+Genius e seus squads e clones"). Searching the library is not the work. When
+`nrv search` or `nrv find` shows no exact match for the name the user used,
+hand the brief over anyway: the harness reads the library and resolves the
+name, or asks. Never search and then build the deliverable yourself.
 
 The harness is not registered as a skill of its own: it lives inside the
 engine, and this file is the door to it.
@@ -110,8 +125,8 @@ engine, and this file is the door to it.
 
 A correction, a new version or a follow-up on work already dispatched in this
 project goes back to the same worker, never a new dispatch: `nrv revise
-<project> "<change>"` (`nrv revise --last [<business|squad|agent-x>] "<change>"`
-for the newest run). It continues the worker's own session.
+<project> "<change>"` (`nrv revise --last [<business|squad>] "<change>"` for the
+newest run). It continues the worker's own session.
 
 Dispatch needs one agent CLI on PATH (`claude`, `codex`, `agy`, `pi`,
 `kimi`, `grok`, `qwen`, `opencode`). With none, Nirvana still answers discovery
@@ -141,17 +156,20 @@ forward:
 - **Install packs.** Curated businesses, squads and mind-clones come from
   squads.sh and land in those same roots.
 
-The first brief inside a project also makes it a Nirvana project: the harness
-Phase 0 preflight runs `nrv init .` when the invocation contract is missing.
-That is the harness's job, not yours.
+A folder becomes a Nirvana project with `nrv init .`, run in its root when the
+user asks to set one up ("prepare esta pasta como projeto do Nirvana"). It
+writes `.nirvana/project.yaml` and the on-demand note in `AGENTS.md`,
+`CLAUDE.md` and `GEMINI.md`. Nothing runs it on its own: a dispatch outside a
+project still works and delivers under `~/.nirvana/outputs`.
 
 ## 6. Where the content lives
 
 Defaults: `~/squads`, `~/businesses`, `~/businesses/_library/dna`. To relocate
 them, set `NIRVANA_HOME`, `SQUADS_DIR`, `BUSINESSES_DIR` or `DNA_LIBRARY` in the
 project `.env`, the only file read for paths besides the real environment.
-`NIRVANA_SCOPE=global|project|merge` in that same file decides whether a project
-sees the global library, its own `.nirvana/` one, or both.
+Whether a project sees the global library, its own `.nirvana/` one, or both is
+its scope (`global`, `project`, `merge`): `scope` in `.nirvana/project.yaml`,
+set with `nrv init --scope=<mode>`.
 
 ## 7. Update and remove
 
@@ -168,6 +186,39 @@ moves to the newest greater stable, a beta to the newest greater release, beta
 or stable. When `nrv update <pack>` fails with a license error, tell the user to
 download the pack again from squads.sh and run its setup (`bash setup.sh`, or
 `powershell -ExecutionPolicy Bypass -File setup.ps1` on Windows).
+
+## 8. Settings: the user asks, you change them
+
+Users change how Nirvana works by talking to you, not by typing commands. Run
+the command, confirm with `nrv config get <key>`, and say what changed in the
+user's words.
+
+| The user says | Command |
+|---|---|
+| "deixe o Nirvana no modo economia" ("equilibrado", "máxima qualidade") | `nrv config set execution.profile economy --global` (`balanced`, `max`) |
+| "o que está configurado?" | `nrv config list` |
+| "o que faz essa configuração?" | `nrv config explain <key>` |
+| "volte ao padrão" | `nrv config unset <key> --global` |
+| "neste projeto, use o Nirvana só quando eu pedir" / "orquestre tudo neste projeto" | `nrv init . --orchestrators=on-demand` / `--orchestrators=always` |
+| "este projeto só com as empresas dele" / "as dele e as globais" / "a biblioteca toda" | `nrv init . --scope=project` / `merge` / `global` |
+| "limite cada execução a US$ 5" | `nrv config set budget.default_max_cost_usd 5 --global` |
+| "qual template de brief você está usando?" / "quais templates eu tenho?" | `nrv brief templates` (the active one has `*`, with its origin) |
+| "neste projeto use o template detailed" (`slim`, `standard`, `karpathy`, or one of the user's) | `nrv config set briefing.template detailed --project` |
+| "quero editar o slim neste projeto" / "crie um template juridico a partir do standard" | `nrv brief init slim --project` / `nrv brief init juridico --from standard --project`, then tell the user the file path it printed; a new name also needs `nrv config set briefing.template juridico --project` |
+
+- **Where it applies.** Always pass `--global` or `--project` to `nrv config`:
+  without a flag it writes to the project when run inside one, which the user
+  rarely means. A request about "this project" is `--project`; anything else is
+  `--global`. `nrv init` runs in the project's root.
+- **A profile first, then exceptions.** A profile moves effort, the context
+  ceiling, review, the judge and routing together; a key the user sets
+  explicitly beats it. Change one key only when the user asked for that
+  behaviour ("sem revisão", "sem juiz de IA").
+- **When it takes effect.** A setting applies from the next dispatch. A new
+  orchestration mode rewrites `AGENTS.md`, `CLAUDE.md` and `GEMINI.md`: tell the
+  user to open a new session for it to take hold.
+- Never edit `config.yaml` or `project.yaml` by hand, and never change a
+  setting the user did not ask for.
 
 This skill is thin by design: discovery goes to `nrv`, production goes to
 `harness`, and the library lives on disk. It produces no artifacts itself.

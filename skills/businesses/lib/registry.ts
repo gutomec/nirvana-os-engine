@@ -151,7 +151,7 @@ function scanRoots(roots: string[]): ScanItem[] {
       }
       const slug = biz.manifest.name;
       if (seenSlugs.has(slug)) {
-        items.push({ slug, path: child, invalid: true, error: "Slug collision com entrada anterior do registry" });
+        items.push({ slug, path: child, invalid: true, error: "Slug collision with an earlier registry entry" });
         continue;
       }
       seenSlugs.add(slug);
@@ -247,7 +247,7 @@ function writeRegistry(registry: Record<string, any>, outPath: string): string {
   const parsed = RegistryBusinessesSchema.safeParse(toValidate);
   if (!parsed.success) {
     throw new ValidationError(
-      "Registry resultante inválido: " + parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
+      "Resulting registry is invalid: " + parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
     );
   }
   // Shared with the squads and clones registries. This wrote straight onto

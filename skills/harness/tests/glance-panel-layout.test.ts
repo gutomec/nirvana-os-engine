@@ -44,7 +44,7 @@ describe("shouldCollapseSidebar — the 64px icon rail (page-layout-redesign.md 
 describe("filterRunsByQuery — the runs-rail search box", () => {
   const runs = [
     { trace_id: "a1", brief: "Redesign de layout do Glance", business_slug: "ux-atelier", squad_name: null },
-    { trace_id: "b2", brief: "Plano de conteúdo 30 dias", business_slug: "content-social-factory", squad_name: "copywriter-squad" },
+    { trace_id: "b2", brief: "Content plan 30 days", business_slug: "content-social-factory", squad_name: "copywriter-squad" },
     { trace_id: "c3", brief: null, business_slug: null, squad_name: "seo-geo-aeo" },
   ];
 

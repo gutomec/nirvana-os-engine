@@ -101,7 +101,7 @@ async function enable() {
 }
 
 function disable() {
-  try { fs.rmSync(BACKEND_FILE); } catch { /* já ausente */ }
+  try { fs.rmSync(BACKEND_FILE); } catch { /* already absent */ }
   const written = setRoutingDense("off");
   console.log(`Neural backend disabled — back to BM25 + hash_tfidf (zero-dep).`);
   console.log(`routing.dense: "off" written to ${written}`);

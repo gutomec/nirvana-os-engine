@@ -2,8 +2,8 @@
 //
 // Pins the Business → Squad → agent-x mapping over every agentic-router
 // decision kind, the --strict-route behavior, the router-failure ladder
-// (retry once → agent-x by default, never BM25 unless routing.on_router_failure
-// is explicitly set to "cascade"), and the agent-x rung (persona resolution +
+// (retry once → agent-x, never BM25; "fail" dispatches nothing), and the
+// agent-x rung (persona resolution +
 // injected runWithCascade seam).
 // Zero-token: every LLM surface is a seam.
 // Runs with: bun test skills/harness/tests
@@ -19,6 +19,7 @@ import {
   runAgentX,
 } from "../lib/dispatch-cascade.ts";
 import { SCOPE_GUARD_EN } from "../../_shared/lib/scope-guard.ts";
+import { CAPTURE_PRELUDE, IS_WINDOWS, readCapturedArgs, writeFakeCli } from "./helpers/fake-cli.ts";
 
 function mkDecision(partial: Partial<AgenticRouteDecision>): AgenticRouteDecision {
   return {
@@ -189,17 +190,14 @@ describe("planRouteWithFallback — router-failure ladder", () => {
     expect(plan.steps[0].slug).toBe("recovered-biz");
   });
 
-  test('default policy (agent-x-only): retry fails → straight to agent-x, BM25 never even called', async () => {
+  test('default policy (agent-x-only): retry fails → straight to agent-x, never BM25', async () => {
     const spy = auditSpy();
     const warns: string[] = [];
-    let fastRouteCalls = 0;
     const plan = await planRouteWithFallback(failed, {
       routeOnce: () => failed,
-      fastRoute: () => { fastRouteCalls++; return "should-never-be-picked"; },
       audit: spy.fn, warn: m => warns.push(m),
       // onRouterFailure intentionally omitted — exercising the DEFAULT.
     });
-    expect(fastRouteCalls).toBe(0);
     expect(plan.ok).toBe(true);
     expect(plan.steps[0].kind).toBe("agent-x");
     expect(plan.source).toBe("router-failure-agent-x");
@@ -207,40 +205,23 @@ describe("planRouteWithFallback — router-failure ladder", () => {
     expect(warns.join(" ")).toContain("never BM25");
   });
 
-  test('routing.on_router_failure: "cascade" (opt-in) → BM25 fallback business step (router-failure-bm25)', async () => {
+  test('a retired "cascade" handed straight to the ladder still ends on agent-x: there is no BM25 rung', async () => {
+    // The settings read a stored "cascade" as "agent-x-only"; this holds the ladder itself.
     const spy = auditSpy();
     const plan = await planRouteWithFallback(failed, {
       routeOnce: () => failed,
-      fastRoute: () => "bm25-biz",
-      onRouterFailure: "cascade",
+      onRouterFailure: "cascade" as any,
       audit: spy.fn, warn: () => {},
     });
     expect(plan.ok).toBe(true);
-    expect(plan.steps[0]).toMatchObject({ kind: "business", slug: "bm25-biz" });
-    expect(plan.source).toBe("router-failure-bm25");
-    expect(spy.calls.some(x => x.event === "x_router_failure_cascade" && x.payload.stage === "bm25")).toBe(true);
-  });
-
-  test('routing.on_router_failure: "cascade" with BM25 undecided → agent-x, loudly (router-failure-agent-x)', async () => {
-    const spy = auditSpy();
-    const warns: string[] = [];
-    const plan = await planRouteWithFallback(failed, {
-      routeOnce: () => failed,
-      fastRoute: () => null,
-      onRouterFailure: "cascade",
-      audit: spy.fn, warn: m => warns.push(m),
-    });
-    expect(plan.ok).toBe(true);
-    expect(plan.steps[0].kind).toBe("agent-x");
+    expect(plan.steps).toEqual([{ kind: "agent-x", reason: "router transport failure — cascade bottom" }]);
     expect(plan.source).toBe("router-failure-agent-x");
-    expect(spy.calls.some(x => x.event === "x_router_failure_cascade" && x.payload.stage === "agent-x")).toBe(true);
-    expect(warns.join(" ")).toContain("NO specialist");
+    expect(spy.calls.filter(x => x.event === "x_router_failure_cascade").map(x => x.payload.stage)).toEqual(["agent-x"]);
   });
 
   test('routing.on_router_failure: "fail" short-circuits the ladder after the retry', async () => {
     const plan = await planRouteWithFallback(failed, {
       routeOnce: () => failed,
-      fastRoute: () => "should-not-be-used",
       onRouterFailure: "fail",
       warn: () => {},
     });
@@ -323,8 +304,13 @@ describe("runAgentX — the cascade bottom (injected runWithCascade seam)", () =
       expect(r.promptPath).toBe(path.join(agentsDir, "agent-x.claude-code.md"));
       expect(seen).toHaveLength(1);
       expect(seen[0].prompt).toContain("PERSONA-MARKER");
+      // The brief file differs from the text here, so the text rides along; the next test covers the file alone.
       expect(seen[0].prompt).toContain("Deliver the impossible artifact.");
       expect(seen[0].prompt).toContain(oroot);
+      // The generalist ends with the same one-page summary; work the brief places elsewhere is done there.
+      expect(seen[0].prompt).toContain(path.join(oroot, "_SUMMARY.md"));
+      expect(seen[0].prompt).toContain("When the brief's work lives in another folder");
+      expect(seen[0].prompt).not.toContain("Write nothing anywhere else");
       expect(seen[0].prompt).toContain("router no_match: nothing fits");
       // Work the brief places elsewhere is done there; earlier runs are input only when pointed to.
       expect(seen[0].prompt).toContain("When the brief's work lives in another folder");
@@ -342,6 +328,25 @@ describe("runAgentX — the cascade bottom (injected runWithCascade seam)", () =
       expect(ax).toBeTruthy();
       expect(ax!.payload.employee).toBe("agent-x");
       expect(ax!.payload.mode).toBe("agent-x");
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+  });
+
+  test("one copy of the brief: the file alone when it holds the brief", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-agentx-one-"));
+    try {
+      const briefPath = path.join(tmp, "brief-enriched.md");
+      fs.writeFileSync(briefPath, "LONG-BRIEF-TEXT\n");
+      const seen: any[] = [];
+      runAgentX({
+        brief: "LONG-BRIEF-TEXT", briefPath, runtime: "claude-code", projectId: "p", projectDir: tmp, projectRoot: tmp, outputsRoot: path.join(tmp, "o"),
+        reason: "r", agentsDir: path.join(tmp, "no-such-dir"), audit: auditSpy().fn,
+        runWithCascadeImpl: ((opts: any) => {
+          seen.push(opts);
+          return { ok: true, runtime: opts.runtime, sessionId: null, result: "", costUsd: null, exitCode: 0, stderr: "", durationMs: 1, handoffs: [], finalRuntime: opts.runtime };
+        }) as any,
+      });
+      expect(seen[0].prompt).toContain(briefPath);
+      expect(seen[0].prompt).not.toContain("LONG-BRIEF-TEXT");
     } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
   });
 
@@ -364,4 +369,53 @@ describe("runAgentX — the cascade bottom (injected runWithCascade seam)", () =
       expect(seen[0].prompt).toContain("autonomous generalist");
     } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
   });
+});
+
+describe("runAgentX on codex — the voice folders reach the CLI", () => {
+  // The real cascade and driver, a fake `codex` on PATH that records its argv:
+  // a voice the generalist is told to open must be a directory codex may read,
+  // or the prompt points at files the sandbox hides.
+  test.skipIf(IS_WINDOWS)("each voice folder is an --add-dir of the codex run", () => {
+    const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "nrv-agentx-codex-")));
+    const bin = path.join(tmp, "bin");
+    const capture = path.join(tmp, "capture");
+    fs.mkdirSync(capture, { recursive: true });
+    writeFakeCli(bin, "codex", CAPTURE_PRELUDE + `
+await stdinLen();
+const oi = argv.indexOf("-o");
+if (oi >= 0) fs.writeFileSync(argv[oi + 1], "done");
+console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 1, output_tokens: 1 } }));
+`);
+    const saved = { PATH: process.env.PATH, FAKE_CAPTURE_DIR: process.env.FAKE_CAPTURE_DIR };
+    process.env.PATH = `${bin}${path.delimiter}${saved.PATH ?? ""}`;
+    process.env.FAKE_CAPTURE_DIR = capture;
+    try {
+      const voiceDir = path.join(tmp, "clones", "yoshua-bengio");
+      fs.mkdirSync(voiceDir, { recursive: true });
+      const projDir = path.join(tmp, "proj");
+      const oroot = path.join(tmp, "out");
+      fs.mkdirSync(projDir, { recursive: true });
+      const briefPath = path.join(tmp, "brief-enriched.md");
+      const brief = "Escreva um ensaio sobre IA.";
+      fs.writeFileSync(briefPath, brief);
+      const r = runAgentX({
+        brief, briefPath, runtime: "codex", projectId: "proj-ax-codex",
+        projectDir: projDir, projectRoot: tmp, outputsRoot: oroot,
+        reason: "router no_match", audit: auditSpy().fn, timeoutMs: 30_000,
+        suggestedClones: ["yoshua-bengio"],
+        cloneLibrary: { names: [{ slug: "yoshua-bengio", name: "Yoshua Bengio" }], dirOf: (s) => (s === "yoshua-bengio" ? voiceDir : null) },
+      });
+      expect(r.ok, r.error ?? r.stderr).toBe(true);
+      expect(r.finalRuntime).toBe("codex");
+      const args = readCapturedArgs(capture, "codex");
+      const grants = args.flatMap((a, i) => (a === "--add-dir" ? [args[i + 1]] : []));
+      expect(grants).toContain(voiceDir);
+      expect(grants).toContain(projDir);
+      expect(args).not.toContain("--model");
+    } finally {
+      if (saved.PATH === undefined) delete process.env.PATH; else process.env.PATH = saved.PATH;
+      if (saved.FAKE_CAPTURE_DIR === undefined) delete process.env.FAKE_CAPTURE_DIR; else process.env.FAKE_CAPTURE_DIR = saved.FAKE_CAPTURE_DIR;
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  }, 60_000);
 });

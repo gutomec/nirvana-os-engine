@@ -17,6 +17,7 @@ import { resolveScope, enumerate } from "../../../_shared/lib/scope.ts";
 import { readFrontmatter } from "../../../_shared/lib/frontmatter-edit.ts";
 import * as orgChartEditor from "./org-chart-editor.ts";
 import * as employeeFrontmatterEditor from "./employee-frontmatter-editor.ts";
+import { findRunSessions } from "../run-session.ts";
 import { parseAuditLine } from "../../../_shared/lib/cloudevents.js";
 import { provenanceOf } from "../../../_shared/lib/audit-provenance.js";
 
@@ -463,8 +464,10 @@ interface Run {
   session_runtime: string | null;   // runtime that runs the session
 }
 
-// Locates a run's session.json (mirrors revise.ts findSessionFile) and returns
-// the continuation metadata. Returns resumable=false when there is no session_id.
+// Locates a run's session.json the way revise.ts does (lib/run-session.ts: a
+// business, a squad or agent-x) and returns the continuation metadata.
+// resumable=false when there is no session_id, or when the run holds several
+// workers' sessions (a route of several squads), which revise refuses.
 function findRunSession(pid: string): { resumable: boolean; session_id: string | null; runtime: string | null } {
   const none = { resumable: false, session_id: null, runtime: null };
   if (!pid) return none;
@@ -475,19 +478,13 @@ function findRunSession(pid: string): { resumable: boolean; session_id: string |
     path.join(os.homedir(), pid),
   ];
   for (const root of roots) {
-    const bizRoot = path.join(root, "businesses");
-    if (!fs.existsSync(bizRoot)) continue;
-    let entries: fs.Dirent[];
-    try { entries = fs.readdirSync(bizRoot, { withFileTypes: true }); } catch { continue; }
-    for (const e of entries) {
-      if (!e.isDirectory()) continue;
-      const sf = path.join(bizRoot, e.name, "session.json");
-      if (!fs.existsSync(sf)) continue;
-      try {
-        const s = JSON.parse(fs.readFileSync(sf, "utf8"));
-        return { resumable: !!s.session_id, session_id: s.session_id ?? null, runtime: s.runtime ?? null };
-      } catch { /* unreadable json */ }
-    }
+    const found = findRunSessions(root);
+    if (!found.length) continue;
+    if (found.length > 1) return none;
+    try {
+      const s = JSON.parse(fs.readFileSync(found[0].file, "utf8"));
+      return { resumable: !!s.session_id, session_id: s.session_id ?? null, runtime: s.runtime ?? null };
+    } catch { return none; /* unreadable json */ }
   }
   return none;
 }

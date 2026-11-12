@@ -194,7 +194,7 @@ function loadConfigFile(p: string): Record<string, number | null | boolean | str
     if (!fs.existsSync(p)) return {}
     return parseFlatYaml(fs.readFileSync(p, 'utf-8'))
   } catch (e) {
-    log(`WARN: falha ao ler ${p}: ${e} — ignorando`)
+    log(`WARN: failed to read ${p}: ${e}; ignoring`)
     return {}
   }
 }
@@ -223,11 +223,11 @@ function applySafetyBounds(key: string, value: number | null): number | null {
   if (!bounds) return value
   const [lo, hi] = bounds
   if (lo !== null && value < lo) {
-    log(`WARN: ${key}=${value} abaixo do piso seguro ${lo} — clampado para ${lo}`)
+    log(`WARN: ${key}=${value} below the safe floor ${lo}; clamped to ${lo}`)
     return lo
   }
   if (hi !== null && value > hi) {
-    log(`WARN: ${key}=${value} acima do teto seguro ${hi} — clampado para ${hi}`)
+    log(`WARN: ${key}=${value} above the safe ceiling ${hi}; clamped to ${hi}`)
     return hi
   }
   return value
@@ -250,7 +250,7 @@ export function loadLimits(): Record<string, number | null> {
       limits[k] = coerceToDefaultType(v, DEFAULTS[k])
       sources[k] = `user:${USER_CONFIG}`
     } else {
-      log(`WARN: chave desconhecida ignorada em ${USER_CONFIG}: ${k}`)
+      log(`WARN: unknown key ignored in ${USER_CONFIG}: ${k}`)
     }
   }
 
@@ -263,7 +263,7 @@ export function loadLimits(): Record<string, number | null> {
         limits[k] = coerceToDefaultType(v, DEFAULTS[k])
         sources[k] = `project:${projectPath}`
       } else {
-        log(`WARN: chave desconhecida ignorada em ${projectPath}: ${k}`)
+        log(`WARN: unknown key ignored in ${projectPath}: ${k}`)
       }
     }
   }

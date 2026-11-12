@@ -149,7 +149,7 @@ export function buildBrief(module: KindModule, slug: string, targets: Finding[])
   lines.push("4. Keep the file's own language and comments; the engine re-reads them.");
   lines.push("5. Write real content, never a placeholder or a TODO — the gate will re-check and reject a stub.");
   lines.push("");
-  lines.push(scopeGuard("en"));
+  lines.push(scopeGuard());
   return lines.join("\n");
 }
 

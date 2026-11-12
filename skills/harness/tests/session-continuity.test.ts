@@ -9,7 +9,7 @@
 //     transcript exists, and does not invent one when it does not;
 //   - codex's id comes from the `--json` stream, also when the run fails or
 //     times out after it started, else from codex's own session file;
-//   - agy's id comes from any JSON line it printed when no result arrives;
+//   - agy's id comes from the stream's first event when no result arrives;
 //   - a continued session (`--continue-from`) is resumed from the folder it was
 //     made in, by the first worker only, and a pruned one starts fresh.
 //
@@ -20,7 +20,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { continueSessionOnNextWorker, runHeadless, sessionHome } from "../../_shared/lib/host-agent-driver.ts";
 import { codexSessionFor, looksLikeMissingSession } from "../../_shared/lib/session-capture.ts";
-import { CAPTURE_PRELUDE, readCapturedArgs, writeFakeCli } from "./helpers/fake-cli.ts";
+import { CAPTURE_PRELUDE, AGY_FAKE_PRELUDE, readCapturedArgs, writeFakeCli } from "./helpers/fake-cli.ts";
 import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-session-continuity-"));
@@ -71,16 +71,15 @@ beforeAll(() => {
     console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 1, output_tokens: 1 } }));
   `);
 
-  // agy: "dies" prints a line naming the conversation, then partial text, and
-  // exits mid-turn: the output is no longer one JSON object.
-  writeFakeCli(BIN, "agy", CAPTURE_PRELUDE + `
+  // agy: "dies" prints the init event (it names the conversation) and exits mid-turn.
+  writeFakeCli(BIN, "agy", AGY_FAKE_PRELUDE + `
+    await agyPrompt();
     if (process.env.FAKE_MODE === "dies") {
       console.log(JSON.stringify({ event: "init", conversation_id: "conv-777" }));
-      console.log("partial answer");
       process.stderr.write("AGY_ERROR: model error\\n");
       process.exit(3);
     }
-    console.log(JSON.stringify({ conversation_id: "conv-777", response: "ok" }));
+    agyReply({ conversation_id: "conv-777", response: "ok" });
   `);
 
   // kimi and grok: record argv, echo the session they were given.
@@ -157,7 +156,7 @@ describe("headless runs record a resumable id", () => {
     expect(codexSessionFor(path.join(TMP, "nowhere"), since)).toBeNull();
   });
 
-  test("agy: a run that died mid-turn keeps the conversation its output named", () => {
+  test("agy: a run that died mid-turn keeps the conversation its first event named", () => {
     const r = run("antigravity-cli", "dies");
     expect(r.ok).toBe(false);
     expect(r.sessionId).toBe("conv-777");
@@ -218,7 +217,7 @@ describe("a continued session runs where it was made", () => {
   test("a session the runtime no longer knows: the worker starts fresh in its own folder, and says so", () => {
     const now = fs.mkdtempSync(path.join(TMP, "fresh-run-"));
     continueSessionOnNextWorker({ sessionId: "sess-pruned", runtime: "claude-code", workspace: null, fromProject: "p-old" });
-    const r = run("claude-code", "missing", { dispatchRole: "agent-x", workspace: now });
+    const r = run("claude-code", "missing", { dispatchRole: "solo", workspace: now });
     expect(r.ok).toBe(true);
     expect(readCapturedArgs(CAP, "claude")).not.toContain("--resume");
     expect(r.sessionId).toMatch(UUID);
@@ -248,16 +247,18 @@ describe("the orchestrator is told to revise, not re-dispatch", () => {
   const REPO = path.resolve(import.meta.dir, "..", "..", "..");
   const read = (...p: string[]) => fs.readFileSync(path.join(REPO, ...p), "utf8");
 
-  test("harness SKILL.md: a change to dispatched work is a revise; --continue-from for a new brief", () => {
+  test("harness SKILL.md: a change to dispatched work is a revise; decide is for the worker's questions; --continue-from for a new brief", () => {
     const skill = read("skills", "harness", "SKILL.md");
-    expect(skill).toContain("### Changes, corrections and follow-ups: revise, never a new dispatch");
+    expect(skill).toContain("A change to dispatched work is a revise, never a new dispatch.");
+    expect(skill).toContain("## 7. Changes, corrections and follow-ups");
     expect(skill).toContain('nrv revise <project> "<the change>"');
-    expect(skill).toContain("nrv revise --last [<business|squad|agent-x>]");
+    expect(skill).toContain("nrv revise --last [<business|squad>]");
+    expect(skill).toContain("`nrv brief decide` is only for a question the worker asked while it runs.");
     expect(skill).toContain("--continue-from <project>");
   });
 
   test("nirvana SKILL.md and the agent contract say the same", () => {
     expect(read("skills", "nirvana", "SKILL.md")).toContain("goes back to the same worker, never a new dispatch: `nrv revise");
-    for (const f of ["AGENTS.md", "CLAUDE.md", "GEMINI.md"]) expect(read(f)).toContain("continues the worker's own session and re-runs the gate. A correction or follow-up on dispatched work is a revise, never a new dispatch.");
+    for (const f of ["AGENTS.md", "CLAUDE.md", "GEMINI.md"]) expect(read(f)).toContain("which continues the worker's own\nsession; never a new dispatch");
   });
 });

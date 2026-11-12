@@ -91,10 +91,10 @@ function formatZodError(err: z.ZodError): string {
 function readFrontmatterMd(file: string): { fm: Record<string, unknown>; body: string } {
   const raw = fs.readFileSync(file, "utf8").replace(/\r\n/g, "\n");
   const m = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/.exec(raw);
-  if (!m) throw new ValidationError(`Frontmatter ausente ou malformado em ${file}`);
+  if (!m) throw new ValidationError(`Frontmatter missing or malformed in ${file}`);
   const fm = parseYaml(m[1]);
   if (fm === null || typeof fm !== "object" || Array.isArray(fm)) {
-    throw new ValidationError(`Frontmatter de ${file} deve ser mapping`);
+    throw new ValidationError(`Frontmatter of ${file} must be a mapping`);
   }
   return { fm: fm as Record<string, unknown>, body: m[2] };
 }
@@ -103,29 +103,29 @@ export function loadBusiness(inputPath: string, opts: { strict?: boolean } = {})
   const strict = opts.strict ?? true;
   const bizPath = expand(inputPath);
   if (!fs.existsSync(bizPath) || !fs.statSync(bizPath).isDirectory()) {
-    throw new ValidationError(`Diretório não encontrado: ${bizPath}`);
+    throw new ValidationError(`Directory not found: ${bizPath}`);
   }
 
   const errors: string[] = [];
 
   // 1. Manifest (required)
   const manifestPath = path.join(bizPath, "business.yaml");
-  if (!fs.existsSync(manifestPath)) throw new ValidationError(`business.yaml ausente em ${bizPath}`);
+  if (!fs.existsSync(manifestPath)) throw new ValidationError(`business.yaml missing in ${bizPath}`);
   const manifestParsed = BusinessManifestSchema.safeParse(parseYaml(fs.readFileSync(manifestPath, "utf8")));
-  if (!manifestParsed.success) throw new ValidationError(`business.yaml inválido: ${formatZodError(manifestParsed.error)}`);
+  if (!manifestParsed.success) throw new ValidationError(`invalid business.yaml: ${formatZodError(manifestParsed.error)}`);
   const manifest = manifestParsed.data;
 
   // 2. Org chart (required)
   const chartPath = path.join(bizPath, "org-chart.yaml");
-  if (!fs.existsSync(chartPath)) throw new ValidationError(`org-chart.yaml ausente em ${bizPath}`);
+  if (!fs.existsSync(chartPath)) throw new ValidationError(`org-chart.yaml missing in ${bizPath}`);
   const chartParsed = OrgChartSchema.safeParse(parseYaml(fs.readFileSync(chartPath, "utf8")));
-  if (!chartParsed.success) throw new ValidationError(`org-chart.yaml inválido: ${formatZodError(chartParsed.error)}`);
+  if (!chartParsed.success) throw new ValidationError(`invalid org-chart.yaml: ${formatZodError(chartParsed.error)}`);
   const orgChart = chartParsed.data;
 
   // 3. Employees (required, >= 1)
   const employeesDir = path.join(bizPath, "employees");
   if (!fs.existsSync(employeesDir) || !fs.statSync(employeesDir).isDirectory()) {
-    throw new ValidationError(`employees/ ausente em ${bizPath}`);
+    throw new ValidationError(`employees/ missing in ${bizPath}`);
   }
   const employees: EmployeeFrontmatter[] = [];
   const empFiles = fs.readdirSync(employeesDir).filter((f) => f.endsWith(".md")).sort();
@@ -141,7 +141,7 @@ export function loadBusiness(inputPath: string, opts: { strict?: boolean } = {})
       errors.push(err);
     }
   }
-  if (employees.length === 0 && strict) throw new ValidationError(`employees/ vazio em ${bizPath}`);
+  if (employees.length === 0 && strict) throw new ValidationError(`employees/ empty in ${bizPath}`);
 
   // 4. Routing (optional, documentation — tolerant parse, never invalidates)
   let routing: Routing | null = null;
@@ -160,7 +160,7 @@ export function loadBusiness(inputPath: string, opts: { strict?: boolean } = {})
   const ctx: BusinessLoadContext = { manifest, employees, org_chart: orgChart };
   const result = validateBusinessIntegrity(ctx);
   if (!result.valid) {
-    if (strict) throw new ValidationError(`Integrity check falhou em ${bizPath}`, result.errors);
+    if (strict) throw new ValidationError(`Integrity check failed in ${bizPath}`, result.errors);
     errors.push(...result.errors);
   }
   // Warnings never fail a load, in strict mode either: v2 tolerates what it

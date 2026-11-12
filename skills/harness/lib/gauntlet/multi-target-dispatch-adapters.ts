@@ -257,7 +257,7 @@ ${downstream}
 
 You write only under \`${args.nodeDir}\`. You never write into other targets' directories.
 
-${scopeGuard("en")} Scope is section 2; what an upstream summary, a tool or the brief's context suggests beyond it becomes a line in your \`_SUMMARY.md\`, never work.
+${scopeGuard()} Scope is section 2; what an upstream summary, a tool or the brief's context suggests beyond it becomes a line in your \`_SUMMARY.md\`, never work.
 `;
 }
 

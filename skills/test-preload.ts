@@ -31,11 +31,22 @@ if (!process.env.NIRVANA_STATE_DB) {
   process.env.NIRVANA_STATE_DB = path.join(process.env.HARNESS_LOGS_DIR!, "state.db");
 }
 
-// And the run ledger. Every claude run now records its session's cumulative
-// cost there (claude-session-cost.ts), so a test that does not pin the ledger
-// would write into the user's ~/.nirvana/run-ledger.sqlite.
+// And the run ledger, whose run-signals live beside it. A test that opens its
+// ledger at a temp path still gets its signals from this resolution, not from
+// the handle, so every terminal run it marked landed in the user's
+// ~/.nirvana/run-signals: run_a.json, run_glance.json and a pile of
+// `"trace_id":"t"` withheld runs, all fixtures.
 if (!process.env.NIRVANA_RUN_LEDGER_DB) {
   process.env.NIRVANA_RUN_LEDGER_DB = path.join(process.env.HARNESS_LOGS_DIR!, "run-ledger.sqlite");
+}
+
+// And the squads' state (verify.json, activated.json). It is a variable and not
+// a floor because the paths.js a test loads is the INSTALLED one when the engine
+// is installed (bun-helpers.ts), and only the environment reaches both copies:
+// a gate run on a fixture squad named my-squad kept rewriting the owner's
+// ~/.nirvana/squads-state/my-squad/verify.json.
+if (!process.env.NIRVANA_STATE_DIR) {
+  process.env.NIRVANA_STATE_DIR = path.join(process.env.HARNESS_LOGS_DIR!, "squads-state");
 }
 
 // The LLM judge runs by default on report deliverables, through whatever
@@ -44,6 +55,33 @@ if (!process.env.NIRVANA_RUN_LEDGER_DB) {
 // runs the heuristics. A test that exercises the judge sets its own value.
 if (process.env.NIRVANA_JUDGE_ENABLED === undefined) process.env.NIRVANA_JUDGE_ENABLED = "false";
 
+// The HTML layout check starts a real browser; a test that gates an HTML file
+// is not about layout. A test that exercises the check sets its own value.
+if (process.env.NIRVANA_HTML_LAYOUT === undefined) process.env.NIRVANA_HTML_LAYOUT = "0";
+
+// The performance profile the installer recorded in the user's global config
+// moves effort, the context ceiling and the review policy at once; under test
+// the engine defaults hold. A test that exercises a profile sets its own.
+if (process.env.NIRVANA_PROFILE === undefined) process.env.NIRVANA_PROFILE = "none";
+
+// Host detection walks the process tree when no session marker is set, and a
+// test is a descendant of whatever CLI started the suite. A test that exercises
+// the walk injects its own process lookup.
+if (process.env.NRV_HOST_ANCESTRY === undefined) process.env.NRV_HOST_ANCESTRY = "0";
+
 if (!process.env.NIRVANA_AUDIT_KEY) {
   process.env.NIRVANA_AUDIT_KEY = path.join(process.env.HARNESS_LOGS_DIR!, "audit-key");
 }
+
+// TypeSafe's Jev is on wherever the owner keeps a TYPESAFE_API_KEY (~/.env is
+// one of the places it is read from), and every dispatch test would then send
+// its request text to TypeSafe and pay for it. Off for the suite, and the
+// endpoint points at a closed local port so a call that slips through fails
+// here instead of leaving the machine. A test that exercises the Jev sets both.
+if (process.env.NIRVANA_ROUTING_JEV === undefined) process.env.NIRVANA_ROUTING_JEV = "off";
+if (process.env.TYPESAFE_ENDPOINT === undefined) process.env.TYPESAFE_ENDPOINT = "http://127.0.0.1:9/v1/systemone";
+
+// And the decision models: the owner's machine may hold real API keys, and no
+// test may spend them. A test that exercises a provider passes it explicitly
+// with a fake fetch.
+if (!process.env.NIRVANA_DECISION_PROVIDER) process.env.NIRVANA_DECISION_PROVIDER = "off";

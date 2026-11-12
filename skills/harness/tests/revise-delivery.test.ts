@@ -20,12 +20,14 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
-import { writeFakeCli } from "./helpers/fake-cli.ts";
-import { SCOPE_GUARD_PT_BR } from "../../_shared/lib/scope-guard.ts";
+import { AGY_FAKE_PRELUDE, writeFakeCli } from "./helpers/fake-cli.ts";
+import { SCOPE_GUARD_EN } from "../../_shared/lib/scope-guard.ts";
 import { spawnBudgetMs, TEARDOWN_BUDGET_MS } from "./helpers/test-budgets.ts";
+import * as runLedger from "../lib/run-ledger.ts";
 
 /** Codex's usage-limit message as the 2026-10-14 incident logs carry it. */
 const QUOTA_MESSAGE = "You’ve hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/settings/usage to purchase more credits or try again at 1:21 AM.";
+import { SOLO_ROLE_LINE } from "../lib/business-solo.ts";
 
 const SKILLS = path.resolve(import.meta.dir, "..", "..");
 const REVISE = path.join(SKILLS, "harness", "scripts", "revise.ts");
@@ -78,21 +80,19 @@ interface ReviseCase {
   stdout: string;
   audit: any[];
   runtimeCalls: number;
-  /** Everything the fake runtime received: its argv and its stdin, per call. */
+  /** Everything the fake runtime received: its argv and its stdin. */
   prompt: string;
-  oroot: string;
-  /** NIRVANA_DISPATCH_ROLE of each runtime call. */
+  /** The dispatch role each runtime call carried (NIRVANA_DISPATCH_ROLE). */
   roles: string[];
-  home: string;
-  pid: string;
+  oroot: string;
 }
 
 /** A project laid out the way dispatch.ts leaves one (outputs/<pid>/businesses/
- *  <slug>/session.json), with `files` already in the outputs root, plus a fake
- *  runtime that succeeds without touching disk. Then: `nrv revise`. */
+ *  <slug>/session.json; squads/<slug>/ or agent-x/ for those kinds), with
+ *  `files` already in the outputs root, plus a fake runtime that succeeds
+ *  without touching disk. Then: `nrv revise`. */
 function runRevise(files: Record<string, string | Buffer>, opts: {
   env?: Record<string, string>; runtimeFails?: boolean | "quota"; brief?: string; setup?: (pid: string, home: string) => void;
-  /** The worker the run had: a business (businesses/<slug>), a squad (squads/copy) or agent-x. */
   kind?: "business" | "squad" | "agent-x"; sessionId?: string | null;
   /** The CLI arguments after the script; `{pid}` is replaced by the case's project id. */
   args?: string[];
@@ -100,8 +100,8 @@ function runRevise(files: Record<string, string | Buffer>, opts: {
   missingSession?: boolean;
   /** Write no session.json at all (a run from before runs recorded one). */
   noSessionFile?: boolean;
-  /** The gate's reservations already on disk from the run's last gate. */
-  reservations?: string;
+  /** Gate findings already on disk from the run's last gate. */
+  findings?: string;
 } = {}): ReviseCase {
   const n = caseSeq++;
   const home = path.join(TMP, `case-${n}`);
@@ -111,13 +111,15 @@ function runRevise(files: Record<string, string | Buffer>, opts: {
   const projectRoot = path.join(home, "outputs", pid);
   const projDir = kind === "business" ? path.join(projectRoot, "businesses", slug)
     : kind === "squad" ? path.join(projectRoot, "squads", slug) : path.join(projectRoot, "agent-x");
+  // A business writes under its own scaffold; a squad and agent-x under the run's deliverables/.
   const oroot = kind === "business" ? path.join(projDir, "deliverables") : path.join(projectRoot, "deliverables");
-  fs.mkdirSync(oroot, { recursive: true });
   fs.mkdirSync(projDir, { recursive: true });
+  fs.mkdirSync(oroot, { recursive: true });
   for (const [name, body] of Object.entries(files)) fs.writeFileSync(path.join(oroot, name), body as any);
-  // The run's brief lives at its scaffold root; agent-x's is brief-enriched.md.
+  // The run's brief lives at its scaffold root, two levels above businesses/<slug>
+  // or squads/<slug>; agent-x's is brief-enriched.md, one level above agent-x/.
   if (opts.brief) fs.writeFileSync(path.join(projectRoot, kind === "agent-x" ? "brief-enriched.md" : "brief.md"), opts.brief);
-  if (opts.reservations) fs.writeFileSync(path.join(oroot, "_QA-RESERVATIONS.md"), opts.reservations);
+  if (opts.findings) fs.writeFileSync(path.join(oroot, "_GATE-FINDINGS.md"), opts.findings);
   const sessionId = opts.sessionId === undefined ? "sess-original" : opts.sessionId;
   if (!opts.noSessionFile) fs.writeFileSync(path.join(projDir, "session.json"), JSON.stringify(kind === "business" ? {
     project_id: pid, business_slug: slug, employee: "ceo", runtime: "claude-code",
@@ -180,6 +182,7 @@ function runRevise(files: Record<string, string | Buffer>, opts: {
       NIRVANA_SKILLS_DIR: SKILLS,
       HARNESS_LOGS_DIR: logs,
       NRV_IN_SWEEP: "",
+      NIRVANA_RUN_LEDGER_DB: path.join(home, "ledger.sqlite"),
       ...(opts.env ?? {}),
     },
   });
@@ -192,7 +195,7 @@ function runRevise(files: Record<string, string | Buffer>, opts: {
   const runtimeCalls = fs.existsSync(callsFile) ? fs.readFileSync(callsFile, "utf8").split("\n").filter(Boolean).length : 0;
   const prompt = fs.existsSync(promptFile) ? fs.readFileSync(promptFile, "utf8") : "";
   const roles = fs.existsSync(rolesFile) ? fs.readFileSync(rolesFile, "utf8").split("\n").slice(0, -1) : [];
-  return { status: r.status, stdout: (r.stdout || "") + (r.stderr || ""), audit, runtimeCalls, prompt, oroot, roles, home, pid };
+  return { status: r.status, stdout: (r.stdout || "") + (r.stderr || ""), audit, runtimeCalls, prompt, roles, oroot };
 }
 
 /** DELIVERY-level events only. quality-gate.ts appends its own per-file
@@ -201,10 +204,10 @@ function runRevise(files: Record<string, string | Buffer>, opts: {
 const events = (c: ReviseCase) => c.audit.filter(l => !l.artifact).map(l => l.event);
 
 describe("nrv revise — the outcome goes through the delivery pipeline", () => {
-  test("the revision prompt the runtime receives carries the scope guard in PT-BR", () => {
+  test("the revision prompt the runtime receives carries the scope guard", () => {
     const c = runRevise({ "nota.md": PASSING_MD });
     expect(c.runtimeCalls).toBeGreaterThanOrEqual(1);
-    expect(c.prompt).toContain(SCOPE_GUARD_PT_BR);
+    expect(c.prompt).toContain(SCOPE_GUARD_EN);
   }, 30_000);
 
   test("THE FAIL-OPEN, CLOSED: zero text files never claims a gate pass", () => {
@@ -228,15 +231,29 @@ describe("nrv revise — the outcome goes through the delivery pipeline", () => 
     expect(c.stdout).toContain("INDETERMINATE");
   }, 30_000);
 
-  test("a real gate FAIL withholds — it never emits delivered before exiting", () => {
+  test("a style failure the corrections did not clear ships WITH RESERVATIONS (rule A), after the corrections ran", () => {
     const c = runRevise({ "nota.md": FAILING_MD });
-    expect(c.status).toBe(2);
+    expect(c.status).toBe(0);
     expect(events(c)).toContain("gate_failed");
-    expect(events(c)).not.toContain("delivered");   // old code emitted it with gate:"fail"
+    expect(events(c)).toContain("x_delivered_with_reservations");
+    expect(c.audit.find(l => l.event === "delivered" && !l.artifact)?.gate).toBe("fail-accepted");
     // Interactive budget: the config's max_revisions (2) revision runs on top
     // of the revision itself. The human asked for this loop.
     expect(c.runtimeCalls).toBe(3);
+    expect(fs.existsSync(path.join(c.oroot, "_QA-RESERVATIONS.md"))).toBe(true);
+    expect(JSON.parse(fs.readFileSync(path.join(c.oroot, "_STATUS.json"), "utf8")).state).toBe("delivered_with_reservations");
   }, 60_000);
+
+  test("a SERIOUS failure no correction improves is WITHHELD after the normal rounds — it never emits delivered", () => {
+    // The fake runtime changes nothing, so the extra rounds a serious finding
+    // may get never start: they are granted for progress (delivery-pipeline.ts).
+    const c = runRevise({ "dados.json": '{"itens": [' + '"valor", '.repeat(40) });
+    expect(c.status).toBe(2);
+    expect(events(c)).toContain("x_delivery_withheld");
+    expect(events(c)).not.toContain("delivered");
+    expect(c.audit.find(l => l.event === "x_delivery_withheld")?.no_progress).toBe(true);
+    expect(c.runtimeCalls).toBe(1 + 2);
+  }, 90_000);
 
   test("passing artifacts → exit 0, delivered, marked as a revision", () => {
     const c = runRevise({ "nota.md": PASSING_MD });
@@ -249,16 +266,17 @@ describe("nrv revise — the outcome goes through the delivery pipeline", () => 
     expect(c.runtimeCalls).toBe(1);                 // no revision needed
   }, 30_000);
 
-  test("a revision agy ran in another conversation says so, is audited, and the new id is kept for the next one", () => {
-    // agy 1.3.3 `--continue` with nothing to continue: exit 0, no warning, a new conversation.
+  test("a revision agy ran in a NEW conversation says so, is audited, and the new id is kept for the next one", () => {
+    // agy 1.3.3 on an unknown --conversation id: exit 0, a stderr warning, a new conversation.
     const c = runRevise({ "nota.md": PASSING_MD }, {
       setup: (pid, home) => {
         const sessionFile = path.join(home, "outputs", pid, "businesses", "biz", "session.json");
         const session = JSON.parse(fs.readFileSync(sessionFile, "utf8"));
         fs.writeFileSync(sessionFile, JSON.stringify({ ...session, runtime: "antigravity-cli", session_id: "conv-gone" }, null, 2));
-        writeFakeCli(path.join(home, "bin"), "agy", `
-          console.log(JSON.stringify({ conversation_id: "conv-new", status: "SUCCESS", response: "OK" }));
-          process.exit(0);
+        writeFakeCli(path.join(home, "bin"), "agy", AGY_FAKE_PRELUDE + `
+          await agyPrompt();
+          console.error('warning: conversation "conv-gone" not found');
+          agyReply({ conversation_id: "conv-new", status: "SUCCESS", response: "OK" });
         `);
       },
     });
@@ -294,18 +312,19 @@ describe("nrv revise — the outcome goes through the delivery pipeline", () => 
     expect(r.stderr).toContain("Usage: nrv revise");
   }, spawnBudgetMs(1));
 
-  test("a FAILED revision still judges what is on disk instead of abandoning it", () => {
+  test("a FAILED revision still judges what is on disk, and ships it WITH RESERVATIONS, never as a full pass", () => {
     // The runtime errors, but the artifacts exist. Old behavior: exit 1, nothing
     // verified, nothing gated — the unjudged-artifact defect, in the revise door.
     const c = runRevise({ "guia.md": PASSING_MD }, { runtimeFails: true });
-    expect(c.status).toBe(0);                       // gate passed → delivered
+    expect(c.status).toBe(0);
     expect(events(c)).toContain("revision_failed");  // the error is never swallowed
     expect(events(c)).toContain("x_runtime_errored_with_artifacts");
+    expect(events(c)).toContain("x_delivered_with_reservations");
     expect(events(c)).toContain("delivered");
   }, spawnBudgetMs(2));
 
-  test("a FAILED revision whose artifacts fail the gate is WITHHELD, never delivered", () => {
-    const c = runRevise({ "guia.md": FAILING_MD }, { runtimeFails: true });
+  test("a FAILED revision whose artifacts carry a serious finding is WITHHELD, never delivered", () => {
+    const c = runRevise({ "guia.json": '{"itens": [' + '"valor", '.repeat(40) }, { runtimeFails: true, env: { NRV_IN_SWEEP: "1" } });
     expect(c.status).toBe(2);
     expect(events(c)).toContain("x_runtime_errored_with_artifacts");
     expect(events(c)).toContain("x_delivery_withheld");
@@ -318,17 +337,11 @@ describe("nrv revise — the outcome goes through the delivery pipeline", () => 
     expect(events(c)).toContain("revision_failed");
     expect(events(c)).toContain("x_delivery_quota_wait");
     for (const e of ["judge_invoked", "gate_passed", "gate_failed", "revision_auto", "x_runtime_errored_with_artifacts", "delivered"]) expect(events(c)).not.toContain(e);
+    const status = JSON.parse(fs.readFileSync(path.join(c.oroot, "_STATUS.json"), "utf8"));
+    expect(status.state).toBe("quota_wait");
+    expect(status.exit_code).toBe(75);
+    expect(Date.parse(status.quota_reset_at)).toBeGreaterThan(Date.now());
     expect(c.stdout).toContain("Waiting on quota");
-  }, spawnBudgetMs(2));
-
-  test("a revision keeps the folder the brief places the work in, and never asks to move it under the outputs root", () => {
-    const site = path.join(TMP, `site-${Date.now()}`);
-    fs.mkdirSync(site, { recursive: true });
-    const c = runRevise({ "guia.md": PASSING_MD }, { brief: `# Brief\n\nCorrija o site em ${site}, no lugar.\n` });
-    expect(c.status).toBe(0);
-    expect(c.prompt).toContain(`O brief coloca trabalho em: ${site}.`);
-    expect(c.prompt).toContain("nunca copiado para dentro de");
-    expect(c.prompt).not.toContain("Reescreva/atualize os entregáveis como arquivos sob");
   }, spawnBudgetMs(2));
 
   test("a FAILED revision with nothing on disk keeps the historical exit 1", () => {
@@ -339,33 +352,164 @@ describe("nrv revise — the outcome goes through the delivery pipeline", () => 
   }, spawnBudgetMs(2));
 });
 
+describe("nrv revise continues the ORIGINAL worker", () => {
+  const BRIEF = [
+    "## Request (verbatim)", "Encurte o relatório.", "",
+    "## Decisions", "None.", "",
+    "## Your part", "O relatório.", "",
+    "## Inputs", "None.", "",
+    "## Done when", "- O relatório tem no máximo uma página (bloqueante)", "",
+    "## Output", "nota.md", "",
+  ].join("\n");
+
+  test("a business revision runs as the solo worker, told to update its summary and claims", () => {
+    const c = runRevise({ "nota.md": PASSING_MD, "_CLAIMS.json": JSON.stringify([{ id: "d1", evidence: "nota.md:1-14, o relatório inteiro" }]) }, { brief: BRIEF });
+    expect(c.status).toBe(0);
+    expect(c.roles[0]).toBe("solo");
+    expect(c.prompt).toContain("_SUMMARY.md");
+    expect(c.prompt).toContain("_CLAIMS.json");
+  }, 30_000);
+
+  test("the brief is read from the run's scaffold root: its blocking criterion is held to the claims", () => {
+    // No _CLAIMS.json and a runtime that writes nothing: the blocking criterion
+    // never gets its proof, which is serious, so the delivery is withheld.
+    const c = runRevise({ "nota.md": PASSING_MD }, { brief: BRIEF });
+    expect(c.status).toBe(2);
+    expect(events(c)).toContain("x_delivery_withheld");
+    const status = JSON.parse(fs.readFileSync(path.join(c.oroot, "_STATUS.json"), "utf8"));
+    expect(status.serious[0]).toContain("blocking criterion d1");
+    // Every correction ran as the solo worker too.
+    expect(c.roles.every(r => r === "solo")).toBe(true);
+  }, 90_000);
+
+  test("the ledger row of the run is carried to its terminal state", () => {
+    let db = "";
+    let runId = "";
+    const c = runRevise({ "nota.md": PASSING_MD }, {
+      setup: (pid, home) => {
+        db = path.join(home, "ledger.sqlite");
+        const h = runLedger.openLedger(db);
+        const row = runLedger.openRun(h, { traceId: pid, projectId: pid, projectRoot: null, targetSlug: "biz", targetKind: "business", runtime: "claude-code",
+          meta: { mode: "solo", dispatch_role: "solo", runtime_source: "flag" } });
+        runLedger.markState(h, row.run_id, "running");
+        runId = row.run_id;
+      },
+    });
+    expect(c.status).toBe(0);
+    const h = runLedger.openLedger(db);
+    const row = runLedger.getRun(h, runId)!;
+    expect(row.state).toBe("delivered");
+    expect(row.child_pid).toBeNull();
+  }, 30_000);
+
+  test("a revision keeps the folder the brief places the work in, and never asks to move it under the outputs root", () => {
+    const site = path.join(TMP, `site-${Date.now()}`);
+    fs.mkdirSync(site, { recursive: true });
+    const c = runRevise({ "nota.md": PASSING_MD, "_CLAIMS.json": JSON.stringify([{ id: "d1", evidence: "nota.md:1-14, o relatório inteiro" }]) },
+      { brief: BRIEF.replace("## Output\nnota.md", `## Output\nnota.md; o site em ${site}, corrigido no lugar`) });
+    expect(c.status).toBe(0);
+    expect(c.prompt).toContain(`The brief places work in: ${site}.`);
+    expect(c.prompt).toContain("never copy it under");
+    expect(c.prompt).not.toContain("Rewrite or update the deliverables as files under");
+  }, 30_000);
+
+  test("a revision that takes over a live row records itself as its dispatcher, so stop reaches it", () => {
+    // 2026-10-14: the supervisor's resume continued a `verifying` row whose
+    // dispatcher had died hours before; the row kept that pid, and
+    // `nrv run-track stop` found "no live process" while the revision judged.
+    let db = "";
+    let runId = "";
+    const c = runRevise({ "nota.md": PASSING_MD }, {
+      setup: (pid, home) => {
+        db = path.join(home, "ledger.sqlite");
+        const h = runLedger.openLedger(db);
+        const row = runLedger.openRun(h, { traceId: pid, projectId: pid, projectRoot: null, targetSlug: "biz", targetKind: "business", runtime: "claude-code",
+          meta: { mode: "solo", dispatch_role: "solo", runtime_source: "flag", dispatcher_pid: 4242424, dispatcher_started_at: "long ago" } });
+        runLedger.markState(h, row.run_id, "running");
+        runLedger.markState(h, row.run_id, "verifying", { error: "the dispatcher died" });
+        runId = row.run_id;
+      },
+    });
+    expect(c.status).toBe(0);
+    const row = runLedger.getRun(runLedger.openLedger(db), runId)!;
+    expect(row.state).toBe("delivered");                     // the same row, carried on to its end
+    expect(typeof row.meta.dispatcher_pid).toBe("number");
+    expect(row.meta.dispatcher_pid).not.toBe(4242424);
+    expect(c.audit.some(l => l.event === "x_ledger_meta_patched" && l.run_id === runId && (l.keys ?? []).includes("dispatcher_pid"))).toBe(true);
+  }, 30_000);
+
+  test("a squad run from before squad runs recorded their session runs a FRESH seeded session, never a refusal", () => {
+    const c = runRevise({ "nota.md": PASSING_MD }, { kind: "squad", noSessionFile: true, brief: "# Brief\n\nUma nota curta para o cliente." });
+    expect(c.status, c.stdout).toBe(0);
+    expect(c.stdout).toContain("FRESH session");
+    expect(c.prompt).not.toContain("--resume");
+    expect(c.prompt).toContain("NEW session");
+    expect(c.prompt).toContain("Uma nota curta para o cliente.");
+    expect(c.audit.find(l => l.event === "x_revise_fresh_session")).toMatchObject({ reason: "legacy_run", target_kind: "squad", target_slug: "copy" });
+    // The new session is recorded where the next revision reads it.
+    const written = JSON.parse(fs.readFileSync(path.join(path.dirname(c.oroot), "squads", "copy", "session.json"), "utf8"));
+    expect(written.session_id).toMatch(/^[0-9a-f-]{36}$/);
+  }, 30_000);
+});
+
 describe("nrv revise continues a squad or agent-x worker like a business one", () => {
-  test("a squad run resumes the squad's own session, as a squad, and delivers", () => {
-    const c = runRevise({ "nota.md": PASSING_MD }, { kind: "squad" });
+  test("a squad revision resumes the squad's session as `squad`, told to update its summary (no claims), and judges the result", () => {
+    let db = "";
+    let runId = "";
+    const c = runRevise({ "nota.md": PASSING_MD }, {
+      kind: "squad",
+      setup: (pid, home) => {
+        // The squad run finished (delivered): the revision opens a new attempt of the trace.
+        db = path.join(home, "ledger.sqlite");
+        const h = runLedger.openLedger(db);
+        const row = runLedger.openRun(h, { traceId: pid, projectId: pid, projectRoot: null, targetSlug: "copy", targetKind: "squad", runtime: "claude-code",
+          meta: { mode: "squad-only", dispatch_role: "squad", runtime_source: "default" } });
+        runLedger.markState(h, row.run_id, "running");
+        runLedger.markState(h, row.run_id, "delivered");
+        runId = row.run_id;
+      },
+    });
     expect(c.status, c.stdout).toBe(0);
-    expect(c.prompt).toContain("--resume\nsess-original");
+    expect(c.runtimeCalls).toBe(1);
+    expect(c.roles[0]).toBe("squad");
+    expect(c.prompt).toContain("--resume");
+    expect(c.prompt).toContain("sess-original");
+    expect(c.prompt).toContain(path.join(c.oroot, "_SUMMARY.md"));
+    expect(c.prompt).not.toContain("_CLAIMS.json");
+    expect(c.prompt).not.toContain(SOLO_ROLE_LINE);
+    expect(c.audit.find(l => l.event === "revision_requested")).toMatchObject({ target_kind: "squad", target_slug: "copy", dispatch_role: "squad", business_slug: null });
+    expect(events(c)).toContain("delivered");
+    const h = runLedger.openLedger(db);
+    const fresh = runLedger.findByTraceId(h, path.basename(path.dirname(c.oroot)))!;
+    expect(fresh.run_id).not.toBe(runId);
+    expect(fresh).toMatchObject({ target_kind: "squad", target_slug: "copy", state: "delivered" });
+    expect(fresh.meta).toMatchObject({ revision_of: runId, dispatch_role: "squad" });
+    // The revision's own dispatcher, not the earlier run's: `stop` ends this one.
+    expect(typeof fresh.meta?.dispatcher_pid).toBe("number");
+    expect(fresh.meta?.dispatcher_pid).not.toBe(runLedger.getRun(h, runId)!.meta?.dispatcher_pid);
+  }, 30_000);
+
+  test("an agent-x revision resumes the generalist's session as `agent-x`", () => {
+    const c = runRevise({ "nota.md": PASSING_MD }, { kind: "agent-x" });
+    expect(c.status, c.stdout).toBe(0);
+    expect(c.roles[0]).toBe("agent-x");
+    expect(c.prompt).toContain("sess-original");
+    expect(c.prompt).toContain(path.join(c.oroot, "_SUMMARY.md"));
+    expect(c.prompt).not.toContain("_CLAIMS.json");
+    expect(c.audit.find(l => l.event === "revision_requested")).toMatchObject({ target_kind: "agent-x", dispatch_role: "agent-x" });
+  }, 30_000);
+
+  test("the corrections after a failed gate run as the same worker", () => {
+    const c = runRevise({ "nota.md": FAILING_MD }, { kind: "squad" });
+    expect(c.status).toBe(0);
+    expect(c.runtimeCalls).toBe(3);
     expect(c.roles.every(r => r === "squad")).toBe(true);
-    expect(c.audit.find(l => l.event === "revision_requested")).toMatchObject({ target_kind: "squad", target_slug: "copy", session_id: "sess-original" });
-  }, 30_000);
+  }, 60_000);
 
-  test("an agent-x run resumes the generalist's session, as agent-x", () => {
-    const c = runRevise({ "nota.md": PASSING_MD }, { kind: "agent-x", brief: "# Brief\n\nNota." });
-    expect(c.status, c.stdout).toBe(0);
-    expect(c.prompt).toContain("--resume\nsess-original");
-    expect(c.roles.every(r => r === "agent-x")).toBe(true);
-  }, 30_000);
-
-  test("the revision runs under a ledger row of the trace, closed by the verdict", () => {
-    const c = runRevise({ "nota.md": PASSING_MD }, { kind: "squad" });
-    expect(c.status, c.stdout).toBe(0);
-    expect(c.audit.some(l => l.event === "x_ledger_state_changed" && l.to === "running")).toBe(true);
-    expect(c.audit.some(l => l.event === "x_ledger_state_changed" && l.to === "delivered")).toBe(true);
-  }, 30_000);
-
-  test("a run whose runtime returned no session id runs a FRESH session seeded with the brief, the deliverables, the reservations and the change", () => {
+  test("a run whose runtime returned no session id runs a FRESH session seeded with the brief, the deliverables, the findings and the change", () => {
     const c = runRevise({ "nota.md": PASSING_MD }, {
       kind: "squad", sessionId: null, brief: "# Brief\n\nCarta para a Eduarda, centralizada.",
-      reservations: "# QA reservations\n\n- html-layout: o título não está centralizado.",
+      findings: "# Gate findings\n\n- html-layout: o título não está centralizado.",
     });
     expect(c.status, c.stdout).toBe(0);
     expect(c.runtimeCalls).toBe(1);
@@ -380,7 +524,7 @@ describe("nrv revise continues a squad or agent-x worker like a business one", (
     expect(c.audit.find(l => l.event === "x_revise_fresh_session")).toMatchObject({ reason: "no_session_id", target_kind: "squad", previous_session_id: null });
     expect(c.audit.find(l => l.event === "revision_requested")).toMatchObject({ fresh_session: "no_session_id", session_id: null });
     // The fresh session is the one the next revision continues.
-    const file = path.join(c.home, "outputs", c.pid, "squads", "copy", "session.json");
+    const file = path.join(path.dirname(c.oroot), "squads", "copy", "session.json");
     expect(JSON.parse(fs.readFileSync(file, "utf8")).session_id).toMatch(/^[0-9a-f-]{36}$/);
   }, 30_000);
 
@@ -396,24 +540,12 @@ describe("nrv revise continues a squad or agent-x worker like a business one", (
     expect(c.audit.find(l => l.event === "x_revise_fresh_session")).toMatchObject({ reason: "resume_failed", previous_session_id: "sess-original" });
   }, 30_000);
 
-  test("a squad run from before squad runs recorded their session runs a FRESH seeded session, never a refusal", () => {
-    const c = runRevise({ "nota.md": PASSING_MD }, { kind: "squad", noSessionFile: true, brief: "# Brief\n\nUma nota curta para o cliente." });
-    expect(c.status, c.stdout).toBe(0);
-    expect(c.stdout).toContain("FRESH session");
-    expect(c.prompt).not.toContain("--resume");
-    expect(c.prompt).toContain("NEW session");
-    expect(c.prompt).toContain("Uma nota curta para o cliente.");
-    expect(c.audit.find(l => l.event === "x_revise_fresh_session")).toMatchObject({ reason: "legacy_run", target_kind: "squad", target_slug: "copy" });
-    const written = JSON.parse(fs.readFileSync(path.join(c.home, "outputs", c.pid, "squads", "copy", "session.json"), "utf8"));
-    expect(written.session_id).toMatch(/^[0-9a-f-]{36}$/);
-  }, 30_000);
-
   test("--runtime naming another runtime runs fresh there, never resumes a foreign id", () => {
     const c = runRevise({ "nota.md": PASSING_MD }, {
       kind: "agent-x", args: ["{pid}", "encurte o texto", "--runtime", "claude-code"],
-      setup: (pid, home) => {
+      setup: (_pid, home) => {
         // The session belongs to codex; the owner asks for claude-code.
-        const file = path.join(home, "outputs", pid, "agent-x", "session.json");
+        const file = path.join(home, "outputs", `proj-revise-${caseSeq - 1}`, "agent-x", "session.json");
         const data = JSON.parse(fs.readFileSync(file, "utf8"));
         fs.writeFileSync(file, JSON.stringify({ ...data, runtime: "codex", session_id: "codex-thread-1" }));
       },
@@ -426,7 +558,7 @@ describe("nrv revise continues a squad or agent-x worker like a business one", (
   test("--last picks the newest run of the named worker, and resumes it", () => {
     const c = runRevise({ "nota.md": PASSING_MD }, {
       kind: "squad", args: ["--last", "copy", "encurte o texto"],
-      setup: (pid, home) => {
+      setup: (_pid, home) => {
         // An older run of the same squad, and a newer one of another squad.
         for (const [run, squad, sid, age] of [["old-run", "copy", "sess-old", 3600], ["other-run", "design", "sess-other", -3600]] as const) {
           const dir = path.join(home, "outputs", run, "squads", squad);
@@ -436,7 +568,7 @@ describe("nrv revise continues a squad or agent-x worker like a business one", (
           const t = new Date(Date.now() - age * 1000);
           fs.utimesSync(file, t, t);
         }
-        const mine = path.join(home, "outputs", pid, "squads", "copy", "session.json");
+        const mine = path.join(home, "outputs", `proj-revise-${caseSeq - 1}`, "squads", "copy", "session.json");
         const t = new Date(Date.now() - 60_000);
         fs.utimesSync(mine, t, t);
       },
@@ -453,16 +585,17 @@ describe("nrv revise continues a squad or agent-x worker like a business one", (
     expect(c.runtimeCalls).toBe(0);
   }, 30_000);
 
-  test("a route of several squads has no single worker to continue: exit 4, nothing runs", () => {
+  test("a route of several squads has no single session to continue: refused (exit 4)", () => {
     const c = runRevise({ "nota.md": PASSING_MD }, {
       kind: "squad",
       setup: (pid, home) => {
         const other = path.join(home, "outputs", pid, "squads", "design");
         fs.mkdirSync(other, { recursive: true });
-        fs.writeFileSync(path.join(other, "session.json"), JSON.stringify({ project_id: pid, target_kind: "squad", target_slug: "design", runtime: "claude-code", session_id: "s2" }));
+        fs.writeFileSync(path.join(other, "session.json"), JSON.stringify({ project_id: pid, target_kind: "squad", target_slug: "design", runtime: "claude-code", session_id: "sess-2" }));
       },
     });
     expect(c.status).toBe(4);
+    expect(c.stdout).toContain("ran 2 workers (squad copy, squad design)");
     expect(c.runtimeCalls).toBe(0);
   }, 30_000);
 });

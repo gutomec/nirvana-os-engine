@@ -1,5 +1,5 @@
 /**
- * Squad Registry — Squad Protocol v5 §23
+ * Squad Registry — Squad Protocol v6 §23
  *
  * Walks configured roots looking for squad.yaml, validates manifests,
  * computes content hashes, and emits a single registry JSON conforming to
@@ -180,7 +180,7 @@ function scan(roots) {
       const existing = byName.get(manifest.name);
       if (existing && existing.root === root) {
         process.stderr.write(
-          `[registry] WARN squad '${manifest.name}' duplicado no mesmo root (o último vence — use dot-dir para backups):\n` +
+          `[registry] WARN squad '${manifest.name}' duplicated in the same root (the last one wins; use a dot-dir for backups):\n` +
           `  ${existing.manifest_path}\n  ${manifestPath}\n`,
         );
       }
@@ -270,7 +270,7 @@ function build(roots) {
           invoke: cap.invoke || {},
           score_boost: typeof cap.score_boost === 'number' ? cap.score_boost : 1.0
         };
-        // Agentic-discovery metadata (Squad Protocol v5 §22.x — optional fields).
+        // Agentic-discovery metadata (Squad Protocol v6 §22.4 — optional fields).
         // Surface in the index so Pass 1 (semantic shortlist) sees them without loading full yaml.
         if (Array.isArray(cap.produces) && cap.produces.length > 0) capEntry.produces = cap.produces;
         if (Array.isArray(cap.example_briefs) && cap.example_briefs.length > 0) capEntry.example_briefs = cap.example_briefs;

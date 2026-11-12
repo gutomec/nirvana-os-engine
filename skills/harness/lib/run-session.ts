@@ -2,13 +2,13 @@
 // so `nrv revise` can continue the worker's own conversation.
 //
 // One file per worker that ran, in the scaffold dir it worked from:
-//   <run>/businesses/<slug>/session.json   the business (its last worker's session)
+//   <run>/businesses/<slug>/session.json   the business's solo worker
 //   <run>/squads/<slug>/session.json       each squad of a squad-only route
 //   <run>/agent-x/session.json             the generalist
 //
-// The business file is written by dispatch.ts itself (its shape predates this
-// module). This module writes the squad and agent-x ones, with the same fields
-// plus the target they belong to, and finds all three kinds.
+// The business file is written by dispatch.ts itself (its shape is pinned by the
+// business parity test). This module writes the squad and agent-x ones, with the
+// same fields plus the target they belong to, and finds all three kinds.
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -112,7 +112,7 @@ export interface WorkerSession {
   slug: string;
   /** The runtime that finished the work, after any handoff: the session is its. */
   runtime: string;
-  /** Null when the runtime returned none; `nrv revise` then runs a fresh, seeded session. */
+  /** Null when the runtime returned none; `nrv revise` then refuses. */
   sessionId: string | null;
   /** The worker's scaffold dir; the file is written here. */
   projectDir: string;

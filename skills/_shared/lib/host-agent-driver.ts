@@ -63,6 +63,7 @@ import { childDepth, currentDepth, currentRole, DEFAULT_MAX_DEPTH, DEPTH_ENV, ma
 import { runOrcaWorker } from "./orca-worker.ts";
 import { confineToWorkspace, FENCE_FILE_PREFIX, RUN_WORKSPACE_ENV } from "./run-workspace.ts";
 import { claudeRunCost } from "./claude-session-cost.ts";
+import { estimateCostUsd } from "../../harness/lib/cost-estimator.ts";
 import { codexSessionFor, findClaudeTranscript, looksLikeMissingSession } from "./session-capture.ts";
 
 /** `execution.child_env`. The variable NIRVANA_CHILD_ENV wins over any file
@@ -101,12 +102,13 @@ const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR
  * this keeps a prompt from being what pushes it over.
  *
  * A single POSIX-sized number here was not a theoretical gap: the argv adapters
- * (agy, kimi, opencode, pi) would hand Windows a command line between 32 KB and
- * 100 KB believing it safe, and the interpreter route would cut it at 8 KB.
+ * (kimi, opencode, pi; agy until it moved to stdin) would hand Windows a
+ * command line between 32 KB and 100 KB believing it safe, and the interpreter
+ * route would cut it at 8 KB.
  *
- * KNOWN TRADE-OFF, measured: AUTONOMOUS_DIRECTIVE is 2,873 bytes (5,942 until 0.13.9) and
+ * KNOWN TRADE-OFF, measured: AUTONOMOUS_DIRECTIVE is about 3 KB (5,942 bytes until 0.13.9) and
  * `withPreamble` merges it ahead of every prompt, so on Windows the argv branch
- * is effectively unreachable for those four adapters — every dispatch takes the
+ * is effectively unreachable for those three adapters — every dispatch takes the
  * temp-file route. That is deliberate rather than accidental, because no number
  * fixes it: the interpreter's whole budget is 8,191, so directive plus any real
  * prompt cannot fit there regardless. The file channel is the lossless one —
@@ -123,6 +125,11 @@ export const MAX_ARGV_PROMPT_BYTES = process.platform === "win32" ? 6_000 : 100_
  * project or global config, keeps every headless child on its CLI's own
  * approval path; anything else, unset included, is the autonomous default. */
 export const HEADLESS_SKIP_PERMISSIONS_ENV = "NIRVANA_HEADLESS_SKIP_PERMISSIONS";
+
+/** Stamped on the environment of an answer-only child (`noTools`): a call that
+ *  returns a decision and runs no tool, such as the routers. Read by Nirvana's
+ *  agy hook (gemini-session-start.ts), which then injects nothing. */
+export const ANSWER_ONLY_ENV = "NIRVANA_ANSWER_ONLY";
 
 /** True unless the setting (env > project > global config) disables headless autonomy. */
 export function headlessSkipPermissions(): boolean {
@@ -143,7 +150,21 @@ export function headlessClaudeEnv<T extends Record<string, string | undefined>>(
   // deny is one fence; this variable, documented on the same page, is the
   // second. Forced, not defaulted: it is a fence, like the deny it backs.
   if (opts.denySubagents) (env as Record<string, string | undefined>).CLAUDE_CODE_DISABLE_WORKFLOWS = "1";
+  // The context ceiling (execution.context_window): the child compacts its
+  // conversation above it instead of re-reading up to the model's full window
+  // on every call. Verified in claude 2.1.284: the variable caps the window
+  // auto-compaction measures against.
+  const window = contextWindowSetting();
+  if (window > 0) (env as Record<string, string | undefined>).CLAUDE_CODE_AUTO_COMPACT_WINDOW = String(window);
   return env;
+}
+
+/** `execution.context_window` in tokens; 0 when unset, invalid or unreadable. */
+export function contextWindowSetting(): number {
+  try {
+    const v = Number(resolveSetting("execution.context_window").value);
+    return Number.isFinite(v) && v > 0 ? Math.floor(v) : 0;
+  } catch { return 0; }
 }
 
 /** Max persona chars accepted by --append-system-prompt-style flags. */
@@ -217,7 +238,7 @@ function removeTmpFiles(files: string[] | undefined): void {
 /** Every prefix writePromptFile is ever called with (default "nrv-prompt",
  * plus claudeDirectiveArgs' "nrv-directive"). One place, so the reaper below
  * can never drift from what this module actually creates. */
-const TMP_FILE_PREFIXES = ["nrv-prompt-", "nrv-directive-", FENCE_FILE_PREFIX];
+const TMP_FILE_PREFIXES = ["nrv-prompt-", "nrv-directive-", "nrv-lean-settings-", FENCE_FILE_PREFIX];
 
 /**
  * Process-wide safety net for the one gap a `finally`/`settle()` cannot close:
@@ -648,9 +669,9 @@ const RUNTIMES: RuntimeAdapter[] = [
   },
   {
     // Antigravity CLI (`agy`) — Google's agent CLI (Gemini models). `agy --help`
-    // (audited 2026-08-06): -p/--print runs a single prompt non-interactively;
-    // NO stdin channel and NO prompt-file flag documented, so large prompts
-    // degrade to the temp-file bootstrap. --dangerously-skip-permissions for
+    // (audited 2026-08-06): -p/--print runs a single prompt non-interactively.
+    // The message goes on stdin as one stream-json event, whatever its size
+    // (runAntigravity's transport, live on 1.3.3). --dangerously-skip-permissions for
     // autonomous runs (without it agy halts waiting for approval; `agy --help`
     // audited 2026-08-26: "Auto-approve all tool permission requests without
     // prompting").
@@ -659,9 +680,12 @@ const RUNTIMES: RuntimeAdapter[] = [
     buildCall(persona, userMsg) {
       const merged = persona ? `${persona}\n\n---\n\n${userMsg}` : userMsg;
       const autonomy = headlessSkipPermissions() ? ["--dangerously-skip-permissions"] : [];
-      return argvOrPromptFile(merged, (p) => ["-p", p, ...autonomy]);
+      return { args: [...AGY_STREAM_ARGS, ...autonomy, AGY_PROMPT_FROM_STDIN], input: agyStdinMessage(merged) };
     },
-    parseStdout(stdout) { return stdout.trim(); },
+    parseStdout(stdout) {
+      const j = agyStreamResult(stdout);
+      return typeof j?.response === "string" ? j.response.trim() : "";
+    },
     envHints: ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
   },
   {
@@ -776,7 +800,11 @@ export interface HostError {
  * (must still be installed). Caller may also pass `preferred` slug.
  */
 export function detectHost(opts: { preferred?: string } = {}): RuntimeAdapter | null {
-  const preferred = opts.preferred || process.env.NIRVANA_AGENT_RUNTIME;
+  // NIRVANA_HOST_RUNTIME (stamped on every child this driver spawns, or set by
+  // the user) names the session the work belongs to; without it the fallback is
+  // the first installed runtime in roster order, which is not a preference for
+  // any vendor, only the last resort.
+  const preferred = opts.preferred || process.env.NIRVANA_AGENT_RUNTIME || process.env.NIRVANA_HOST_RUNTIME;
   if (preferred) {
     const r = RUNTIMES.find(x => x.name === preferred);
     if (r && whichSync(r.cli)) return r;
@@ -1173,7 +1201,7 @@ export interface RunHeadlessOpts {
   /** Tool allowlist. Default: file + web tools, no Bash. */
   allowedTools?: string[];
   /** An answer-only call: the child gets no tools at all where the CLI can
-   *  say so (claude `--tools ""`, codex's read-only sandbox). A decision step that only returns JSON has nothing to do with a
+   *  say so (claude `--tools ""`, codex's read-only sandbox, agy's plan mode without the bypass). A decision step that only returns JSON has nothing to do with a
    *  tool, and a model holding tools reports its work instead of answering.
    *  Runtimes without such a switch run as before; the caller contains them
    *  with an empty working directory. */
@@ -1360,10 +1388,11 @@ export interface RunHeadlessResult {
    * this flag only states the CLI did not say. */
   costUnavailable?: boolean;
   /** True when `costUsd` is NOT the CLI's figure but the engine's estimate from
-   *  token counts and the model's price (an Orca claude worker, read from its
-   *  transcript). `costUnavailable` stays true beside it: the CLI said nothing. */
+   *  the reported token counts and the model's price (agy reports tokens only).
+   *  `costUnavailable` stays true beside it: the CLI itself said nothing. */
   costEstimated?: boolean;
-  /** The model the run used, when the runner knows it. */
+  /** The model the run used, when the runner knows it (the `--model` it passed,
+   *  or a name in the CLI's output). Lets a later estimate price the tokens. */
   model?: string;
   /** Token usage as the CLI itself reported it (codex `turn.completed.usage`).
    * `cachedInputTokens` is the cached SUBSET of `inputTokens`, as OpenAI counts
@@ -1373,11 +1402,10 @@ export interface RunHeadlessResult {
    * fail the turn (codex: skills budget, an MCP server that did not start), or a
    * grant this runtime's CLI has no flag for. Delivered, not swallowed. */
   warnings?: string[];
-  /** A resume was asked for and the CLI ran the turn in another conversation
-   *  instead (agy: `--continue` lands on whatever conversation it finds, or a
-   *  new one). The run happened without the previous context; `warnings` says
-   *  so in words, and `sessionId` is the conversation it ran in. Never re-run:
-   *  the turn was paid. */
+  /** A resume was asked for and the CLI ran the turn in a NEW conversation
+   *  instead (agy: an unknown `--conversation` id exits 0 on a fresh one). The
+   *  run happened without the previous context; `warnings` says so in words,
+   *  and `sessionId` is the new conversation. Never re-run: the turn was paid. */
   resumeLost?: boolean;
   exitCode: number;
   stderr: string;
@@ -1718,7 +1746,7 @@ function runClaudeCode(opts: RunHeadlessOpts): RunHeadlessResult {
 
   // Full access by default. EXPLICIT caller settings (allowedTools / permissionMode)
   // always take precedence — so focused text-only calls like the brief-proxy or
-  // the team-orchestrator director can lock down permissions without the trust
+  // a decision step can lock down permissions without the trust
   // default overriding them.
   const safe = opts.yolo === false;
   const explicitTools = opts.allowedTools !== undefined;
@@ -1727,6 +1755,27 @@ function runClaudeCode(opts: RunHeadlessOpts): RunHeadlessResult {
   // `claude --help` (audited 2026-09-29): `--tools <tools...>` — 'Use "" to
   // disable all tools'.
   if (opts.noTools) args.push("--tools", "");
+  // An answer-only call also starts lean: it uses no MCP server, no skill and
+  // no hook, and each of them costs startup time and leaks the user's session
+  // rules into the answer (the cards router once wrote the user's prose rules
+  // into its done-criteria). `claude --help` (audited 2026-10-13 on 2.1.296):
+  // `--strict-mcp-config` "Only use MCP servers from --mcp-config" (none given,
+  // so none load) and `--disable-slash-commands` "Disable all skills". Hooks go
+  // through `--settings`: `disableAllHooks` turns hooks off
+  // (code.claude.com/docs/en/settings-reference), and a key passed there
+  // "overrides the same key in your project and user settings files, and a key
+  // you leave out keeps its value from those files" (docs/en/settings), so the
+  // user's model and the rest of their settings stay. `--setting-sources ""`
+  // is never the tool here: it drops the user's configured model too.
+  const settingsTmp: string[] = [];
+  if (opts.noTools) {
+    args.push("--strict-mcp-config", "--disable-slash-commands");
+    if (!opts.claudeSettings) {
+      const lean = claudeLeanSettingsArg(resolveExecutable("claude").shell);
+      args.push("--settings", lean.value);
+      settingsTmp.push(...lean.tmpFiles);
+    }
+  }
   if (explicitTools) {
     if (opts.allowedTools!.length > 0) args.push("--allowedTools", opts.allowedTools!.join(" "));
     // length === 0 → caller asked for "no tools": skip the flag and let
@@ -1792,6 +1841,7 @@ function runClaudeCode(opts: RunHeadlessOpts): RunHeadlessResult {
   } finally {
     spawnDenySubagents = previousDenySubagents;
     removeTmpFiles(directive.tmpFiles);
+    removeTmpFiles(settingsTmp);
   }
 
   const durationMs = Date.now() - started;
@@ -1900,6 +1950,9 @@ function runCodex(opts: RunHeadlessOpts): RunHeadlessResult {
   // the user's own value in force.
   const cxEffort = effortFor(opts, "codex");
   if (cxEffort) args.push("-c", `model_reasoning_effort=${JSON.stringify(cxEffort)}`);
+  // The context ceiling, as codex's own config key (present in codex 0.159).
+  const cxWindow = contextWindowSetting();
+  if (cxWindow > 0) args.push("-c", `model_auto_compact_token_limit=${cxWindow}`);
   // A dispatched worker does not open its own agents (the claude runner's rule):
   // codex ships `multi_agent` on by default, and `agents.enabled = false` is
   // the documented switch (developers.openai.com/codex/subagents, audited
@@ -2014,15 +2067,46 @@ function runCodex(opts: RunHeadlessOpts): RunHeadlessResult {
   };
 }
 
-// Antigravity CLI (`agy`), Google's agent CLI (Gemini models).
-// Prompt delivery: `agy --help` (audited 2026-08-06) documents NO stdin
-// channel and NO prompt-file flag — argv for small prompts, temp-file
-// bootstrap above MAX_ARGV_PROMPT_BYTES. Note: the bootstrap needs the child
-// to READ the file, so in --safe mode (no skip-permissions) a large-prompt
-// run can block on approval — a pre-existing agy constraint (headless agy
-// without the skip flag halts anyway).
-/** The conversation id any JSON line of an agy run named (a partial or
- *  stream-json output carries it before the turn ends), or null. */
+/** Prefix of a session id the engine made up because agy returned none. */
+export const SYNTHETIC_AGY_SID = "nrv-agy-";
+
+/**
+ * agy's stdin transport (verified live on agy 1.3.3, 2026-10-13). Both formats
+ * are stream-json; `-p=` goes LAST and in the `=` form, because a bare `-p`
+ * followed by another flag takes that flag as the prompt and exits 2. Every
+ * other flag sits before it.
+ */
+const AGY_STREAM_ARGS = ["--input-format", "stream-json", "--output-format", "stream-json"];
+const AGY_PROMPT_FROM_STDIN = "-p=";
+
+/** The one NDJSON line a turn sends on stdin. The caller closes stdin after it,
+ *  so agy ends after that turn. The text is passed whole: what comes first in
+ *  it (the fixed part, see withPreamble) is the first thing the model reads. */
+export function agyStdinMessage(text: string): string {
+  return JSON.stringify({ event: AGY_USER_EVENT, message: { content: text } }) + "\n";
+}
+/** agy's stream-json input event name. A constant, not a literal in the object:
+ *  check-audit-parity reads every `event: "<name>"` literal as an audit event. */
+const AGY_USER_EVENT = "user";
+
+/** The `result` object of agy's final `{"event":"result","result":{...}}`
+ *  stream-json line (the same shape `--output-format json` printed whole), or
+ *  null when the stream carries none. */
+export function agyStreamResult(stdout: string): Record<string, any> | null {
+  const lines = (stdout || "").split("\n");
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const t = lines[i].trim();
+    if (!t.startsWith("{")) continue;
+    try {
+      const ev = JSON.parse(t);
+      if (ev?.event === "result" && ev.result && typeof ev.result === "object") return ev.result;
+    } catch { /* not an event line */ }
+  }
+  return null;
+}
+
+/** The conversation id any stream-json event of an agy run named (the `init`
+ *  event carries it before the turn starts), or null. */
 export function agyStreamConversationId(stdout: string): string | null {
   for (const line of (stdout || "").split("\n")) {
     const t = line.trim();
@@ -2040,13 +2124,11 @@ export function agyStreamConversationId(stdout: string): string | null {
 
 /**
  * A resume agy did not honour, read from its output, or null when it held (or
- * nothing says otherwise). This line resumes with `--continue`, which agy
- * 1.3.3 points at the most recent non-empty conversation of the directory and,
- * when there is none, at a new conversation, with exit 0 and no warning. So
- * the sign is the envelope: a conversation id that differs from the one the
- * run recorded. (`conversation "<id>" not found` on stderr, agy's answer to an
- * unknown `--conversation <id>`, counts too.) The turn ran, so the caller must
- * not re-run it: the result carries the warning and the id agy answered from.
+ * nothing says otherwise). Two signs, either one enough: stderr carries
+ * `conversation "<id>" not found` (agy 1.3.3), or the envelope's conversation
+ * id differs from the one asked for. agy exits 0 in both cases, having run the
+ * turn in a new conversation, so the caller must not re-run it: the result
+ * carries the warning and the new id (null when the envelope named none).
  */
 export function agyResumeLost(requested: string, stdout: string, stderr: string): { newId: string | null; warning: string } | null {
   let returned: string | null = null;
@@ -2061,65 +2143,97 @@ export function agyResumeLost(requested: string, stdout: string, stderr: string)
   const why = notFound ? `agy reported conversation "${requested}" not found` : `agy answered from conversation ${returned}`;
   return {
     newId,
-    warning: `agy: resume failed: --continue did not resume conversation ${requested} (${why}); `
-      + `this run went to ${newId ? `conversation ${newId}` : "another conversation"} (a new one, or another of this directory) WITHOUT the previous context`,
+    warning: `agy: resume failed: --conversation ${requested} did not resume that conversation (${why}); `
+      + `this run started a new conversation${newId ? ` ${newId}` : ""} WITHOUT the previous context`,
   };
 }
 
+// Antigravity CLI (`agy`), Google's agent CLI (Gemini models).
+// Prompt delivery: stdin, always, as one stream-json `user` event
+// (AGY_STREAM_ARGS, agyStdinMessage). It used to be argv for small prompts and
+// a "read this file" bootstrap above MAX_ARGV_PROMPT_BYTES, which on Windows
+// (6,000 bytes) was almost every call. Live on agy 1.3.3 (2026-10-13) that
+// broke twice: in `--mode plan` the model reached for a shell command to read
+// the file, agy auto-denied it and the router got an empty answer; and the
+// temp path made every message different, so no prefix cache could hit. Stdin
+// has neither problem and no size limit, and one path for every size keeps the
+// bytes of the message identical however long the request is.
 function runAntigravity(opts: RunHeadlessOpts): RunHeadlessResult {
   const started = Date.now();
-  const sid = opts.sessionId || randomUUID();
-  // agy headless: -p / --print / --prompt all accept the prompt as argv value.
-  // Output formats: "json" (single object) or "stream-json" (NDJSON events).
-  // We use single-object json for parity with runClaudeCode.
+  // `agy` does not let us choose a conversation id up front, so when its
+  // envelope carries none the id below is OURS: a placeholder that names no
+  // conversation in agy. It is marked (SYNTHETIC_AGY_SID) so a resume knows the
+  // difference: a real id resumes THAT conversation (`--conversation <id>`,
+  // `agy --help` audited 2026-10-01), a placeholder can only fall back to
+  // `--continue` (the most recent conversation in this directory), which can
+  // resume the wrong one when two runs share a directory.
+  const sid = opts.sessionId || `${SYNTHETIC_AGY_SID}${randomUUID()}`;
+  // Output is stream-json too (stdin needs it): NDJSON events, the last one
+  // `{"event":"result","result":{...}}` whose object is what
+  // `--output-format json` printed whole, so the handling below is unchanged.
   // Resume = --continue (most recent conversation); we can't set our own id
-  // upfront. Autonomy = --dangerously-skip-permissions (without it agy hangs
-  // waiting for approval).
+  // upfront. Autonomy = --dangerously-skip-permissions (without it headless agy
+  // auto-denies every tool that needs a permission; answer-only calls rely on
+  // exactly that, below).
   //
-  // --output-format json: under non-TTY, `agy -p` in TEXT mode can drop the
-  // final response from stdout (documented terminal-render bug); JSON does not
-  // suffer from it.
+  // Never TEXT output: under non-TTY, `agy -p` in TEXT mode can drop the
+  // final response from stdout (documented terminal-render bug).
   //
   // ONE spawn, never a re-spawn. Since agy 1.2.10 a model or agent error in the
   // middle of a turn exits 3 with an `AGY_ERROR` line, after the turn was paid
-  // for. The retry that used to sit here (without --output-format on any
-  // stderr naming "unknown"/"invalid") matched those messages and ran the whole
-  // turn again. Every supported agy has --output-format (1.3.3 help), so it is
-  // gone: a failed run is reported as failed, and the callers' own recovery
-  // decides.
-  const delivery = argvOrPromptFile(withPreamble(opts), (p) => ["-p", p]);
-  const args = [...delivery.args, "--output-format", "json"];
-  if (opts.sessionId) args.push("--continue");
+  // for. The two retries that used to sit here (without --output-format on any
+  // stderr naming "unknown"/"invalid", and --conversation → --continue on any
+  // stderr naming "conversation") matched those messages and ran the whole
+  // turn again, and `--continue` can attach to another conversation in the
+  // same directory. Every supported agy has --output-format (1.3.3 help), and
+  // no agy output proves that a failed --conversation run never reached the
+  // model, so both are gone: a failed run is reported as failed, and the
+  // callers' own recovery (the delivery pipeline's cold retry) decides.
+  const args = [...AGY_STREAM_ARGS];
+  const resumeById = !!opts.sessionId && !opts.sessionId.startsWith(SYNTHETIC_AGY_SID);
+  if (opts.sessionId) args.push(...(resumeById ? ["--conversation", opts.sessionId!] : ["--continue"]));
   const agyModel = opts.model ?? resolveSystemModel("antigravity-cli");
   if (agyModel) args.push("--model", agyModel);
-  if (opts.yolo !== false) args.push("--dangerously-skip-permissions");
+  // An answer-only call (the routers) runs in agy's plan mode and never with
+  // the bypass, whatever execution.headless_skip_permissions says. Live on agy
+  // 1.3.3 (2026-10-13): `--mode plan` without --dangerously-skip-permissions
+  // answers a JSON-only prompt normally (exit 0, `response` holds it), and a
+  // tool that needs a permission (write_file, command) is auto-denied: exit 0,
+  // empty `response`, `denied_actions` naming it, nothing written. Never
+  // together with `--disable-slash-commands`: agy warns that plan mode "has no
+  // effect while slash command expansion is disabled".
+  if (opts.noTools) args.push("--mode", "plan");
+  else if (opts.yolo !== false) args.push("--dangerously-skip-permissions");
   for (const d of opts.addDirs ?? []) args.push("--add-dir", d);
+  args.push(AGY_PROMPT_FROM_STDIN);
 
-  const spawnOpts = {
+  const r = driverSpawnSync("agy", args, {
     cwd: opts.cwd,
-    encoding: "utf8" as const,
+    input: agyStdinMessage(withPreamble(opts)),
+    encoding: "utf8",
     ...(typeof opts.timeoutMs === "number" ? { timeout: opts.timeoutMs } : {}),
     maxBuffer: 64 * 1024 * 1024,
-  };
-  let r!: SpawnSyncReturns<string>;
-  try {
-    r = driverSpawnSync("agy", args, spawnOpts);
-  } finally {
-    removeTmpFiles(delivery.tmpFiles);
-  }
+  });
 
   const durationMs = Date.now() - started;
   const exitCode = r.status ?? (r.signal ? 124 : 1);
   const stderr = (r.stderr || "").trim();
 
-  const rawStdout = (r.stdout || "").trim();
   let sessionId: string | null = sid;
-  let result = rawStdout;
+  let result = "";
   let envelopeError: string | null = null;
   let costUsd: number | null = null;
   let usage: RunHeadlessResult["usage"];
-  try {
-    const j = JSON.parse(rawStdout);
+  let reportedModel: string | null = null;
+  const j = agyStreamResult(r.stdout || "");
+  // No result event: the turn did not finish (or never started), whatever the
+  // exit code says. stderr carries the reason.
+  if (!j) {
+    envelopeError = salientError(stderr, `agy printed no result event (exit ${exitCode})`);
+    // Killed, timed out or failed mid-turn: the conversation still exists, and
+    // the stream's first event already named it.
+    sessionId = agyStreamConversationId(r.stdout || "") ?? sid;
+  } else {
     sessionId = j.session_id || j.sessionId || j.conversation_id || sid;
     // Token counts (`agy -p --output-format json`, 1.2.13: `usage` carries
     // input_tokens, output_tokens, thinking_tokens, cache_read_tokens and
@@ -2139,35 +2253,63 @@ function runAntigravity(opts: RunHeadlessOpts): RunHeadlessResult {
         reasoningOutputTokens: n(u.thinking_tokens),
       };
     }
-    // JSON format (new builds): the response comes in a field; text (old
-    // builds): the whole stdout IS the response.
     if (typeof j.response === "string") result = j.response;
     else if (typeof j.result === "string") result = j.result;
     // Failure contract: is_error / error in the envelope = failed run.
     if (j.is_error === true) envelopeError = envelopeErrorMessage(j.error) || "agy returned is_error";
     else if (j.error != null) envelopeError = envelopeErrorMessage(j.error);
+    // A tool headless agy cannot ask about was auto-denied and the model gave
+    // no answer: exit 0, `status: SUCCESS`, `response: ""` and `denied_actions`
+    // (agy 1.3.3). That is a failed run, not an empty success, and it is not
+    // re-run: the same prompt asks for the same tool.
+    else if (result.trim() === "" && Array.isArray(j.denied_actions) && j.denied_actions.length) {
+      envelopeError = agyDeniedActionsError(j.denied_actions);
+    }
     if (typeof j.total_cost_usd === "number" && Number.isFinite(j.total_cost_usd)) costUsd = j.total_cost_usd;
-  } catch {
-    // Plain text, or a run killed, timed out or failed mid-turn: keep the whole
-    // stdout, and the conversation id when any event line already named it.
-    sessionId = agyStreamConversationId(rawStdout) ?? sid;
+    if (typeof j.model === "string" && j.model) reportedModel = j.model;
   }
 
-  // A resume agy did not honour: `--continue` with no conversation to continue
-  // (or another one more recent in the directory) exits 0 having run the turn,
-  // paid, elsewhere. Not re-run; said, and the id it ran in kept.
-  const lost = opts.sessionId ? agyResumeLost(opts.sessionId, rawStdout, stderr) : null;
+  // A resume by id that agy did not honour. agy 1.3.3 answers an unknown
+  // `--conversation <id>` with exit 0, `warning: conversation "<id>" not found`
+  // on stderr and a NEW conversation_id in the envelope: the turn ran, paid,
+  // with none of the previous context. Not re-run; said, and the new id kept.
+  const lost = resumeById ? agyResumeLost(opts.sessionId!, j ? JSON.stringify(j) : "", stderr) : null;
   if (lost) sessionId = lost.newId;
+
+  // No USD in agy's envelope (1.3.3: token counts only, and no model name). The
+  // tokens are priced when the model is known, from the envelope or from the
+  // `--model` this run passed, with the estimator's price table; otherwise the
+  // cost stays null, which every reader shows as unknown, never as $0.
+  const model = reportedModel ?? agyModel ?? null;
+  let costEstimated = false;
+  if (costUsd === null && usage && usage.inputTokens + usage.outputTokens > 0 && model) {
+    costUsd = estimateCostUsd("antigravity-cli", model, { costUsd: null, usage } as RunHeadlessResult);
+    costEstimated = costUsd !== null;
+  }
 
   const ok = exitCode === 0 && envelopeError === null;
   return {
     ok, runtime: "antigravity-cli", sessionId, result,
-    costUsd, ...(costUsd === null ? { costUnavailable: true } : {}),
+    costUsd, ...(costEstimated || costUsd === null ? { costUnavailable: true } : {}),
+    ...(costEstimated ? { costEstimated: true } : {}),
+    ...(model ? { model } : {}),
     ...(usage ? { usage } : {}),
     ...(lost ? { resumeLost: true, warnings: [lost.warning] } : {}),
     exitCode, stderr, durationMs,
     error: ok ? undefined : (envelopeError || salientError(stderr, "agy failed")),
   };
+}
+
+/** The error of an agy run that produced no answer because headless agy
+ *  auto-denied the tools it asked for. Names each denied action. */
+export function agyDeniedActionsError(denied: unknown[]): string {
+  const names = denied.map((d: any) => {
+    const action = typeof d?.action === "string" ? d.action : typeof d === "string" ? d : "";
+    const label = typeof d?.display_name === "string" && d.display_name && d.display_name !== action ? ` (${d.display_name})` : "";
+    return action ? `${action}${label}` : "";
+  }).filter(Boolean);
+  return `agy produced no answer: headless agy auto-denied the tool permission(s) it cannot prompt for`
+    + ` (${names.length ? names.join(", ") : "unnamed action"}); not re-run`;
 }
 
 /**
@@ -2749,9 +2891,9 @@ export function runHeadless(opts: RunHeadlessOpts): RunHeadlessResult {
     if (!_warnedUncappable.has(key)) {
       _warnedUncappable.add(key);
       console.error(
-        `[driver] AVISO: teto de $${opts.maxBudgetUsd} pedido, mas o runtime '${opts.runtime}' não aceita limite de gasto — ` +
-        `este run NÃO está limitado. Só claude-code aplica o teto no próprio CLI. ` +
-        `Entre runs, o acumulador de gasto do LLM_CASCADE continua valendo.`,
+        `[driver] WARNING: a ceiling of $${opts.maxBudgetUsd} was requested, but runtime '${opts.runtime}' does not accept a spend limit; ` +
+        `this run is NOT limited. Only claude-code applies the ceiling in its own CLI. ` +
+        `Across runs, the LLM_CASCADE spend accumulator still applies.`,
       );
     }
   }
@@ -2771,7 +2913,11 @@ function dispatchToRunner(opts: RunHeadlessOpts): RunHeadlessResult {
   const previousExtraEnv = spawnExtraEnv;
   spawnAsRuntime = opts.runtime;
   spawnAsRole = opts.dispatchRole ?? null;
-  spawnExtraEnv = opts.env && Object.keys(opts.env).length ? opts.env : null;
+  // An answer-only child (the routers) is marked, so the hooks a runtime runs
+  // around it (Nirvana's own agy PreInvocation hook) can step aside; the depth
+  // variable already marks every dispatched child.
+  const extraEnv = { ...(opts.env ?? {}), ...(opts.noTools ? { [ANSWER_ONLY_ENV]: "1" } : {}) };
+  spawnExtraEnv = Object.keys(extraEnv).length ? extraEnv : null;
   try {
     return dispatchToRunnerInner(opts);
   } finally {
@@ -2811,13 +2957,11 @@ export interface SessionContinuation {
 }
 
 let pendingContinuation: SessionContinuation | null = null;
-/** The roles that produce a run's deliverable as ONE worker: a business
- *  session, the single intake seat and agent-x (both `agent-x`), a squad. A
- *  team seat (`employee`), a planner or an exec never takes a continuation. */
-const WORKER_ROLES = new Set<string>(["business", "squad", "agent-x"]);
+const WORKER_ROLES = new Set<string>(["solo", "squad", "agent-x"]);
 
-/** Hands an earlier session to the next worker this process runs on the same
- *  runtime. Consumed once; null clears it. */
+/** Hands an earlier session to the next worker this process runs (a business's
+ *  solo worker, a squad, agent-x) on the same runtime. Consumed once; null
+ *  clears it. A judge, a router or a reviewer never takes it. */
 export function continueSessionOnNextWorker(c: SessionContinuation | null): void {
   pendingContinuation = c;
 }
@@ -2872,7 +3016,7 @@ function runInWorkspace(requested: RunHeadlessOpts): RunHeadlessResult {
 }
 
 function runConfined(opts: RunHeadlessOpts): RunHeadlessResult {
-  // Inside Orca (host.orca, execution.orca_workers: on) the dispatch runs as a visible
+  // Inside Orca (host.orca, host.orca_workers) the dispatch runs as a visible
   // worker terminal; null means the transport does not apply or could not
   // start, and the headless child below runs exactly as everywhere else.
   const viaOrca = runOrcaWorker(opts);
@@ -2934,8 +3078,7 @@ const RUNTIME_BINS: Record<Runtime, string> = {
  * on Windows, `which` elsewhere. */
 export function runtimeAvailable(runtime: Runtime): boolean {
   // An unknown name is NOT installed, and neither is a retired one (gemini-cli):
-  // the old `?? "gemini"` fallback made any typo report whatever gemini
-  // reported, so a typo or an old config could pass an availability gate.
+  // a typo or an old config must never pass an availability gate.
   const bin = Object.prototype.hasOwnProperty.call(RUNTIME_BINS, runtime) ? RUNTIME_BINS[runtime] : undefined;
   if (!bin) return false;
   const probe = process.platform === "win32" ? "where" : "which";
@@ -2962,6 +3105,19 @@ export function runtimeAvailable(runtime: Runtime): boolean {
  * resolveExecutable now spawns the pair a readable shim names, so the shell branch is the
  * exception rather than the rule. This stays as the defense for whatever falls into it.
  */
+/** The settings an answer-only claude call starts with: hooks off, nothing
+ * else touched. Inline JSON on a direct spawn; under a shell (Windows `.cmd`
+ * shims) the quotes would not survive cmd.exe, so the JSON goes in a temp file
+ * the caller removes, as the directive does. */
+export const CLAUDE_LEAN_SETTINGS = JSON.stringify({ disableAllHooks: true });
+
+export function claudeLeanSettingsArg(shell: boolean): { value: string; tmpFiles: string[] } {
+  if (!shell) return { value: CLAUDE_LEAN_SETTINGS, tmpFiles: [] };
+  const f = path.join(os.tmpdir(), `nrv-lean-settings-${Date.now()}-${Math.random().toString(36).slice(2)}.json`);
+  fs.writeFileSync(f, CLAUDE_LEAN_SETTINGS, "utf8");
+  return { value: f, tmpFiles: [f] };
+}
+
 export function claudeDirectiveArgs(directive: string, shell: boolean): { args: string[]; tmpFiles?: string[] } {
   if (!directive) return { args: [] };
   if (!shell) return { args: ["--append-system-prompt", directive] };

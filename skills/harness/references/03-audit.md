@@ -130,6 +130,13 @@ Event names have two tiers:
 The parity gate `bun scripts/check-audit-parity.ts --strict` fails the build
 when the docs prescribe a non-enum, non-`x_` event or when code emits one.
 
+`x_brief_template` is written once per dispatch (business, squad or agent-x):
+the brief template the run was written with (`template`, `template_origin`
+project/global/engine, `template_path`, `template_sha256`, `template_source`),
+the brief's format (`labels` or `sections`) and the user's words
+(`request_file`, `request_sha256`). Both texts are copied into the run folder,
+`brief-template.md` and `request.md`, so a run can be reproduced from it.
+
 <!-- BEGIN GENERATED: audit-events (scripts/gen-audit-events-doc.ts — do not edit by hand) -->
 
 91 events in the closed enum (declaration order of `ALLOWED_EVENTS` in `lib/audit.js`):

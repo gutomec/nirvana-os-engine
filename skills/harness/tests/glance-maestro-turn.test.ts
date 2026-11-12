@@ -98,10 +98,10 @@ const auditLines = () => {
 };
 
 describe("the maestro directive", () => {
-  test("is a short PT-BR system-prompt suffix, never the harness SKILL.md", () => {
+  test("is a short system-prompt suffix, never the harness SKILL.md", () => {
     expect(MAESTRO_DIRECTIVE.length).toBeLessThan(3000);
-    expect(MAESTRO_DIRECTIVE).toContain("maestro do Nirvana-OS DESTE projeto");
-    expect(MAESTRO_DIRECTIVE).toContain("Nunca pule o gate");
+    expect(MAESTRO_DIRECTIVE).toContain("maestro of Nirvana-OS for THIS project");
+    expect(MAESTRO_DIRECTIVE).toContain("Never skip the gate");
     expect(MAESTRO_DIRECTIVE).toContain("use business <slug>:");
     expect(MAESTRO_DIRECTIVE).not.toContain("## Dispatch cascade");
     expect(maestroDirective(root)).toStartWith(MAESTRO_DIRECTIVE);
@@ -168,9 +168,9 @@ describe("the maestro directive", () => {
       { message_id: "m1", role: "user", content: "Quais empresas eu tenho?" }, { message_id: "m2", role: "assistant", content: "Três: a, b e c." },
       { message_id: "m3", role: "system", content: "infra" }, { message_id: "m4", role: "user", content: "E para jurídico?" },
     ], "m4");
-    expect(recap).toStartWith("Recapitulação da conversa");
-    expect(recap).toContain("- usuário: Quais empresas eu tenho?");
-    expect(recap).toContain("- assistente: Três: a, b e c.");
+    expect(recap).toStartWith("Conversation recap");
+    expect(recap).toContain("- user: Quais empresas eu tenho?");
+    expect(recap).toContain("- assistant: Três: a, b e c.");
     expect(recap).not.toContain("jurídico");
     expect(recap).not.toContain("infra");
   });

@@ -11,6 +11,7 @@
 //   bun quality-gate.ts <artifact_path> --rubrics correctness,structure-bounds
 //   bun quality-gate.ts <artifact_path> --auto                   # explicit auto
 //   bun quality-gate.ts <artifact_path> --offline                # skip LLM rubrics
+//   bun quality-gate.ts --batch --with-revisions <artifact>...   # one judge session, many files
 //
 // Exit codes:
 //   0 = PASS (all selected rubrics passed)
@@ -25,6 +26,20 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { quotaStop } from "../lib/quota-detector.ts";
 
+export type RubricResult = {
+  name: string;
+  passed: boolean;
+  score: number;
+  reasoning: string;
+  fix_list: string[];
+  skipped?: boolean;
+  /** Judge rubrics only: the rubric's critique holds a material (`high`) defect. */
+  material?: boolean;
+};
+
+const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR || (fs.existsSync(path.join(os.homedir(), ".nirvana", "skills")) ? path.join(os.homedir(), ".nirvana", "skills") : path.join(os.homedir(), ".claude", "skills"));
+const RUBRICS_DIR = path.join(SKILLS_ROOT, "harness", "rubrics");
+
 /** The judge could not run because its runtime's quota is spent. */
 export type JudgeUnavailable = { reason: "quota"; reset_at: string; hint: string };
 
@@ -34,23 +49,11 @@ export function judgeQuotaOf(errorText: string | null | undefined): JudgeUnavail
   return q ? { reason: "quota", reset_at: q.resetAt, hint: q.hint } : null;
 }
 
-export type RubricResult = {
-  name: string;
-  passed: boolean;
-  score: number;
-  reasoning: string;
-  fix_list: string[];
-  skipped?: boolean;
-};
-
-const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR || (fs.existsSync(path.join(os.homedir(), ".nirvana", "skills")) ? path.join(os.homedir(), ".nirvana", "skills") : path.join(os.homedir(), ".claude", "skills"));
-const RUBRICS_DIR = path.join(SKILLS_ROOT, "harness", "rubrics");
-
 /** One verdict schema across heuristic and judge modes (routing-360 Phase 4).
  * Extra mode-specific fields may ride along, but every verdict carries these. */
 export type GateVerdict = {
   status: "PASS" | "FAIL" | "INDETERMINATE";
-  mode: "heuristic" | "judge";
+  mode: "heuristic" | "judge" | "decision";
   score: number;
   results: RubricResult[];
   critique?: unknown[];
@@ -90,7 +93,7 @@ export function rubricsForExt(ext: string): string[] {
     case ".webp":
       return ["brief-fidelity"];
     case ".html":
-      return ["html-valid", "secret-leak"];
+      return ["html-valid", "html-layout", "secret-leak"];
     case ".css":
       return ["css-composite-alpha", "secret-leak"];
     case ".pdf":
@@ -102,6 +105,60 @@ export function rubricsForExt(ext: string): string[] {
     default:
       return ["correctness", "secret-leak"];
   }
+}
+
+/** The rubrics that run on a file whichever mode judges it: a leaked secret,
+ *  a file that is not what its extension promises and a page that does not fit
+ *  a phone are measured facts, not opinions, so the judge's verdict never
+ *  replaces them. The delivery pipeline counts a failure among the first two
+ *  kinds as serious (delivery-pipeline.ts SERIOUS_RUBRICS); a layout finding
+ *  goes back for correction and is not. */
+export const ALWAYS_RUBRICS: ReadonlySet<string> = new Set([
+  "secret-leak", "json-valid", "html-valid", "html-layout", "pdf-valid", "yaml-valid", "brief-fidelity",
+]);
+
+/** The heuristic rubrics of `ext` that run beside the judge. */
+export function alwaysRubricsForExt(ext: string): string[] {
+  return rubricsForExt(ext).filter((r) => ALWAYS_RUBRICS.has(r));
+}
+
+const TEXT_RUBRICS = ["prose_longform", "prose_shortform", "data_research", "juridical", "mind_clone_voice_fidelity", "video"];
+
+/** The judge rubrics a file of this extension may be graded by, and the one it
+ *  gets when no `produces` slug picks among them. The EXTENSION decides the
+ *  family first: a business that produces a landing page and a report used to
+ *  have its .md report judged by the design rubric, because that was the first
+ *  rubric its produces list matched. */
+export function judgeRubricFamily(ext: string): { allowed: ReadonlySet<string>; fallback: string } {
+  switch (ext.toLowerCase()) {
+    case ".ts": case ".js": case ".py": case ".css":
+      return { allowed: new Set(["code"]), fallback: "code" };
+    case ".png": case ".jpg": case ".jpeg": case ".webp":
+      return { allowed: new Set(["image"]), fallback: "image" };
+    case ".md":
+      return { allowed: new Set(TEXT_RUBRICS), fallback: "prose_longform" };
+    case ".html":
+      return { allowed: new Set([...TEXT_RUBRICS, "design"]), fallback: "prose_longform" };
+    case ".json": case ".yaml": case ".yml":
+      return { allowed: new Set([...TEXT_RUBRICS, "code"]), fallback: "prose_shortform" };
+    default:
+      return { allowed: new Set(TEXT_RUBRICS), fallback: "prose_shortform" };
+  }
+}
+
+/** The name of the judge rubric for `ext`: the first rubric the produces slugs
+ *  matched that belongs to the extension's family, else the family's fallback. */
+export function pickJudgeRubricName(ext: string, matched: readonly string[]): string {
+  const family = judgeRubricFamily(ext);
+  return matched.find((name) => family.allowed.has(name)) ?? family.fallback;
+}
+
+/** Every judge rubric a file is graded by. An HTML page is read twice: for what
+ *  it says (the rubric its family or produces picks) and for how it is built
+ *  (design), and it passes only when both pass. Other files get one rubric. */
+export function judgeRubricNames(ext: string, matched: readonly string[]): string[] {
+  const first = pickJudgeRubricName(ext, matched);
+  return ext.toLowerCase() === ".html" && first !== "design" ? [first, "design"] : [first];
 }
 
 async function runRubric(name: string, artifact: string, content: string, opts: { offline: boolean }): Promise<RubricResult> {
@@ -142,7 +199,23 @@ export function revisionFixes(critique: { severity: string; suggested_fix: strin
 // by --produces, calls the host LLM runtime (codex/claude/agy via
 // host-agent-driver), and loops judge→critique→revise up to --max-revisions.
 // Falls back to heuristics with a warning if no runtime is available.
-async function runWithRevisions(artifact: string, content: string, args: string[]): Promise<number> {
+
+type SelectorMod = typeof import("../lib/rubric-selector.ts");
+type JudgeMod = typeof import("../lib/judge.ts");
+type Rubric = NonNullable<ReturnType<SelectorMod["getRubric"]>>;
+type JudgeVerdict = Awaited<ReturnType<JudgeMod["judge"]>>;
+
+/** What every judged file of one gate call shares: the produces slugs, the
+ *  brief and the judge modules. null when the judge cannot be loaded. */
+interface JudgeContext {
+  produces: string[];
+  maxRev: number;
+  brief?: string;
+  selector: SelectorMod;
+  judgeMod: JudgeMod;
+}
+
+async function judgeContext(args: string[]): Promise<JudgeContext | null> {
   const producesArg = args.find(a => a.startsWith("--produces="));
   const produces = producesArg ? producesArg.slice("--produces=".length).split(",").map(s => s.trim()) : [];
   const maxRev = parseInt(args.find(a => a.startsWith("--max-revisions="))?.split("=")[1] || "2", 10);
@@ -152,87 +225,74 @@ async function runWithRevisions(artifact: string, content: string, args: string[
   const briefFileArg = args.find(a => a.startsWith("--brief-file="))?.slice("--brief-file=".length);
   let brief: string | undefined;
   if (briefFileArg) { try { brief = fs.readFileSync(briefFileArg, "utf8").trim() || undefined; } catch { brief = undefined; } }
-
-  let selector: typeof import("../lib/rubric-selector.ts");
-  let revision: typeof import("../lib/revision-dispatch.ts");
   try {
-    selector = await import("../lib/rubric-selector.ts");
-    revision = await import("../lib/revision-dispatch.ts");
+    const selector = await import("../lib/rubric-selector.ts");
+    await import("../lib/revision-dispatch.ts");
+    const judgeMod = await import("../lib/judge.ts");
+    return { produces, maxRev, brief, selector, judgeMod };
   } catch (e: any) {
     console.error(`--with-revisions unavailable (${e.message}); falling back to heuristic rubrics.`);
-    return -1; // signal fallback
+    return null;
   }
+}
 
-  // Pick the rubric. If --produces given, select by produces-slug mapping.
-  // Otherwise infer a rubric NAME from the file extension and fetch it directly.
+/** The judge rubrics of one file: the file's extension names the family, and a
+ *  produces slug chooses within it (pickJudgeRubricName). Empty when none resolves. */
+function judgeRubricsFor(ctx: JudgeContext, artifact: string): Rubric[] {
   const ext = path.extname(artifact).toLowerCase();
-  let rubric: import("../lib/rubric-selector.ts").RubricMeta | null = null;
-  if (produces.length) {
-    // selectRubricsForProduces returns {rubrics, fallback_used, reason} — the
-    // old `[0]` indexing on the object was a latent defect that never fired
-    // because the judge path was unreachable (unconditional --offline).
-    const sel = selector.selectRubricsForProduces(produces);
-    rubric = (sel.fallback_used ? null : sel.rubrics[0]) || null;
-    if (!rubric) console.error(`No .md rubric matches produces=[${produces.join(",")}]; trying extension inference.`);
+  const matched = ctx.produces.length ? (() => {
+    const sel = ctx.selector.selectRubricsForProduces(ctx.produces);
+    return sel.fallback_used ? [] : sel.rubrics.map((r) => r.name);
+  })() : [];
+  const rubricNames = judgeRubricNames(ext, matched);
+  if (ctx.produces.length && !matched.includes(rubricNames[0])) {
+    console.error(`No ${ext} rubric matches produces=[${ctx.produces.join(",")}]; using ${rubricNames[0]}, the one the extension implies.`);
   }
-  if (!rubric) {
-    // Rubric names in frontmatter use underscores (prose_longform, etc.)
-    const inferredName = ext === ".md" ? "prose_longform"
-      : [".ts", ".js", ".py"].includes(ext) ? "code"
-      : [".png", ".jpg", ".jpeg"].includes(ext) ? "image"
-      : "prose_shortform";
-    rubric = selector.getRubric(inferredName);
-  }
-  if (!rubric) {
-    console.error(`No .md rubric resolvable; falling back to heuristics.`);
-    return -1;
-  }
+  return rubricNames.map((name) => ctx.selector.getRubric(name)).filter((r): r is Rubric => !!r);
+}
 
-  // The revise callback: for the CLI we don't auto-regenerate (that needs the
-  // dispatching agent's context). Instead we run a single judge pass and, if it
-  // fails, surface the critique for the agent to act on. A maestro embedding
-  // this can pass a real ReviseFn that re-dispatches.
-  const judgeMod = await import("../lib/judge.ts");
-  const result = await judgeMod.judge(
-    { rubric, artifact: content, brief, trace_id: process.env.NIRVANA_TRACE_ID || undefined,
-      business_slug: process.env.NIRVANA_BUSINESS_SLUG || undefined },
-  );
-  // No verdict came back (no runtime, a failed call, an answer that is not the
-  // schema). That says nothing about the artifact, so it is not a fail: the
-  // heuristic rubrics decide this file, as they do with the judge off.
-  if (!result.schema_valid) {
-    // A spent quota is not "no verdict": the judge could not run. Say so and
-    // decide nothing, instead of letting the heuristics pass or fail the file.
-    const unavailable = result.judge_runtime === "error" ? judgeQuotaOf((result.schema_errors ?? []).join("\n")) : null;
-    if (unavailable) {
-      console.error(`[gate] the judge's runtime is out of quota (${unavailable.hint}): ${path.basename(artifact)} is NOT judged.`);
-      console.log(JSON.stringify({
-        status: "INDETERMINATE", mode: "unjudged", score: 0, results: [], artifact,
-        timestamp: new Date().toISOString(), judge_unavailable: unavailable,
-      }, null, 2));
-      return 3;
-    }
-    console.error(`[gate] judge gave no usable verdict (${(result.schema_errors ?? []).join(", ") || result.judge_runtime}); the heuristic rubrics decide ${path.basename(artifact)}.`);
-    return -1;
-  }
+/** The gate verdict of a judged file, from its judge verdicts (one per judge
+ *  rubric) and the checks no judge verdict replaces. Writes the file's audit line. */
+async function judgedVerdict(artifact: string, content: string, verdicts: Array<{ rubric: Rubric; result: JudgeVerdict }>, maxRev: number): Promise<GateVerdict> {
+  const ext = path.extname(artifact).toLowerCase();
+  const rubric = { name: verdicts.map((v) => v.rubric.name).join("+") };
+  const critique = verdicts.flatMap((v) => v.result.critique);
+  const result = {
+    verdict: verdicts.every((v) => v.result.verdict === "pass") ? "pass" : "fail",
+    total_score: Math.min(...verdicts.map((v) => v.result.total_score)),
+    critique,
+    criteria_scores: Object.assign({}, ...verdicts.map((v) => v.result.criteria_scores)),
+    judge_runtime: verdicts[0].result.judge_runtime,
+  };
+
+  // The checks no judge verdict replaces: secret-leak and the validity rubric
+  // of the extension run on every file, and a failure among them fails the
+  // file whatever the judge said.
+  const always: RubricResult[] = [];
+  for (const name of alwaysRubricsForExt(ext)) always.push(await runRubric(name, artifact, content, { offline: true }));
+  const alwaysFailed = always.filter(r => !r.passed && !r.skipped);
+  const judgePassed = result.verdict === "pass";
 
   // Normalized verdict schema {status, mode, score, results[], critique?} —
   // same shape the heuristic path prints, so callers (delivery-pipeline's
   // runGateOnce) parse ONE contract. Judge-specific fields ride along.
   const out: GateVerdict = {
-    status: result.verdict === "pass" ? "PASS" : "FAIL",
+    status: judgePassed && alwaysFailed.length === 0 ? "PASS" : "FAIL",
     mode: "judge",
     score: result.total_score,
-    results: [{
-      name: rubric.name,
-      passed: result.verdict === "pass",
-      score: result.total_score,
-      reasoning: result.critique.map(c => `[${c.severity}] ${c.issue}`).join("; ") || "judge verdict",
-      // What a revision is asked to fix: the material items first, then the
-      // medium ones. Low items (style, polish) stay in `critique` as notes and
-      // never become revision work, unless nothing else explains a low score.
-      fix_list: revisionFixes(result.critique),
-    }],
+    // One result per judge rubric. What a revision is asked to fix: the material
+    // items first, then the medium ones. Low items (style, polish) stay in
+    // `critique` as notes and never become revision work, unless nothing else
+    // explains a low score. `material` says the rubric's own critique holds a
+    // material defect, which the delivery pipeline counts as serious.
+    results: [...verdicts.map((v) => ({
+      name: v.rubric.name,
+      passed: v.result.verdict === "pass",
+      score: v.result.total_score,
+      reasoning: v.result.critique.map(c => `[${c.severity}] ${c.issue}`).join("; ") || "judge verdict",
+      fix_list: v.result.verdict === "pass" ? [] : revisionFixes(v.result.critique),
+      material: v.result.critique.some(c => c.severity === "high"),
+    })), ...always],
     critique: result.critique,
     artifact,
     timestamp: new Date().toISOString(),
@@ -244,7 +304,6 @@ async function runWithRevisions(artifact: string, content: string, args: string[
     judge_runtime: result.judge_runtime,
     max_revisions: maxRev,
   };
-  console.log(JSON.stringify(out, null, 2));
 
   // Audit
   try {
@@ -254,8 +313,9 @@ async function runWithRevisions(artifact: string, content: string, args: string[
     const _stamp = require(path.join(SKILLS_ROOT, "_shared/lib/audit-provenance.ts")).stamp;
     fs.appendFileSync(path.join(dir, "audit.jsonl"), JSON.stringify(_stamp({
       ts: out.timestamp,
-      event: result.verdict === "pass" ? "gate_passed" : "gate_failed",
+      event: out.status === "PASS" ? "gate_passed" : "gate_failed",
       mode: "with-revisions",
+      ...(alwaysFailed.length ? { failed_rubrics: alwaysFailed.map(r => r.name) } : {}),
       trace_id: process.env.NIRVANA_TRACE_ID || null,
       project_id: process.env.NIRVANA_PROJECT_ID || null,
       business_slug: process.env.NIRVANA_BUSINESS_SLUG || null,
@@ -269,51 +329,194 @@ async function runWithRevisions(artifact: string, content: string, args: string[
     })) + "\n");
   } catch { /* non-fatal */ }
 
-  return result.verdict === "pass" ? 0 : 1;
+  return out;
 }
 
-async function main() {
-  const args = process.argv.slice(2);
-  const artifact = args.find(a => !a.startsWith("--"));
-  if (!artifact || !fs.existsSync(artifact)) {
-    console.error("Usage: bun quality-gate.ts <artifact_path> [--rubrics list] [--auto] [--offline]");
-    console.error("       bun quality-gate.ts <artifact_path> --with-revisions [--produces=slug] [--max-revisions=N]");
-    if (artifact) console.error(`Artifact not found: ${artifact}`);
-    process.exit(2);
+/** The gate's fallback when the LLM judge is out of quota: a decision model
+ *  (API or local only) answers whether the artifact meets the brief and rubric,
+ *  and grades it 0-4. null when no provider answers, the confidence is below
+ *  decision.min_confidence, or the two answers disagree. */
+export async function decisionVerdict(
+  rubric: { name: string; display_name?: string; file_path?: string },
+  content: string, brief: string | undefined,
+  decideFn?: typeof import("../../_shared/lib/decision-model.ts").decide,
+): Promise<{ pass: boolean; score: number; meets: number; level: number; confidence: number; provider: string } | null> {
+  if (!content.trim()) return null;
+  const dm = await import("../../_shared/lib/decision-model.ts");
+  let rubricText = "";
+  try { rubricText = rubric.file_path ? fs.readFileSync(rubric.file_path, "utf8").slice(0, 8_000) : ""; } catch { /* the name alone */ }
+  const state = [
+    brief ? `BRIEF:\n${brief.slice(0, 6_000)}` : "",
+    `RUBRIC (${rubric.display_name ?? rubric.name}):\n${rubricText || rubric.name}`,
+    `ARTIFACT:\n${content.slice(0, 40_000)}`,
+  ].filter(Boolean).join("\n\n");
+  const r = await (decideFn ?? dm.decide)({
+    state,
+    questions: {
+      meets: { type: "yes_no", instructions: "The ARTIFACT delivers what the BRIEF asks and meets the RUBRIC's criteria." },
+      quality: { type: "score", instructions: "Grade the ARTIFACT against the RUBRIC.", levels: [
+        "unusable or off-brief", "major gaps against the rubric", "usable, with fixes the rubric requires",
+        "good: meets the rubric", "excellent: exceeds the rubric",
+      ] },
+    },
+  }, { apiOnly: true });
+  if (dm.isDecisionError(r)) return null;
+  const meets = r.answers.meets?.type === "yes_no" ? r.answers.meets.probability : null;
+  const q = r.answers.quality?.type === "score" ? r.answers.quality : null;
+  if (meets === null || !q || q.confidence === null) return null;
+  const floor = Number(dm.settingText("decision.min_confidence") || 0.7);
+  if (q.confidence < floor) return null;
+  const pass = meets >= 0.5 && q.score >= 2.5;
+  const fail = meets < 0.5 && q.score < 2.5;
+  if (!pass && !fail) return null;
+  return { pass, score: Math.round((q.score / 4) * 100) / 100, meets, level: q.score, confidence: q.confidence, provider: r.provider };
+}
+
+const BINARY_EXTS = [".png", ".jpg", ".jpeg", ".webp", ".pdf"];
+
+function readArtifact(artifact: string): string {
+  return BINARY_EXTS.includes(path.extname(artifact).toLowerCase()) ? "" : fs.readFileSync(artifact, "utf8");
+}
+
+async function runWithRevisions(artifact: string, content: string, args: string[]): Promise<number> {
+  const ctx = await judgeContext(args);
+  if (!ctx) return -1; // signal fallback
+  const rubrics = judgeRubricsFor(ctx, artifact);
+  if (!rubrics.length) {
+    console.error(`No .md rubric resolvable; falling back to heuristics.`);
+    return -1;
   }
 
-  const offline = args.includes("--offline");
-
-  // --with-revisions path: LLM judge + revision loop (nirvana-evolution).
-  if (args.includes("--with-revisions") && !offline) {
-    const ext0 = path.extname(artifact).toLowerCase();
-    const isBin0 = [".png", ".jpg", ".jpeg", ".webp", ".pdf"].includes(ext0);
-    const content0 = isBin0 ? "" : fs.readFileSync(artifact, "utf8");
-    const code = await runWithRevisions(artifact, content0, args);
-    if (code >= 0) process.exit(code);
-    // code === -1 → fall through to heuristic path below
-  }
-  const rubricsArg = args.find(a => a.startsWith("--rubrics="));
-  let rubrics: string[];
-  if (rubricsArg) {
-    rubrics = rubricsArg.slice("--rubrics=".length).split(",").map(s => s.trim()).filter(Boolean);
-  } else {
-    rubrics = rubricsForExt(path.extname(artifact));
-    // The _SUMMARY handoff gets the WARNING-only context-budget check.
-    if (path.basename(artifact) === "_SUMMARY.md" && !rubrics.includes("summary-bounds")) {
-      rubrics.push("summary-bounds");
+  // The revise callback: for the CLI we don't auto-regenerate (that needs the
+  // dispatching agent's context). Instead we run a single judge pass and, if it
+  // fails, surface the critique for the agent to act on. A maestro embedding
+  // this can pass a real ReviseFn that re-dispatches.
+  const verdicts: Array<{ rubric: Rubric; result: JudgeVerdict }> = [];
+  for (const rubric of rubrics) {
+    const result = await ctx.judgeMod.judge(
+      { rubric, artifact: content, brief: ctx.brief, trace_id: process.env.NIRVANA_TRACE_ID || undefined,
+        business_slug: process.env.NIRVANA_BUSINESS_SLUG || undefined },
+    );
+    if (result.schema_valid) { verdicts.push({ rubric, result }); continue; }
+    console.error(`[gate] judge gave no usable ${rubric.name} verdict (${(result.schema_errors ?? []).join(", ") || result.judge_runtime}).`);
+    // A spent quota is not "no verdict": the judge could not run, and every
+    // other rubric would meet the same limit. Say so, and decide nothing.
+    const unavailable = result.judge_runtime === "error" ? judgeQuotaOf((result.schema_errors ?? []).join("\n")) : null;
+    if (unavailable) {
+      // A hosted or local decision model can still grade the file, for cents,
+      // when it is confident enough. Otherwise the file stays unjudged.
+      const fallback = await decisionVerdict(rubric, content, ctx.brief);
+      if (fallback) {
+        console.error(`[gate] the judge's runtime is out of quota (${unavailable.hint}): ${path.basename(artifact)} graded by the decision model (${fallback.provider}, confidence ${fallback.confidence.toFixed(2)}).`);
+        const out: GateVerdict = {
+          status: fallback.pass ? "PASS" : "FAIL", mode: "decision", score: fallback.score,
+          results: [{ name: rubric.name, passed: fallback.pass, score: fallback.score,
+            reasoning: `decision model ${fallback.provider}: meets brief p=${fallback.meets.toFixed(2)}, quality ${fallback.level.toFixed(1)}/4`,
+            fix_list: fallback.pass ? [] : ["Re-judge with the LLM judge once its quota resets: the decision model only grades, it does not explain."] }],
+          artifact, timestamp: new Date().toISOString(), judge_unavailable: unavailable, decision_provider: fallback.provider,
+        };
+        console.log(JSON.stringify(out, null, 2));
+        return fallback.pass ? 0 : 1;
+      }
+      console.error(`[gate] the judge's runtime is out of quota (${unavailable.hint}): ${path.basename(artifact)} is NOT judged.`);
+      console.log(JSON.stringify({
+        status: "INDETERMINATE", mode: "unjudged", score: 0, results: [], artifact,
+        timestamp: new Date().toISOString(), judge_unavailable: unavailable,
+      }, null, 2));
+      return 3;
     }
   }
-
-  if (rubrics.length === 0) {
-    console.error("No rubrics applicable. Use --rubrics= explicitly.");
-    process.exit(2);
+  // No verdict came back (no runtime, a failed call, an answer that is not the
+  // schema). That says nothing about the artifact, so it is not a fail: the
+  // heuristic rubrics decide this file, as they do with the judge off, and the
+  // verdict says `mode: "heuristic"`.
+  if (!verdicts.length) {
+    console.error(`[gate] the heuristic rubrics decide ${path.basename(artifact)}.`);
+    return -1;
   }
+  const out = await judgedVerdict(artifact, content, verdicts, ctx.maxRev);
+  console.log(JSON.stringify(out, null, 2));
+  return out.status === "PASS" ? 0 : 1;
+}
 
+/** What `--batch` prints: a verdict per file it could decide, and the files it
+ *  could not (the batched answer did not parse, or skipped them), which the
+ *  caller judges one by one. */
+export type GateBatchOutput = {
+  mode: "batch";
+  verdicts: Record<string, GateVerdict>;
+  unjudged: string[];
+  /** Set when the judge's runtime is out of quota: no file of the batch was
+   *  judged, and none was handed to the heuristics in its place. */
+  judge_unavailable?: JudgeUnavailable;
+};
+
+/**
+ * --batch: judge several files in ONE judge session (judge.ts judgeBatch).
+ * Every file gets the same verdict shape as a single-file call. A batched
+ * answer that does not parse leaves its files `unjudged`, for one call each; a
+ * judge that cannot be reached at all sends them to the heuristics, as the
+ * single-file path does, since a second call would fail the same way.
+ */
+async function runBatch(artifacts: string[], args: string[]): Promise<GateBatchOutput> {
+  const out: GateBatchOutput = { mode: "batch", verdicts: {}, unjudged: [] };
+  const ctx = await judgeContext(args);
+  const heuristic = async (a: string) => { out.verdicts[a] = await heuristicVerdict(a, defaultRubrics(a), false); };
+  if (!ctx) { for (const a of artifacts) await heuristic(a); return out; }
+
+  // Labels relative to the files' common folder: the judge needs names, not this machine's paths.
+  const dirs = artifacts.map(a => path.dirname(path.resolve(a)));
+  let common = dirs[0] ?? "";
+  while (common && !dirs.every(d => d === common || d.startsWith(common + path.sep))) {
+    const up = path.dirname(common);
+    if (up === common) break;
+    common = up;
+  }
+  const items: Array<{ id: string; label: string; artifact: string; rubrics: Rubric[]; file: string }> = [];
+  for (const a of artifacts) {
+    const rubrics = judgeRubricsFor(ctx, a);
+    if (!rubrics.length) { await heuristic(a); continue; }
+    items.push({ id: `F${items.length + 1}`, label: path.relative(common, path.resolve(a)).replace(/\\/g, "/"), artifact: readArtifact(a), rubrics, file: a });
+  }
+  if (!items.length) return out;
+
+  const res = await ctx.judgeMod.judgeBatch({
+    items, brief: ctx.brief,
+    trace_id: process.env.NIRVANA_TRACE_ID || undefined, business_slug: process.env.NIRVANA_BUSINESS_SLUG || undefined,
+  });
+  if (!res.ok) console.error(`[gate] the batched judge gave no verdict (${res.reason}: ${res.error}).`);
+  const unavailable = !res.ok && res.reason === "call_failed" ? judgeQuotaOf(res.error) : null;
+  if (unavailable) {
+    console.error(`[gate] the judge's runtime is out of quota (${unavailable.hint}): this batch is NOT judged.`);
+    out.judge_unavailable = unavailable;
+    return out;
+  }
+  for (const it of items) {
+    if (!res.ok) {
+      if (res.reason === "unparseable") out.unjudged.push(it.file);
+      else await heuristic(it.file);
+      continue;
+    }
+    const got = res.verdicts.get(it.id);
+    const verdicts = it.rubrics.flatMap(rubric => { const result = got?.get(rubric.name); return result ? [{ rubric, result }] : []; });
+    if (verdicts.length !== it.rubrics.length) { out.unjudged.push(it.file); continue; }
+    out.verdicts[it.file] = await judgedVerdict(it.file, it.artifact, verdicts, ctx.maxRev);
+  }
+  return out;
+}
+
+/** The heuristic rubrics of a file when none are named on the command line. */
+function defaultRubrics(artifact: string): string[] {
+  const rubrics = rubricsForExt(path.extname(artifact));
+  // The _SUMMARY handoff gets the WARNING-only context-budget check.
+  if (path.basename(artifact) === "_SUMMARY.md" && !rubrics.includes("summary-bounds")) rubrics.push("summary-bounds");
+  return rubrics;
+}
+
+/** The heuristic verdict of one file over `rubrics`. Writes the file's audit line. */
+async function heuristicVerdict(artifact: string, rubrics: string[], offline: boolean): Promise<GateVerdict> {
   // Read content. For binary (images), we still load — rubrics may stat instead.
-  const ext = path.extname(artifact).toLowerCase();
-  const isBinary = [".png", ".jpg", ".jpeg", ".webp", ".pdf"].includes(ext);
-  const content = isBinary ? "" : fs.readFileSync(artifact, "utf8");
+  const content = readArtifact(artifact);
 
   const results: RubricResult[] = [];
   for (const r of rubrics) {
@@ -336,8 +539,6 @@ async function main() {
     score_avg: Math.round(avg * 100) / 100,
     timestamp: new Date().toISOString(),
   };
-
-  console.log(JSON.stringify(verdict, null, 2));
 
   // Audit emit
   try {
@@ -368,8 +569,53 @@ async function main() {
   } catch {
     // non-fatal
   }
+  return verdict;
+}
 
-  process.exit(allPass ? 0 : 1);
+async function main() {
+  const args = process.argv.slice(2);
+  // --batch <file>...: one judge session for every file (the delivery
+  // pipeline's batched judging); prints a GateBatchOutput and exits 0.
+  if (args.includes("--batch")) {
+    const files = args.filter(a => !a.startsWith("--"));
+    const missing = files.filter(f => !fs.existsSync(f));
+    if (!files.length || missing.length) {
+      console.error("Usage: bun quality-gate.ts --batch --with-revisions [--produces=slug] [--brief-file=path] <artifact>...");
+      if (missing.length) console.error(`Artifact not found: ${missing.join(", ")}`);
+      process.exit(2);
+    }
+    console.log(JSON.stringify(await runBatch(files, args), null, 2));
+    process.exit(0);
+  }
+  const artifact = args.find(a => !a.startsWith("--"));
+  if (!artifact || !fs.existsSync(artifact)) {
+    console.error("Usage: bun quality-gate.ts <artifact_path> [--rubrics list] [--auto] [--offline]");
+    console.error("       bun quality-gate.ts <artifact_path> --with-revisions [--produces=slug] [--max-revisions=N]");
+    if (artifact) console.error(`Artifact not found: ${artifact}`);
+    process.exit(2);
+  }
+
+  const offline = args.includes("--offline");
+
+  // --with-revisions path: LLM judge + revision loop (nirvana-evolution).
+  if (args.includes("--with-revisions") && !offline) {
+    const code = await runWithRevisions(artifact, readArtifact(artifact), args);
+    if (code >= 0) process.exit(code);
+    // code === -1 → fall through to heuristic path below
+  }
+  const rubricsArg = args.find(a => a.startsWith("--rubrics="));
+  const rubrics = rubricsArg
+    ? rubricsArg.slice("--rubrics=".length).split(",").map(s => s.trim()).filter(Boolean)
+    : defaultRubrics(artifact);
+
+  if (rubrics.length === 0) {
+    console.error("No rubrics applicable. Use --rubrics= explicitly.");
+    process.exit(2);
+  }
+
+  const verdict = await heuristicVerdict(artifact, rubrics, offline);
+  console.log(JSON.stringify(verdict, null, 2));
+  process.exit(verdict.status === "PASS" ? 0 : 1);
 }
 
 // Guarded so lib consumers (delivery-pipeline imports rubricsForExt /

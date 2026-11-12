@@ -1,6 +1,6 @@
 # squads · Reusable Multi-Agent Workflow Skill
 
-> **Squad Protocol v5** (with v4 backward compat) · zero-deps · capability-first
+> **Squad Protocol v6** (v4 and v5 squads load unchanged) · zero-deps · capability-first
 
 Create, validate, index, and invoke **squads** — portable multi-agent teams that expose **capabilities** discoverable by the harness for BM25 routing. Where `businesses` are persistent organizations with hierarchy and memory, **squads are reusable workflow units**: a fixed roster of agents with declared capabilities, tasks, and workflows that produce well-defined outputs.
 
@@ -33,14 +33,14 @@ bun ~/.nirvana/skills/squads/scripts/list-squads.ts   # auto-bootstrap registry
 
 ---
 
-## Project scoping (NIRVANA_SCOPE)
+## Project scoping
 
-Squads can be **global** (visible to every project), **project-local** (visible only inside one project), or **merged** (project overrides global by slug). Set `NIRVANA_SCOPE` in `<project>/.env`:
+Squads can be **global** (visible to every project), **project-local** (visible only inside one project), or **merged** (project overrides global by slug). The mode is `scope` in `<project>/.nirvana/project.yaml`, set with `nrv init --scope=<mode>`:
 
-```bash
-NIRVANA_SCOPE=global   # ~/squads/* only — default, full backward compat
-NIRVANA_SCOPE=project  # <project>/.nirvana/squads/* only
-NIRVANA_SCOPE=merge    # both, project overrides global on slug clash
+```
+global   # ~/squads/* only (default)
+project  # <project>/.nirvana/squads/* only
+merge    # both, project overrides global on slug clash
 ```
 
 Project-local squads live at `<project>/.nirvana/squads/<slug>/` with the same v5 layout (`squad.yaml` + `agents/` + `tasks/` + `workflows/` + `dependencies.yaml`). The squad registry, activation state, and logs persist under `<project>/.nirvana/` (never `$HOME`) so two projects on the same machine never collide.
@@ -238,9 +238,7 @@ The harness handles dispatch, capability resolution, and handoff_artifact valida
 ```
 ~/.nirvana/skills/squads/
 ├── SKILL.md                      ← Claude-discoverable
-├── SQUAD_PROTOCOL_V6.md          ← v6 spec (workflow document, acceptance, evaluator)
-├── SQUAD_PROTOCOL_V5.md          ← v5 spec (~1000 lines, capability-aware)
-├── SQUAD_PROTOCOL_V4.md          ← v4 spec (legacy)
+├── SQUAD_PROTOCOL_V6.md          ← the complete Squad Protocol (§1-§36 and appendices)
 ├── lib/
 │   ├── registry.js               ← scan + write ${SQUADS_REGISTRY_PATH} (with capabilities + domains index)
 │   └── capability-validator.js   ← structural checks (dotted ids, examples, invoke refs)
@@ -261,7 +259,7 @@ The harness handles dispatch, capability resolution, and handoff_artifact valida
     └── *.test.ts                 ← `bun test skills` (validate, registry, capability-validator, BM25)
 ```
 
-Squad v5 manifest reference:
+Squad manifest reference (`SQUAD_PROTOCOL_V6.md` §5.1, §22):
 - Top-level required: `name, version, protocol, description, author, license, capabilities, components, runtime_requirements`
 - Capability required: `id, description (≥20 chars), domains[1-5], invoke{type,ref}, examples[≥1], outputs[≥1]`
 - Optional: `score_boost`, `model_hint`, `tools_required`, `inputs`, `not_for`
@@ -316,7 +314,7 @@ const ok = capabilityValidator.validateAll(`${process.env.SQUADS_DIR}/my-researc
 
 ## Spec & versioning
 
-- Protocol: **Squad Protocol v6.0** (`SQUAD_PROTOCOL_V6.md`) over v5 (`SQUAD_PROTOCOL_V5.md`) over v4 (`SQUAD_PROTOCOL_V4.md`)
+- Protocol: **Squad Protocol v6** (`SQUAD_PROTOCOL_V6.md`, complete and self-contained); v2, v4 and v5 are archived in the repository's `docs/legacy/protocols/`
 - Capability catalog: `~/.nirvana/skills/_shared/catalogs/CAPABILITY_CATALOG_V1.yaml` (57 domains, 6 categories)
 - 148 squads indexed at last count (134 v4 legacy + 14 v5 with capabilities)
 - Test coverage: 5/5 smoke (T1-T5) + 36/36 pytest validators

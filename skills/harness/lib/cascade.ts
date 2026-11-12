@@ -42,6 +42,7 @@ import type { Runtime } from "./host-agent-driver.ts";
 import { isInCooldown, getCooldown } from "./cooldown-registry.ts";
 import { getSpend } from "./spend-tracker.ts";
 import { findProjectRoot } from "../../_shared/lib/project-root.js";
+import { canonicalRuntimeName } from "./runtime-rules.ts"; // cycle is safe: used at call time only
 
 export interface CascadeEntry {
   runtime: Runtime;
@@ -62,7 +63,7 @@ export interface CascadeEntry {
 // driver owns the list; everyone else asks it.
 const VALID_RUNTIMES: ReadonlyArray<Runtime> = listRuntimes().map((r) => r.name);
 
-const warnedRetired = new Set<string>();
+const warnedDropped = new Set<string>();
 
 function parseCascadeString(s: string): CascadeEntry[] {
   const entries: CascadeEntry[] = [];
@@ -74,17 +75,20 @@ function parseCascadeString(s: string): CascadeEntry[] {
     const bm = tok.match(/\$(\d+(?:\.\d+)?)$/);
     if (bm) { budgetUsd = parseFloat(bm[1]); tok = tok.slice(0, -bm[0].length); }
     const [runtimeAndModel, providerHint = null] = tok.split("@").map(x => x.trim());
-    const [runtime, model = null] = runtimeAndModel.split(":").map(x => x.trim());
+    const [name, model = null] = runtimeAndModel.split(":").map(x => x.trim());
+    // `claude`, `agy`, `codex-cli` … resolve through the same alias table as USE_*.
+    const runtime = canonicalRuntimeName(name);
     if (!(VALID_RUNTIMES as ReadonlyArray<string>).includes(runtime)) {
-      // A retired runtime (gemini-cli) is said out loud once; the next entry runs.
-      const retired = retiredRuntimeMessage(runtime);
-      if (retired && !warnedRetired.has(raw)) {
-        warnedRetired.add(raw);
-        console.error(`[cascade] LLM_CASCADE entry '${raw}': ${retired} — entry dropped. Known: ${VALID_RUNTIMES.join(", ")}`);
+      if (!warnedDropped.has(raw)) {
+        const retired = retiredRuntimeMessage(name);
+        console.error(retired
+          ? `[cascade] LLM_CASCADE entry '${raw}': ${retired} — entry dropped. Known: ${VALID_RUNTIMES.join(", ")}`
+          : `[cascade] LLM_CASCADE entry '${raw}' names an unknown runtime — entry dropped. Known: ${VALID_RUNTIMES.join(", ")}`);
       }
+      warnedDropped.add(raw);
       continue;
     }
-    entries.push({ runtime: runtime as Runtime, model: model || null, providerHint: providerHint || null, budgetUsd });
+    entries.push({ runtime, model: model || null, providerHint: providerHint || null, budgetUsd });
   }
   return entries;
 }

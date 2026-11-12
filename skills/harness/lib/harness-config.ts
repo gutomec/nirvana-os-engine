@@ -19,14 +19,13 @@
  *     threshold both recovers the majority of multilingual probes AND holds
  *     the negatives NO_MATCH floor; see baselines/golden-multilingual-probes.json).
  *
- *   routing.on_router_failure — "cascade" | "agent-x-only" | "fail" (routing-360
- *     Phase 4, agent-x-only added 2026-08-31). Governs dispatch.ts when the
- *     agentic router fails at the transport level even after one retry.
- *     Default "agent-x-only": go straight to the agent-x generalist, never
- *     BM25 — BM25 fires only when the CALLER asked for --mode=fast, never as
- *     a silent substitute for a broken agentic transport. "cascade" is the
- *     old default (tries BM25 first) for anyone who wants that safety net
- *     back; "fail" refuses to dispatch anything at all.
+ *   routing.on_router_failure — "agent-x-only" | "fail" (routing-360 Phase 4).
+ *     Governs dispatch.ts when the router fails at the transport level even
+ *     after one retry. Default "agent-x-only": go straight to the agent-x
+ *     generalist; "fail" refuses to dispatch anything at all. BM25 is never a
+ *     substitute for a broken router: "cascade" (a BM25 pick first) was
+ *     retired on 2026-10-13, and a stored "cascade" reads as "agent-x-only"
+ *     with a warning (settings-schema.ts, `retired`).
  *
  *   quality_gate.* — `judge_enabled` decides where the LLM judge runs in the
  *     delivery pipeline: "reports" (default) on text deliverables, true on
@@ -46,16 +45,12 @@ import {
 
 export type DenseRoutingMode = "off" | "fallback";
 
-/** What dispatch.ts does when the agentic router fails at the TRANSPORT level
- *  (ok:false) even after one retry (routing-360 Phase 4; agent-x-only added
- *  2026-08-31 — owner report: BM25 must never fire unless the caller asked
- *  for --mode=fast, not as a silent substitute for a dead runtime):
+/** What dispatch.ts does when the router fails at the TRANSPORT level
+ *  (ok:false) even after one retry (routing-360 Phase 4):
  *    "agent-x-only" (default) — straight to agent-x, loudly. BM25 never runs.
- *    "cascade"                — the old default: fast BM25 route first, then
- *                                agent-x if BM25 also can't decide.
  *    "fail"                   — exit non-zero and surface the router error;
  *                                nothing is dispatched at all. */
-export type RouterFailurePolicy = "cascade" | "agent-x-only" | "fail";
+export type RouterFailurePolicy = "agent-x-only" | "fail";
 
 /** Where the LLM judge runs: nowhere, on text deliverables, or on every gateable file. */
 export type JudgeScope = "off" | "reports" | "all";

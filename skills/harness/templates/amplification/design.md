@@ -1,17 +1,17 @@
 # Design amplification questions
 
 ## objective
-Qual é o objetivo desta tela / componente (converter, informar, entreter, capturar)?
-_Example:_ Landing pra converter visita em trial de SaaS B2B.
+What is the goal of this screen / component (convert, inform, entertain, capture)?
+_Example:_ A landing page that converts visits into B2B SaaS trials.
 
 ## audience
-Em que dispositivo, contexto, plataforma e nível de letramento digital?
-_Example:_ 80% mobile, sessão 30s na primeira visita, público leigo tech.
+On which device, in which context and platform, and at what level of digital literacy?
+_Example:_ 80% mobile, 30s session on the first visit, non-technical audience.
 
 ## constraints
-Tokens existentes, brand guideline, acessibilidade WCAG, tecnologia?
-_Example:_ DTCG tokens da marca; WCAG 2.2 AA; Next.js 15 + Tailwind.
+Existing tokens, brand guideline, WCAG accessibility, technology?
+_Example:_ The brand's DTCG tokens; WCAG 2.2 AA; Next.js 15 + Tailwind.
 
 ## success_criteria
-Métrica de sucesso (CRO, NPS, tempo de cognição, A/B)?
-_Example:_ Trial signup ≥ 4% (atual 2.1%), latência cognitiva 1ª dobra ≤ 1.5s.
+Success metric (CRO, NPS, cognition time, A/B)?
+_Example:_ Trial signup ≥ 4% (currently 2.1%), cognitive latency above the fold ≤ 1.5s.

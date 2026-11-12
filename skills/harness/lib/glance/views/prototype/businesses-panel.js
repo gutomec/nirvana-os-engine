@@ -36,11 +36,11 @@ export function BusinessesPanel() {
     <${Panel} title="Businesses" hint="dado real de GET /api/businesses">
       <input
         class="w-full mb-3 px-2 py-1.5 text-sm bg-[var(--surface-2)] border border-[var(--border-default)] rounded-[var(--radius-sm)] text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
-        placeholder="filtrar por slug..."
+        placeholder="filter by slug..."
         value=${filter.value}
         onInput=${e => { filter.value = e.target.value; }}
       />
-      ${loading.value && html`<p class="text-sm text-[var(--text-tertiary)]">carregando...</p>`}
+      ${loading.value && html`<p class="text-sm text-[var(--text-tertiary)]">loading...</p>`}
       ${error.value && html`<p class="text-sm text-[var(--status-danger-fg)]">${error.value}</p>`}
       <ul class="flex flex-col gap-1 max-h-64 overflow-auto">
         ${filtered.map(b => html`
@@ -51,7 +51,7 @@ export function BusinessesPanel() {
         `)}
       </ul>
       <p class="text-[10px] text-[var(--text-tertiary)] mt-2">
-        ${filtered.length} de ${businesses.value.length} · fetch em ${fetchMs.value}ms · este componente renderizou ${renderCount}x
+        ${filtered.length} of ${businesses.value.length} · fetched in ${fetchMs.value}ms · this component rendered ${renderCount}x
       </p>
     </${Panel}>
   `;

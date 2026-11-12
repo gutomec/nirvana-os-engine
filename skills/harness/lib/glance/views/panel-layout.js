@@ -23,7 +23,7 @@ export function clampChatWidth(width) {
 /** The sidebar collapses to the 64px icon rail exactly when a run is open in
  * detail AND the operator has not pinned the full-width version — never
  * based on which `kind` tab happens to be active (page-layout-redesign.md
- * §1.3: "a lista de 9 ícones... ainda precisa existir"). */
+ * §1.3: "the list of 9 icons... still needs to exist"). */
 export function shouldCollapseSidebar({ pinnedFull, hasSelectedRun }) {
   return !pinnedFull && !!hasSelectedRun;
 }

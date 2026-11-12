@@ -43,7 +43,7 @@ Nirvana-OS 是一个 Bun 原生、与运行时无关的多 agent 系统。它运
 
 | 支柱 | 它是什么 | 它在哪里 |
 |---|---|---|
-| **公司（businesses）** | 拥有由员工（岗位）组成的组织架构的组织。被派遣的公司运行它的各个岗位，岗位调用 squad 并引导 mind-clone | `~/businesses/` |
+| **公司（businesses）** | 拥有组织架构的组织。被派遣的公司作为一个 agent 运行，由它扮演各个岗位，通过 squad 的卡片使用 squad，并引导 mind-clone | `~/businesses/` |
 | **Squads** | 可移植的 agent 团队，包含 agent、task 和工作流，被派遣的 agent 把它们当作自己的方法来遵循 | `~/squads/` |
 | **Mind-clones** | 分为五层的人格 DNA，让 agent 以某位特定专家的方法思考和写作 | `~/businesses/_library/dna/` |
 
@@ -51,14 +51,14 @@ Nirvana-OS 是一个 Bun 原生、与运行时无关的多 agent 系统。它运
 
 ## 安装
 
-运行本页顶部的一行命令：macOS、Linux 和 WSL 用 `bash` 那一行，Windows 用 PowerShell 那一行。不需要 Node。如果缺少 [Bun](https://bun.sh)，安装器会在不使用 sudo、也不需要管理员权限的情况下把它装进你的用户目录（`~/.bun`），然后继续。
+本 README 描述的是 0.15.0，即当前的**稳定版**，本页顶部的一行命令安装的就是它。不需要 Node。如果缺少 [Bun](https://bun.sh)，两个安装器都会在不使用 sudo、也不需要管理员权限的情况下把它装进你的用户目录（`~/.bun`），然后继续。
 
 运行之前：
 
 - **macOS：** 无需准备。
 - **Windows（PowerShell）：** 无需准备，也不需要管理员权限。
 - **Linux（Ubuntu）：** `sudo apt update && sudo apt install -y curl unzip`。
-- **Windows + WSL（Ubuntu）：** 在以管理员身份打开的 PowerShell 中运行 `wsl --install`，重启，打开 Ubuntu 应用并创建你的 Linux 用户。然后像在 Linux 上一样安装 `curl` 和 `unzip`，并在 Ubuntu 里运行 `bash` 那一行。你的 AI agent（Claude Code、Codex、Antigravity）也必须安装在 Ubuntu 里，你的项目应放在 `~`，不要放在 `/mnt/c` 下，那里很慢。
+- **Windows + WSL（Ubuntu）：** 在以管理员身份打开的 PowerShell 中运行 `wsl --install`，重启，打开 Ubuntu 应用并创建你的 Linux 用户。然后像在 Linux 上一样安装 `curl` 和 `unzip`，并在 Ubuntu 里运行 `bash` 命令。你的 AI agent（Claude Code、Codex、Antigravity）也必须安装在 Ubuntu 里，你的项目应放在 `~`，不要放在 `/mnt/c` 下，那里很慢。
 
 它在你的机器上改动的内容：
 
@@ -68,15 +68,23 @@ Nirvana-OS 是一个 Bun 原生、与运行时无关的多 agent 系统。它运
 - Claude Code、Antigravity 和 Codex 中的审计 hook；
 - 空的内容文件夹 `~/squads`、`~/businesses` 和 `~/businesses/_library/dna`。
 
-再次运行是安全的。**关闭终端并打开一个新终端**，让 `nrv` 出现在你的 PATH 上，然后用 `nrv --version` 检查。接着对你的 agent 说：*“检查 Nirvana-OS 是否安装正确。”* 它会运行 `nrv doctor`。退出码 1 表示只有警告；退出码 2 会列出失败的项目。
+再次运行是安全的。**关闭终端并打开一个新终端**，让 `nrv` 出现在你的 PATH 上，然后用 `nrv --version` 检查；它会显示 `0.15.0`。接着对你的 agent 说：*“检查 Nirvana-OS 是否安装正确。”* 它会运行 `nrv doctor`。退出码 1 表示只有警告；退出码 2 会列出失败的项目。
 
-各个系统的分步指南、beta 版和故障排查都在[文档网站](https://gutomec.github.io/nirvana-os-engine/install.html)（葡萄牙语）和 [INSTALL.md](./INSTALL.md) 中，其他安装途径也在那里（通过 skills.sh 安装 `nirvana` skill、从克隆安装）。
+通过 `curl | bash` 运行时，安装器不会提问。要在安装时选择性能档位，把它传进去：把末尾的 `bash` 换成 `bash -s -- --profile=balanced`。你也可以之后让你的 agent 来设置（见[设置](#设置)）。
+
+各个系统的分步指南在[文档网站](https://gutomec.github.io/nirvana-os-engine/install.html)（葡萄牙语）上，另有一个 [beta 页面](https://gutomec.github.io/nirvana-os-engine/beta.html)；[INSTALL.md](./INSTALL.md) 中也有，其他安装途径也在那里（通过 skills.sh 安装 `nirvana` skill、从克隆安装）。
 
 ## 开始一个项目
 
-打开你要工作的文件夹，在那里启动你的 agent，然后说：*“把这个文件夹设置成 Nirvana-OS 项目。”* agent 会运行 `nrv init .`，它写入 `.nirvana/project.yaml`、一个记录项目库范围的 `.env`，以及 `AGENTS.md`、`CLAUDE.md` 和 `GEMINI.md` 中的项目契约。交付物会放在项目内的 `outputs/`。
+打开你想工作的文件夹，在那里启动你的 agent，然后说：*“把这个文件夹设置成一个 Nirvana-OS 项目。”* agent 会运行 `nrv init .`，它会写入 `.nirvana/project.yaml`，并在 `AGENTS.md`、`CLAUDE.md` 和 `GEMINI.md` 中写一段简短说明。交付物落在项目内的 `outputs/` 中。
 
-在 0.14.11 上，这份契约让 Nirvana 成为项目中每一个具体交付物的编排者：要一份报告、一个页面或一次活动，你的 agent 就会把它交给 Nirvana。如果你只想在点名时才用 Nirvana，就在设置项目时说明（*“把这个文件夹设置成 Nirvana 项目，仅按需使用”*）。agent 会运行 `nrv init . --orchestrators=on-demand`，写入一段简短说明，而不是完整契约。如果你自己在终端里、在一个已经有这些文件之一的文件夹中运行 `nrv init .`，它会询问使用哪种模式。0.15 beta 正好相反：按需是默认值，`--orchestrators=always` 才开启全面编排。
+这段说明让你的 agent 照常工作。只有当你的请求需要时，它才使用 Nirvana：
+
+- 你点名提到它（“用 Nirvana 来……”、“通过 nirvana”）；
+- 你点名或指向你的某家公司、某个 squad 或某个 mind-clone（“我的发布公司”、“文案 squad”、“用 Hormozi 的口吻”），包括 pack 的名字；
+- 你要求整个工作或其中一部分在另一个运行时上运行（“用 Codex 来审查”）。
+
+如果你想让 Nirvana 编排一个项目中的每一项交付物，就说 *“在这个项目里用 Nirvana 编排一切”*。agent 会运行 `nrv init . --orchestrators=always`。打开一个新会话，让这项改动生效。在 0.14 上设置的项目会保留完整契约，直到你再次运行 `nrv init .`，它会就地把契约换成按需说明（`--orchestrators=always` 则保留完整契约），并保留你自己写的内容。
 
 从那以后，你用平实的语言和你的 agent 对话，由它使用 Nirvana-OS。你日常不需要输入命令。
 
@@ -85,14 +93,15 @@ Nirvana-OS 是一个 Bun 原生、与运行时无关的多 agent 系统。它运
 | 你说 | 你的 agent 运行 |
 |---|---|
 | “我有哪些公司 / squad / mind-clone？” | `nrv list-businesses`、`nrv list-squads`、`nrv list-clones` |
-| “用 Nirvana 为 X 写发布文案。” | harness：挑选公司和 squad，为它们写简报并派遣它们 |
+| “用 Nirvana 为 X 写发布文案。” | harness：挑选公司，写一份简报，`nrv dispatch … --exec` |
 | “把这个交给文案 squad，在 Codex 上跑。” | `nrv dispatch --squad <slug> … --exec --runtime codex` |
+| “停掉那次运行。” | `nrv run-track stop <run>` |
 | “改一下你交付内容里的标题。” | `nrv revise <project> "<change>"` |
 | “给我看看那次运行做了什么。” | `nrv audit-view <project>` |
 | “安装我所有 squad 的依赖。” | `nrv activate --all` |
 | “更新 Nirvana-OS。” | `nrv update` |
 | “更新我的 Genesis Circle pack。” | `nrv update genesis-circle` |
-| “每次运行最多花 US$ 5。” | `nrv config set budget.default_max_cost_usd 5 --global` |
+| “把 Nirvana 切到经济模式。” | `nrv config set execution.profile economy --global` |
 
 更大的请求也是同样的方式：
 
@@ -110,7 +119,7 @@ Nirvana-OS 是一个 Bun 原生、与运行时无关的多 agent 系统。它运
 用 Nirvana-OS 制作一套发布方案：市场调研、落地页文案和一份竞品拆解。
 ```
 
-agent 负责编排，从不亲自撰写交付物。它挑选公司和 squad，为每一个写一份充实的简报并派遣它们，各部分相互独立时并行进行。
+agent 负责编排，从不亲自撰写交付物。它挑选的每一家公司都会得到自己的简报和自己的运行，各部分相互独立时并行进行。
 
 <div align="center">
   <img src="./docs/assets/nirvana-promo-en-readme.gif" alt="一条散文指令进，一整个 AI 集团组装完成并交付" width="100%">
@@ -140,37 +149,45 @@ Pack 是在 [squads.sh](https://squads.sh/pt/packs) 上出售的精选公司、s
 
 让你的 agent 更新 Nirvana-OS，或者运行 `nrv update`。它会先备份 `~/.nirvana/skills`，并保留你的设置和内容。`nrv update --check` 会说出它将安装哪个版本，但不做任何改动。
 
-更新永远不会把引擎降到更旧的版本。稳定版引擎只会升到更新的稳定版。beta 版会升到最新的更高版本，无论是 beta 还是稳定版，所以 0.15 的 beta 会在 0.15.0 发布时变成 0.15.0。引擎更新后，`nrv update` 还会检查每一个带许可的已安装 pack，并在有新版本时告诉你。
+更新永远不会把引擎降到更旧的版本。稳定版引擎只会升到更新的稳定版，所以 0.14 的引擎会升到 0.15.0。beta 版会升到最新的更高版本，无论是 beta 还是稳定版，所以 beta 会变成它之后发布的稳定版。引擎更新后，`nrv update` 还会检查每一个带许可的已安装 pack，并在有新版本时告诉你。
 
 ## Beta 版
 
-Beta 版是 GitHub 上的预发布版本。一行安装命令安装的是最新稳定版，所以要安装 beta，需要固定它的 tarball。当前的 beta 是 `v0.15.0-beta.12`。标签以 `v` 开头；少了它，下载会返回 404。要安装更新的 beta，把这个标签换成[发布列表](https://github.com/gutomec/nirvana-os-engine/releases)中的标签。
+Beta 版是 GitHub 上的预发布版本，顶部的一行命令从不安装 beta。安装 beta 需要固定它的 tarball：把下面的 `v<version>` 换成[发布列表](https://github.com/gutomec/nirvana-os-engine/releases)中它的标签。标签以 `v` 开头；少了它，下载会返回 404。
 
 macOS、Linux 和 WSL：
 
 ```bash
-curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.12/nirvana-os-engine.tar.gz bash
+curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v<version>/nirvana-os-engine.tar.gz bash
 ```
 
 Windows（PowerShell），写成一行：
 
 ```powershell
-$env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.12/nirvana-os-engine.tar.gz'; irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
+$env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/download/v<version>/nirvana-os-engine.tar.gz'; irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
 ```
 
 之后，如果窗口还开着，运行 `Remove-Item Env:NIRVANA_ENGINE_URL`：只要这个变量还在，`nrv update` 就会重新安装固定的 tarball。Windows 命令使用单引号，是因为粘贴时丢失的双引号会让 PowerShell 停在 `>>` 提示符上等待。
 
-beta 带来了性能档位（`max`、`balanced`、`economy`），并让 `nrv init` 默认按需。进入 beta 之后，`nrv update` 和每一次 pack setup 都会让你留在 beta 通道。
+进入 beta 之后，`nrv update` 和每一次 pack setup 都会让你留在 beta 通道：先是更新的 beta，然后是之后发布的稳定版。
 
-**回到稳定版。** 在 Windows 上，先打开一个新的 PowerShell 并运行 `Remove-Item Env:NIRVANA_ENGINE_URL`；提示它不存在的错误可以忽略。运行本页顶部的普通一行命令。它会在 beta 之上安装最新稳定版，并保留你的内容、pack 和设置。确认 `nrv --version` 不再显示 `beta`，然后在每个用 beta 用过的项目中删掉 beta 写入 `AGENTS.md`、`CLAUDE.md` 和 `GEMINI.md` 的区块，再重新运行 `nrv init .`（[详情](./INSTALL.md#back-to-stable-from-a-beta)）。
+**回到稳定版。** 在 Windows 上，先打开一个新的 PowerShell 并运行 `Remove-Item Env:NIRVANA_ENGINE_URL`；提示它不存在的错误可以忽略。运行本页顶部的普通一行命令。它会在 beta 之上安装最新稳定版，并保留你的内容、pack 和设置。确认 `nrv --version` 不再显示 `beta`，然后在每个用 beta 用过的项目中重新运行 `nrv init .`（[详情](./INSTALL.md#back-to-stable-from-a-beta)）。
 
 ## 设置
 
-设置在你开口时才会改变。说 *“现在配置了什么？”*、*“每次运行最多花 US$ 5”* 或 *“关掉 AI 评判”* 就够了；你的 agent 会运行 `nrv config`，并告诉你改了什么。`nrv config list` 会显示每一项设置、它的值以及它的来源：环境变量、项目的 `.nirvana/config.yaml`、你的 `~/.nirvana/config.yaml`、引擎或默认值。你的全局文件在每次更新后都会保留。
+设置在你开口时才会改变。说 *“把 Nirvana 切到经济模式”*、*“最高质量”* 或 *“现在配置了什么？”* 就够了；你的 agent 会运行 `nrv config`，并告诉你改了什么。
 
-默认不设置任何模型，也不设置推理投入，所以每个运行时都使用它自己的配置。完整参考见 [docs/configuration.md](./docs/configuration.md)。
+一个档位会同时调整多项设置：
 
-**按项目设置。** `nrv config set briefing.altitude <outcome|guided|prescriptive> --project` 决定一份 brief 承载多少内容：默认的 `outcome` 说明结果、约束和完成标准；`guided` 再加上作者建议的结构；`prescriptive` 再加上逐项标准、产物清单和方法。`nrv config get briefing.altitude` 显示当前生效的值。自由文本形式的规则写在项目的 `CLAUDE.md`、`AGENTS.md` 或 `GEMINI.md` 中，放在 `nrv init` 会重写的 Nirvana 区块之上；你的 agent 会读取它们，并把它们带进它写的 brief。直接提出即可：*“在这个项目里使用 guided brief”*、*“在这个项目的 CLAUDE.md 里加上：所有交付物都用巴西葡萄牙语”*。
+| 档位 | 推理投入 | 每个 worker 的上下文上限 | 评审 | worker 的视觉检查 |
+|---|---|---|---|---|
+| `max` | xhigh | 无（运行时默认） | 每次交付，最多两轮 | 开启 |
+| `balanced` | high | 400k tokens | 规则要求时 | 关闭 |
+| `economy` | medium | 200k tokens | 仅在请求时 | 关闭 |
+
+档位从不挑选模型；那由你的运行时自己的配置决定。你显式更改的设置优先于档位。`nrv config list` 会显示每一项设置、它的值以及它的来源。完整参考见 [docs/configuration.md](./docs/configuration.md)。档位只从 0.15 起才有。
+
+**按项目设置。** 编排器用 brief 模板来写每一份 brief。引擎自带四个：`slim`（默认：简短的带标签行，用户的原话保存在文件里）、`standard`（六个段落）、`detailed`（六个段落，加上建议结构、方法和逐项标准）以及 `karpathy`，灵感来自 Andrej Karpathy 的 [X 帖子](https://x.com/karpathy/status/2105819303471976479) 和他的 [2025 Year in Review](https://karpathy.bearblog.dev/year-in-review-2025/)：在 slim 之上加一份浅白语言的摘要、一张图，以及在有帮助时的一个 HTML 讲解页，每次交付消耗更多 token。`nrv config set briefing.template detailed --project` 为项目选一个模板，`nrv brief templates` 列出全部。要修改某个模板或新建自己的模板（例如 `juridico`），运行 `nrv brief init juridico --from standard --project`：`.nirvana/brief-templates/` 中的副本优先于 `~/.nirvana/brief-templates/` 和引擎自带的模板。`briefing.altitude` 仍可作为已弃用的别名使用。自由文本形式的规则写在项目的 `CLAUDE.md`、`AGENTS.md` 或 `GEMINI.md` 中，放在 `nrv init` 会重写的 Nirvana 区块之上；你的 agent 会读取它们，并把它们带进它写的 brief。直接提出即可：*“在这个项目里使用 detailed brief”*、*“在这个项目的 CLAUDE.md 里加上：所有交付物都用巴西葡萄牙语”*。
 
 ## 为什么“工作已完成”在这里有分量
 
@@ -178,7 +195,7 @@ beta 带来了性能档位（`max`、`balanced`、`economy`），并让 `nrv ini
 
 - **审计轨迹。** 每一次派遣、质量门裁决和交付都是 `~/.harness-logs/<date>/audit.jsonl` 中的一条只追加事件。每一次 `--exec` 运行还会在项目的 `.nirvana/run-kernel.sqlite` 中留下一条记录。`nrv audit-view <project>` 会展示这条链。
 - **在磁盘上核验。** `verify-deliverable` 把简报承诺的内容与实际存在的文件进行比对，质量门按文件类型运行评分标准，失败时进行修正轮次。严重问题在修正后仍然存在的运行会被扣下，不予交付。
-- **对照简报评分。** 质量门把简报交给它的评判，所以交付物要符合当初的要求，而不只是一份通用的评分标准。
+- **带标准的简报。** 每份简报都逐字携带用户的请求，以及可观察的“完成条件”；标记为 `(blocking)` 的那些决定交付能否通过。
 - **花费由你掌控。** 除非你要求，否则不会设置成本上限（*“每次运行最多花 US$ 5”* 会设置 `budget.default_max_cost_usd`）。
 
 ## 命令参考
@@ -188,11 +205,12 @@ beta 带来了性能档位（`max`、`balanced`、`economy`），并让 `nrv ini
 | 命令 | 它做什么 |
 |---|---|
 | `nrv doctor` | 健康检查：运行时、hook、skills 链接、依赖、注册表、许可 |
-| `nrv init <dir>` | 把一个文件夹变成 Nirvana 项目（`--orchestrators=on-demand\|always`、`--scope=project\|merge`） |
+| `nrv init <dir>` | 把一个文件夹变成 Nirvana 项目（`--orchestrators=always`、`--scope=project\|merge\|global`） |
 | `nrv list-businesses` / `list-squads` / `list-clones` | 浏览三个注册表 |
 | `nrv find "<need>"` / `nrv search "<topic>"` | 针对一个请求的排序候选 / 跨库关键词搜索 |
-| `nrv dispatch <business> "<brief>" --exec` | 让一家公司按一份简报运行；`--squad <slug>`、`--agent-x` 或 `--auto` 指定其他目标。没有 `--exec` 时只生成脚手架 |
-| `nrv run-track status\|wait <run>` | 读取一次运行的状态，或等待它结束 |
+| `nrv brief template\|templates\|check\|decide\|init` | 编排器依据 brief 模板为一家公司撰写的简报 |
+| `nrv dispatch <business> --brief-file <file> --exec` | 让一家公司按一份简报运行；`--squad <slug>[:<capability>]`、`--agent-x` 或 `--auto` 指定其他目标。没有 `--exec` 时拒绝执行 |
+| `nrv run-track status\|stop <run>` | 读取一次运行的状态，或干净地停止它 |
 | `nrv revise <project> "<change>"` | 在同一个运行时会话中修改一次交付 |
 | `nrv audit-view <project>` | 一次运行的审计链 |
 | `nrv activate <squad>\|--all` | 提前在 `~/.nirvana/envs/<squad>` 中准备一个 squad 的环境 |
@@ -206,7 +224,7 @@ beta 带来了性能档位（`max`、`balanced`、`economy`），并让 `nrv ini
 
 **我需要会写代码吗？** 不需要。你用平实的语言描述结果；你的 agent 运行 Nirvana，公司和 squad 负责撰写、检查和交付。
 
-**它会取代我的 agent 吗？** 不会。它运行在你的 agent 之上。被派遣的工作在你会话所用的运行时上运行，除非你指定另一个：Claude Code、Codex、Antigravity、Pi、Kimi 或 Grok。
+**它会取代我的 agent 吗？** 不会。它运行在你的 agent 之上。被派遣的工作在你会话所用的运行时上运行，除非你指定另一个：Claude Code、Codex、Antigravity、Pi、Kimi、Grok、Qwen Code 或 OpenCode。
 
 **我的工作存放在哪里？** 在你的机器上：内容在 `~/businesses`、`~/squads` 和 `~/businesses/_library/dna`，交付物在每个项目的 `outputs/`。整个流程中没有任何 Nirvana 云。
 
@@ -228,4 +246,4 @@ beta 带来了性能档位（`max`、`balanced`、`economy`），并让 `nrv ini
 
 许可：Nirvana-OS Sustainable Use License (SUL) v1.0。源码公开发布、可公开阅读，引擎可免费使用。它是 source-available，而非 OSI 批准的开源许可，某些商业用途需要单独的商业许可。在依赖任何摘要（包括这一段）之前，请先阅读 [LICENSE](./LICENSE)。
 
-状态：beta（0.x，当前为 0.14.13）。引擎今天就能用，几分钟内即可安装。在 1.0 之前，预计接口表面会持续变动。
+状态：beta（0.x，当前为 0.15.0）。引擎今天就能用，几分钟内即可安装。在 1.0 之前，预计接口表面会持续变动。

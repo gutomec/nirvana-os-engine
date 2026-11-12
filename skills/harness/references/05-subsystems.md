@@ -53,7 +53,7 @@ The trace-builder correlates Claude Code hook events (`session_id`) with harness
 | Command | Description |
 |---|---|
 | `nrv run <business> "<brief>"` / `nrv auto "<brief>"` | Process a brief end to end (dispatch + gate + deliver) |
-| `nrv find "<intent>"` / `*find` | BM25 discovery (`fast` mode; diagnostic in agentic) |
+| `nrv find "<intent>"` / `*find` | The shortlist: businesses and squads ranked apart by BM25, with their cards (zero tokens; you read it and decide) |
 | `nrv list-squads` / `nrv list-businesses` / `nrv list-clones` | List registry contents |
 | `nrv inspect-clone <slug>` | Inspect a mind-clone; squads/businesses: read their manifests |
 | `nrv index` / `*index` | Rebuild registries |
@@ -63,19 +63,19 @@ The trace-builder correlates Claude Code hook events (`session_id`) with harness
 
 When the user types "abra o glance" / "open the cockpit" / "show me the project state", invoke `glance --allow-actions`.
 
-## Diagnostic helpers (never authoritative in agentic mode)
+## Diagnostic helpers (they never decide who executes)
 
 | Tool | Purpose | When to use |
 |---|---|---|
-| `bun scripts/find.ts --json "<brief>"` | BM25 + keyword discovery (`fast` mode engine) | The fast-mode pick; in agentic mode, a sanity-check peek |
-| `bun scripts/route.ts "<brief>"` | Full BM25 routing pipeline (`fast` mode) | Same + budget pre-flight |
+| `bun scripts/find.ts --json "<brief>"` | The shortlist as data (`shortlist`) beside the keyword router's own decision | Scripts that need the candidates |
+| `bun scripts/route.ts "<brief>"` | Full BM25 pipeline, stage by stage | Debugging why an entity ranks where it does; budget pre-flight |
 | `bun scripts/index.ts` | Rebuild registries | After adding/editing businesses or squads |
 | `bun scripts/validate.ts` | Self-test (registries, BM25, audit) | Before a big production run |
 | `glance --allow-actions` | Web cockpit (live audit + decisions + gates) | When watching a run live |
 
-### The `fast` router (BM25 + optional dense fallback) — state, and when to still prefer agentic
+### The keyword router (BM25 + optional dense fallback): a retriever, never a decider
 
-The `fast` router was calibrated across routing-360 (full detail: `references/01-routing.md`):
+It builds the `nrv find` shortlist, the capability tiebreak inside a squad and the clone search. It stopped deciding dispatch targets on 2026-10-13 (the retired `fast` mode; `references/01-routing.md`). It was calibrated across routing-360:
 - Manifest `keywords` / `example_briefs` / `produces` are indexed with field weights, so narrow-vocabulary specialists are no longer invisible.
 - The intent FILTER is opt-in (`NIRVANA_ROUTER_INTENT_FILTER=1`) — measured against the census it only destroyed accuracy, so business nouns can no longer hide squad capabilities by class.
 - Stage 0 abstains on generic-object patterns (landing/page/copy/...), letting the matching decide by domain.
@@ -83,7 +83,7 @@ The `fast` router was calibrated across routing-360 (full detail: `references/01
 - Coverage gates make NO_MATCH honest: an out-of-domain brief abstains instead of dispatching a confident wrong target.
 - **Optional dense arm — fallback slot only:** `nrv embeddings enable` turns on a local neural model consulted ONLY when BM25 ends at NO_MATCH, returning an AMBIGUOUS suggestion (never a dispatch). The BM25/dense RRF fusion was measured twice and retired; without the backend the router is purely lexical (zero-dep).
 
-Residuals that keep agentic mode the source of truth:
+Residuals that keep a model the one that decides:
 - Stage 0 and Stage -1 remain keyword-based (pruned and gated, but not semantic).
 - The router has no notion of "the right mind-clone for this voice" — that is pure agentic reasoning; the script does not do it.
 - Without the dense fallback active, matching is lexical.
@@ -98,7 +98,9 @@ The scripted autopilot (`nrv dispatch --auto ... --exec`, `nrv run`, `nrv auto`)
 - A brief that opens by naming an installed target (`use squad <slug>:` / `use business <slug>:`) goes straight to it with no router.
 - A squad-only route dispatches the squad (`lib/squad-exec.ts`), and every path flows into the fail-closed delivery pipeline (`lib/delivery-pipeline.ts`).
 
-Exit codes: `0` delivered · `1` run failed · `2` delivery WITHHELD (gate failed after the revision budget) · `3` INDETERMINATE (nothing judged: zero gateable artifacts, or a scaffold-only run without `--exec`) · `4` invalid args. A runtime that returns an error verdict but left artifacts on disk does not abandon them: the run is marked `failed` with its error (`x_runtime_errored_with_artifacts`, `meta.runtime_errored`) and recovers into the same verify → gate pipeline, so an errored run still ends delivered, withheld or indeterminate, never unjudged.
+Every input is checked before the first side effect: runtime names and availability, the target's existence, `--brief-file`, numeric flags, `--project` (a plain id, never a path) and whether the caller's role may dispatch. A dispatch without `--exec` refuses and prints the same command with it; `--scaffold-only` is the one way to prepare the folder and the prompt without running them.
+
+Exit codes: `0` delivered, or delivered with reservations · `1` run failed · `2` delivery WITHHELD (gate failed after the revision budget) · `3` INDETERMINATE (nothing judged: zero gateable artifacts, or `--scaffold-only`) · `4` invalid input, or refused before anything ran. `<outputs>/_STATUS.json` names the state and its reasons. A runtime that returns an error verdict but left artifacts on disk does not abandon them: the run is marked `failed` with its error (`x_runtime_errored_with_artifacts`, `meta.runtime_errored`) and recovers into the same verify → gate pipeline under the completeness ceiling, so an errored run ends withheld or indeterminate (delivered only when promised paths, from a manifest or the roles' `acceptance[]`, prove the set complete), never unjudged.
 
 ## Run ledger & supervisor internals
 
@@ -108,8 +110,6 @@ What happens to a run nobody closed. The orchestrator-facing side (who opens, wh
 
 **Recovery ends in the delivery pipeline, never in a private verdict.** A re-dispatch hands its fresh output to `runDelivery()` (verify → gate → delivered | withheld | indeterminate), and a resume reads `nrv revise`'s exit code (0 delivered · 2 withheld · 3 indeterminate). Both run with zero auto-revisions: an unattended sweep must not spend LLM budget in a fix loop nobody is watching, so a failing gate is withheld and escalated for a human to run `nrv revise`. A re-dispatch that ran to completion is not capped by the completeness ceiling, which is for interrupted runs.
 
-**Session continuity.** Every worker run records a session it can be resumed from (`session.json` beside its scaffold: `businesses/<slug>/`, `squads/<slug>/`, `agent-x/`; the ledger row; `agent_executed.session_id`), headless or as an Orca worker. claude and grok get an id the engine chose (`--session-id`), kimi `--session`, pi `--session-id` as before; codex's comes from its `--json` stream or, failing that, its `sessions/` file for the run's folder; agy's from its output or, for an Orca worker, its `history.jsonl`; qwen and opencode have none. A failed, killed or timed-out run keeps the id once the runtime created the session. A resume always runs in the folder the session was made in (`sessionHome`). `nrv revise` continues that session; with none to continue (no id, a pruned session, another runtime) it runs a fresh session seeded with the brief, the deliverables and `_QA-RESERVATIONS.md`, audited as `x_revise_fresh_session` with the reason. `nrv dispatch --continue-from <project>` hands the earlier project's session to the new run's worker (`x_session_continued`, or `x_continue_fresh_session` when it cannot).
-
-**Stall guard.** A scripted dispatch is awaited through its completion notice, which arrives only when the dispatch ends, so a hung worker must never keep it open. The heartbeat sidecar (`harness/lib/stall-guard.ts`) confirms a stall only when nothing moves: no worker output, no file under the run's folders, no hook-recorded tool event, no live child run and no CPU growth above 1 s per minute. Two rules, both settings (0 = off): `execution.stall_timeout_min` (90) of silence, and `execution.stall_no_start_min` (45) with no sign of life since the start. On a confirmed stall the row goes to `stalled` with `meta.stall` and `meta.salvaged`, the worker's process tree is ended (`taskkill /T` on Windows) and its Orca terminal closed; `nrv dispatch` and `nrv revise` skip the gate, write `_STATUS.json` and exit 76. While its dispatcher is alive (`meta.dispatcher_pid`) the supervisor leaves a run's stall decision to it, until the run is silent past the threshold plus 15 minutes; a stall the dispatcher confirmed is never relaunched or salvaged. `nrv run-track status|wait` report it with exit 76.
+**Session continuity.** Every worker run records a session it can be resumed from (`session.json` beside its scaffold, the ledger row, `sessions.json`, `agent_executed.session_id`), headless or as an Orca worker. claude, grok and pi get an id the engine chose (`--session-id`), kimi `--session`; codex's comes from its `--json` stream or, failing that, its `sessions/` file for the run's folder; agy's from its stream or its `history.jsonl`; qwen and opencode have none. A failed, killed or timed-out run keeps the id once the runtime created the session. A resume always runs in the folder the session was made in (`sessionHome`). `nrv revise` continues that session; with none to continue (no id, a pruned session, another runtime) it runs a fresh session seeded with the brief, the deliverables and `_GATE-FINDINGS.md`, audited as `x_revise_fresh_session` with the reason. `nrv dispatch --continue-from <project>` hands the earlier project's session to the new run's worker (`x_session_continued`, or `x_continue_fresh_session` when it cannot).
 
 **Salvage.** When the retries are exhausted the sweep marks the run `stalled` and escalates, and before it does, it salvages what the run left on disk: the artifacts go once through verify → quality gate, read-only (zero revisions, offline rubrics, no runtime spawn). Because an interrupted run's file set is unproven, `delivered` is reachable only when a manifest verification passes; otherwise the best outcome is `withheld` with the gate verdict attached. The escalation (`human_notification_required`, `x_ledger_notify_human`, the stderr block and the OS notification) carries the verdict: artifacts found, gateable count, gate outcome, decision, where the files are. The salvage runs once per run (`meta.salvaged`).

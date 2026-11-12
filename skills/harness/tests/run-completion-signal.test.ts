@@ -38,7 +38,7 @@ process.env.NIRVANA_RUN_LEDGER_DB = path.join(TMP, "default-ledger.sqlite");
 process.env.NIRVANA_NO_DESKTOP_NOTIFY = "1";
 
 import {
-  openLedger, openRun, getRun, markState, findByTraceId, runSignalPath, runSignalDir,
+  openLedger, openRun, getRun, markState, findByTraceId, runSignalPath, runSignalDir, recordChildPid, clearChildPid,
   type LedgerHandle,
 } from "../lib/run-ledger.ts";
 import { spawnBudgetMs } from "./helpers/test-budgets.ts";
@@ -189,6 +189,26 @@ describe("nrv run-track status", () => {
     expect(payload.outputs_root).toBe(outputs);
     expect(typeof payload.ended_at).toBe("string");
   }, spawnBudgetMs(2));
+
+  test("a dead worker pid means `killed` only while the worker is the one at work, never while the dispatcher gates", () => {
+    const h = openLedger(db);
+    const row = openRun(h, { traceId: "t-pid", projectId: "p-pid", projectRoot: null, targetSlug: "biz-pid", targetKind: "business", runtime: "claude-code" });
+    markState(h, row.run_id, "running");
+    recordChildPid(h, row.run_id, 2_147_483_000, null);   // no such process
+    const running = runTrack(["status", row.run_id]);
+    expect(running.stdout).toContain("killed");
+    expect(running.status).toBe(1);
+    // The worker ended and the dispatcher is verifying and gating: a live delivery.
+    markState(h, row.run_id, "verifying");
+    const verifying = runTrack(["status", row.run_id]);
+    expect(verifying.stdout).toContain("verifying");
+    expect(verifying.status).toBe(75);
+    markState(h, row.run_id, "gated");
+    expect(runTrack(["status", row.run_id]).stdout).toContain("gated");
+    // And the pipeline forgets the pid once the worker is done.
+    clearChildPid(h, row.run_id);
+    expect(getRun(h, row.run_id)!.child_pid).toBeNull();
+  }, spawnBudgetMs(3));
 
   test("an unknown id is a clean miss, not a crash", () => {
     const r = runTrack(["status", "run-does-not-exist"]);

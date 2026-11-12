@@ -99,3 +99,58 @@ function promptFileLen(): number {
   return 0;
 }
 `;
+
+/**
+ * Body prelude for a fake `agy`, speaking the transport the driver uses (agy
+ * 1.3.3, verified live 2026-10-13). Needs no imports, so it composes with
+ * CAPTURE_PRELUDE in either order.
+ *
+ * - `await agyPrompt()` returns the prompt (and leaves stdin in `agyStdinRaw`). Under `--input-format stream-json`
+ *   it reads stdin as NDJSON, one event per line, and keeps the text of every
+ *   `{"event":"user","message":{...}}` (string content or text blocks). A line
+ *   without `event` is an error, exit 1, as in agy; an unknown event is only a
+ *   warning on stderr. Without that flag it is the `-p` value. A bare `-p`
+ *   followed by another flag takes that flag as the prompt: exit 2, as agy does.
+ * - `agyReply(result, exitCode?)` prints `result` the way the chosen
+ *   `--output-format` does: stream-json is an `init` line, a step line and a
+ *   final `{"event":"result","result":...}`; anything else is the object whole.
+ */
+export const AGY_FAKE_PRELUDE = `
+const agyArgv = Bun.argv.slice(2);
+const agyFlag = (name: string) => { const i = agyArgv.indexOf(name); return i >= 0 ? agyArgv[i + 1] : undefined; };
+/** What arrived on stdin, byte for byte (set by agyPrompt). */
+let agyStdinRaw = "";
+async function agyPrompt(): Promise<string> {
+  if (agyFlag("--input-format") === "stream-json") {
+    const raw = agyStdinRaw = await Bun.stdin.text();
+    const texts: string[] = [];
+    for (const line of raw.split("\\n")) {
+      if (!line.trim()) continue;
+      const msg = JSON.parse(line);
+      if (typeof msg?.event !== "string") { process.stderr.write("error: stream input message has no event field\\n"); process.exit(1); }
+      if (msg.event !== "user") { process.stderr.write('warning: ignoring unsupported stream input message event "' + msg.event + '"\\n'); continue; }
+      const c = msg.message?.content;
+      if (typeof c === "string") texts.push(c);
+      else if (Array.isArray(c)) for (const b of c) if (b?.type === "text" && typeof b.text === "string") texts.push(b.text);
+    }
+    return texts.join("\\n");
+  }
+  const eq = agyArgv.find((a) => a.startsWith("-p="));
+  if (eq !== undefined) return eq.slice(3);
+  const i = agyArgv.indexOf("-p");
+  if (i < 0) return "";
+  const v = agyArgv[i + 1] ?? "";
+  if (v.startsWith("-") && v !== "-") { process.stderr.write("error: unexpected argument '" + v + "'\\n"); process.exit(2); }
+  return v;
+}
+function agyReply(result: Record<string, unknown>, exitCode = 0): never {
+  if (agyFlag("--output-format") === "stream-json") {
+    console.log(JSON.stringify({ event: "init", conversation_id: result.conversation_id ?? "conv-fake" }));
+    console.log(JSON.stringify({ event: "step", step: { type: "planner_response" } }));
+    console.log(JSON.stringify({ event: "result", result }));
+  } else {
+    console.log(JSON.stringify(result));
+  }
+  process.exit(exitCode);
+}
+`;

@@ -2,7 +2,7 @@
  * clarification-prompt.ts — generates 2-4 focused clarifying questions when
  * a brief's richness score is below the amplifier threshold.
  *
- * Phase 4 da nirvana-evolution.
+ * Phase 4 of nirvana-evolution.
  *
  * Sources:
  *  - missing_dimensions from brief-scorer
@@ -37,38 +37,38 @@ export interface ClarificationOutput {
 const GENERIC_QUESTIONS: Record<string, Question> = {
   objective: {
     dimension: "objective",
-    question: "Qual é o resultado concreto que você quer ao final?",
-    example_answer: "Um post de blog de 1500 palavras com 3 takeaways acionáveis.",
+    question: "What concrete result do you want at the end?",
+    example_answer: "A 1500-word blog post with 3 actionable takeaways.",
   },
   audience: {
     dimension: "audience",
-    question: "Para quem este entregável é destinado?",
-    example_answer: "Pequenos empreendedores de e-commerce brasileiros.",
+    question: "Who is this deliverable for?",
+    example_answer: "Small e-commerce entrepreneurs.",
   },
   constraints: {
     dimension: "constraints",
-    question: "Quais restrições devem ser respeitadas (prazo, orçamento, formato, tamanho)?",
-    example_answer: "Entrega em 24h, máximo 2000 palavras, formato markdown.",
+    question: "Which constraints must be respected (deadline, budget, format, size)?",
+    example_answer: "Delivery within 24h, at most 2000 words, markdown format.",
   },
   examples: {
     dimension: "examples",
-    question: "Tem alguma referência ou exemplo de algo similar que aprovou?",
-    example_answer: "Estilo similar ao blog da Stripe / artigos da Paul Graham.",
+    question: "Is there a reference or example of something similar that you approved of?",
+    example_answer: "A style similar to the Stripe blog / Paul Graham essays.",
   },
   scope: {
     dimension: "scope",
-    question: "O que está dentro e o que está fora do escopo?",
-    example_answer: "Dentro: análise técnica. Fora: implementação de código.",
+    question: "What is in scope and what is out of scope?",
+    example_answer: "In: technical analysis. Out: code implementation.",
   },
   success_criteria: {
     dimension: "success_criteria",
-    question: "Como você saberá que o entregável foi bem-sucedido?",
-    example_answer: "Quando o relatório responder as 5 perguntas declaradas e gerar pelo menos 3 ações.",
+    question: "How will you know the deliverable succeeded?",
+    example_answer: "When the report answers the 5 stated questions and produces at least 3 actions.",
   },
   length: {
     dimension: "length",
-    question: "Pode dar mais detalhe sobre o contexto e o que você espera?",
-    example_answer: "(qualquer detalhe ajuda)",
+    question: "Can you give more detail about the context and what you expect?",
+    example_answer: "(any detail helps)",
   },
 };
 
@@ -127,11 +127,11 @@ export function buildClarification(
 
   const lines: string[] = [];
   lines.push(`Brief richness: ${(score.score * 100).toFixed(0)}/100${category ? ` (category: ${category})` : ""}`);
-  lines.push("Para entregar com qualidade, preciso esclarecer:");
+  lines.push("To deliver with quality, I need to clarify:");
   for (let i = 0; i < picked.length; i++) {
     const q = picked[i];
     lines.push(`${i + 1}. ${q.question}`);
-    if (q.example_answer) lines.push(`   exemplo: ${q.example_answer}`);
+    if (q.example_answer) lines.push(`   example: ${q.example_answer}`);
   }
 
   return {

@@ -3,7 +3,7 @@
 // temp PATH. Verifies, for all 9 runtimes:
 //   1. DELIVERY: a synthetic 300KB prompt reaches the CLI intact and no argv
 //      element ever carries it (ARG_MAX safety: STDIN / --prompt-file /
-//      bootstrap temp file / pi @file, per adapter).
+//      bootstrap temp file / pi @file / agy stream-json on STDIN, per adapter).
 //   2. COST: native USD extracted where the CLI reports it (claude, grok,
 //      pi, kimi result event); explicit costUnavailable elsewhere — distinct
 //      from a reported $0.
@@ -26,7 +26,7 @@ import {
   type Runtime,
   RUNTIME_DIR_GRANT_FLAG, type RunHeadlessOpts,
 } from "../../_shared/lib/host-agent-driver.ts";
-import { writeFakeCli, readCapturedArgs, CAPTURE_PRELUDE } from "./helpers/fake-cli.ts";
+import { writeFakeCli, readCapturedArgs, CAPTURE_PRELUDE, AGY_FAKE_PRELUDE } from "./helpers/fake-cli.ts";
 import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 import { makeTempRoot, removeDir } from "./helpers/temp-dirs.ts";
 
@@ -91,14 +91,11 @@ beforeAll(() => {
     console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 10, cached_input_tokens: 4, cache_write_input_tokens: 0, output_tokens: 5, reasoning_output_tokens: 2 } }));
   `);
 
-  // agy — argv small / bootstrap prompt-file large; is_error envelope; no USD.
-  fake("agy", `
-    const plen = promptFileLen();
-    if (process.env.FAKE_MODE === "error") {
-      process.stdout.write(JSON.stringify({ is_error: true, error: { message: "agy backend down" }, session_id: "a1" }));
-      process.exit(0);
-    }
-    process.stdout.write(JSON.stringify({ response: "plen:" + plen, session_id: "a1" }));
+  // agy — STDIN, one stream-json user event; stream-json result event; is_error; no USD.
+  fake("agy", AGY_FAKE_PRELUDE + `
+    const len = (await agyPrompt()).length;
+    if (process.env.FAKE_MODE === "error") agyReply({ is_error: true, error: { message: "agy backend down" }, session_id: "a1" });
+    agyReply({ response: "len:" + len, session_id: "a1" });
   `);
 
   // kimi — bootstrap prompt-file; NDJSON; result event may carry total_cost_usd.
@@ -246,10 +243,10 @@ describe("driver adapters — 300KB prompt delivery + cost matrix", () => {
     expect(__testables.RUNTIMES.some((a: { name: string }) => a.name === "gemini-cli")).toBe(false);
   });
 
-  test("antigravity-cli: bootstrap prompt-file above threshold; costUnavailable", () => {
+  test("antigravity-cli: STDIN (one stream-json event); costUnavailable", () => {
     const r = run("antigravity-cli");
     expect(r.ok).toBe(true);
-    expect(r.result).toBe("plen:300000"); // shim read the full prompt from the temp file
+    expect(r.result).toBe("len:300000");
     expect(r.costUsd).toBeNull();
     expect(r.costUnavailable).toBe(true);
     assertArgvSafe("agy");

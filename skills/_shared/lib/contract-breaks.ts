@@ -46,11 +46,11 @@ export function contractBreaks(installedDir: string, incomingDir: string, label:
 export function reportBreaks(breaks: BreakingChange[], dry: boolean, log: (s: string) => void): void {
   if (!breaks.length) return;
   log("");
-  log(`  ATENÇÃO: ${breaks.length} mudança(s) de contrato ${dry ? "seriam aplicadas" : "aplicadas"} nesta atualização.`);
-  log("  Projetos que dependiam dos itens abaixo precisam de ajuste:");
+  log(`  WARNING: ${breaks.length} contract change(s) ${dry ? "would be applied" : "applied"} in this update.`);
+  log("  Projects that depended on the items below need adjusting:");
   for (const b of breaks) {
     log(`    ! ${b.slug}: ${b.detail}`);
     if (b.migration) log(`      → ${b.migration}`);
   }
-  log("  Detalhe completo em CHANGES.json dentro de cada componente.");
+  log("  Full detail in CHANGES.json inside each component.");
 }

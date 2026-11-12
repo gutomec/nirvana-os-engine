@@ -23,6 +23,7 @@
 // Exit: 0 continue · 7 STOP (loop ceiling) · 8 ROLL (context budget) · 2 invalid args
 
 import { createRequire } from "node:module";
+import { resolveSetting } from "../../_shared/lib/settings.ts";
 const requireCjs = createRequire(import.meta.url);
 const { createLoopGuard } = requireCjs("../../_shared/lib/loop-guard.js");
 const { readHandoff, writeHandoff } = requireCjs("../../_shared/lib/handoff.js");
@@ -51,7 +52,9 @@ const ROLL_AT = Number(process.env.NIRVANA_CONTEXT_ROLL_AT || 0.7);
 if (sub === "context") {
   const projectDir = arg("--project") || process.cwd();
   const used = Number(arg("--used") || NaN);
-  const window = Number(arg("--window") || process.env.NIRVANA_CONTEXT_WINDOW || 200_000);
+  // execution.context_window is the ceiling the dispatched agents run under; 0 (the
+  // runtime's own window) keeps the historical 200k measure.
+  const window = Number(arg("--window") || Number(resolveSetting("execution.context_window").value) || 200_000);
   if (!Number.isFinite(used) || used < 0 || !Number.isFinite(window) || window <= 0) {
     console.error("usage: nrv guard context --project <dir> --used <tokens> [--window <tokens>]");
     process.exit(2);
@@ -84,13 +87,13 @@ if (sub === "context") {
     } catch { /* audit down must never block the rollover advice */ }
     console.error(
       `🔄 CONTEXT GUARD: ${used.toLocaleString()} / ${window.toLocaleString()} tokens ` +
-      `(${(ratio * 100).toFixed(0)}%, teto ${budget.toLocaleString()}).\n` +
-      `   Escreva o HANDOFF e continue numa sessão nova — não siga acumulando.\n` +
-      `   Retomar com: nrv resume ${projectDir}`,
+      `(${(ratio * 100).toFixed(0)}%, cap ${budget.toLocaleString()}).\n` +
+      `   Write the HANDOFF and continue in a fresh session; do not keep accumulating.\n` +
+      `   Resume with: nrv resume ${projectDir}`,
     );
     process.exit(8);
   }
-  console.log(`context guard ok — ${used.toLocaleString()}/${window.toLocaleString()} (${(ratio * 100).toFixed(0)}%, rola em ${(ROLL_AT * 100).toFixed(0)}%)`);
+  console.log(`context guard ok — ${used.toLocaleString()}/${window.toLocaleString()} (${(ratio * 100).toFixed(0)}%, rolls over at ${(ROLL_AT * 100).toFixed(0)}%)`);
   process.exit(0);
 }
 

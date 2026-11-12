@@ -22,9 +22,9 @@
 //     refused; the worker redid 62 screenshots it was told to reuse. A worker
 //     must be able to reach any folder on the machine: a review of another
 //     project, or a new project created elsewhere, is ordinary work;
-//   · the run folder in its environment (RUN_WORKSPACE_ENV), so a dispatch the
-//     worker starts itself nests inside this run (nestedOutputsBase) instead of
-//     becoming a sibling of it.
+//   · the run folder in its environment (RUN_WORKSPACE_ENV), so a dispatch
+//     started from inside this run (only an orchestrator may start one) nests
+//     inside it (nestedOutputsBase) instead of becoming a sibling.
 //
 // Moving the cwd has one cost that is paid back here: Claude Code loads a
 // project's `.claude/settings.json` from the cwd only, with no parent fallback,
@@ -41,8 +41,8 @@ import { canonical, findProjectRoot, isInvalidProjectRoot, outputsBaseDir, resol
 export const FENCE_FILE_PREFIX = "nrv-fence-";
 
 /** The run folder a confined worker runs in, exported to its environment. A
- *  dispatch the worker starts itself (a seat's `nrv dispatch --squad …`) reads
- *  it and nests its scaffold inside that run. */
+ *  dispatch started from inside that run reads it and nests its scaffold
+ *  inside the run. */
 export const RUN_WORKSPACE_ENV = "NIRVANA_RUN_WORKSPACE";
 
 /**
@@ -70,11 +70,9 @@ export function runFolderOf(dir: string | null | undefined, projectRoot?: string
 
 /**
  * Where a dispatch started from inside a run puts its scaffold:
- * `<run folder>/dispatches`. A seat that dispatches a squad integrates what the
- * squad delivers, and so do the seats after it and the final synthesis; as a
- * run of its own under the outputs base the squad's work would sit BESIDE the
- * seat's run, where no later seat looks for it. Nested, `runFolderOf` maps it
- * to the run that asked for it. Null for a dispatch from the operator, and for
+ * `<run folder>/dispatches`. As a run of its own under the outputs base, that
+ * work would sit BESIDE the run that asked for it, fenced off from it. Nested,
+ * `runFolderOf` maps it to the run that asked for it. Null for a dispatch from the operator, and for
  * a variable that does not name a run folder of this project or of the store.
  */
 export function nestedOutputsBase(projectRoot: string | null, env: Record<string, string | undefined> = process.env): string | null {
@@ -147,7 +145,7 @@ export function fenceSettings(workspace: string, projectRoot: string | null, pla
 
 /** The line every confined worker reads, on every runtime. */
 export function workspaceDirective(workspace: string): string {
-  return `YOUR RUN FOLDER is ${workspace}. What you dispatch from here lands inside it and is yours to use. The earlier runs beside it, in ${path.dirname(workspace)}, are not your input unless your instruction points to them; any other folder your work needs is yours to read and write.`;
+  return `YOUR RUN FOLDER is ${workspace}. Everything you write for this run belongs under the output folder your prompt names. The earlier runs beside it, in ${path.dirname(workspace)}, are not your input unless your instruction points to them; any other folder your work needs is yours to read and write.`;
 }
 
 /**
@@ -191,8 +189,8 @@ export function confineToWorkspace<T extends Confinable>(opts: T): { opts: T; cl
   const projectRoot = resolved && sameDir(canonical(resolved), canonical(opts.cwd)) ? opts.cwd : resolved;
   const addDirs = [...(opts.addDirs ?? [])];
   if (projectRoot && !addDirs.some((d) => sameDir(canonical(d), canonical(projectRoot)))) addDirs.push(projectRoot);
-  // The line rides with the worker's directive. A decision step (a director, a
-  // judge) runs lean with no directive at all and keeps it that way; it still
+  // The line rides with the worker's directive. A decision step (a judge, a router)
+  // runs lean with no directive at all and keeps it that way; it still
   // gets the cwd and, on claude-code, the deny rules.
   const confined: T = {
     ...opts,

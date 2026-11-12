@@ -52,6 +52,9 @@ export interface RouteCandidate {
   reason: string;
 }
 
+/** One deliverable of a request, and the target that delivers it. */
+export interface RoutedPart { kind: "business" | "squad"; slug: string; part: string; after: string[] }
+
 export interface AgenticRouteDecision {
   /** Transport: the router call + JSON parse + slug validation succeeded. */
   ok: boolean;
@@ -62,6 +65,8 @@ export interface AgenticRouteDecision {
   optional_squads: string[];
   /** 0-3 clone slugs, only when the brief implies a voice/persona. */
   suggested_mind_clones: string[];
+  /** Two or more when the request holds deliverables for different targets; [] otherwise. */
+  parts?: RoutedPart[];
   /** Populated only when kind === "ambiguous". */
   candidates: RouteCandidate[];
   rationale: string;
@@ -401,6 +406,20 @@ function failed(error: string, costUsd: number | null, durationMs: number, timed
   };
 }
 
+/**
+ * An empty folder the router runs in: nothing to read, nowhere to write. Always
+ * the same one, because the runtime puts its cwd in the prompt: a fresh random
+ * folder per call changed the prefix and defeated the prompt cache.
+ */
+export function routerCwd(): string {
+  const dir = path.join(os.tmpdir(), "nrv-router");
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+export const addCost = (a: number | null, b: number | null | undefined): number | null =>
+  typeof b === "number" ? (a ?? 0) + b : a;
+
 /** Run the router. Writes one `agentic_route_decision` audit event. */
 export async function agenticRoute(args: AgenticRouteArgs): Promise<AgenticRouteDecision> {
   const routerPaths: RouterPaths = { ...defaultRouterPaths(), ...(args.paths || {}) };
@@ -449,7 +468,9 @@ export async function agenticRoute(args: AgenticRouteArgs): Promise<AgenticRoute
     // Bash, so the stamp is what keeps it from dispatching, not its prompt.
     dispatchRole: "planner",
   });
-  const durationMs = Date.now() - started;
+  let durationMs = Date.now() - started;
+  // What the decision cost, the re-ask included.
+  let costUsd: number | null = res.costUsd;
 
   try { fs.rmSync(briefFile, { force: true }); } catch { /* ignore */ }
 
@@ -501,17 +522,22 @@ export async function agenticRoute(args: AgenticRouteArgs): Promise<AgenticRoute
       narrated.slice(0, 6000),
       "",
       "Your entire reply must be one JSON object and nothing else, in the shape the instructions gave you:",
-      '{"kind":"decision"|"ambiguous"|"no_match","primary_business":"<slug>"|null,"mandatory_squads":[],"optional_squads":[],"mind_clones":[],"rationale":"<one sentence>"}',
+      '{"kind":"decision"|"ambiguous"|"no_match","primary_business":"<slug>"|null,"mandatory_squads":[],"optional_squads":[],"suggested_mind_clones":[],"rationale":"<one sentence>"}',
       "No preamble, no summary of what you did, no markdown fences. The JSON object is the whole reply.",
     ].join("\n");
+    // The comment above promises no tools, and the call used to grant the
+    // runtime's full set: say so in the call, from the empty router folder.
     const retry = runner({
       runtime: args.runtime,
       prompt: reask,
-      cwd: args.cwd,
+      cwd: routerCwd(),
+      noTools: true,
       maxBudgetUsd: args.maxBudgetUsd,
       timeoutMs: 2 * 60 * 1000,
       dispatchRole: "planner",
     });
+    costUsd = addCost(costUsd, retry.costUsd);
+    durationMs = Date.now() - started;
     parsed = retry.ok ? parseAndValidate(retry.result || "", slugs) : parsed;
   }
 
@@ -521,9 +547,9 @@ export async function agenticRoute(args: AgenticRouteArgs): Promise<AgenticRoute
       project_id: args.projectId ?? null,
       error: parsed.error,
       duration_ms: durationMs,
-      cost_usd: res.costUsd,
+      cost_usd: costUsd,
     }, args.cwd);
-    return failed(parsed.error || "router output unparsable", res.costUsd, durationMs);
+    return failed(parsed.error || "router output unparsable", costUsd, durationMs);
   }
 
   const d = parsed.decision;
@@ -541,9 +567,9 @@ export async function agenticRoute(args: AgenticRouteArgs): Promise<AgenticRoute
     rationale: d.rationale,
     runtime: d.runtime,
     warnings: d.warnings,
-    cost_usd: res.costUsd,
+    cost_usd: costUsd,
     duration_ms: durationMs,
   }, args.cwd);
 
-  return { ok: true, ...d, cost_usd: res.costUsd, duration_ms: durationMs };
+  return { ok: true, ...d, cost_usd: costUsd, duration_ms: durationMs };
 }

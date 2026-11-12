@@ -330,6 +330,13 @@ export function stateFromExit(code: number): RunEnvelopeState {
 
 function gateFromState(state: RunEnvelopeState, outputsRoot: string): RunEnvelope["gate"] {
   if (state === "delivered") {
+    // The pipeline's own verdict (_STATUS.json) when the run wrote one; a run from
+    // before it existed is read from the reservations file it left.
+    try {
+      const status = JSON.parse(fs.readFileSync(path.join(outputsRoot, "_STATUS.json"), "utf8"));
+      if (status?.state === "delivered_with_reservations") return "fail-accepted";
+      if (status?.state === "delivered") return "pass";
+    } catch { /* no status file: fall back below */ }
     return fs.existsSync(path.join(outputsRoot, "_QA-RESERVATIONS.md")) ? "fail-accepted" : "pass";
   }
   if (state === "withheld") return "fail";

@@ -179,21 +179,21 @@ describe("library scope", () => {
     expect(listed.sessions.find((s: any) => s.session_id === session_id).library).toBe("isolated");
   });
 
-  test("a global session writes NIRVANA_SCOPE=merge — the library is never project by default", async () => {
+  // The scope lives in the session's project manifest (.nirvana/project.yaml).
+  const sessionScope = (id: string) => JSON.parse(readFileSync(join(root, "sessions", id, ".nirvana", "project.yaml"), "utf8")).scope;
+
+  test("a global session is scoped merge — the library is never project by default", async () => {
     const r = await api("/v1/sessions", { method: "POST" });
     const { session_id } = await r.json();
-    const env = readFileSync(join(root, "sessions", session_id, ".env"), "utf8");
     // The source of intelligence resolves globally; a session that starts
     // blind would route every brief to the generalist.
-    expect(env).toContain("NIRVANA_SCOPE=merge");
-    expect(env).not.toContain("NIRVANA_SCOPE=project");
+    expect(sessionScope(session_id)).toBe("merge");
   });
 
   test("an isolated session is the only one scoped to the project itself", async () => {
     const r = await api("/v1/sessions", { method: "POST", body: JSON.stringify({ library: "isolated" }) });
     const { session_id } = await r.json();
-    const env = readFileSync(join(root, "sessions", session_id, ".env"), "utf8");
-    expect(env).toContain("NIRVANA_SCOPE=project");
+    expect(sessionScope(session_id)).toBe("project");
   });
 
   test("files are written inside the session regardless of where the library comes from", async () => {

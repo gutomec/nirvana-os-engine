@@ -36,7 +36,7 @@ import { spawnSync } from "node:child_process";
 import { resolveScope, enumerate } from "../../_shared/lib/scope.ts";
 import { verifyHook } from "../../_shared/lib/verify/index.ts";
 import { listRuntimes, runtimeAvailable, runHeadless, whichSync, type Runtime } from "../../_shared/lib/host-agent-driver.ts";
-import { canonicalRuntimeName, detectCurrentHost } from "../lib/runtime-rules.ts";
+import { canonicalRuntimeName, detectSessionHost } from "../lib/runtime-rules.ts";
 import {
   detectCaller, issuesFromOutcome, parseActivatorJson, parseFixWithAgent, recover, renderAgentBlock,
   type ActivationIssue, type FixEnv, type SquadOutcome,
@@ -156,7 +156,7 @@ const callerInfo = detectCaller({
   env: process.env,
   stdinTTY: process.stdin.isTTY,
   stdoutTTY: process.stdout.isTTY,
-  sessionHost: detectCurrentHost,
+  sessionHost: detectSessionHost,
 });
 
 function askLine(question: string): Promise<string> {

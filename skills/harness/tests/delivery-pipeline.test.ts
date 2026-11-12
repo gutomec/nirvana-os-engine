@@ -22,6 +22,12 @@ import {
   nonStubText,
   decideGateOutcome,
   producesForRubric,
+  runGateOnce,
+  planJudgeBatches,
+  findingKey,
+  sameSeriousFindings,
+  shortLine,
+  GATE_FINDINGS_FILE,
   type DeliveryArgs,
   type RuntimeErrorOutcome,
 } from "../lib/delivery-pipeline.ts";
@@ -30,21 +36,30 @@ import { loadHarnessConfig, type HarnessConfig } from "../lib/harness-config.ts"
 // heuristic gate, whatever runtime the machine has on PATH.
 const judgeOff = (cfg: HarnessConfig): HarnessConfig => ({ ...cfg, quality_gate: { ...cfg.quality_gate, judge_enabled: false } });
 import * as runLedger from "../lib/run-ledger.ts";
-import { SCOPE_GUARD_PT_BR } from "../../_shared/lib/scope-guard.ts";
+import { soloDirective } from "../lib/business-solo.ts";
+import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
+import { SCOPE_GUARD_EN } from "../../_shared/lib/scope-guard.ts";
 import { spawnBudgetMs } from "./helpers/test-budgets.ts";
+import { isRunStateFile } from "../../_shared/lib/run-plumbing.ts";
+import { JUDGE_BATCH_FILE_MAX_CHARS, JUDGE_BATCH_MAX_CHARS } from "../lib/judge.ts";
 
 const GATE = path.join(import.meta.dir, "..", "scripts", "quality-gate.ts");
 
 let tmp: string;
 const savedLogsDir = process.env.HARNESS_LOGS_DIR;
+const savedSkillsDir = process.env.NIRVANA_SKILLS_DIR;
 beforeEach(() => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-delivery-"));
   // Isolate every audit side effect (pipeline + spawned gate children).
   process.env.HARNESS_LOGS_DIR = path.join(tmp, "logs");
+  // The gate loads its rubrics from this checkout, never from an install.
+  process.env.NIRVANA_SKILLS_DIR = path.join(import.meta.dir, "..", "..");
 });
 afterEach(() => {
   if (savedLogsDir === undefined) delete process.env.HARNESS_LOGS_DIR;
   else process.env.HARNESS_LOGS_DIR = savedLogsDir;
+  if (savedSkillsDir === undefined) delete process.env.NIRVANA_SKILLS_DIR;
+  else process.env.NIRVANA_SKILLS_DIR = savedSkillsDir;
   try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* best effort */ }
 });
 
@@ -150,6 +165,7 @@ describe("gateableFiles — the Phase 4 gate surface", () => {
     fs.mkdirSync(path.join(oroot, "_internal"), { recursive: true });
     fs.writeFileSync(path.join(oroot, "relatorio.md"), PASSING_MD);
     fs.writeFileSync(path.join(oroot, "_SUMMARY.md"), PASSING_MD);
+    fs.writeFileSync(path.join(oroot, "_CLAIMS.json"), JSON.stringify([{ id: "d1", evidence: "relatorio.md:1-9, the whole report" }]) + " ".repeat(300));
     fs.writeFileSync(path.join(oroot, ".squad-state", "state.md"), FAILING_MD);
     fs.writeFileSync(path.join(oroot, "projects", "old", "draft.md"), FAILING_MD);
     fs.writeFileSync(path.join(oroot, "_internal", "notes.md"), FAILING_MD);
@@ -160,9 +176,9 @@ describe("gateableFiles — the Phase 4 gate surface", () => {
     fs.writeFileSync(path.join(oroot, "memory", "projects", "old.md"), FAILING_MD);
 
     const gated = gateableFiles(oroot, new Set()).map(f => path.relative(oroot, f)).sort();
-    // `_SUMMARY.md` is a FILE the run authored — the reserved prefix marks
-    // directories, never the engine's own root-level handoff files.
-    expect(gated).toEqual(["_SUMMARY.md", path.join("memory", "permanent.md"), "relatorio.md"]);
+    // `_SUMMARY.md` and `_CLAIMS.json` are the worker talking about its work
+    // (run-plumbing.ts isRunStateFile): the gate judges the work itself.
+    expect(gated).toEqual([path.join("memory", "permanent.md"), "relatorio.md"]);
   });
 
   test("when the captured entity is ALL there is, it IS gated (never silence the only signal)", () => {
@@ -261,8 +277,8 @@ describe("runDelivery — outcomes", () => {
       maxRevisions: 1,
       runHeadlessImpl: ((opts: any) => {
         revisions++;
-        expect(opts.prompt).toContain("quality gate reprovou");
-        expect(opts.prompt).toContain(SCOPE_GUARD_PT_BR);
+        expect(opts.prompt).toContain("quality gate rejected");
+        expect(opts.prompt).toContain(SCOPE_GUARD_EN);
         fs.writeFileSync(artifact, PASSING_MD); // the "agent" fixes the file
         return { ok: true, runtime: opts.runtime, sessionId: "sess-rev-1", result: "", costUsd: null, exitCode: 0, stderr: "", durationMs: 5 };
       }) as any,
@@ -310,6 +326,7 @@ describe("runDelivery — outcomes", () => {
       expect(call.prompt).toContain(path.resolve(artifact));
       expect(call.prompt).toContain(path.resolve(oroot));
       expect(call.dispatchRole).toBe("squad");
+      // Both the resumed round and the cold retry run with the squad's environment.
       expect(call.env).toEqual({ NODE_PATH: "/env/brandcraft/node_modules" });
     }
     expect(res.exitCode).toBe(0);
@@ -317,7 +334,7 @@ describe("runDelivery — outcomes", () => {
     expect(calls.find(x => x.event === "revision_auto")?.payload.cold_retry).toBe(true);
   }, spawnBudgetMs(2));
 
-  test("a correction the runtime ran in another conversation is warned about, audited, never re-run, and the new id kept", () => {
+  test("a correction the runtime ran in a NEW conversation is warned about, audited, never re-run, and the new id kept", () => {
     const oroot = path.join(tmp, "out-resume-lost");
     fs.mkdirSync(oroot);
     const artifact = path.join(oroot, "nota.md");
@@ -332,8 +349,8 @@ describe("runDelivery — outcomes", () => {
       runHeadlessImpl: ((opts: any) => {
         seen.push(opts);
         fs.writeFileSync(artifact, PASSING_MD);
-        return { ok: true, runtime: opts.runtime, sessionId: "conv-new", result: "OK", costUsd: null, exitCode: 0, stderr: "", durationMs: 5,
-          resumeLost: true, warnings: ["agy: resume failed: --continue did not resume conversation conv-gone"] };
+        return { ok: true, runtime: opts.runtime, sessionId: "conv-new", result: "OK", costUsd: null, exitCode: 0, stderr: 'warning: conversation "conv-gone" not found', durationMs: 5,
+          resumeLost: true, warnings: ["agy: resume failed: --conversation conv-gone did not resume that conversation"] };
       }) as any,
     });
     const res = runDelivery(args);
@@ -803,5 +820,621 @@ describe("producesForRubric — delivery.produces_to_rubric", () => {
   test("on, the target's declaration reaches the rubric selector, trimmed and deduped", () => {
     expect(producesForRubric([" landing-page ", "copy", "landing-page", "", "  "], true)).toEqual(["landing-page", "copy"]);
     expect(producesForRubric(null, true)).toEqual([]);
+  });
+});
+
+// ── owner rule A: serious findings, reservations, _STATUS.json ───────────
+// A serious finding (a leaked secret, an invalid file, a material defect, an
+// unproven blocking criterion) keeps being corrected past the normal limit,
+// up to SERIOUS_EXTRA_ROUNDS more rounds, and is WITHHELD if it stays; any
+// other failure ships with reservations. Every outcome lands in _STATUS.json.
+
+// Unparseable: json-valid fails, which is serious.
+const INVALID_JSON = '{"items": [' + '"valor", '.repeat(40);
+const VALID_JSON = JSON.stringify({ items: Array.from({ length: 30 }, (_, i) => `item ${i}`) });
+
+function statusOf(oroot: string): Record<string, any> {
+  return JSON.parse(fs.readFileSync(path.join(oroot, "_STATUS.json"), "utf8"));
+}
+
+function auditLines(): any[] {
+  const day = new Date().toISOString().slice(0, 10);
+  const file = path.join(tmp, "logs", day, "audit.jsonl");
+  if (!fs.existsSync(file)) return [];
+  return fs.readFileSync(file, "utf8").split("\n").filter(Boolean).map(l => { try { return parseAuditLine(l); } catch { return {}; } });
+}
+
+const WORK_BRIEF = [
+  "## Request (verbatim)", "Quero uma página de entrega.", "",
+  "## Decisions", "None.", "",
+  "## Your part", "A página.", "",
+  "## Inputs", "None.", "",
+  "## Done when",
+  "- A página existe e abre no navegador (bloqueante)",
+  "  - um detalhe aninhado que não é critério",
+  "- Tem um título claro",
+  "", "## Output", "page.html", "",
+].join("\n");
+
+describe("runDelivery — _STATUS.json and the state field", () => {
+  test("a pass: state delivered, gate pass, exit 0", () => {
+    const oroot = path.join(tmp, "st-pass");
+    fs.mkdirSync(oroot);
+    fs.writeFileSync(path.join(oroot, "page.html"), PASSING_HTML);
+    const res = runDelivery(baseArgs(oroot).args);
+    expect(res.state).toBe("delivered");
+    expect(statusOf(oroot)).toEqual({ state: "delivered", gate: "pass", serious: [], reservations: null, exit_code: 0 });
+  }, spawnBudgetMs(2));
+
+  test("only run state under the outputs root is NOT a delivery: exit 1, state failed, gate skipped", () => {
+    const oroot = path.join(tmp, "st-only-state");
+    fs.mkdirSync(path.join(oroot, "_work"), { recursive: true });
+    fs.writeFileSync(path.join(oroot, "_SUMMARY.md"), PASSING_MD);
+    fs.writeFileSync(path.join(oroot, "_CLAIMS.json"), JSON.stringify([{ id: "d1", evidence: "x" }]) + " ".repeat(300));
+    fs.writeFileSync(path.join(oroot, "_work", "PROGRESS.md"), PASSING_MD);
+    const { args, calls } = baseArgs(oroot);
+    const res = runDelivery(args);
+    expect(res.exitCode).toBe(1);
+    expect(res.state).toBe("failed");
+    expect(res.produced).toEqual([]);
+    expect(calls.find(x => x.event === "verify_failed")?.payload.reason).toBe("only run state");
+    expect(statusOf(oroot)).toMatchObject({ state: "failed", gate: "skipped", exit_code: 1 });
+  }, spawnBudgetMs(1));
+
+  test("nothing gateable: state indeterminate, gate skipped, exit 3", () => {
+    const oroot = path.join(tmp, "st-ind");
+    fs.mkdirSync(oroot);
+    fs.writeFileSync(path.join(oroot, "bundle.zip"), Buffer.alloc(2048));
+    const res = runDelivery(baseArgs(oroot).args);
+    expect(res.state).toBe("indeterminate");
+    expect(statusOf(oroot)).toMatchObject({ state: "indeterminate", gate: "skipped", exit_code: 3 });
+  }, spawnBudgetMs(1));
+
+  test("a style failure after the corrections: delivered WITH RESERVATIONS, exit 0, the note named in _STATUS.json", () => {
+    const oroot = path.join(tmp, "st-reservations");
+    fs.mkdirSync(oroot);
+    fs.writeFileSync(path.join(oroot, "nota.md"), FAILING_MD);
+    const res = runDelivery(baseArgs(oroot).args);
+    expect(res.exitCode).toBe(0);
+    expect(res.state).toBe("delivered_with_reservations");
+    expect(res.serious).toEqual([]);
+    const status = statusOf(oroot);
+    expect(status.state).toBe("delivered_with_reservations");
+    expect(status.gate).toBe("fail");
+    expect(status.reservations).toBe(path.join(oroot, "_QA-RESERVATIONS.md"));
+    // No environment knob decides this any more: the rule is the owner's.
+    expect(fs.readFileSync(status.reservations, "utf8")).not.toContain("NIRVANA_GATE_EXHAUSTED");
+  }, spawnBudgetMs(2));
+});
+
+const okRun = (opts: any) => ({ ok: true, runtime: opts.runtime, sessionId: null, result: "", costUsd: null, exitCode: 0, stderr: "", durationMs: 1 });
+
+describe("runDelivery — a serious finding (rule A)", () => {
+  test("serious findings that change every round keep being corrected past max_revisions, 3 more rounds, then are WITHHELD", () => {
+    const oroot = path.join(tmp, "se-json");
+    fs.mkdirSync(oroot);
+    const a = path.join(oroot, "a.json");
+    const b = path.join(oroot, "b.json");
+    fs.writeFileSync(a, INVALID_JSON);
+    fs.writeFileSync(b, VALID_JSON);
+    let runs = 0;
+    const warned: string[] = [];
+    // Each correction fixes the broken file and breaks the other: progress every
+    // round, never a pass.
+    const { args, calls } = baseArgs(oroot, {
+      maxRevisions: 1, warn: (l: string) => warned.push(l),
+      runHeadlessImpl: ((opts: any) => {
+        runs++;
+        const broken = runs % 2 === 1 ? b : a;
+        fs.writeFileSync(broken === a ? b : a, VALID_JSON);
+        fs.writeFileSync(broken, INVALID_JSON);
+        return okRun(opts);
+      }) as any,
+    });
+    const res = runDelivery(args);
+    expect(runs).toBe(4);                      // 1 normal round + 3 for the serious finding
+    expect(res.revisionsUsed).toBe(4);
+    expect(res.exitCode).toBe(2);
+    expect(res.state).toBe("withheld");
+    expect(res.delivered).toBe(false);
+    expect(res.serious).toEqual(["a.json: json-valid failed"]);
+    const events = calls.map(x => x.event);
+    expect(events).not.toContain("delivered");
+    expect(calls.find(x => x.event === "x_delivery_withheld")?.payload.serious).toEqual(["a.json: json-valid failed"]);
+    expect(calls.find(x => x.event === "x_delivery_withheld")?.payload.no_progress).toBeUndefined();
+    expect(statusOf(oroot)).toEqual({ state: "withheld", gate: "fail", serious: ["a.json: json-valid failed"], reservations: null, exit_code: 2 });
+    // Where the 4 comes from, on the line itself, and each serious finding under it.
+    const counter = warned.filter(l => l.includes("auto-revision"));
+    expect(counter).toHaveLength(4);
+    expect(counter[0]).toContain("auto-revision 1/4 (max_revisions 1 + 3 for serious findings; 1 serious finding(s))");
+    expect(counter[3]).toContain("auto-revision 4/4");
+    const firstFinding = warned[warned.indexOf(counter[0]) + 1];
+    expect(firstFinding).toStartWith("    ! a.json: json-valid failed");
+    expect(firstFinding.length).toBeLessThanOrEqual(4 + 2 + 160);
+  }, spawnBudgetMs(10));
+
+  test("a correction that leaves the same serious finding ends the extra rounds: no progress, WITHHELD", () => {
+    const oroot = path.join(tmp, "se-stuck");
+    fs.mkdirSync(oroot);
+    fs.writeFileSync(path.join(oroot, "dados.json"), INVALID_JSON);
+    let runs = 0;
+    const warned: string[] = [];
+    const { args, calls } = baseArgs(oroot, {
+      maxRevisions: 1, warn: (l: string) => warned.push(l),
+      runHeadlessImpl: ((opts: any) => { runs++; return okRun(opts); }) as any,
+    });
+    const res = runDelivery(args);
+    expect(runs).toBe(1);                      // the normal round runs; no extra round follows it
+    expect(res.revisionsUsed).toBe(1);
+    expect(res.state).toBe("withheld");
+    expect(res.serious).toEqual(["dados.json: json-valid failed"]);
+    expect(calls.find(x => x.event === "x_delivery_withheld")?.payload.no_progress).toBe(true);
+    expect(warned.some(l => l.includes("no progress"))).toBe(true);
+    expect(fs.readFileSync(path.join(oroot, GATE_FINDINGS_FILE), "utf8")).toContain("No progress: round 1 carries the same serious findings as round 0");
+  }, spawnBudgetMs(4));
+
+  test("no progress is caught in the middle of the extra rounds too", () => {
+    const oroot = path.join(tmp, "se-stuck-later");
+    fs.mkdirSync(oroot);
+    const a = path.join(oroot, "a.json");
+    const b = path.join(oroot, "b.json");
+    fs.writeFileSync(a, INVALID_JSON);
+    fs.writeFileSync(b, VALID_JSON);
+    let runs = 0;
+    const { args } = baseArgs(oroot, {
+      maxRevisions: 1,
+      // The first correction moves the defect to b.json; the next ones change nothing.
+      runHeadlessImpl: ((opts: any) => { runs++; if (runs === 1) { fs.writeFileSync(a, VALID_JSON); fs.writeFileSync(b, INVALID_JSON); } return okRun(opts); }) as any,
+    });
+    const res = runDelivery(args);
+    expect(runs).toBe(2);                      // round 2 made no progress over round 1: round 3 never runs
+    expect(res.state).toBe("withheld");
+    expect(res.serious).toEqual(["b.json: json-valid failed"]);
+  }, spawnBudgetMs(5));
+
+  test("the normal rounds always run, whatever they change", () => {
+    const oroot = path.join(tmp, "se-normal");
+    fs.mkdirSync(oroot);
+    fs.writeFileSync(path.join(oroot, "dados.json"), INVALID_JSON);
+    let runs = 0;
+    const { args } = baseArgs(oroot, { maxRevisions: 2, runHeadlessImpl: ((opts: any) => { runs++; return okRun(opts); }) as any });
+    runDelivery(args);
+    expect(runs).toBe(2);                      // max_revisions is the user's: both run; the extra rounds do not
+  }, spawnBudgetMs(5));
+
+  test("a serious finding the correction fixes falls back to the normal outcome", () => {
+    const oroot = path.join(tmp, "se-fixed");
+    fs.mkdirSync(oroot);
+    const file = path.join(oroot, "dados.json");
+    fs.writeFileSync(file, INVALID_JSON);
+    const { args } = baseArgs(oroot, {
+      maxRevisions: 1,
+      runHeadlessImpl: ((opts: any) => { fs.writeFileSync(file, VALID_JSON); return { ok: true, runtime: opts.runtime, sessionId: null, result: "", costUsd: null, exitCode: 0, stderr: "", durationMs: 1 }; }) as any,
+    });
+    const res = runDelivery(args);
+    expect(res.revisionsUsed).toBe(1);
+    expect(res.state).toBe("delivered");
+  }, spawnBudgetMs(3));
+
+  test("--force-deliver overrides a quality verdict, never a serious finding", () => {
+    const oroot = path.join(tmp, "se-force");
+    fs.mkdirSync(oroot);
+    fs.writeFileSync(path.join(oroot, "dados.json"), INVALID_JSON);
+    const { args, calls } = baseArgs(oroot, { forceDeliver: true });
+    const res = runDelivery(args);
+    expect(res.exitCode).toBe(2);
+    expect(calls.map(x => x.event)).not.toContain("delivered");
+  }, spawnBudgetMs(2));
+
+  test("maxRevisions 0 (an unattended caller) runs no correction at all, serious or not", () => {
+    const oroot = path.join(tmp, "se-zero");
+    fs.mkdirSync(oroot);
+    fs.writeFileSync(path.join(oroot, "dados.json"), INVALID_JSON);
+    const res = runDelivery(baseArgs(oroot).args); // runHeadless throws if called
+    expect(res.revisionsUsed).toBe(0);
+    expect(res.state).toBe("withheld");
+  }, spawnBudgetMs(2));
+
+  test("a leaked secret is serious, and the run's own value is what the gate looks for", () => {
+    const oroot = path.join(tmp, "se-secret");
+    fs.mkdirSync(oroot);
+    const saved = process.env.NRV_TEST_PIPELINE_API_KEY;
+    process.env.NRV_TEST_PIPELINE_API_KEY = "nrv-fixture-9f3c2a7d1e";
+    try {
+      fs.writeFileSync(path.join(oroot, "nota.md"), PASSING_MD + "\nA chave usada foi nrv-fixture-9f3c2a7d1e.\n");
+      const res = runDelivery(baseArgs(oroot).args);
+      expect(res.state).toBe("withheld");
+      expect(res.serious).toEqual(["nota.md: secret-leak failed"]);
+    } finally {
+      if (saved === undefined) delete process.env.NRV_TEST_PIPELINE_API_KEY; else process.env.NRV_TEST_PIPELINE_API_KEY = saved;
+    }
+  }, spawnBudgetMs(2));
+
+  test("a blocking criterion the solo review left unconfirmed withholds even a passing gate", () => {
+    const oroot = path.join(tmp, "se-review");
+    fs.mkdirSync(oroot);
+    fs.writeFileSync(path.join(oroot, "page.html"), PASSING_HTML);
+    const { args, calls } = baseArgs(oroot, { reviewBlockingMissed: ["d1"] });
+    const res = runDelivery(args);
+    expect(res.gateOutcome).toBe("pass");
+    expect(res.state).toBe("withheld");
+    expect(calls.map(x => x.event)).toContain("gate_passed");
+    expect(calls.map(x => x.event)).not.toContain("delivered");
+    expect(statusOf(oroot)).toMatchObject({ gate: "pass", serious: ["review: blocking criterion d1 was not confirmed"] });
+  }, spawnBudgetMs(2));
+});
+
+describe("runDelivery — the claims check of a business delivery", () => {
+  function claimsCase(name: string, claims: unknown | null, extra: Partial<DeliveryArgs> = {}) {
+    const oroot = path.join(tmp, name);
+    fs.mkdirSync(path.join(oroot, "site"), { recursive: true });
+    fs.writeFileSync(path.join(oroot, "site", "page.html"), PASSING_HTML);
+    if (claims !== null) fs.writeFileSync(path.join(oroot, "_CLAIMS.json"), JSON.stringify(claims));
+    const { args, calls } = baseArgs(oroot, { brief: WORK_BRIEF, ...extra });
+    return { oroot, res: runDelivery(args), calls };
+  }
+
+  test("no _CLAIMS.json: the blocking criterion is unproven, so the delivery is withheld", () => {
+    const { res } = claimsCase("cl-none", null);
+    expect(res.state).toBe("withheld");
+    expect(res.serious).toEqual(["blocking criterion d1 (A página existe e abre no navegador): _CLAIMS.json is missing or not a JSON array"]);
+  }, spawnBudgetMs(2));
+
+  test("evidence that names a file which does not exist is no proof", () => {
+    const { res } = claimsCase("cl-missing", [{ id: "d1", evidence: "site/inexistente.html:1-20, a página" }]);
+    expect(res.state).toBe("withheld");
+    expect(res.serious[0]).toContain("names no file that exists under the outputs root");
+  }, spawnBudgetMs(2));
+
+  test("evidence naming an existing file delivers; a Windows separator and a line range are fine", () => {
+    const { res } = claimsCase("cl-ok", [{ id: "d1", evidence: "site\\page.html:1-11, the page itself" }]);
+    expect(res.state).toBe("delivered");
+    expect(res.serious).toEqual([]);
+  }, spawnBudgetMs(2));
+
+  test("only BLOCKING criteria are checked, and only nested-free top-level bullets are criteria", () => {
+    // d2 ("Tem um título claro") is not blocking; the nested bullet is no criterion at all.
+    const { res } = claimsCase("cl-blocking-only", [{ id: "d1", evidence: "`site/page.html`, inteira" }]);
+    expect(res.state).toBe("delivered");
+  }, spawnBudgetMs(2));
+
+  test("the claims check is a business check: a squad run with the same brief is not held to it", () => {
+    const { res } = claimsCase("cl-squad", null, { targetKind: "squad", slug: null });
+    expect(res.state).toBe("delivered");
+  }, spawnBudgetMs(2));
+
+  test("a correction is told which criterion lacks proof, and the solo worker keeps its role and directive", () => {
+    const seen: any[] = [];
+    const { res } = claimsCase("cl-revise", null, {
+      maxRevisions: 1, producerRole: "solo", rulesDirective: "\nRULES", env: { NODE_PATH: "/env/carded/node_modules" },
+      runHeadlessImpl: ((opts: any) => {
+        seen.push(opts);
+        fs.writeFileSync(path.join(tmp, "cl-revise", "_CLAIMS.json"), JSON.stringify([{ id: "d1", evidence: "site/page.html:1, the page" }]));
+        return { ok: true, runtime: opts.runtime, sessionId: null, result: "", costUsd: null, exitCode: 0, stderr: "", durationMs: 1 };
+      }) as any,
+    });
+    expect(seen).toHaveLength(1);
+    expect(seen[0].dispatchRole).toBe("solo");
+    expect(seen[0].env).toEqual({ NODE_PATH: "/env/carded/node_modules" });
+    expect(seen[0].appendSystemPrompt).toBe(soloDirective("\nRULES"));
+    expect(seen[0].prompt).toContain("d1 (A página existe e abre no navegador)");
+    expect(seen[0].prompt).toContain("_SUMMARY.md and _CLAIMS.json");
+    expect(res.state).toBe("delivered");
+  }, spawnBudgetMs(3));
+});
+
+describe("runDelivery — what the gate reports about itself", () => {
+  test("the real mode per file: a judge that ran on some files is `mixed`, never stamped `judge`", () => {
+    const fakeGate = path.join(tmp, "fake-gate.ts");
+    fs.writeFileSync(fakeGate, `
+const file = Bun.argv[2];
+const mode = file.endsWith(".md") ? "judge" : "heuristic";
+console.log(JSON.stringify({ status: "PASS", mode, results: [] }));
+`, "utf8");
+    const oroot = path.join(tmp, "mode-mixed");
+    fs.mkdirSync(oroot);
+    fs.writeFileSync(path.join(oroot, "nota.md"), PASSING_MD);
+    fs.writeFileSync(path.join(oroot, "page.html"), PASSING_HTML);
+    const { args, calls } = baseArgs(oroot, { gateScript: fakeGate });
+    runDelivery(args);
+    const passed = calls.find(x => x.event === "gate_passed")!;
+    expect(passed.payload.mode).toBe("mixed");
+    expect(passed.payload.judged_files).toBe(1);
+  }, spawnBudgetMs(2));
+
+  test("a judge that gave no verdict is reported as heuristic", () => {
+    const oroot = path.join(tmp, "mode-heuristic");
+    fs.mkdirSync(oroot);
+    fs.writeFileSync(path.join(oroot, "page.html"), PASSING_HTML);
+    const { args, calls } = baseArgs(oroot);
+    runDelivery(args);
+    expect(calls.find(x => x.event === "gate_passed")!.payload.mode).toBe("heuristic");
+  }, spawnBudgetMs(2));
+});
+
+describe("runDelivery — the ledger while the run is judged", () => {
+  test("the worker's pid is cleared and the lease renewed by the pipeline", () => {
+    const oroot = path.join(tmp, "led-pid");
+    fs.mkdirSync(oroot);
+    fs.writeFileSync(path.join(oroot, "page.html"), PASSING_HTML);
+    const led = openTestRun();
+    runLedger.recordChildPid(led.handle, led.runId, 999_999, null);
+    const res = runDelivery(baseArgs(oroot, { ledger: led }).args);
+    expect(res.state).toBe("delivered");
+    const row = runLedger.getRun(led.handle, led.runId)!;
+    expect(row.child_pid).toBeNull();
+    const renewals = auditLines().filter(l => l.event === "x_ledger_lease_renewed" && l.run_id === led.runId);
+    expect(renewals.length).toBeGreaterThan(0);
+    expect(renewals.every(l => l.source === "delivery-pipeline")).toBe(true);
+  }, spawnBudgetMs(2));
+
+  test("a publication that throws is reported, and the run still reaches delivered (never stuck at gated)", () => {
+    const oroot = path.join(tmp, "led-throw");
+    fs.mkdirSync(oroot);
+    fs.writeFileSync(path.join(oroot, "page.html"), PASSING_HTML);
+    const led = openTestRun();
+    const { args, calls } = baseArgs(oroot, { ledger: led, afterGate: () => { throw new Error("pdf engine exploded"); } });
+    const res = runDelivery(args);
+    expect(res.state).toBe("delivered");
+    expect(calls.find(x => x.event === "x_after_gate_failed")?.payload.error).toBe("pdf engine exploded");
+    expect(runLedger.getRun(led.handle, led.runId)!.state).toBe("delivered");
+  }, spawnBudgetMs(2));
+});
+
+describe("deliverAfterRuntimeError — a worker that crashed is never a full pass", () => {
+  test("passing artifacts ship WITH RESERVATIONS naming the error, and the row never passes through failed", () => {
+    const oroot = path.join(tmp, "rt-reservations");
+    fs.mkdirSync(oroot);
+    fs.writeFileSync(path.join(oroot, "guia.html"), PASSING_HTML);
+    const led = openTestRun();
+    const outcome = deliverAfterRuntimeError({ ...baseArgs(oroot, { ledger: led }).args, runtimeError: "timed out after 30 min" });
+    expect(outcome.exitCode).toBe(0);
+    expect(outcome.result!.state).toBe("delivered_with_reservations");
+    expect(outcome.result!.ceilingApplied).toContain("timed out after 30 min");
+    expect(fs.readFileSync(path.join(oroot, "_QA-RESERVATIONS.md"), "utf8")).toContain("timed out after 30 min");
+    const row = runLedger.getRun(led.handle, led.runId)!;
+    expect(row.state).toBe("delivered");
+    expect(row.last_error).toBe("timed out after 30 min");
+    const transitions = auditLines().filter(l => l.event === "x_ledger_state_changed" && l.run_id === led.runId).map(l => l.to);
+    expect(transitions).not.toContain("failed");
+    expect(transitions).toContain("verifying");
+  }, spawnBudgetMs(2));
+
+  test("a serious finding after a crash is withheld", () => {
+    const oroot = path.join(tmp, "rt-serious");
+    fs.mkdirSync(oroot);
+    fs.writeFileSync(path.join(oroot, "dados.json"), INVALID_JSON);
+    const outcome = deliverAfterRuntimeError({ ...baseArgs(oroot).args, runtimeError: "killed" });
+    expect(outcome.result!.state).toBe("withheld");
+    expect(outcome.exitCode).toBe(2);
+  }, spawnBudgetMs(2));
+
+  test("a crash that left only run state is nothing to judge", () => {
+    const oroot = path.join(tmp, "rt-only-state");
+    fs.mkdirSync(path.join(oroot, "_work"), { recursive: true });
+    fs.writeFileSync(path.join(oroot, "_work", "PROGRESS.md"), PASSING_MD);
+    const outcome = deliverAfterRuntimeError({ ...baseArgs(oroot).args, runtimeError: "killed" });
+    expect(outcome.judged).toBe(false);
+    expect(outcome.exitCode).toBe(1);
+    expect(statusOf(oroot)).toMatchObject({ state: "failed", exit_code: 1 });
+  });
+
+  test("a caller's own ceiling still wins (the supervisor's salvage withholds)", () => {
+    const oroot = path.join(tmp, "rt-caller-ceiling");
+    fs.mkdirSync(oroot);
+    fs.writeFileSync(path.join(oroot, "guia.html"), PASSING_HTML);
+    const outcome = deliverAfterRuntimeError({ ...baseArgs(oroot, { completenessCeiling: { reason: CEILING_REASON } }).args, runtimeError: "killed" });
+    expect(outcome.result!.state).toBe("withheld");
+    expect(outcome.result!.ceilingApplied).toBe(CEILING_REASON);
+  }, spawnBudgetMs(2));
+});
+
+describe("runDelivery — _GATE-FINDINGS.md, the gate's round-by-round record", () => {
+  test("every round is recorded with rubric, file, reasoning, fixes and seriousness; the file is run state", () => {
+    const oroot = path.join(tmp, "gf-rounds");
+    fs.mkdirSync(oroot);
+    fs.writeFileSync(path.join(oroot, "dados.json"), INVALID_JSON);
+    fs.writeFileSync(path.join(oroot, "nota.md"), FAILING_MD);
+    const { args } = baseArgs(oroot, { maxRevisions: 1, runHeadlessImpl: okRun as any });
+    const res = runDelivery(args);
+    const file = path.join(oroot, GATE_FINDINGS_FILE);
+    const text = fs.readFileSync(file, "utf8");
+    expect(text).toStartWith("# Gate findings");
+    expect(text).toContain("## Gate run · proj-delivery-test");
+    expect(text).toContain("### Round 0 (first gate) · FAIL");
+    expect(text).toContain("### Round 1 (after correction 1) · FAIL");
+    expect(text).toMatch(/- \*\*SERIOUS\*\* `dados\.json` · `json-valid`: \S/);
+    expect(text).toMatch(/- `nota\.md` · `wiki-lint`: \S/);
+    expect(text).toContain("  - fix: ");
+    // Serious first within a round.
+    const round0 = text.slice(text.indexOf("### Round 0"), text.indexOf("### Round 1"));
+    expect(round0.indexOf("**SERIOUS**")).toBeLessThan(round0.indexOf("`nota.md`"));
+    // Never a deliverable: not produced, not gated, not a candidate.
+    expect(isRunStateFile(GATE_FINDINGS_FILE)).toBe(true);
+    expect(isRunStateFile(`sub\\${GATE_FINDINGS_FILE}`, "win32")).toBe(true);
+    expect(res.produced.map(f => path.basename(f))).not.toContain(GATE_FINDINGS_FILE);
+    expect(res.gatedFiles.map(f => path.basename(f))).not.toContain(GATE_FINDINGS_FILE);
+    expect(gateableFiles(oroot, new Set()).map(f => path.basename(f))).not.toContain(GATE_FINDINGS_FILE);
+    expect(candidateArtifacts(oroot, "").map(f => path.basename(f))).not.toContain(GATE_FINDINGS_FILE);
+  }, spawnBudgetMs(4));
+
+  test("a passing round is recorded as such, and a run that leaves only the findings file delivered nothing", () => {
+    const oroot = path.join(tmp, "gf-pass");
+    fs.mkdirSync(oroot);
+    fs.writeFileSync(path.join(oroot, "page.html"), PASSING_HTML);
+    runDelivery(baseArgs(oroot).args);
+    expect(fs.readFileSync(path.join(oroot, GATE_FINDINGS_FILE), "utf8")).toContain("### Round 0 (first gate) · PASS");
+
+    const only = path.join(tmp, "gf-only");
+    fs.mkdirSync(only);
+    fs.writeFileSync(path.join(only, GATE_FINDINGS_FILE), "# Gate findings\n\n" + "x".repeat(400));
+    const res = runDelivery(baseArgs(only).args);
+    expect(res.exitCode).toBe(1);
+    expect(res.state).toBe("failed");
+  }, spawnBudgetMs(2));
+
+  test("a non-serious failure names its limit's source too", () => {
+    const oroot = path.join(tmp, "gf-style");
+    fs.mkdirSync(oroot);
+    fs.writeFileSync(path.join(oroot, "nota.md"), FAILING_MD);
+    const warned: string[] = [];
+    runDelivery(baseArgs(oroot, { maxRevisions: 1, warn: (l: string) => warned.push(l), runHeadlessImpl: okRun as any }).args);
+    expect(warned.find(l => l.includes("auto-revision"))).toContain("auto-revision 1/1 (max_revisions 1)");
+    expect(warned.some(l => l.startsWith("    ! "))).toBe(false);
+  }, spawnBudgetMs(3));
+});
+
+describe("serious finding identity", () => {
+  test("keys ignore case, separators and spacing; equality is by set of keys, never prose", () => {
+    expect(findingKey("rubric", "JSON-valid", "docs\\Plan.json")).toBe(findingKey("rubric", "json-valid", "docs/plan.json"));
+    const a = [{ key: findingKey("criterion", "d1"), text: "blocking criterion d1 (x): no claim", detail: "" }];
+    const b = [{ key: findingKey("criterion", " D1 "), text: "blocking criterion d1 (x): evidence names no file", detail: "other words" }];
+    expect(sameSeriousFindings(a, b)).toBe(true);
+    expect(sameSeriousFindings(a, [...b, { key: "rubric|secret-leak|a.md", text: "", detail: "" }])).toBe(false);
+    expect(sameSeriousFindings([], [])).toBe(false);
+  });
+
+  test("shortLine folds whitespace and cuts long lines", () => {
+    expect(shortLine("a\n  b")).toBe("a b");
+    const long = shortLine("x".repeat(500));
+    expect(long).toHaveLength(160);
+    expect(long.endsWith("…")).toBe(true);
+  });
+});
+
+describe("runDelivery — a run stopped under the pipeline spends nothing more", () => {
+  const throwingGate = () => {
+    const gate = path.join(tmp, "gate-must-not-run.ts");
+    fs.writeFileSync(gate, `require("node:fs").writeFileSync(${JSON.stringify(path.join(tmp, "gate-ran"))}, "1"); process.exit(1);\n`);
+    return gate;
+  };
+
+  test("abandoned before the pipeline: no verify, no gate, the row stays abandoned, _STATUS.json says stopped", () => {
+    const oroot = path.join(tmp, "stop-before");
+    fs.mkdirSync(oroot);
+    fs.writeFileSync(path.join(oroot, "page.html"), PASSING_HTML);
+    const led = openTestRun();
+    runLedger.abandon(led.handle, led.runId, "stopped by the user");
+    const warned: string[] = [];
+    const { args, calls } = baseArgs(oroot, { ledger: led, gateScript: throwingGate(), warn: (l: string) => warned.push(l) });
+    const res = runDelivery(args);
+    expect(res.stopped).toBe("abandoned: stopped by the user");
+    expect(res.exitCode).toBe(1);
+    expect(res.state).toBe("failed");
+    expect(res.delivered).toBe(false);
+    expect(fs.existsSync(path.join(tmp, "gate-ran"))).toBe(false);
+    expect(runLedger.getRun(led.handle, led.runId)!.state).toBe("abandoned");
+    expect(statusOf(oroot)).toMatchObject({ state: "failed", stopped: "abandoned: stopped by the user", exit_code: 1 });
+    expect(calls.map(x => x.event)).toEqual(["x_delivery_stopped"]);
+    expect(warned.filter(l => l.includes("was stopped"))).toHaveLength(1);
+    expect(warned.some(l => l.includes("[run-ledger]"))).toBe(false);
+    expect(auditLines().some(l => l.event === "x_ledger_lease_renewed" && l.run_id === led.runId)).toBe(false);
+  }, spawnBudgetMs(1));
+
+  test("stopped during a correction: no cold retry, no gate after it, nothing more spawned", () => {
+    const oroot = path.join(tmp, "stop-revision");
+    fs.mkdirSync(oroot);
+    fs.writeFileSync(path.join(oroot, "dados.json"), INVALID_JSON);
+    const led = openTestRun();
+    let runs = 0;
+    const { args, calls } = baseArgs(oroot, {
+      ledger: led, maxRevisions: 2, sessionId: "sess-1",
+      // `nrv run-track stop` lands while the correction's worker runs, and kills it.
+      runHeadlessImpl: ((opts: any) => { runs++; runLedger.abandon(led.handle, led.runId, "stopped by the user"); return { ...okRun(opts), ok: false, error: "killed" }; }) as any,
+    });
+    const res = runDelivery(args);
+    expect(runs).toBe(1);
+    expect(res.stopped).toBe("abandoned: stopped by the user");
+    expect(res.revisionsUsed).toBe(1);
+    expect(runLedger.getRun(led.handle, led.runId)!.state).toBe("abandoned");
+    const events = calls.map(x => x.event);
+    expect(events.filter(e => e === "gate_failed" || e === "gate_passed")).toHaveLength(0);
+    expect(events).toContain("x_delivery_stopped");
+    expect(events).not.toContain("x_delivery_withheld");
+    expect(fs.readFileSync(path.join(oroot, GATE_FINDINGS_FILE), "utf8")).toContain("Stopped before the cold retry of correction 1");
+  }, spawnBudgetMs(3));
+
+  test("stopped after a correction finished: the gate does not run again", () => {
+    const oroot = path.join(tmp, "stop-after");
+    fs.mkdirSync(oroot);
+    fs.writeFileSync(path.join(oroot, "dados.json"), INVALID_JSON);
+    const led = openTestRun();
+    const { args } = baseArgs(oroot, {
+      ledger: led, maxRevisions: 2,
+      runHeadlessImpl: ((opts: any) => { runLedger.abandon(led.handle, led.runId, "stopped by the user"); return okRun(opts); }) as any,
+    });
+    const gateLog = path.join(tmp, "gate-calls");
+    const countingGate = path.join(tmp, "counting-gate.ts");
+    fs.writeFileSync(countingGate, `require("node:fs").appendFileSync(${JSON.stringify(gateLog)}, "x"); console.log(JSON.stringify({ status: "FAIL", mode: "heuristic", results: [{ name: "json-valid", passed: false, reasoning: "bad", fix_list: ["fix it"] }] })); process.exit(1);\n`);
+    const res = runDelivery({ ...args, gateScript: countingGate });
+    expect(res.stopped).toBe("abandoned: stopped by the user");
+    expect(fs.readFileSync(gateLog, "utf8")).toBe("x"); // the first gate only
+  }, spawnBudgetMs(3));
+
+  test("a killed worker's runtime error on a stopped run is not salvaged", () => {
+    const oroot = path.join(tmp, "stop-error");
+    fs.mkdirSync(oroot);
+    fs.writeFileSync(path.join(oroot, "page.html"), PASSING_HTML);
+    const led = openTestRun();
+    runLedger.abandon(led.handle, led.runId, "stopped by the user");
+    const warned: string[] = [];
+    const out = deliverAfterRuntimeError({ ...baseArgs(oroot, { ledger: led, gateScript: throwingGate(), warn: (l: string) => warned.push(l) }).args, runtimeError: "killed" });
+    expect(out.result?.stopped).toBe("abandoned: stopped by the user");
+    expect(out.exitCode).toBe(1);
+    expect(fs.existsSync(path.join(tmp, "gate-ran"))).toBe(false);
+    expect(runLedger.getRun(led.handle, led.runId)!.state).toBe("abandoned");
+    expect(warned.some(l => l.includes("[run-ledger]"))).toBe(false);
+  }, spawnBudgetMs(1));
+
+  test("runGateOnce asks before every call and spawns nothing once stopped", () => {
+    const oroot = path.join(tmp, "stop-gate");
+    fs.mkdirSync(oroot);
+    fs.writeFileSync(path.join(oroot, "a.md"), PASSING_MD);
+    fs.writeFileSync(path.join(oroot, "b.md"), PASSING_MD);
+    let asked = 0;
+    const run = runGateOnce([path.join(oroot, "a.md"), path.join(oroot, "b.md")], {
+      gateScript: throwingGate(), offline: false, shouldStop: () => { asked++; return true; },
+    });
+    expect(run.stopped).toBe(true);
+    expect(asked).toBe(1);
+    expect(fs.existsSync(path.join(tmp, "gate-ran"))).toBe(false);
+  }, spawnBudgetMs(1));
+
+  test("a delivered row (closed by someone else) keeps its own _STATUS.json and exits 0", () => {
+    const oroot = path.join(tmp, "stop-delivered");
+    fs.mkdirSync(oroot);
+    fs.writeFileSync(path.join(oroot, "page.html"), PASSING_HTML);
+    fs.writeFileSync(path.join(oroot, "_STATUS.json"), JSON.stringify({ state: "delivered", gate: "pass", serious: [], reservations: null, exit_code: 0 }));
+    const led = openTestRun();
+    runLedger.markState(led.handle, led.runId, "verifying");
+    runLedger.markState(led.handle, led.runId, "gated");
+    runLedger.markState(led.handle, led.runId, "delivered");
+    const res = runDelivery(baseArgs(oroot, { ledger: led, gateScript: throwingGate() }).args);
+    expect(res.exitCode).toBe(0);
+    expect(res.stopped).toBe("delivered");
+    expect(statusOf(oroot).stopped).toBeUndefined();
+  }, spawnBudgetMs(1));
+});
+
+describe("planJudgeBatches — one judge session for the small text deliverables of a round", () => {
+  test("small files share a batch; a large one keeps its own call; a lone file is no batch", () => {
+    const dir = path.join(tmp, "batches");
+    fs.mkdirSync(dir);
+    const make = (name: string, bytes: number) => { const f = path.join(dir, name); fs.writeFileSync(f, "a".repeat(bytes)); return f; };
+    const small = [1, 2, 3].map(i => make(`s${i}.md`, 1_000));
+    const large = make("large.md", JUDGE_BATCH_FILE_MAX_CHARS + 1);
+    expect(planJudgeBatches([...small, large])).toEqual([small]);
+    expect(planJudgeBatches([small[0]])).toEqual([]);
+    expect(planJudgeBatches([large])).toEqual([]);
+  });
+
+  test("a delivery larger than one batch takes several, none over the cap", () => {
+    const dir = path.join(tmp, "batches-cap");
+    fs.mkdirSync(dir);
+    const files = Array.from({ length: 10 }, (_, i) => { const f = path.join(dir, `f${i}.md`); fs.writeFileSync(f, "a".repeat(JUDGE_BATCH_FILE_MAX_CHARS)); return f; });
+    const batches = planJudgeBatches(files);
+    expect(batches.flat()).toEqual(files.slice(0, batches.flat().length));
+    for (const b of batches) expect(b.length * JUDGE_BATCH_FILE_MAX_CHARS).toBeLessThanOrEqual(JUDGE_BATCH_MAX_CHARS);
+    expect(batches.length).toBeGreaterThan(1);
   });
 });

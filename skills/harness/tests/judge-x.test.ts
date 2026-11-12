@@ -8,7 +8,7 @@ import { describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { SCOPE_GUARD_SENTINEL, SCOPE_GUARD_SENTINEL_PT_BR } from "../../_shared/lib/scope-guard.ts";
+import { SCOPE_GUARD_SENTINEL } from "../../_shared/lib/scope-guard.ts";
 import { runAgentX } from "../lib/dispatch-cascade.ts";
 import { compileGauntletPlan } from "../lib/gauntlet/compiler.ts";
 import { renderEvaluationBrief, type EvaluationRequest } from "../lib/gauntlet/evaluation-contract.ts";
@@ -71,7 +71,7 @@ describe("personas", () => {
     expect(text).toContain("scorecard.json");
     expect(text).toContain("indeterminate");
     // A judge neither recruits nor produces: none of the agent-x recruitment surfaces, no rollover protocol.
-    for (const forbidden of ["nrv dispatch", "brief-business.ts", "Agent({", "x_session_rollover", "_SUMMARY.md", "## Premissas assumidas"]) {
+    for (const forbidden of ["nrv dispatch", "brief-business.ts", "Agent({", "x_session_rollover", "_SUMMARY.md", "## Assumptions"]) {
       expect(text, `${flavor} carries '${forbidden}'`).not.toContain(forbidden);
     }
     expect(resolveJudgeXPromptPath(runtime, AGENTS_DIR)).toBe(file);
@@ -113,7 +113,6 @@ describe("prompt", () => {
     expect(prompt).toContain("- scorecard_path: /tmp/e/outputs/scorecard.json");
     expect(prompt).toContain(EVALUATION_BRIEF);
     expect(prompt).toContain(SCOPE_GUARD_SENTINEL);
-    expect(prompt).toContain(SCOPE_GUARD_SENTINEL_PT_BR);
     for (const absent of ["AVAILABLE SQUADS", "FUNDAMENTAL PREMISE", "AUTONOMOUS MODE", "nrv dispatch", "USE_"]) expect(prompt).not.toContain(absent);
   });
 

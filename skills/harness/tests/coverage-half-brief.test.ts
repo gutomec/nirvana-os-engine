@@ -37,7 +37,7 @@ d("the band itself", () => {
   test("a brief whose winner explains half of it is never dispatched", async () => {
     const r = await router.route("me empresta vinte reais até sexta-feira", { registries: all, amplify: false });
     expect(r.stage3?.signal).not.toBe("HIGH");
-    expect(r.stage3?.reason).toContain("metade ou menos");
+    expect(r.stage3?.reason).toContain("half or less");
   });
 
   test("and the candidates are still exposed, so the caller can confirm", async () => {
@@ -66,6 +66,6 @@ describe("what the band must not cost (corpus-independent)", () => {
   test("very short briefs stay with the bands that already govern them", async () => {
     // total >= 4 keeps "escreva o ebook" (2 content tokens) out of this band.
     const r = await router.route("escreva o ebook", { registries: all, amplify: false });
-    expect(r.stage3?.reason || "").not.toContain("metade ou menos");
+    expect(r.stage3?.reason || "").not.toContain("half or less");
   });
 });

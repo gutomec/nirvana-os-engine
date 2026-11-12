@@ -14,8 +14,8 @@
  * NIRVANA_PROJECT_ROOT, HARNESS_LOGS_DIR, ...) are plumbing, not settings;
  * docs/architecture/configuration.md lists them and says why.
  *
- * `description` and `expects` are what the user reads (PT-BR by contract);
- * code, identifiers and comments stay English.
+ * `description` and `expects` are what the user reads; like all code,
+ * identifiers and comments, they are English.
  */
 
 import { z } from "zod";
@@ -49,6 +49,14 @@ export interface SettingSpec<T extends SettingValue = SettingValue> {
   fromEnv?: (raw: string, variable: string) => SettingValue | null;
   /** The value as the variable spells it, for pinning into children; null = leave the variable unset. */
   toEnv?: (value: T) => string | null;
+  /**
+   * Values a past release accepted and this one does not. Read from a file or a
+   * variable, such a value never breaks the machine that stored it: it reads as
+   * `to` (null = as if the key were not set there) with one warning naming
+   * where it came from. Written (`nrv config set`, the Glance), it is refused
+   * with `why`.
+   */
+  retired?: Record<string, { to: T | null; why: string }>;
 }
 
 const TRUE_WORDS = new Set(["1", "true", "on", "yes"]);
@@ -81,7 +89,15 @@ export function validateSettingValue(spec: SettingSpec, value: unknown): Validat
   const parsed = spec.type.safeParse(value);
   if (parsed.success) return { ok: true, value: parsed.data as SettingValue };
   const shown = typeof value === "string" ? JSON.stringify(value) : String(value);
-  return { ok: false, message: `${spec.key}: valor inválido ${shown}; esperado ${spec.expects}` };
+  const retired = retiredValue(spec, value);
+  if (retired) return { ok: false, message: `${spec.key}: ${shown} was retired (${retired.why}); expected ${spec.expects}` };
+  return { ok: false, message: `${spec.key}: invalid value ${shown}; expected ${spec.expects}` };
+}
+
+/** The retirement entry `value` matches, if any (case- and space-insensitive). */
+export function retiredValue(spec: SettingSpec, value: unknown): { to: SettingValue | null; why: string } | null {
+  if (!spec.retired || typeof value !== "string") return null;
+  return spec.retired[value.trim().toLowerCase()] ?? null;
 }
 
 const nonNegativeInt = z.number().int().min(0);
@@ -131,6 +147,7 @@ function numberSetting(key: string, description: string, opts: Common & {
 
 function enumSetting<const O extends readonly [string, ...string[]]>(key: string, description: string, options: O, opts: Common & {
   default: O[number]; toEnv?: (value: O[number]) => string | null;
+  retired?: Record<string, { to: O[number] | null; why: string }>;
 }): SettingSpec<O[number]> {
   return {
     key, kind: "enum", type: z.enum(options), default: opts.default, options,
@@ -138,6 +155,7 @@ function enumSetting<const O extends readonly [string, ...string[]]>(key: string
     env: opts.env ?? null, ...(opts.envAliases ? { envAliases: opts.envAliases } : {}), secret: false,
     ...(opts.fromEnv ? { fromEnv: opts.fromEnv } : {}),
     toEnv: opts.toEnv ?? ((value) => value),
+    ...(opts.retired ? { retired: opts.retired } : {}),
   };
 }
 
@@ -149,7 +167,7 @@ export const MULTI_TARGET_ENGINE_ENV = "NIRVANA_MULTI_TARGET_ENGINE";
 
 export const SETTINGS = {
   "multi_target.enabled": booleanSetting("multi_target.enabled",
-    "Se `nrv multi-target run` executa planos (false = kill switch: recusa com exit 4).",
+    "Whether `nrv multi-target run` executes plans (false = kill switch: refuses with exit 4).",
     {
       default: true, env: MULTI_TARGET_KILL_SWITCH_ENV, envAliases: [MULTI_TARGET_ENGINE_ENV],
       // The kill switch at 1|true|on switches the engine off; the legacy opt-in
@@ -164,75 +182,100 @@ export const SETTINGS = {
     }),
 
   "gauntlet.default_mode": enumSetting("gauntlet.default_mode",
-    "Modo de execução quando o dispatch não recebe --execution-mode.",
+    "Execution mode when the dispatch gets no --execution-mode.",
     ["standard", "gauntlet", "auto"], { default: "standard", env: "NIRVANA_EXECUTION_MODE" }),
   "gauntlet.default_intensity": enumSetting("gauntlet.default_intensity",
-    "Intensidade do Gauntlet quando o dispatch não recebe --gauntlet-intensity.",
+    "Gauntlet intensity when the dispatch gets no --gauntlet-intensity.",
     ["light", "balanced", "exhaustive"], { default: "balanced", env: "NIRVANA_GAUNTLET_INTENSITY" }),
   "gauntlet.evaluator": stringSetting("gauntlet.evaluator",
-    "Avaliador do Gauntlet; vazio = seleção automática (squad instalado com quality.specification_conformance, senão judge-x).",
+    "Gauntlet evaluator; empty = automatic selection (an installed squad with quality.specification_conformance, otherwise judge-x).",
     {
       env: "NIRVANA_GAUNTLET_EVALUATOR",
       type: z.string().regex(/^(|heuristic|agent-x|judge-x|squad:[^:\s]+(?::[^\s]+)?)$/),
-      expects: "squad:<slug>[:<capability>] | judge-x | agent-x | heuristic | vazio",
+      expects: "squad:<slug>[:<capability>] | judge-x | agent-x | heuristic | empty",
     }),
   "gauntlet.business_allowlist": stringSetting("gauntlet.business_allowlist",
-    "Businesses (slugs separados por vírgula) autorizados a rodar em modo gauntlet.",
+    "Businesses (comma-separated slugs) allowed to run in gauntlet mode.",
     {
       env: "NIRVANA_BUSINESS_GAUNTLET_ALLOWLIST",
       type: z.string().regex(/^$|^[A-Za-z0-9._-]+(?:\s*,\s*[A-Za-z0-9._-]+)*$/),
-      expects: "slugs separados por vírgula (ou vazio)",
+      expects: "comma-separated slugs (or empty)",
     }),
   "gauntlet.business_kill_switch": booleanSetting("gauntlet.business_kill_switch",
-    "Desliga o canário Gauntlet de businesses mesmo com allowlist.",
+    "Turns off the business Gauntlet canary even with an allowlist.",
     { default: false, env: "NIRVANA_BUSINESS_GAUNTLET_KILL_SWITCH" }),
   "gauntlet.auto_allowed": booleanSetting("gauntlet.auto_allowed",
-    "Permite que o modo auto escolha gauntlet (senão auto resolve para standard).",
+    "Lets auto mode choose gauntlet (otherwise auto resolves to standard).",
     { default: false, env: "NIRVANA_ALLOW_AUTO_GAUNTLET" }),
   "gauntlet.requirements_source": enumSetting("gauntlet.requirements_source",
-    "De onde vem o contrato do juiz: brief = só brief-conformance (padrão de hoje); capability = brief-conformance + acceptance[] declarada.",
+    "Where the judge's contract comes from: brief = brief-conformance only (today's default); capability = brief-conformance plus the declared acceptance[].",
     ["brief", "capability"], { default: "brief", env: "NIRVANA_GAUNTLET_REQUIREMENTS_SOURCE" }),
 
   "delivery.produces_to_rubric": booleanSetting("delivery.produces_to_rubric",
-    "Passa o produces[] do alvo ao seletor de rubricas do quality gate, para que um relatório de pesquisa seja julgado pela rubrica de pesquisa; um produces sem rubrica cai na inferência pela extensão. false = o juiz usa só a rubrica inferida pela extensão.",
+    "Passes the target's produces[] to the quality gate's rubric selector, so a research report is judged by the research rubric; a produces entry with no rubric falls back to inference by file extension. false = the judge uses only the rubric inferred from the extension.",
     { default: true, env: "NIRVANA_PRODUCES_TO_RUBRIC" }),
 
+  // Decision models (System One): typed, calibrated answers to closed questions,
+  // used for routing, runtime choice on request and the gate's fallback. See _shared/DECISION_MODELS.md.
+  "decision.provider": enumSetting("decision.provider",
+    "Decision model: auto (default) = the first available in the order local, typesafe, gemini, openai, subscription; a name = only that one; off = never.",
+    ["auto", "local", "typesafe", "gemini", "openai", "subscription", "off"], { default: "auto", env: "NIRVANA_DECISION_PROVIDER" }),
+  "decision.local_url": stringSetting("decision.local_url",
+    "URL of a JEV-27B server the user started (the /v1/decide contract); empty (default) = no local model. The engine never downloads or starts it.",
+    { env: "NIRVANA_DECISION_LOCAL_URL", type: z.string().regex(/^$|^https?:\/\/\S+$/), expects: "http(s)://host:port or empty" }),
+  "decision.min_confidence": numberSetting("decision.min_confidence",
+    "Minimum confidence (0 to 1) for the engine to act on a decision by itself; below it the decision is only a signal.",
+    { default: 0.7, env: "NIRVANA_DECISION_MIN_CONFIDENCE", type: z.number().min(0).max(1), expects: "number between 0 and 1" }),
+
   "execution.default_runtime": stringSetting("execution.default_runtime",
-    "Runtime usado quando a sessão não é identificada; vazio = primeiro disponível no PATH.",
-    { env: "NIRVANA_DEFAULT_RUNTIME", type: z.string().regex(/^[A-Za-z0-9._-]*$/), expects: "nome de runtime (claude-code, codex, antigravity-cli, ...) ou vazio" }),
+    "Runtime used when the session is not identified; empty = first one available on PATH.",
+    { env: "NIRVANA_DEFAULT_RUNTIME", type: z.string().regex(/^[A-Za-z0-9._-]*$/), expects: "runtime name (claude-code, codex, antigravity-cli, ...) or empty" }),
   // Empty is the default, and empty means PASS NOTHING: the child CLI uses what
   // its own configuration says, which is the user's default. Dispatching codex
   // is running `codex` with no `--model` and no effort; dispatching claude is a
   // bare `claude`. A value here is the user asking for something else on purpose.
   "execution.model": stringSetting("execution.model",
-    "Modelo fixado nos spawns do Nirvana (--model); vazio (padrão) = não especifica nada e o CLI usa o padrão do usuário.",
-    { env: "NIRVANA_MODEL", expects: "id ou alias de modelo (opus, sonnet, haiku, fable, ...) ou vazio" }),
+    "Model pinned on Nirvana spawns (--model); empty (default) = specify nothing and the CLI uses the user's default.",
+    { env: "NIRVANA_MODEL", expects: "model id or alias (opus, sonnet, haiku, fable, ...) or empty" }),
   "execution.effort": stringSetting("execution.effort",
-    "Effort fixado nos spawns do Nirvana; vazio (padrão) = não especifica nada e o CLI usa o padrão do usuário.",
-    { env: "NIRVANA_EFFORT", expects: "low | medium | high | xhigh | max ou vazio" }),
+    "Effort pinned on Nirvana spawns; empty (default) = specify nothing and the CLI uses the user's default.",
+    { env: "NIRVANA_EFFORT", expects: "low | medium | high | xhigh | max or empty" }),
   "execution.child_env": enumSetting("execution.child_env",
-    "Ambiente que um agente despachado recebe: inherit = o ambiente inteiro do processo pai (padrão local); declared = só a base do sistema, o escopo NIRVANA_*, as credenciais do runtime que vai rodar e as env_vars que os squads instalados declaram (padrão do nrv serve).",
+    "Environment a dispatched agent receives: inherit = the parent process's whole environment (local default); declared = only the system base, the NIRVANA_* scope, the credentials of the runtime about to run and the env_vars that installed squads declare (the nrv serve default).",
     ["inherit", "declared"], { default: "inherit", env: "NIRVANA_CHILD_ENV" }),
   // Agents dispatching agents is bounded, and the bound is finite on purpose:
   // the failure mode is exponential. Reported from a live run — two dispatches
   // became fifteen agents, each opening its own subagents, one of them looping
   // against the project contract's orchestration rule.
   "execution.max_dispatch_depth": numberSetting("execution.max_dispatch_depth",
-    "Profundidade máxima de uma cadeia de agentes despachando agentes; 0 = ilimitado. O padrão 4 cobre as duas topologias: no terminal empresa (1), assento (2) e squad usado pelo assento (3); no Glance o maestro é ele mesmo um filho, então tudo desce um nível e o squad fica em 4.",
-    { default: 4, type: nonNegativeInt, env: "NIRVANA_MAX_DISPATCH_DEPTH", expects: "inteiro >= 0" }),
-  // How a business runs when the user named neither --team nor --single. `chain`
-  // is the director and one session per seat, in series. `session` is one
-  // session for the whole business, with the seats as the runtime's own
-  // subagents. Opt-in while it is measured against the chain.
-  "execution.business_mode": enumSetting("execution.business_mode",
-    "Como uma empresa roda sem --team nem --single: chain = um diretor escolhe a cadeia e cada cargo roda numa sessão própria, em série (padrão); session = uma sessão só roda a empresa e abre os cargos como subagentes do próprio runtime, em paralelo quando um não depende do outro.",
-    ["chain", "session"], { default: "chain", env: "NIRVANA_BUSINESS_MODE" }),
+    "Maximum depth of a chain of agents dispatching agents; 0 = unlimited. The default 4 covers both topologies: in the terminal, business (1), seat (2) and the squad used by the seat (3); in Glance the maestro is itself a child, so everything moves down one level and the squad sits at 4.",
+    { default: 4, type: nonNegativeInt, env: "NIRVANA_MAX_DISPATCH_DEPTH", expects: "integer >= 0" }),
+  // The profile is a layer of defaults (profiles.ts), resolved between the
+  // user's files and the engine defaults; `none` keeps the engine defaults.
+  "execution.profile": enumSetting("execution.profile",
+    "Performance profile: max = highest quality and highest token use; balanced = balance (recommended); economy = lowest use; none = no profile, engine defaults apply. An explicitly set key always beats the profile.",
+    ["none", "max", "balanced", "economy"], { default: "none", env: "NIRVANA_PROFILE" }),
+  // Measured on real runs: 76% of the plan went to re-reading context, and a
+  // worker's conversation grew to 650k-870k tokens before the runtime
+  // compacted it. The ceiling makes the worker compact early; its state lives
+  // on disk (PROGRESS.md), so what leaves the context is tool output it has
+  // already turned into files.
+  // Rendering a page and reading screenshots of it is the costliest check a
+  // worker can choose: one squad's verify step took 110+ captures per viewport
+  // profile, each an image the model reads. The user reviews the result and
+  // asks for changes; only the max profile pays for it.
+  "execution.visual_checks": booleanSetting("execution.visual_checks",
+    "Lets dispatched agents check their own visual work by rendering it: screenshots, capture passes across viewports, Lighthouse runs, reading images of their output. Off, they skip those steps even when a squad's workflow asks for them, and the user reviews the result. On in the max profile.",
+    { default: false, env: "NIRVANA_VISUAL_CHECKS", fromEnv: (raw) => parseBooleanWord(raw) ?? raw }),
+  "execution.context_window": numberSetting("execution.context_window",
+    "Context ceiling, in tokens, for the agents Nirvana dispatches: above it the runtime compacts the conversation. 0 = the runtime default. Applies to claude-code (CLAUDE_CODE_AUTO_COMPACT_WINDOW) and codex (model_auto_compact_token_limit).",
+    { default: 0, type: nonNegativeInt, env: "NIRVANA_CONTEXT_WINDOW", expects: "integer >= 0 (tokens)" }),
   // 2026 models read what they need when they need it (Anthropic: context on
   // demand; OpenAI: "prompting the model to read files before every edit is a
   // great way to burn context"). A whole persona pasted three times over made
   // the task 0.2% of a 169k-character prompt; the card names the file instead.
   "execution.dna_injection": enumSetting("execution.dna_injection",
-    "Profundidade da injeção de DNA dos mind-clones: reference = cartão (caminho, one_liner, routing) e o executor lê o arquivo quando precisar; fragments = camadas da fase; full = persona inteira.",
+    "Depth of mind-clone DNA injection: reference = a card (path, one_liner, routing) and the executor reads the file when needed; fragments = the phase's layers; full = the whole persona.",
     ["reference", "fragments", "full"], { default: "reference", env: "NIRVANA_DNA_INJECTION" }),
   // A worker that hangs (a TUI parked on a dialog, a CLI waiting on a dead
   // socket) used to keep its dispatch open forever: nothing ended it, so the
@@ -247,8 +290,8 @@ export const SETTINGS = {
   "execution.stall_no_start_min": numberSetting("execution.stall_no_start_min",
     "Minutes after the worker starts with no activity of any kind (nothing printed, written, run or dispatched) after which the dispatch ends it and exits 76 as stalled: a worker that never started. A hang detector, not a spend or time ceiling. 0 = off.",
     { default: 45, type: nonNegative, env: "NIRVANA_STALL_NO_START_MIN", expects: "number >= 0 (minutes, fractions allowed); 0 = off" }),
-  // Off by default since 0.14.13: an interactive TUI in a terminal tab can stop
-  // on a trust, permission or plan dialog that no one answers, and the headless
+  // Off by default since 0.15: an interactive TUI in a terminal tab can stop on
+  // a trust, permission or plan dialog that no one answers, and the headless
   // child cannot. `on` is for the owner who wants to watch workers in Orca.
   "execution.orca_workers": enumSetting("execution.orca_workers",
     "Inside Orca, run dispatched workers in visible Orca terminal tabs: off (default) = the invisible headless child, also inside an Orca terminal; on = an Orca worker terminal per dispatch, falling back to the headless child when the agent stops on a dialog.",
@@ -261,19 +304,25 @@ export const SETTINGS = {
     "Headless children run with full access: every runtime skips its own CLI approvals (claude --dangerously-skip-permissions); false = restricted path.",
     { default: true, env: "NIRVANA_HEADLESS_SKIP_PERMISSIONS", fromEnv: offWordDisables }),
 
+  "briefing.template": stringSetting("briefing.template",
+    "The brief template the orchestrator writes with (nrv brief templates lists them); empty = slim, or the template briefing.altitude maps to when that is set. Names: slim, standard, detailed, karpathy, or one of your own in <project>/.nirvana/brief-templates/ or ~/.nirvana/brief-templates/. Wins over briefing.altitude.",
+    { default: "", env: "NIRVANA_BRIEF_TEMPLATE", type: z.string().regex(/^(|[A-Za-z0-9][A-Za-z0-9._-]*)$/), expects: "template name (slim, standard, detailed, karpathy, or your own)" }),
   "briefing.altitude": enumSetting("briefing.altitude",
-    "Altitude do brief enriquecido e das instruções de despacho: outcome = resultado, guarda-corpos e definição de pronto (padrão); guided = acrescenta a estrutura sugerida pelo autor; prescriptive = critérios por item, lista de artefatos e método (forma até 0.13.9).",
-    ["outcome", "guided", "prescriptive"], { default: "outcome", env: "NIRVANA_BRIEF_ALTITUDE" }),
+    "Deprecated: use briefing.template. Read only while briefing.template is unset: outcome = the standard template; guided = standard plus a suggested structure; prescriptive = the detailed template.",
+    ["outcome", "guided", "prescriptive"], { default: "outcome", env: "NIRVANA_BRIEF_ALTITUDE",
+      // The default is not handed to a child: a variable reads as a stored
+      // altitude there, and would pick the standard template over slim.
+      toEnv: (value) => (value === "outcome" ? null : value) }),
   "glance.execution": booleanSetting("glance.execution",
-    "O Glance executa Messages por processo filho; false = cockpit sem execução.",
+    "Glance runs Messages through a child process; false = cockpit without execution.",
     { default: true, env: "NIRVANA_GLANCE_EXECUTION", fromEnv: offWordDisables }),
   // 0, like every other cap here. A ceiling is the owner's to name: it is
   // HARD, so one chosen by the engine can end a turn halfway with everything
   // spent and nothing delivered. This defaulted to 5 and was the only place
   // the engine put a number on someone else's money by itself.
   "glance.maestro_max_budget_usd": numberSetting("glance.maestro_max_budget_usd",
-    "Teto de gasto em USD de um turno do maestro no chat do Glance (claude --max-budget-usd); 0 = sem teto, e é o padrão.",
-    { default: 0, type: nonNegative, expects: "número >= 0 (USD); 0 = sem teto" }),
+    "Spend ceiling in USD for one maestro turn in the Glance chat (claude --max-budget-usd); 0 = no ceiling, and that is the default.",
+    { default: 0, type: nonNegative, expects: "number >= 0 (USD); 0 = no ceiling" }),
 
   // Enforced today only by a served Glance instance (`glance --host` beyond loopback), against
   // the log already pinned to the project (the tenant). The default (365) is the same number
@@ -282,21 +331,25 @@ export const SETTINGS = {
   // filing deadline and an LGPD obligation: the real value is the project owner's call, made
   // via `nrv config set audit.project_retention_days <n> --scope project`.
   "audit.project_retention_days": numberSetting("audit.project_retention_days",
-    "Dias de retenção do log de auditoria de um projeto servido antes da rotação apagar o diretório do dia; o valor certo para uma obrigação legal (ex.: LGPD) é decisão do dono, não um padrão do engine.",
-    { default: 365, type: z.number().int().positive(), expects: "inteiro > 0 (dias)" }),
+    "Retention days for a served project's audit log before rotation deletes the day's directory; the right value for a legal obligation (e.g. LGPD) is the owner's decision, not an engine default.",
+    { default: 365, type: z.number().int().positive(), expects: "integer > 0 (days)" }),
 
   "runtime.provider_catalog_dir": stringSetting("runtime.provider_catalog_dir",
-    "Diretórios de catálogo de providers (separados por : ou ; no Windows); vazio = ~/.nirvana/providers e <projeto>/.nirvana/providers.",
-    { env: "NIRVANA_PROVIDER_CATALOG_DIR", expects: "lista de caminhos separados pelo delimitador do sistema, ou vazio" }),
+    "Provider catalog directories (separated by : or ; on Windows); empty = ~/.nirvana/providers and <project>/.nirvana/providers.",
+    { env: "NIRVANA_PROVIDER_CATALOG_DIR", expects: "list of paths separated by the system delimiter, or empty" }),
   "runtime.allow_stale_catalog": booleanSetting("runtime.allow_stale_catalog",
-    "Aceita catálogo de providers vencido (com aviso) em vez de deixar runtime e modelo sem resolução.",
+    "Accepts an expired provider catalog (with a warning) instead of leaving runtime and model unresolved.",
     { default: false, env: "NIRVANA_ALLOW_STALE_CATALOG" }),
 
   "routing.mode": enumSetting("routing.mode",
-    "Como o roteador escolhe o alvo: agentic = um agente lê os registries; cards = uma chamada sem ferramentas sobre os cartões compilados; fast = BM25 determinístico.",
-    ["agentic", "cards", "fast"], { default: "agentic", env: "NIRVANA_ROUTING_MODE" }),
+    "How the router picks the target: agentic = an agent reads the registries; cards = one tool-less call over the compiled cards. The keyword match (BM25) only builds shortlists (nrv find, the clone search) and never decides who executes.",
+    ["agentic", "cards"], {
+      default: "agentic", env: "NIRVANA_ROUTING_MODE",
+      // Measured on 48 labeled requests (2026-10-13): AMBIGUOUS on 42, the right business on 4 of 42.
+      retired: { fast: { to: null, why: "the keyword match never decides who executes; it only builds shortlists" } },
+    }),
   "routing.dense": enumSetting("routing.dense",
-    "Braço neural do roteador fast: off; fallback = consultado só em NO_MATCH, sugere, nunca despacha.",
+    "Neural arm of the keyword router (the BM25 shortlist): off; fallback = consulted only on NO_MATCH, suggests, never dispatches.",
     ["off", "fallback"], {
       default: "off", env: "NIRVANA_ROUTER_DENSE",
       fromEnv: (raw) => {
@@ -308,31 +361,37 @@ export const SETTINGS = {
       toEnv: (value) => (value === "fallback" ? "1" : "0"),
     }),
   "routing.on_router_failure": enumSetting("routing.on_router_failure",
-    "Quando o roteador agêntico falha no transporte (após 1 retry): agent-x-only = pula direto pro agent-x, BM25 nunca dispara sem --fast explícito (padrão); cascade = tenta BM25 antes do agent-x; fail = encerra sem despachar nada.",
-    ["cascade", "agent-x-only", "fail"], { default: "agent-x-only" }),
+    "When the router fails in transport (after 1 retry): agent-x-only = goes straight to agent-x (default); fail = ends without dispatching anything. The keyword match is never a fallback.",
+    ["agent-x-only", "fail"], {
+      default: "agent-x-only",
+      retired: { cascade: { to: "agent-x-only", why: "the keyword match is never a fallback for the router; a failure goes to agent-x" } },
+    }),
+  "routing.jev": enumSetting("routing.jev",
+    "TypeSafe's Jev classifier as the first step of --auto routing and of the voice pick: auto = on when TYPESAFE_API_KEY is configured (environment, project .env or ~/.env), and then the request text is sent to TypeSafe; off = never, even with the key. Without the key it has no effect.",
+    ["auto", "off"], { default: "auto", env: "NIRVANA_ROUTING_JEV" }),
   "routing.timeout_ms": numberSetting("routing.timeout_ms",
-    "Teto de uma chamada do roteador agêntico, em milissegundos. Um timeout não é repetido: o despacho segue direto para routing.on_router_failure.",
-    { default: 300_000, type: z.number().int().min(1), expects: "inteiro > 0 (ms)", env: "NIRVANA_ROUTING_TIMEOUT_MS" }),
+    "Ceiling for one agentic router call, in milliseconds. A timeout is not retried: the dispatch goes straight to routing.on_router_failure.",
+    { default: 300_000, type: z.number().int().min(1), expects: "integer > 0 (ms)", env: "NIRVANA_ROUTING_TIMEOUT_MS" }),
   "routing.digest_token_budget": numberSetting("routing.digest_token_budget",
-    "Orçamento em tokens do digest de roteamento (chars/4); acima dele o digest degrada por níveis. 0 = sem teto (padrão).",
-    { default: 0, type: nonNegativeInt, expects: "inteiro >= 0 (tokens); 0 = sem teto" }),
+    "Token budget for the routing digest (chars/4); above it the digest degrades in tiers. 0 = no ceiling (default).",
+    { default: 0, type: nonNegativeInt, expects: "integer >= 0 (tokens); 0 = no ceiling" }),
 
   "host.orca": enumSetting("host.orca",
-    "Host Orca: auto = só dentro de um terminal do Orca; on = sempre que o app responder; off = nunca chamar o Orca.",
+    "Orca host: auto = only inside an Orca terminal; on = whenever the app responds; off = never call Orca.",
     ["auto", "on", "off"], { default: "auto", env: "NIRVANA_ORCA_HOST" }),
 
   "supervisor.progress_ping_sec": numberSetting("supervisor.progress_ping_sec",
-    "Intervalo em segundos do aviso de progresso de um run longo; 0 silencia.",
-    { default: 1800, env: "NIRVANA_PROGRESS_PING_SEC", type: nonNegativeInt, expects: "inteiro >= 0 (segundos)" }),
+    "Interval in seconds of the progress notice for a long run; 0 silences it.",
+    { default: 1800, env: "NIRVANA_PROGRESS_PING_SEC", type: nonNegativeInt, expects: "integer >= 0 (seconds)" }),
   "supervisor.stall_threshold_ms": numberSetting("supervisor.stall_threshold_ms",
-    "Milissegundos sem atividade até um run ser tratado como travado (supervisor e heartbeat do driver).",
-    { default: 300_000, env: "NIRVANA_STALL_THRESHOLD_MS", type: z.number().int().positive(), expects: "inteiro > 0 (milissegundos)" }),
+    "Milliseconds without activity until a run is treated as stalled (supervisor and driver heartbeat).",
+    { default: 300_000, env: "NIRVANA_STALL_THRESHOLD_MS", type: z.number().int().positive(), expects: "integer > 0 (milliseconds)" }),
   "supervisor.touch_events_max": numberSetting("supervisor.touch_events_max",
-    "Teto de eventos artifact_touched que o heartbeat emite por execução headless; 0 desliga o relato de arquivos.",
-    { default: 500, env: "NIRVANA_TOUCH_EVENTS_MAX", type: nonNegativeInt, expects: "inteiro >= 0 (eventos)" }),
+    "Ceiling on artifact_touched events the heartbeat emits per headless execution; 0 turns off file reporting.",
+    { default: 500, env: "NIRVANA_TOUCH_EVENTS_MAX", type: nonNegativeInt, expects: "integer >= 0 (events)" }),
 
   "updates.check": booleanSetting("updates.check",
-    "Verifica se há release nova do engine (cache diário); false desliga.",
+    "Checks whether a new engine release exists (daily cache); false turns it off.",
     {
       default: true, scopes: ["global"], env: "NIRVANA_NO_UPDATE_CHECK",
       // The legacy variable is an opt-out: NIRVANA_NO_UPDATE_CHECK=1 means "do not check".
@@ -341,29 +400,29 @@ export const SETTINGS = {
     }),
 
   "budget.default_max_cost_usd": numberSetting("budget.default_max_cost_usd",
-    "Teto de custo por run em USD; 0 = ilimitado.", { default: 0, type: nonNegative, expects: "número >= 0 (USD)" }),
+    "Cost ceiling per run in USD; 0 = unlimited.", { default: 0, type: nonNegative, expects: "number >= 0 (USD)" }),
   "budget.default_max_tokens": numberSetting("budget.default_max_tokens",
-    "Teto de tokens por run; 0 = ilimitado.", { default: 0, type: nonNegativeInt, expects: "inteiro >= 0" }),
+    "Token ceiling per run; 0 = unlimited.", { default: 0, type: nonNegativeInt, expects: "integer >= 0" }),
   "budget.default_max_handoffs": numberSetting("budget.default_max_handoffs",
-    "Teto de handoffs por run; 0 = ilimitado.", { default: 0, type: nonNegativeInt, expects: "inteiro >= 0" }),
+    "Handoff ceiling per run; 0 = unlimited.", { default: 0, type: nonNegativeInt, expects: "integer >= 0" }),
   "budget.default_max_duration_seconds": numberSetting("budget.default_max_duration_seconds",
-    "Duração máxima de um run em segundos; 0 = ilimitado.", { default: 0, type: nonNegativeInt, expects: "inteiro >= 0 (segundos)" }),
+    "Maximum duration of a run in seconds; 0 = unlimited.", { default: 0, type: nonNegativeInt, expects: "integer >= 0 (seconds)" }),
   "budget.on_budget_exceeded": enumSetting("budget.on_budget_exceeded",
-    "O que fazer quando um teto > 0 é excedido.", ["abort", "warn", "escalate"], { default: "warn" }),
+    "What to do when a ceiling > 0 is exceeded.", ["abort", "warn", "escalate"], { default: "warn" }),
   "budget.auto_invoke_budget_usd": numberSetting("budget.auto_invoke_budget_usd",
-    "Teto em USD para invocação automática de uma capability validada; 0 = sem teto.", { default: 0, type: nonNegative, expects: "número >= 0 (USD)" }),
+    "USD ceiling for the automatic invocation of a validated capability; 0 = no ceiling.", { default: 0, type: nonNegative, expects: "number >= 0 (USD)" }),
   "baselines.squad_capability_usd": numberSetting("baselines.squad_capability_usd",
-    "Custo estimado de uma capability de squad sem estimativa própria.", { default: 0.3, type: nonNegative, expects: "número >= 0 (USD)" }),
+    "Estimated cost of a squad capability with no estimate of its own.", { default: 0.3, type: nonNegative, expects: "number >= 0 (USD)" }),
   "baselines.business_usd": numberSetting("baselines.business_usd",
-    "Custo estimado de um business sem estimativa própria.", { default: 0.8, type: nonNegative, expects: "número >= 0 (USD)" }),
+    "Estimated cost of a business with no estimate of its own.", { default: 0.8, type: nonNegative, expects: "number >= 0 (USD)" }),
   "baselines.per_handoff_usd": numberSetting("baselines.per_handoff_usd",
-    "Custo estimado por handoff.", { default: 0.05, type: nonNegative, expects: "número >= 0 (USD)" }),
+    "Estimated cost per handoff.", { default: 0.05, type: nonNegative, expects: "number >= 0 (USD)" }),
 
   // Three values, and the old two keep their meaning: `true` judges every gateable
   // file, `false` keeps the offline heuristics only. `reports` (the default)
-  // judges the text deliverables (.md, .txt) — the reports and research whose
-  // content the heuristics cannot check against the brief — and leaves code,
-  // images and data files to their heuristic rubrics.
+  // judges the text deliverables (.md, .txt, .html), the reports and research
+  // whose content the heuristics cannot check against the brief, and leaves
+  // code, images and data files to their heuristic rubrics.
   "quality_gate.judge_enabled": {
     key: "quality_gate.judge_enabled", kind: "enum",
     // A YAML `true`/`false` written before this key had three values is still
@@ -372,7 +431,7 @@ export const SETTINGS = {
     type: z.union([z.boolean(), z.enum(["reports", "true", "false", "off"])])
       .transform((v) => (v === true ? "true" : v === false || v === "off" ? "false" : v)) as unknown as z.ZodType<"reports" | "true" | "false">,
     default: "reports", options: ["reports", "true", "false"], scopes: ["global", "project"],
-    description: "Juiz LLM do quality gate: reports (padrão) = julga os entregáveis de texto (.md, .txt) contra o brief e deixa o resto nas heurísticas; true = julga tudo que o gate cobre; false = só as heurísticas offline.",
+    description: "Quality gate LLM judge, on the session's runtime: reports (default) = judges text deliverables (.md, .txt, .html) against the brief and leaves the rest to the heuristics; true = judges everything the gate covers; false = offline heuristics only. Secret-leak and file-validity checks run either way.",
     expects: "reports | true | false", env: "NIRVANA_JUDGE_ENABLED", secret: false,
     fromEnv: (raw) => {
       if (raw.trim().toLowerCase() === "reports") return "reports";
@@ -381,14 +440,29 @@ export const SETTINGS = {
     },
     toEnv: (value) => value,
   } as SettingSpec<"reports" | "true" | "false">,
+  "quality_gate.html_layout": booleanSetting("quality_gate.html_layout",
+    "Renders HTML deliverables in a headless browser at 360, 390, 768 and 1440px and sends back a page that scrolls sideways or hides its heading under a fixed navigation. Needs a Chromium-family browser and puppeteer-core in the shared store; without them the check is skipped.",
+    { default: true, env: "NIRVANA_HTML_LAYOUT", fromEnv: (raw) => parseBooleanWord(raw) ?? raw }),
   "quality_gate.max_revisions": numberSetting("quality_gate.max_revisions",
-    "Revisões automáticas antes de reter a entrega.", { default: 2, type: nonNegativeInt, expects: "inteiro >= 0" }),
+    "Automatic corrections after a failed gate. A style finding left after them ships with _QA-RESERVATIONS.md; a serious one (secret leak, invalid file, material defect, unproven blocking criterion) gets up to 3 more rounds and is then withheld.", { default: 2, type: nonNegativeInt, expects: "integer >= 0" }),
   "quality_gate.escalate_after": numberSetting("quality_gate.escalate_after",
-    "Revisões antes de escalar (reservado; hoje segue max_revisions).", { default: 2, type: nonNegativeInt, expects: "inteiro >= 0" }),
+    "Revisions before escalating (reserved; today it follows max_revisions).", { default: 2, type: nonNegativeInt, expects: "integer >= 0" }),
   "quality_gate.rubric_fallback": stringSetting("quality_gate.rubric_fallback",
-    "Rubrica usada quando produces[] não casa com nenhuma.", { default: "prose_shortform", type: z.string().min(1), expects: "nome de rubrica" }),
+    "Rubric used when produces[] matches none.", { default: "prose_shortform", type: z.string().min(1), expects: "rubric name" }),
   "quality_gate.default_judge_model": stringSetting("quality_gate.default_judge_model",
-    "Modelo do juiz; inherit = o modelo configurado no runtime do usuário.", { default: "inherit", type: z.string().min(1), expects: "id de modelo ou inherit" }),
+    "Judge model; inherit = the model configured in the user's runtime.", { default: "inherit", type: z.string().min(1), expects: "model id or inherit" }),
+
+  // The review of a solo delivery (solo-review.ts): one reviewer for the whole
+  // delivery, never one per seat, decided by a rule rather than by an LLM.
+  "review.policy": enumSetting("review.policy",
+    "When a solo-mode delivery goes through review: always = always; rule = when the user asks, when the business manifest marks the delivery as sensitive or when the deterministic gate fails; on-request = only when the user asks or the gate fails; never = never.",
+    ["always", "rule", "on-request", "never"], { default: "rule", env: "NIRVANA_REVIEW_POLICY" }),
+  "review.runtime": enumSetting("review.runtime",
+    "Reviewer runtime: same (default) = the runtime of the session; other = another installed runtime that no NOT_USE_* rule vetoes for this brief, falling back to the same one when there is none.",
+    ["other", "same"], { default: "same", env: "NIRVANA_REVIEW_RUNTIME" }),
+  "review.max_rounds": numberSetting("review.max_rounds",
+    "Fix rounds after a failed review; once exhausted, the delivery ships with _QA-RESERVATIONS.md.",
+    { default: 1, type: nonNegativeInt, env: "NIRVANA_REVIEW_MAX_ROUNDS", expects: "integer >= 0" }),
 
   // The admission gate's rollout switches. `verify.mode` is what the HOOKS
   // read (creation, install, activation, pack build); the explicit CLI
@@ -396,13 +470,13 @@ export const SETTINGS = {
   // gets the honest one. Defaults ship the gate in report-only so an existing
   // machine keeps installing what it already has.
   "verify.mode": enumSetting("verify.mode",
-    "Como os ganchos do portão de admissão tratam um achado: report = só relata; warn = avisa em destaque; block = recusa erro não baselinado.",
+    "How the admission gate hooks treat a finding: report = only reports; warn = warns prominently; block = refuses a non-baselined error.",
     ["report", "warn", "block"], { default: "report", env: "NIRVANA_VERIFY_MODE" }),
   "verify.enforce_on_install": booleanSetting("verify.enforce_on_install",
-    "Instalação recusa uma entidade com erro não baselinado (escape: --skip-validate).",
+    "Install refuses an entity with a non-baselined error (escape: --skip-validate).",
     { default: false, env: "NIRVANA_VERIFY_ENFORCE_ON_INSTALL" }),
   "verify.enforce_on_activate": booleanSetting("verify.enforce_on_activate",
-    "`nrv activate` recusa um squad com erro não baselinado antes de instalar dependências (escape: --skip-verify).",
+    "`nrv activate` refuses a squad with a non-baselined error before installing dependencies (escape: --skip-verify).",
     { default: false, env: "NIRVANA_VERIFY_ENFORCE_ON_ACTIVATE" }),
 } as const;
 

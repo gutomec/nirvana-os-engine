@@ -20,7 +20,7 @@ import { loadHarnessConfig, type HarnessConfig } from "../lib/harness-config.ts"
 // heuristic gate, whatever runtime the machine has on PATH.
 const judgeOff = (cfg: HarnessConfig): HarnessConfig => ({ ...cfg, quality_gate: { ...cfg.quality_gate, judge_enabled: false } });
 import { getRun, listEvents, openKernel, type KernelHandle, type TargetRef } from "../lib/run-kernel/index.ts";
-import { SCOPE_GUARD_PT_BR } from "../../_shared/lib/scope-guard.ts";
+import { SCOPE_GUARD_EN } from "../../_shared/lib/scope-guard.ts";
 import { writeFakeDispatch } from "./helpers/fake-dispatch.ts";
 import { KERNEL_BUDGET_MS, spawnBudgetMs } from "./helpers/test-budgets.ts";
 
@@ -111,8 +111,8 @@ function publicationDependencies(root: string, outputsRoot: string): Partial<Bus
     exists: pathname => pathname.endsWith("build-report-pdf.ts") || fs.existsSync(pathname),
     runPublisher: () => ({ ok: true, sessionId: null, durationMs: 0, costUsd: 0 }),
     spawn: (_command, args) => {
-      if (args.some(argument => argument.endsWith("build-report-pdf.ts"))) fs.writeFileSync(path.join(outputsRoot, "relatorio-final.pdf"), "pdf", "utf8");
-      else if (args.some(argument => argument.endsWith("build-report-html.ts"))) fs.writeFileSync(path.join(outputsRoot, "relatorio-final.html"), "html", "utf8");
+      if (args.some(argument => argument.endsWith("build-report-pdf.ts"))) fs.writeFileSync(path.join(outputsRoot, "final-report.pdf"), "pdf", "utf8");
+      else if (args.some(argument => argument.endsWith("build-report-html.ts"))) fs.writeFileSync(path.join(outputsRoot, "final-report.html"), "html", "utf8");
       else if (args.some(argument => argument.endsWith("export.ts"))) fs.writeFileSync(path.join(root, "proof.zip"), "zip", "utf8");
       return { status: 0, stdout: "", stderr: "" };
     },
@@ -133,8 +133,8 @@ describe("Gauntlet causal revision loop", () => {
         revisionRequests: [{ requirementId: "brief", evidenceRefs: ["loop:crv_run_loop_can_1_1:brief"] }] } });
     expect(fs.readFileSync(path.join(request.previousRoot, "report.md"), "utf8")).toContain("Candidate can_1");
     const section = revisionDefectsSection(request);
-    expect(section).toContain("## Defeitos a corrigir");
-    expect(section).toContain(SCOPE_GUARD_PT_BR);
+    expect(section).toContain("## Defects to fix");
+    expect(section).toContain(SCOPE_GUARD_EN);
     expect(section).toContain(request.previousRoot); expect(section).toContain(request.candidateRoot);
     expect(section).toContain("evl_crv_run_loop_can_1_1"); expect(section).toContain("- brief: loop:crv_run_loop_can_1_1:brief");
     const revisions = loop.revisions();
@@ -288,7 +288,7 @@ describe("Gauntlet causal revision loop", () => {
         config: judgeOff(loadHarnessConfig(path.join(loop.root, "missing-config.yaml"))), audit: () => {}, log: () => {}, warn: () => {},
         afterGate: () => { postGateCalls += 1; return runBusinessPostGate({ projectId: "prj_loop", businessSlug: business.slug,
           runtime: "codex", projectDir: loop.root, projectRoot: loop.root, outputsRoot: loop.outputsRoot, skillsRoot: "/skills",
-          employeePromptScript: "/skills/employee-prompt.ts", sessionFile, sessionData, rulesDirective: "", yolo: true,
+          sessionFile, sessionData, rulesDirective: "", yolo: true,
           wantPdf: true, skipHtml: false, offlineSnapshot: false, routingMode: "agentic", wantZip: true,
           emit: () => {}, log: () => {}, warn: () => {}, dependencies: publicationDependencies(loop.root, loop.outputsRoot) }); },
       });
@@ -300,7 +300,7 @@ describe("Gauntlet causal revision loop", () => {
     expect(postGateCalls).toBe(1);
     expect(loop.calls.revisions).toHaveLength(1);
     expect(fs.readFileSync(path.join(loop.outputsRoot, "report.html"), "utf8")).toContain("Revision 2 of can_1");
-    expect(fs.existsSync(path.join(loop.outputsRoot, "relatorio-final.pdf"))).toBeTrue();
+    expect(fs.existsSync(path.join(loop.outputsRoot, "final-report.pdf"))).toBeTrue();
   }, spawnBudgetMs(2));
 
   test("the dispatch evaluator drives the causal revision from the scorecard's revisionRequests and reaches the final gate", () => {
@@ -356,7 +356,7 @@ describe("Gauntlet causal revision loop", () => {
   test.each(["balanced", "exhaustive"] as const)("%s enters every canary only with an explicit gauntlet request and --exec", intensity => {
     const explicit = parseExecutionOptions(["--execution-mode=gauntlet", `--gauntlet-intensity=${intensity}`], {});
     const standard = parseExecutionOptions([`--gauntlet-intensity=${intensity}`], {});
-    const policy = { businessSlug: "allowed", wantExec: true, teamMode: false, requestedMode: explicit.requestedMode, resolvedMode: explicit.resolvedMode, allowlist: "allowed" };
+    const policy = { businessSlug: "allowed", wantExec: true, requestedMode: explicit.requestedMode, resolvedMode: explicit.resolvedMode, allowlist: "allowed" };
     expect(explicit.intensity).toBe(intensity);
     expect(shouldRunAgentXGauntlet({ targetKind: "agent-x", wantExec: true, resolvedMode: explicit.resolvedMode })).toBeTrue();
     expect(shouldRunSquadGauntlet({ squadCount: 1, wantExec: true, resolvedMode: explicit.resolvedMode })).toBeTrue();

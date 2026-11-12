@@ -11,17 +11,21 @@
 // it could not isolate exactly one `deliverables/` folder. A run served over the
 // API has no such folder — its artifacts sit flat in the run root — so the
 // normal case took the fallback and shipped the scaffold.
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
 const SCRIPT = path.join(import.meta.dir, "..", "scripts", "export.ts");
-const OUTPUTS = path.join(os.homedir(), ".nirvana", "outputs");
+// A project of its own: export looks in <cwd>/outputs/<id> first, so the runs
+// below never touch the owner's ~/.nirvana/outputs.
+const CWD = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-export-cwd-"));
+const OUTPUTS = path.join(CWD, "outputs");
 const made: string[] = [];
 
 afterEach(() => { for (const p of made.splice(0)) { try { fs.rmSync(p, { recursive: true, force: true }); } catch { /* best effort */ } } });
+afterAll(() => { try { fs.rmSync(CWD, { recursive: true, force: true }); } catch { /* best effort */ } });
 
 /** A run whose shape matches what the engine actually writes. */
 function project(id: string, files: Record<string, string>): string {
@@ -41,7 +45,7 @@ const PROMPT = "PROTOCOL COMPLIANCE\nYOUR PERSONA\nMIND-CLONE LIBRARY\nMEMÓRIA 
 function zipOf(id: string, extra: string[] = []): { names: string[]; body: string } {
   const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "nrv-zip-")), `${id}.zip`);
   made.push(path.dirname(out));
-  const r = spawnSync("bun", [SCRIPT, id, "--format=zip", "--deliverables-only", `--output=${out}`, ...extra], { encoding: "utf8" });
+  const r = spawnSync(process.execPath, [SCRIPT, id, "--format=zip", "--deliverables-only", `--output=${out}`, ...extra], { encoding: "utf8", cwd: CWD });
   expect(r.status, r.stderr).toBe(0);
   const names = spawnSync("unzip", ["-Z1", out], { encoding: "utf8" }).stdout.split("\n").filter(Boolean);
   const body = spawnSync("unzip", ["-p", out], { encoding: "utf8" }).stdout;
@@ -60,7 +64,12 @@ describe("the run shape the API produces: artifacts flat, no deliverables folder
     "_SUMMARY.md": "promovido para campo do envelope",
     "HANDOFF.json": "{}",
     "session.json": "{}",
-    "_team/rascunho.md": "trabalho intermediário de um colega",
+    "_CLAIMS.json": "[]",
+    "_STATUS.json": "{}",
+    "solo-prompt.md": PROMPT,
+    "participation.json": "{}",
+    "_work/rascunho.md": "o rascunho do próprio worker",
+    "_review/answer-0.txt": "o parecer do revisor",
   };
 
   test("ships the work and nothing else", () => {
@@ -77,7 +86,8 @@ describe("the run shape the API produces: artifacts flat, no deliverables folder
     expect(body).toContain("o trabalho real");
   });
 
-  test.each(["agent-prompt.md", "brief.md", "CLAUDE.md", "AGENTS.md", "_SUMMARY.md", "HANDOFF.json", "session.json"])(
+  test.each(["agent-prompt.md", "brief.md", "CLAUDE.md", "AGENTS.md", "_SUMMARY.md", "HANDOFF.json", "session.json",
+    "_CLAIMS.json", "_STATUS.json", "solo-prompt.md", "participation.json", "answer-0.txt"])(
     "%s is plumbing and stays behind",
     (name) => {
       project(id, files);
@@ -85,7 +95,7 @@ describe("the run shape the API produces: artifacts flat, no deliverables folder
     },
   );
 
-  test("a peer's intermediate work stays behind too", () => {
+  test("the worker's scratch folder stays behind too", () => {
     project(id, files);
     expect(zipOf(id).names.join(" ")).not.toContain("rascunho");
   });
@@ -96,6 +106,9 @@ describe("the org chart's own shape", () => {
     const id = "nrv-test-one-biz";
     project(id, {
       "businesses/acme/deliverables/relatorio.md": "a entrega",
+      "businesses/acme/deliverables/_SUMMARY.md": "o resumo do worker",
+      "businesses/acme/cards/copy.md": "o card de um squad",
+      "businesses/acme/solo-prompt.md": PROMPT,
       "agent-prompt.md": PROMPT,
       "brief.md": "o pedido",
     });
@@ -131,5 +144,18 @@ describe("--include-audit is a deliberate choice, not a hole", () => {
     expect(base).toContain("audit.jsonl");
     expect(base).not.toContain("agent-prompt.md");
     expect(body).not.toContain("MIND-CLONE LIBRARY");
+  });
+});
+
+describe("the tarball ships exactly what the zip ships", () => {
+  test("--format=tgz: the same member list, run state left behind", () => {
+    const id = "nrv-test-tgz";
+    project(id, { "relatorio.md": "o trabalho", "brief.md": "o pedido", "_SUMMARY.md": "resumo", "_work/rascunho.md": "rascunho", "site/index.html": "<p>ok</p>" });
+    const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "nrv-tgz-")), `${id}.tgz`);
+    made.push(path.dirname(out));
+    const r = spawnSync(process.execPath, [SCRIPT, id, "--format=tgz", `--output=${out}`], { encoding: "utf8", cwd: CWD });
+    expect(r.status, r.stderr).toBe(0);
+    const names = spawnSync("tar", ["-tzf", out], { encoding: "utf8" }).stdout.split("\n").filter(Boolean).sort();
+    expect(names).toEqual([`${id}/relatorio.md`, `${id}/site/index.html`]);
   });
 });

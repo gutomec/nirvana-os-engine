@@ -4,7 +4,7 @@
 Intent: DISCOVER (keywords: list, show, find, search, inspect, info, describe)
 
 ## Protocol Reference
-SQUAD_PROTOCOL_V4.md §5.2 (Directory Layout)
+`SQUAD_PROTOCOL_V6.md` §5.2 (Directory Layout)
 
 ## Discovery Algorithm
 

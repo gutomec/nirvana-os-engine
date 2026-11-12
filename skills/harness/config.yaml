@@ -17,12 +17,14 @@ routing:
   # uses it at the top level, and business employees use it to find squads.
   #   agentic (default) — an agent inspects the registries and reasons about the
   #                       best target. Higher quality, costs tokens.
-  #   fast              — BM25/keyword matching over the registry indexes.
-  #                       Zero-token, deterministic, lower quality. Opt-in for
-  #                       cost-sensitive runs.
+  #   cards             — one tool-less call over the compiled routing cards.
+  #                       The balanced and economy profiles use it.
+  # The keyword router (BM25) never decides who executes: it builds the
+  # shortlist of `nrv find` and the clone search. A stored `fast` is ignored
+  # with a warning.
   # Override per-run with env NIRVANA_ROUTING_MODE or the --mode flag.
   mode: agentic
-  # dense — the neural (multilingual MiniLM) arm of the fast router.
+  # dense — the neural (multilingual MiniLM) arm of the keyword router.
   #   "off"      (default) — BM25 only. Measured 2026-08-05 (routing-360 Phase
   #              3.4): dense top-1 cosines of correct multilingual targets
   #              (0.371-0.655) overlap the out-of-domain negatives band
@@ -49,7 +51,7 @@ routing:
 # pass/fail check, not a rewrite.
 # Phase 3 — quality gate with LLM judge + revision loop (nirvana-evolution)
 quality_gate:
-  judge_enabled: reports      # reports = judge text deliverables (.md, .txt) against the brief; true = every gateable file; false = offline heuristics only.
+  judge_enabled: reports      # reports = judge text deliverables (.md, .txt, .html) against the brief; true = every gateable file; false = offline heuristics only.
   max_revisions: 2            # hard cap; loop fails open after this.
   escalate_after: 2           # alias of max_revisions; future-use placeholder.
   rubric_fallback: prose_shortform   # used when produces[] has no matching rubric

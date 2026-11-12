@@ -60,14 +60,14 @@ const TARGETS: Target[] = [
     schema: CapabilitySchema,
     id: "https://nirvana-protocol/v6/schemas/capability.schema.json",
     title: "Capability",
-    description: "One entry of squad.yaml capabilities[] (Squad Protocol v5 §22, v6 §29–§31 and §33).",
+    description: "One entry of squad.yaml capabilities[] (Squad Protocol v6 §22, §29 to §31 and §33).",
   },
   {
     file: "squad.schema.json",
     schema: SquadManifestSchema,
     id: "https://nirvana-protocol/v6/schemas/squad.schema.json",
     title: "Squad manifest",
-    description: "squad.yaml, the squad manifest (Squad Protocol v4 §5, v5 §22, v6 §28.6 and §34).",
+    description: "squad.yaml, the squad manifest (Squad Protocol v6 §5.1, §22, §28.6 and §34).",
   },
   {
     file: "workflow.schema.json",

@@ -117,6 +117,24 @@ export function foreignProvider(entryPath: string, skillName: string, canonicalR
 }
 
 /**
+ * Whether a skills.sh copy of `skillName` came from this engine's own
+ * repository, per the lock skills.sh keeps beside its skills dir
+ * (`~/.agents/.skill-lock.json`, `skills.<name>.source`). Such a copy is this
+ * engine's skill at an older version, and the runtimes that read it followed a
+ * protocol the engine no longer runs (a Codex session read a copy three weeks
+ * old). Anything else, or no lock, is someone else's and stays untouched.
+ */
+export function skillsShCopyOfOurs(entryPath: string, skillName: string, repo = process.env.NIRVANA_ENGINE_REPO || "gutomec/nirvana-os-engine"): string | null {
+  let real: string;
+  try { real = realpathSync(entryPath); } catch { return null; }
+  try {
+    const lock = JSON.parse(readFileSync(join(dirname(dirname(real)), ".skill-lock.json"), "utf8"));
+    const source = lock?.skills?.[skillName]?.source;
+    return typeof source === "string" && source.toLowerCase() === repo.toLowerCase() ? real : null;
+  } catch { return null; }
+}
+
+/**
  * Where a foreign entry displaced by the installer is parked. OUTSIDE every
  * skills root on purpose: Codex, Pi and OpenClaw walk their roots recursively,
  * and a `<name>.pre-nirvana.bak` beside the entry is a second directory with

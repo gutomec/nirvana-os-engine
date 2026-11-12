@@ -24,7 +24,7 @@ function home(): string {
 }
 
 function agyChecks(root: string): Array<{ name: string; status: string; note: string }> {
-  const env: Record<string, string> = { ...(process.env as Record<string, string>), HOME: root, USERPROFILE: root, NIRVANA_HOME: root };
+  const env: Record<string, string> = { ...(process.env as Record<string, string>), HOME: root, USERPROFILE: root, NIRVANA_HOME: root, NIRVANA_SKILLS_DIR: join(import.meta.dir, "..", "..") };
   const r = spawnSync(process.execPath, [DOCTOR, "--json"], { cwd: root, env, encoding: "utf8", windowsHide: true });
   return JSON.parse(r.stdout).checks.filter((c: any) => c.name.startsWith("antigravity:"));
 }

@@ -19,6 +19,7 @@
 //     verify baseline exists, and left untouched.
 
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { paths } from "../bun-helpers.ts";
 import { entityKey, findingKey, type Finding, type Kind, type VerifyReport } from "./types.ts";
@@ -31,6 +32,14 @@ export interface Baseline {
 
 export function defaultBaselinePath(): string {
   const home = (paths as Record<string, string>).NIRVANA_HOME ?? ".";
+  // Last rung before the user's home, the floor state-db.js and run-ledger.ts
+  // have: a test never reads, nor grandfathers into, the machine's baseline.
+  // Compared with homedir() rather than gated on NIRVANA_HOME, because paths.js
+  // is frozen at require time and may still name the real home after a test
+  // set its own. Set only by skills/test-preload.ts.
+  if (process.env.NIRVANA_TEST_LOGS_HOME && path.resolve(home) === path.resolve(os.homedir())) {
+    return path.join(path.resolve(process.env.NIRVANA_TEST_LOGS_HOME), ".verify-baseline.json");
+  }
   return path.join(home, ".nirvana", ".verify-baseline.json");
 }
 

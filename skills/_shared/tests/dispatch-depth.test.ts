@@ -184,9 +184,10 @@ describe("every real dispatch site declares its role", () => {
   // reopens the incident, so the sites are asserted from source.
   test.each([
     ["skills/harness/lib/squad-exec.ts", 'dispatchRole: "squad"'],
-    ["skills/harness/lib/team-orchestrator.ts", 'dispatchRole: "employee"'],
-    ["skills/harness/lib/team-orchestrator.ts", 'dispatchRole: "planner"'],
-    ["skills/harness/scripts/dispatch.ts", 'dispatchRole: "agent-x"'],
+    ["skills/harness/lib/business-solo.ts", 'dispatchRole: "solo"'],
+    ["skills/harness/lib/solo-review.ts", 'dispatchRole: "planner"'],
+    ["skills/harness/scripts/dispatch.ts", 'dispatchRole: "solo"'],
+    ["skills/harness/lib/dispatch-cascade.ts", 'dispatchRole: "agent-x"'],
   ])("%s declares %s", async (file, needle) => {
     const fs = await import("node:fs");
     const path = await import("node:path");

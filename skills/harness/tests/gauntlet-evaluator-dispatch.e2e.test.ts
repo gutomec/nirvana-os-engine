@@ -23,6 +23,7 @@ import type { TargetRef } from "../lib/run-kernel/types.ts";
 import { canonicalRunIdFor } from "../scripts/dispatch.ts";
 import { writeFakeCli } from "./helpers/fake-cli.ts";
 import { writeFakeDispatch } from "./helpers/fake-dispatch.ts";
+import { isRunStateFile } from "../../_shared/lib/run-plumbing.ts";
 import { makeTempRoot, removeDir } from "./helpers/temp-dirs.ts";
 import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
@@ -101,7 +102,9 @@ function fixture(installed: Record<string, string[]>) {
   const outputs = path.join(root, "deliverables");
   const dispatch = (projectId: string, extra: Record<string, string> = {}, argv: string[] = []) =>
     spawnSync(process.execPath, [DISPATCH, "--agent-x", "--brief-file", briefFile, "--exec", "--project", projectId, "--outputs-root", outputs,
-      "--execution-mode=gauntlet", "--gauntlet-intensity=light", ...argv], { cwd: projectRoot, encoding: "utf8", env: { ...env, ...extra } });
+      // --no-judge: the gate's LLM judge (it reads .html reports by default) would be one more
+      // non-judge-x call of the fake, counted as a producer run; the Gauntlet evaluator is the subject.
+      "--execution-mode=gauntlet", "--gauntlet-intensity=light", "--no-judge", ...argv], { cwd: projectRoot, encoding: "utf8", env: { ...env, ...extra } });
   const audit = () => {
     const dir = path.join(root, "logs");
     if (!fs.existsSync(dir)) return [] as Array<Record<string, unknown>>;
@@ -324,7 +327,8 @@ describe("a real dispatch.ts as the evaluator child", () => {
     const child = runChild("nothing");
     const outputsRoot = path.join(child.evaluationDir, EVALUATION_OUTPUTS_DIR);
     expect(child.outputPathsSeen, child.diagnostics).toEqual([outputsRoot]);
-    expect(fs.readdirSync(outputsRoot)).toEqual([]);
+    // _STATUS.json is the run's own state (run-plumbing isRunStateFile), never an artifact.
+    expect(fs.readdirSync(outputsRoot).filter((name) => !isRunStateFile(name))).toEqual([]);
     expect(fs.readdirSync(child.evaluationDir).sort()).toEqual(["evaluation-brief.md", "evaluation-request.json", EVALUATION_OUTPUTS_DIR]);
     expect(child.scorecard.verdict).toBe("indeterminate");
     expect(child.scorecard.dimensions[0].evidenceRefs[0]).toMatch(/^indeterminate: scorecard\.json not found at .*outputs[\\/]scorecard\.json/);

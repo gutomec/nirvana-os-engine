@@ -9,6 +9,7 @@ import { loadHarnessConfig, type HarnessConfig } from "../lib/harness-config.ts"
 // heuristic gate, whatever runtime the machine has on PATH.
 const judgeOff = (cfg: HarnessConfig): HarnessConfig => ({ ...cfg, quality_gate: { ...cfg.quality_gate, judge_enabled: false } });
 import * as runLedger from "../lib/run-ledger.ts";
+import { isRunStateFile } from "../../_shared/lib/run-plumbing.ts";
 import { KERNEL_BUDGET_MS } from "./helpers/test-budgets.ts";
 
 const roots: string[] = [];
@@ -43,10 +44,10 @@ function runScenario(kind: "legacy-reference" | "boundary", verifyExit: 0 | 1) {
 
   const publishLegacyReference = () => {
     publicationCalls++;
-    const pdf = path.join(outputsRoot, "relatorio-final.pdf"); fs.writeFileSync(pdf, "pdf", "utf8");
+    const pdf = path.join(outputsRoot, "final-report.pdf"); fs.writeFileSync(pdf, "pdf", "utf8");
     audit.push({ event: "report_publisher_ran", payload: { trace_id: "proj-parity", project_id: "proj-parity", business_slug: "example", ok: true, publisher: "generic" } });
     audit.push({ event: "report_pdf_generated", payload: { trace_id: "proj-parity", project_id: "proj-parity", business_slug: "example", output: pdf } });
-    const html = path.join(outputsRoot, "relatorio-final.html"); fs.writeFileSync(html, "html", "utf8");
+    const html = path.join(outputsRoot, "final-report.html"); fs.writeFileSync(html, "html", "utf8");
     audit.push({ event: "report_html_generated", payload: { trace_id: "proj-parity", project_id: "proj-parity", business_slug: "example", output: html } });
     const zip = path.join(root, "proj-parity.zip"); fs.writeFileSync(zip, "zip", "utf8");
     sessionData.zip_path = zip; fs.writeFileSync(sessionFile, JSON.stringify(sessionData, null, 2), "utf8");
@@ -60,9 +61,9 @@ function runScenario(kind: "legacy-reference" | "boundary", verifyExit: 0 | 1) {
     runPublisher: () => ({ ok: true, sessionId: null, durationMs: 0, costUsd: 0 }),
     spawn: (_command, args) => {
       if (args.some(argument => argument.endsWith("build-report-pdf.ts"))) {
-        fs.writeFileSync(path.join(outputsRoot, "relatorio-final.pdf"), "pdf", "utf8");
+        fs.writeFileSync(path.join(outputsRoot, "final-report.pdf"), "pdf", "utf8");
       } else if (args.some(argument => argument.endsWith("build-report-html.ts"))) {
-        fs.writeFileSync(path.join(outputsRoot, "relatorio-final.html"), "html", "utf8");
+        fs.writeFileSync(path.join(outputsRoot, "final-report.html"), "html", "utf8");
       } else if (args.some(argument => argument.endsWith("export.ts"))) {
         fs.writeFileSync(path.join(root, "proj-parity.zip"), "zip", "utf8");
       }
@@ -74,7 +75,7 @@ function runScenario(kind: "legacy-reference" | "boundary", verifyExit: 0 | 1) {
     publicationCalls++;
     return runBusinessPostGate({
       projectId: "proj-parity", businessSlug: "example", runtime: "codex", projectDir: root, projectRoot: root,
-      outputsRoot, skillsRoot: "/skills", employeePromptScript: "/skills/employee-prompt.ts",
+      outputsRoot, skillsRoot: "/skills",
       sessionFile, sessionData, rulesDirective: "", yolo: true, wantPdf: true, skipHtml: false,
       offlineSnapshot: false, routingMode: "agentic", wantZip: true,
       emit: (event, payload) => audit.push({ event, payload }), log: () => {}, warn: () => {}, dependencies,
@@ -94,9 +95,11 @@ function runScenario(kind: "legacy-reference" | "boundary", verifyExit: 0 | 1) {
   const result = runDelivery(args);
   const terminal = runLedger.getRun(ledger, row.run_id)?.state;
   ledger.close();
-  const files = fs.readdirSync(outputsRoot).sort();
+  // The work and the publication; `_STATUS.json` is the run's own record of the outcome.
+  const files = fs.readdirSync(outputsRoot).filter(f => !isRunStateFile(f)).sort();
+  const status = JSON.parse(fs.readFileSync(path.join(outputsRoot, "_STATUS.json"), "utf8"));
   return { result: normalize(result, root), audit: normalize(audit, root), terminal, publicationCalls,
-    files, session: normalize(JSON.parse(fs.readFileSync(sessionFile, "utf8")), root) };
+    files, status, session: normalize(JSON.parse(fs.readFileSync(sessionFile, "utf8")), root) };
 }
 
 describe("Business delivery parity E2E", () => {
@@ -105,14 +108,16 @@ describe("Business delivery parity E2E", () => {
     const boundary = runScenario("boundary", 0);
     expect(boundary).toEqual(legacy);
     expect(boundary).toMatchObject({ terminal: "delivered", publicationCalls: 1,
-      files: ["relatorio-final.html", "relatorio-final.pdf", "report.html"] });
+      files: ["final-report.html", "final-report.pdf", "report.html"],
+      status: { state: "delivered", gate: "pass", exit_code: 0 } });
   }, KERNEL_BUDGET_MS);
 
   test("keeps manifest failure terminal and never runs post-gate publication", () => {
     const legacy = runScenario("legacy-reference", 1);
     const boundary = runScenario("boundary", 1);
     expect(boundary).toEqual(legacy);
-    expect(boundary).toMatchObject({ terminal: "failed", publicationCalls: 0, files: ["report.html"] });
+    expect(boundary).toMatchObject({ terminal: "failed", publicationCalls: 0, files: ["report.html"],
+      status: { state: "failed", gate: "skipped", exit_code: 1 } });
     expect((boundary.audit as AuditEntry[]).some(entry => entry.event === "delivered")).toBeFalse();
   }, KERNEL_BUDGET_MS);
 });

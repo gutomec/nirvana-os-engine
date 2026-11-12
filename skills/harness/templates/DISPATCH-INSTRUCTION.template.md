@@ -68,7 +68,7 @@ You write **only** under your own target directory (`{target_dir}/`) and the sha
 
 ## 8. Done, and how you know
 
-Done is section 2: every acceptance criterion there is observably true, the files you promised exist under `{target_dir}/outputs/` and none is a stub, and `outputs/_SUMMARY.md` says in one page what exists, the assumptions you relied on (`## Premissas assumidas`) and what you left out. Check your own work in proportion to the change; the quality gate runs after you hand back and is not yours to run. Method, depth and the layout of the artifacts are yours to decide. Keep changes and files to what section 2 asks for, and stop when its criteria hold or when a blocker only the user can lift remains (rule 6 above).
+Done is section 2: every acceptance criterion there is observably true, the files you promised exist under `{target_dir}/outputs/` and none is a stub, and `outputs/_SUMMARY.md` says in one page what exists, the assumptions you relied on (`## Assumptions`, titled in the deliverable's language) and what you left out. Check your own work in proportion to the change; the quality gate runs after you hand back and is not yours to run. Method, depth and the layout of the artifacts are yours to decide. Keep changes and files to what section 2 asks for, and stop when its criteria hold or when a blocker only the user can lift remains (rule 6 above).
 
 ## 9. Guardrails that travel with you
 

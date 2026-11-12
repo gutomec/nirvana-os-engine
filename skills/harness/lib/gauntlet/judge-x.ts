@@ -81,7 +81,7 @@ export function buildJudgeXPrompt(args: { persona: string; brief: string; projec
     "",
     "## Output",
     `Write exactly one file, ${SCORECARD_FILE}, at the scorecard_path above. Do not print a verdict; write the file.`,
-    scopeGuard("en"),
+    scopeGuard(),
   ].join("\n");
 }
 

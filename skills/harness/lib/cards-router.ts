@@ -29,11 +29,13 @@ import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import { runHeadless, type Runtime, type RunHeadlessOpts, type RunHeadlessResult } from "./host-agent-driver.ts";
 import {
-  digestIsStale, extractJsonBlock, loadRegistrySlugs,
-  type AgenticRouteDecision, type RegistrySlugs, type RouterPaths,
+  addCost, digestIsStale, extractJsonBlock, loadRegistrySlugs, routerCwd,
+  type AgenticRouteDecision, type RegistrySlugs, type RouterPaths, type RoutedPart,
 } from "./agentic-router.ts";
 import { resolveRoutingArtifactPaths } from "../scripts/build-routing-digest.ts";
 import { clip } from "./routing-cards.ts";
+
+export { routerCwd };
 import { findCloneForTask } from "../../_shared/lib/clone-search.ts";
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
 import { stamp } from "../../_shared/lib/audit-provenance.ts";
@@ -122,15 +124,19 @@ export function cloneCandidateLine(c: CloneCandidate): string {
   return [`clone:${c.slug}`, name, oneLiner].filter(Boolean).join(" | ");
 }
 
-export function buildCardsPrompt(brief: string, cards: string, clones: string[], correction?: string): string {
+/**
+ * The router's prompt in two parts. The static one (instructions, rules, answer
+ * shape, the cards) travels as the system prompt; the per-request one (clone
+ * candidates, the request, a correction) as the message. A runtime caches a
+ * prompt at block boundaries, and a CLI sends the message as one block: with
+ * the cards inside the message no two requests shared a cached prefix, and
+ * every call rewrote ~50k tokens of cache (measured 2026-10-13: $0.41 per call
+ * on Opus, 95% of it the cache write). In the system prompt the cards are read
+ * back from cache from the second call on.
+ */
+export function buildCardsStatic(cards: string): string {
   return [
     "You choose who executes a request. Do not execute the request and do not use tools: answer with one JSON object and nothing else.",
-    "# Request",
-    brief.trim(),
-    cards.trim(),
-    "# Mind-clone candidates",
-    "The closest to the request in a lexical search. Use only the ones that truly serve it.",
-    clones.join("\n") || "(none)",
     "# How to choose",
     [
       "- Choose by what must be produced, not by the theme of the request.",
@@ -138,21 +144,43 @@ export function buildCardsPrompt(brief: string, cards: string, clones: string[],
       "- With no target named, a business is the default and a squad the exception: go straight to a squad only when the request is one artifact of one specialty, that squad delivers the whole of it, and nothing needs judgment across specialties. \"solo\" when nothing in the catalog can deliver it.",
       "- Voices: 0 to 2 mind-clones whose method improves the delivery. None beats a forced one.",
       "- Support squads: only when the target is a business, 0 to 2 squads for parts of the request that no role of the business covers. A squad that would repeat the roles' work slows the delivery; then, none.",
+      "- Several deliverables that belong to different businesses (or squads): list each in parts, one target per part, what it delivers in a few words, and after: the targets whose output it needs. target is then the part the others build on, or the largest. One deliverable is one part, whatever the request says about its circumstances.",
       "- Done when: 3 to 5 observable states that are true once the request is met. States, not steps.",
       "- Write the done states and the reason in the language of the request.",
     ].join("\n"),
-    ...(correction ? ["# Correction", correction] : []),
     "# Answer",
-    '{"target": "business:<slug> | squad:<slug> | solo", "voices": ["<slug>"], "squads": ["<slug>"], "done": ["<state>"], "reason": "<one sentence>"}',
+    '{"target": "business:<slug> | squad:<slug> | solo", "parts": [{"target": "business:<slug> | squad:<slug>", "part": "<what it delivers>", "after": ["business:<slug>"]}], "voices": ["<slug>"], "squads": ["<slug>"], "done": ["<state>"], "reason": "<one sentence>"}',
+    cards.trim(),
   ].join("\n\n");
+}
+
+export function buildCardsRequest(brief: string, clones: string[], correction?: string): string {
+  return [
+    "# Mind-clone candidates",
+    "The closest to the request in a lexical search. Use only the ones that truly serve it.",
+    clones.join("\n") || "(none)",
+    "# Request",
+    brief.trim(),
+    ...(correction ? ["# Correction", correction] : []),
+  ].join("\n\n");
+}
+
+/** Both parts as one text, for reading and for runtimes that take a single prompt. */
+export function buildCardsPrompt(brief: string, cards: string, clones: string[], correction?: string): string {
+  return `${buildCardsStatic(cards)}\n\n${buildCardsRequest(brief, clones, correction)}`;
 }
 
 // ─────────────────────────────────────────────────────────────────────
 // Parse + validate (pure — the zero-token test seam)
 // ─────────────────────────────────────────────────────────────────────
 
+/** One deliverable of a request that several targets share. */
+export interface CardsPart { target: string; part: string; after: string[] }
+
 export interface CardsAnswer {
   target: string;
+  /** Present when the request has deliverables for more than one target. */
+  parts: CardsPart[];
   voices: string[];
   squads: string[];
   done: string[];
@@ -189,6 +217,9 @@ export function parseCardsAnswer(raw: string): { ok: true; answer: CardsAnswer }
     ok: true,
     answer: {
       target: typeof parsed.target === "string" ? parsed.target.trim() : "",
+      parts: Array.isArray(parsed.parts) ? parsed.parts
+        .filter((x: any) => x && typeof x.target === "string" && x.target.trim())
+        .map((x: any) => ({ target: x.target.trim(), part: typeof x.part === "string" ? x.part.trim() : "", after: strings(x.after) })) : [],
       voices: unprefix(strings(parsed.voices), "clone:"),
       squads: unprefix(strings(parsed.squads), "squad:"),
       done: strings(parsed.done).slice(0, MAX_DONE),
@@ -226,9 +257,17 @@ export function toCardsDecision(
   target: CardsTarget,
   slugs: RegistrySlugs,
 ): Pick<CardsRouteDecision, "kind" | "primary_business" | "mandatory_squads" | "optional_squads" | "suggested_mind_clones"
-  | "candidates" | "rationale" | "runtime" | "warnings" | "done" | "dropped"> {
+  | "candidates" | "rationale" | "runtime" | "warnings" | "done" | "dropped" | "parts"> {
   const dropped: string[] = [];
   const warnings: string[] = [];
+  // Parts with a target that is installed, the primary one included; one part is no split.
+  const parts: RoutedPart[] = [];
+  for (const p of answer.parts ?? []) {
+    const t = resolveCardsTarget(p.target, slugs);
+    if ("error" in t || t.kind === "solo") { dropped.push(`part:${p.target}`); warnings.push(`part dropped (${"error" in t ? t.error : "solo is not a part"}): ${p.target}`); continue; }
+    if (parts.some((q) => q.kind === t.kind && q.slug === t.slug)) continue;
+    parts.push({ kind: t.kind, slug: t.slug, part: p.part, after: p.after.map((a) => a.replace(/^(business|squad):/, "")) });
+  }
   const voices: string[] = [];
   for (const slug of answer.voices) {
     if (slugs.mindClones.has(slug) && voices.length < MAX_VOICES) voices.push(slug);
@@ -253,6 +292,7 @@ export function toCardsDecision(
   const base = {
     optional_squads: [] as string[], suggested_mind_clones: voices, candidates: [],
     rationale: answer.reason, runtime: null, warnings, done: answer.done, dropped,
+    parts: parts.length > 1 ? parts : [],
   };
   if (target.kind === "business") return { kind: "decision", primary_business: target.slug, mandatory_squads: support, ...base };
   if (target.kind === "squad") return { kind: "decision", primary_business: null, mandatory_squads: [target.slug], ...base };
@@ -306,9 +346,6 @@ function failed(error: string, costUsd: number | null, durationMs: number, attem
   };
 }
 
-const addCost = (a: number | null, b: number | null | undefined): number | null =>
-  typeof b === "number" ? (a ?? 0) + b : a;
-
 /** Run the cards router. Writes the same `agentic_route_*` audit events as the
  *  agentic router, marked `mode: "cards"`. */
 export async function cardsRoute(args: CardsRouteArgs): Promise<CardsRouteDecision> {
@@ -339,23 +376,17 @@ export async function cardsRoute(args: CardsRouteArgs): Promise<CardsRouteDecisi
   let correction: string | undefined;
   let lastError = "";
   for (let attempt = 1; attempt <= 2; attempt++) {
-    // An empty folder: the router has nothing to read and nowhere to write.
-    const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "nrv-cards-route-"));
-    let res: RunHeadlessResult;
-    try {
-      res = runner({
-        runtime: args.runtime,
-        prompt: buildCardsPrompt(args.brief, cards, clones, correction),
-        cwd: scratch,
-        noTools: true,
-        maxBudgetUsd: args.maxBudgetUsd,
-        timeoutMs: args.timeoutMs ?? resolveSetting("routing.timeout_ms").value,
-        // A decision step answers with a verdict and opens nothing.
-        dispatchRole: "planner",
-      });
-    } finally {
-      try { fs.rmSync(scratch, { recursive: true, force: true }); } catch { /* ignore */ }
-    }
+    const res: RunHeadlessResult = runner({
+      runtime: args.runtime,
+      prompt: buildCardsRequest(args.brief, clones, correction),
+      appendSystemPrompt: buildCardsStatic(cards),
+      cwd: routerCwd(),
+      noTools: true,
+      maxBudgetUsd: args.maxBudgetUsd,
+      timeoutMs: args.timeoutMs ?? resolveSetting("routing.timeout_ms").value,
+      // A decision step answers with a verdict and opens nothing.
+      dispatchRole: "planner",
+    });
     costUsd = addCost(costUsd, res.costUsd);
     const durationMs = Date.now() - started;
 
@@ -384,7 +415,7 @@ export async function cardsRoute(args: CardsRouteArgs): Promise<CardsRouteDecisi
     emitAudit({
       event: "agentic_route_decision", mode: "cards", project_id: args.projectId ?? null,
       kind: d.kind, primary_business: d.primary_business, mandatory_squads: d.mandatory_squads,
-      optional_squads: d.optional_squads, suggested_mind_clones: d.suggested_mind_clones,
+      optional_squads: d.optional_squads, suggested_mind_clones: d.suggested_mind_clones, parts: d.parts,
       done: d.done, dropped: d.dropped, rationale: d.rationale, warnings: d.warnings,
       attempts: attempt, cost_usd: costUsd, duration_ms: durationMs,
     }, args.cwd);

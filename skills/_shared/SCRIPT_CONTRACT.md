@@ -187,11 +187,11 @@ The shared helper `~/.nirvana/skills/_shared/lib/bun-helpers.ts` provides `paths
 
 ### Scope awareness for new scripts
 
-Any new loader (lists / reads / scans squads, businesses, or mind-clones) MUST honor `NIRVANA_SCOPE`. Use the resolver:
+Any new loader (lists / reads / scans squads, businesses, or mind-clones) MUST honor the project's scope. Use the resolver:
 
 ```ts
 import { resolveScope, enumerate } from "../../_shared/lib/scope.ts";
-const scope = resolveScope();                        // reads <project>/.env + cwd walk
+const scope = resolveScope();                        // cwd walk + .nirvana/project.yaml
 const entries = enumerate(scope, "squads");          // [{slug, dir, source, overridden?}]
 ```
 

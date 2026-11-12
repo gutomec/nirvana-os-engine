@@ -1,6 +1,6 @@
 // antigravity-usage.test.ts — the agy runner keeps the token counts its CLI reports.
 //
-// `agy -p --output-format json` answers with a `usage` block (input, output,
+// agy's result (`--output-format json`, or the final stream-json `result` event) carries a `usage` block (input, output,
 // thinking and cache-read tokens) and no USD. The runner kept only `response`,
 // so every Antigravity run reached the ledger with no cost and the estimator had
 // nothing to price.
@@ -10,7 +10,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { runHeadless } from "../../_shared/lib/host-agent-driver.ts";
 import { estimateCostUsd } from "../lib/cost-estimator.ts";
-import { writeFakeCli } from "./helpers/fake-cli.ts";
+import { AGY_FAKE_PRELUDE, writeFakeCli } from "./helpers/fake-cli.ts";
 import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "agy-usage-"));
@@ -19,11 +19,12 @@ const PATH_BEFORE = process.env.PATH;
 
 beforeAll(() => {
   // The shape agy 1.2.13 prints, values chosen to make the arithmetic visible.
-  writeFakeCli(BIN, "agy", `
-    console.log(JSON.stringify({
+  writeFakeCli(BIN, "agy", AGY_FAKE_PRELUDE + `
+    await agyPrompt();
+    agyReply({
       conversation_id: "conv-1", status: "success", response: "done", duration_seconds: 1.5, num_turns: 1,
       usage: { input_tokens: 1000000, output_tokens: 200000, thinking_tokens: 100000, cache_read_tokens: 400000, total_tokens: 1300000 },
-    }));
+    });
   `);
   process.env.PATH = `${BIN}${path.delimiter}${process.env.PATH}`;
 });
@@ -42,6 +43,26 @@ describe("antigravity-cli runner", () => {
     expect(r.costUnavailable).toBe(true);
     // Thinking tokens bill as output; cache reads are the cached subset of input.
     expect(r.usage).toEqual({ inputTokens: 1_000_000, cachedInputTokens: 400_000, cacheWriteInputTokens: 0, outputTokens: 300_000, reasoningOutputTokens: 100_000 });
+  }, spawnBudgetMs(1));
+
+  test("a run given --model is priced by the driver itself, and says it is an estimate", () => {
+    const r = runHeadless({ runtime: "antigravity-cli", prompt: "do it", cwd: TMP, timeoutMs: 20_000, model: "gemini-3-pro" });
+    expect(r.ok, r.error ?? r.stderr).toBe(true);
+    expect(r.model).toBe("gemini-3-pro");
+    expect(r.costUsd).toBeCloseTo(1.25 + 3.0, 6);
+    expect(r.costEstimated).toBe(true);
+    // agy itself still reported no USD.
+    expect(r.costUnavailable).toBe(true);
+    // The cascade's estimator, given no model of its own, reads the run's.
+    expect(estimateCostUsd("antigravity-cli", null, r)).toBeCloseTo(1.25 + 3.0, 6);
+  }, spawnBudgetMs(1));
+
+  test("a model the price table does not know leaves the cost unknown, never $0", () => {
+    const r = runHeadless({ runtime: "antigravity-cli", prompt: "do it", cwd: TMP, timeoutMs: 20_000, model: "some-unpriced-model" });
+    expect(r.ok, r.error ?? r.stderr).toBe(true);
+    expect(r.costUsd).toBeNull();
+    expect(r.costEstimated).toBeUndefined();
+    expect(r.costUnavailable).toBe(true);
   }, spawnBudgetMs(1));
 
   test("the estimator prices it once the model is known", () => {

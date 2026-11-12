@@ -2,15 +2,16 @@
 //
 // Since agy 1.2.10 a model or agent error mid-turn exits 3 with an `AGY_ERROR`
 // line, after the turn was paid for. The runner used to re-spawn the whole turn
-// when stderr said "unknown"/"invalid" (dropping --output-format). That
-// re-spawn is gone.
+// when stderr said "unknown"/"invalid" (dropping --output-format) or
+// "conversation" (swapping --conversation for --continue, which can attach to
+// another conversation in the same directory). Both re-spawns are gone.
 // Hermetic: a fake `agy` that counts its calls. No LLM, no network.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { runHeadless } from "../../_shared/lib/host-agent-driver.ts";
-import { writeFakeCli } from "./helpers/fake-cli.ts";
+import { AGY_FAKE_PRELUDE, writeFakeCli } from "./helpers/fake-cli.ts";
 import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "agy-no-respawn-"));
@@ -20,19 +21,23 @@ const MODE = path.join(TMP, "mode");
 const PATH_BEFORE = process.env.PATH;
 
 beforeAll(() => {
-  writeFakeCli(BIN, "agy", `
+  writeFakeCli(BIN, "agy", AGY_FAKE_PRELUDE + `
     import * as fs from "node:fs";
+    await agyPrompt();
     fs.appendFileSync(${JSON.stringify(CALLS)}, JSON.stringify(Bun.argv.slice(2)) + "\\n");
     const mode = fs.existsSync(${JSON.stringify(MODE)}) ? fs.readFileSync(${JSON.stringify(MODE)}, "utf8") : "ok";
     if (mode === "agy-error") {
-      console.log(JSON.stringify({ conversation_id: "conv-1", response: "partial", is_error: true, error: "unknown model error" }));
       console.error("AGY_ERROR: unknown error while resuming conversation conv-1");
-      process.exit(3);
+      agyReply({ conversation_id: "conv-1", response: "partial", is_error: true, error: "unknown model error" }, 3);
     }
     if (mode === "flag-error") { console.error("error: unknown option '--output-format'"); process.exit(1); }
-    // agy 1.3.3 \`--continue\` with no conversation to continue: exit 0, no warning, a NEW conversation.
-    if (mode === "fresh-conv") { console.log(JSON.stringify({ conversation_id: "conv-new", status: "SUCCESS", response: "OK" })); process.exit(0); }
-    console.log(JSON.stringify({ conversation_id: "conv-1", response: "done" }));
+    // agy 1.3.3 on an unknown --conversation id: exit 0, a warning, a NEW conversation.
+    if (mode === "unknown-conv") {
+      console.error('warning: conversation "conv-gone" not found');
+      agyReply({ conversation_id: "conv-new", status: "SUCCESS", response: "OK\\n" });
+    }
+    if (mode === "other-conv") agyReply({ conversation_id: "conv-other", response: "done" });
+    agyReply({ conversation_id: "conv-1", response: "done" });
   `);
   process.env.PATH = `${BIN}${path.delimiter}${process.env.PATH}`;
 });
@@ -51,10 +56,11 @@ function run(mode: string, sessionId?: string) {
 }
 
 describe("antigravity-cli runner: one spawn per turn", () => {
-  test("exit 3 + AGY_ERROR on a resume: one call, reported failed", () => {
+  test("exit 3 + AGY_ERROR on a resume by id: one call, reported failed, never --continue", () => {
     const { r, calls } = run("agy-error", "conv-1");
     expect(calls).toHaveLength(1);
-    expect(calls[0]).toContain("--continue");
+    expect(calls[0]).toContain("--conversation");
+    expect(calls[0]).not.toContain("--continue");
     expect(r.ok).toBe(false);
     expect(r.exitCode).toBe(3);
   }, spawnBudgetMs(2));
@@ -66,26 +72,34 @@ describe("antigravity-cli runner: one spawn per turn", () => {
     expect(r.ok).toBe(false);
   }, spawnBudgetMs(2));
 
-  test("a successful resume is one call with --continue", () => {
-    const { r, calls } = run("ok", "conv-1");
+  test("a run the engine labelled itself (no agy id) still resumes with --continue, once", () => {
+    const { r, calls } = run("ok", "nrv-agy-1234");
     expect(r.ok, r.error ?? r.stderr).toBe(true);
     expect(calls).toHaveLength(1);
     expect(calls[0]).toContain("--continue");
   }, spawnBudgetMs(2));
 });
 
-// `--continue` (this line's only resume) points agy 1.3.3 at the most recent
-// non-empty conversation of the directory, and at a NEW one when there is
-// none, with exit 0 and no warning. The envelope's conversation id is the sign.
-describe("antigravity-cli runner: a --continue that did not land on the run's conversation", () => {
-  test("a different conversation id: one call, ok, marked resumeLost with a warning, the new id kept", () => {
-    const { r, calls } = run("fresh-conv", "conv-1");
+// agy 1.3.3, measured 2026-10-11: `--conversation <unknown-id>` exits 0, prints
+// `warning: conversation "<id>" not found` on stderr and answers from a NEW
+// conversation. The turn ran (and was paid) without the previous context.
+describe("antigravity-cli runner: a resume that landed in a new conversation", () => {
+  test("unknown id: one call, ok, marked resumeLost with a warning, the new id kept", () => {
+    const { r, calls } = run("unknown-conv", "conv-gone");
     expect(calls).toHaveLength(1);
-    expect(calls[0]).toContain("--continue");
+    expect(calls[0]).toContain("--conversation");
     expect(r.ok, r.error ?? r.stderr).toBe(true);
     expect(r.resumeLost).toBe(true);
     expect(r.sessionId).toBe("conv-new");
-    expect(r.warnings?.join("\n")).toMatch(/resume failed.*--continue.*conv-1.*conversation conv-new.*WITHOUT the previous context/);
+    expect(r.warnings?.join("\n")).toMatch(/resume failed.*conv-gone.*not found.*new conversation conv-new WITHOUT the previous context/);
+  }, spawnBudgetMs(2));
+
+  test("a different conversation id in the envelope is a lost resume too, even with nothing on stderr", () => {
+    const { r, calls } = run("other-conv", "conv-1");
+    expect(calls).toHaveLength(1);
+    expect(r.ok).toBe(true);
+    expect(r.resumeLost).toBe(true);
+    expect(r.sessionId).toBe("conv-other");
   }, spawnBudgetMs(2));
 
   test("a resume that held carries no warning", () => {
@@ -97,8 +111,8 @@ describe("antigravity-cli runner: a --continue that did not land on the run's co
   }, spawnBudgetMs(2));
 
   test("a fresh run (no resume asked) is never marked", () => {
-    const { r } = run("fresh-conv");
+    const { r } = run("other-conv");
     expect(r.resumeLost).toBeUndefined();
-    expect(r.sessionId).toBe("conv-new");
+    expect(r.sessionId).toBe("conv-other");
   }, spawnBudgetMs(2));
 });

@@ -41,30 +41,30 @@ describe("the catalog the spec describes is the catalog that runs", () => {
 describe("the numbers the spec states", () => {
   test("the body ceiling is LIMITS.workflow_body_words_max", () => {
     expect(LIMITS.workflow_body_words_max).toBe(2500);
-    expect(SPEC).toContain("**2.500 palavras**");
+    expect(SPEC).toContain("**2,500 words**");
   });
 
   test("acceptance is capped at 12 in the schema and in the spec", () => {
     const acceptance = (CapabilitySchema.shape.acceptance as any);
     expect(acceptance.safeParse(Array.from({ length: 13 }, () => ({ id: "a", description: "x" }))).success).toBe(false);
     expect(acceptance.safeParse(Array.from({ length: 12 }, () => ({ id: "a", description: "x" }))).success).toBe(true);
-    expect(SPEC).toContain("**máximo 12 entradas**");
+    expect(SPEC).toContain("**at most 12 entries**");
   });
 
   test("v6.1: an acceptance criterion may promise a file (path, min_bytes), and the spec says so", () => {
     const acceptance = (CapabilitySchema.shape.acceptance as any);
     expect(acceptance.safeParse([{ id: "report", description: "x", path: "report.md", min_bytes: 400 }]).success).toBe(true);
     expect(acceptance.safeParse([{ id: "report", description: "x", min_bytes: -1 }]).success).toBe(false);
-    expect(SPEC).toContain("| `path` | v6.1");
-    expect(SPEC).toContain("| `min_bytes` | v6.1");
-    expect(SPEC).toContain("## §36 Tasks na altitude de resultado (v6.1)");
+    expect(SPEC).toContain("| `path` | optional");
+    expect(SPEC).toContain("| `min_bytes` | optional");
+    expect(SPEC).toContain("## 36. Tasks at outcome altitude");
     expect(SPEC).toContain("`deprescribe-tasks.ts`");
   });
 
   test("not_for's 25-char ceiling lives in the gate, exactly as the spec says", async () => {
     const { NOT_FOR_MAX_CHARS } = await import("../../_shared/lib/verify/kinds/squad.ts");
     expect(NOT_FOR_MAX_CHARS).toBe(25);
-    expect(SPEC).toContain("no máximo **25 caracteres**");
+    expect(SPEC).toContain("at most **25 characters**");
     // The spec states the divergence: CapabilitySchema only enforces min(5).
     expect(CapabilitySchema.shape.not_for.safeParse(["a much longer refusal than twenty-five chars"]).success).toBe(true);
     expect(CapabilitySchema.shape.not_for.safeParse(["ab"]).success).toBe(false);
@@ -78,7 +78,7 @@ describe("the numbers the spec states", () => {
 
   test("the task-extraction threshold the spec quotes matches the migration", () => {
     expect(MIGRATE).toContain("export const TASK_EXTRACTION_WORDS = 40;");
-    expect(SPEC).toContain("≥40 palavras");
+    expect(SPEC).toContain("≥40 words");
   });
 });
 

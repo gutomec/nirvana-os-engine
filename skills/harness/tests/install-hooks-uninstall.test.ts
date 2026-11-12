@@ -351,45 +351,10 @@ describe("Antigravity: the hook goes where agy reads it", () => {
     expect(JSON.parse(readFileSync(hooksFile, "utf8"))).toEqual(ORCA);
   }, 60_000);
 
-  test("--check names the new location, and fails while our hooks sit in the old one", () => {
-    const root = home();
-    mkdirSync(join(root, ".gemini", "config"), { recursive: true });
-    mkdirSync(join(root, ".antigravity"), { recursive: true });
-    const hooksFile = join(root, ".gemini", "config", "hooks.json");
-    const oldFile = join(root, ".antigravity", "settings.json");
-    writeFileSync(oldFile, JSON.stringify(oldSettings, null, 2));
-    // --check before install: needs install at the new path, stale old entries named, nothing written
-    const before = run(["--check"], root);
-    expect(before.code).toBe(1);
-    expect(before.out).toContain(`Antigravity — Nirvana hooks left in ${oldFile}`);
-    expect(existsSync(hooksFile)).toBe(false);
-    expect(readFileSync(oldFile, "utf8")).toBe(JSON.stringify(oldSettings, null, 2));
-    // after install: the new file is reported by path and the check passes
-    expect(run([], root).code).toBe(0);
-    const after = run(["--check"], root);
-    expect(after.out).toContain(`Antigravity — already installed (${hooksFile})`);
-    expect(after.out).not.toContain("Nirvana hooks left in");
-  }, 60_000);
-
   test("no ~/.gemini/config (agy absent): nothing is created", () => {
     const root = home();
     expect(run([], root).code).toBe(0);
     expect(existsSync(join(root, ".gemini", "config", "hooks.json"))).toBe(false);
-  }, 30_000);
-});
-
-describe("the agy hook speaks the same contract", () => {
-  test("--agy answers with an ephemeral message carrying the session context, and writes no audit event", () => {
-    const root = home();
-    const script = join(REPO, "skills", "_shared", "scripts", "gemini-session-start.ts");
-    const r = spawnSync(process.execPath, [script, "--agy"], {
-      cwd: root, input: JSON.stringify({ workspacePaths: [root] }), encoding: "utf8", windowsHide: true,
-      env: { ...(process.env as Record<string, string>), HOME: root, USERPROFILE: root, HARNESS_LOGS_DIR: join(root, "logs") },
-    });
-    expect(r.status).toBe(0);
-    const out = JSON.parse(r.stdout);
-    expect(out.injectSteps[0].ephemeralMessage).toContain("harness/SKILL.md");
-    expect(existsSync(join(root, "logs"))).toBe(false);
   }, 30_000);
 });
 

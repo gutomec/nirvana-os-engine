@@ -24,8 +24,8 @@ const INIT_TIMEOUT_MS = 60_000;
 
 /** NIRVANA_SKILLS_DIR pinned to the repo: without it the script reads the
  *  INSTALLED templates, and the test would silently grade a different tree. */
-function runInit(dir: string) {
-  return spawnSync(process.execPath, [INIT, "."], {
+function runInit(dir: string, ...args: string[]) {
+  return spawnSync(process.execPath, [INIT, ".", ...args], {
     cwd: dir, encoding: "utf8",
     env: { ...process.env, NIRVANA_SKILLS_DIR: path.join(ROOT, "skills") },
   });
@@ -40,10 +40,13 @@ function project(name: string, files: Record<string, string> = {}): string {
 
 afterAll(() => { try { fs.rmSync(TMP, { recursive: true, force: true }); } catch { /* best-effort */ } });
 
+/** The full invocation contract is opt-in since on-demand became the default. */
+const ALWAYS = "--orchestrators=always";
+
 describe("a project that already has a contract file", () => {
   test("keeps the user's rules AND gains the invocation contract", () => {
     const dir = project("existing", { "CLAUDE.md": "# My rules\nnever delete this line\n" });
-    runInit(dir);
+    runInit(dir, ALWAYS);
     const claude = fs.readFileSync(path.join(dir, "CLAUDE.md"), "utf8");
     expect(claude).toContain("never delete this line");        // user content survives
     expect(claude).toMatch(/invoke the .?harness.? skill/i);   // and orchestration is wired
@@ -52,7 +55,7 @@ describe("a project that already has a contract file", () => {
 
   test("the user's rules stay at the top, above what we appended", () => {
     const dir = project("order", { "CLAUDE.md": "# My rules\nMY MARKER LINE\n" });
-    runInit(dir);
+    runInit(dir, ALWAYS);
     const c = fs.readFileSync(path.join(dir, "CLAUDE.md"), "utf8");
     expect(c.indexOf("MY MARKER LINE")).toBeLessThan(c.indexOf("Writing contract"));
   }, INIT_TIMEOUT_MS);
@@ -79,7 +82,7 @@ describe("a project that already has a contract file", () => {
     // A project with only CLAUDE.md must still serve codex (AGENTS.md) and
     // antigravity (AGENTS.md / GEMINI.md) after init.
     const dir = project("all-runtimes", { "CLAUDE.md": "# Mine\n" });
-    runInit(dir);
+    runInit(dir, ALWAYS);
     for (const f of ["AGENTS.md", "CLAUDE.md", "GEMINI.md"]) {
       expect(fs.readFileSync(path.join(dir, f), "utf8")).toMatch(/invoke the .?harness.? skill/i);
     }
@@ -87,16 +90,11 @@ describe("a project that already has a contract file", () => {
 });
 
 /**
- * On-demand mode — adopting Nirvana must not silently change a configured
- * project.
- *
- * Appending the invocation contract to a pre-existing AGENTS.md turns Nirvana
- * into the default orchestrator for every agent in the repo. That is the right
- * default for a fresh project and a significant silent change for an existing
- * one — the owner asked for the choice: --orchestrators=always keeps the
- * historical behavior, --orchestrators=on-demand leaves the project's rules
- * alone and adds one short marked note ("act only when explicitly asked").
- * Non-interactive without a flag stays "always", so CI does not change.
+ * On-demand mode, the default: agents work as they would without Nirvana and
+ * reach for it only when the request names it, asks for a business, a squad or
+ * a mind-clone, or asks for work on another runtime. Instruction files carry
+ * one short marked note and nothing else; --orchestrators=always opts into the
+ * full invocation contract.
  */
 function runInitWith(dir: string, ...args: string[]) {
   return spawnSync(process.execPath, [INIT, ".", ...args], {
@@ -111,9 +109,10 @@ describe("on-demand mode leaves the project's behavior alone", () => {
     runInitWith(dir, "--orchestrators=on-demand");
     const agents = fs.readFileSync(path.join(dir, "AGENTS.md"), "utf8");
     expect(agents).toContain("MY LINE");
-    expect(agents).toContain("nirvana-os:on-demand-contract:v2");
-    expect(agents).toContain("ONLY when the user explicitly asks");
-    expect(agents).not.toContain("nirvana-os:invocation-contract:v3");
+    expect(agents).toContain("nirvana-os:on-demand-contract:v3");
+    expect(agents).toContain("The request calls for it when it");
+    expect(agents).toContain("as the model to follow");
+    expect(agents).not.toContain("nirvana-os:invocation-contract:v4");
     expect(agents).not.toContain("nirvana-os:writing-contract:v2");
     expect(agents).not.toMatch(/invoke the .?harness.? skill for any concrete artifact/i);
   }, INIT_TIMEOUT_MS);
@@ -122,8 +121,8 @@ describe("on-demand mode leaves the project's behavior alone", () => {
     const dir = project("od-created", { "AGENTS.md": "# Mine\n" });
     runInitWith(dir, "--orchestrators=on-demand");
     const claude = fs.readFileSync(path.join(dir, "CLAUDE.md"), "utf8");
-    expect(claude).toContain("nirvana-os:on-demand-contract:v2");
-    expect(claude).not.toContain("nirvana-os:invocation-contract:v3");
+    expect(claude).toContain("nirvana-os:on-demand-contract:v3");
+    expect(claude).not.toContain("nirvana-os:invocation-contract:v4");
   }, INIT_TIMEOUT_MS);
 
   test("on-demand is idempotent", () => {
@@ -141,33 +140,85 @@ describe("on-demand mode leaves the project's behavior alone", () => {
     expect(`${r.stderr}`).toContain('"always" or "on-demand"');
   }, INIT_TIMEOUT_MS);
 
-  test("non-interactive without a flag keeps the historical default (always)", () => {
-    // The five cases in the block above run exactly this way — pinned here by
-    // name so the compat promise is explicit rather than incidental.
+  test("without a flag a new project is on-demand, in its files and its manifest", () => {
     const dir = project("od-default", { "CLAUDE.md": "# Mine\n" });
     runInit(dir);
-    expect(fs.readFileSync(path.join(dir, "CLAUDE.md"), "utf8")).toContain("nirvana-os:invocation-contract:v3");
+    const claude = fs.readFileSync(path.join(dir, "CLAUDE.md"), "utf8");
+    expect(claude).toContain("nirvana-os:on-demand-contract:v3");
+    expect(claude).not.toContain("nirvana-os:invocation-contract:v4");
+    const manifest = JSON.parse(fs.readFileSync(path.join(dir, ".nirvana", "project.yaml"), "utf8"));
+    expect(manifest.orchestration_mode).toBe("on-demand");
+  }, INIT_TIMEOUT_MS);
+
+  test("a project switches between modes in place, and the user's lines survive both ways", () => {
+    const dir = project("od-switch", { "CLAUDE.md": "# Mine\nKEEP-ABOVE\n" });
+    const manifest = () => JSON.parse(fs.readFileSync(path.join(dir, ".nirvana", "project.yaml"), "utf8"));
+    runInit(dir, ALWAYS);
+    expect(manifest().orchestration_mode).toBe("always");
+    // a rerun without a flag brings an "always" project to the default
+    const r = runInit(dir);
+    expect(`${r.stdout}`).toContain("orchestration: always → on-demand");
+    let c = fs.readFileSync(path.join(dir, "CLAUDE.md"), "utf8");
+    expect(c).toContain("KEEP-ABOVE");
+    expect(c).toContain("nirvana-os:on-demand-contract:v3");
+    expect(c).not.toContain("nirvana-os:invocation-contract:v4");
+    expect(c.match(/nirvana-os:on-demand-contract/g)!.length).toBe(1);
+    expect(manifest().orchestration_mode).toBe("on-demand");
+    // and back
+    runInit(dir, ALWAYS);
+    c = fs.readFileSync(path.join(dir, "CLAUDE.md"), "utf8");
+    expect(c).toContain("KEEP-ABOVE");
+    expect(c).toContain("nirvana-os:invocation-contract:v4");
+    expect(c).not.toContain("nirvana-os:on-demand-contract");
+    expect(c.match(/nirvana-os:invocation-contract:v4/g)!.length).toBe(1);
+    expect(manifest().orchestration_mode).toBe("always");
+  }, INIT_TIMEOUT_MS);
+
+  test.each(["v1", "v2"])("an on-demand note %s from an earlier engine is brought to the current text", (version) => {
+    const old = ["# Mine", "KEEP", "", `<!-- nirvana-os:on-demand-contract:${version} -->`, "## Nirvana-OS (on demand)", "OLD-NOTE-MUST-GO", ""].join("\n");
+    const dir = project(`od-${version}`, { "AGENTS.md": old });
+    runInit(dir);
+    const c = fs.readFileSync(path.join(dir, "AGENTS.md"), "utf8");
+    expect(c).toContain("KEEP");
+    expect(c).not.toContain("OLD-NOTE-MUST-GO");
+    expect(c.match(/nirvana-os:on-demand-contract:v3/g)!.length).toBe(1);
   }, INIT_TIMEOUT_MS);
 });
 
-describe("the promised .env exists even when the template does not", () => {
-  test("a skills tree without the template still yields a working .env, and --scope works on it", () => {
-    // One install shipped without project-skeleton/.env: init warned, finished
-    // "[ok] done", pointed the user at a file that did not exist — and --scope
-    // crashed on the read. The fallback keeps the promise the help makes.
-    const stripped = path.join(TMP, "stripped-skills");
-    fs.cpSync(path.join(ROOT, "skills", "_shared", "templates"), path.join(stripped, "_shared", "templates"), { recursive: true });
-    fs.cpSync(path.join(ROOT, "skills", "_shared", "lib"), path.join(stripped, "_shared", "lib"), { recursive: true });
-    fs.rmSync(path.join(stripped, "_shared", "templates", "project-skeleton", ".env"));
+describe("the scope lives in .nirvana/project.yaml", () => {
+  const manifest = (dir: string) => JSON.parse(fs.readFileSync(path.join(dir, ".nirvana", "project.yaml"), "utf8"));
 
-    const dir = project("env-fallback");
-    const r = spawnSync(process.execPath, [INIT, ".", "--scope=project"], {
-      cwd: dir, encoding: "utf8",
-      env: { ...process.env, NIRVANA_SKILLS_DIR: stripped },
-    });
-    expect(r.status).toBe(0);
+  test("init creates no .env, and --scope writes the manifest", () => {
+    const dir = project("scope-flag");
+    expect(runInitWith(dir, "--scope=project").status).toBe(0);
+    expect(fs.existsSync(path.join(dir, ".env"))).toBe(false);
+    expect(fs.existsSync(path.join(dir, ".env.example"))).toBe(true);
+    expect(manifest(dir).scope).toBe("project");
+  }, INIT_TIMEOUT_MS);
+
+  test("--scope on an existing project changes its manifest", () => {
+    const dir = project("scope-change");
+    runInit(dir);
+    expect(manifest(dir).scope).toBe("global");
+    runInitWith(dir, "--scope=merge");
+    expect(manifest(dir).scope).toBe("merge");
+  }, INIT_TIMEOUT_MS);
+
+  test("a legacy .env scope moves into the manifest and leaves the .env", () => {
+    const dir = project("scope-legacy", { ".env": "OPENAI_API_KEY=x\nNIRVANA_SCOPE=project\n" });
+    const r = runInit(dir);
+    expect(`${r.stdout}`).toContain("moved NIRVANA_SCOPE=project from .env into .nirvana/project.yaml");
+    expect(manifest(dir).scope).toBe("project");
     const env = fs.readFileSync(path.join(dir, ".env"), "utf8");
-    expect(env).toContain("NIRVANA_SCOPE=project");
+    expect(env).not.toContain("NIRVANA_SCOPE");
+    expect(env).toContain("OPENAI_API_KEY=x");
+  }, INIT_TIMEOUT_MS);
+
+  test("--adopt carries a legacy .env scope into the manifest and leaves the .env untouched", () => {
+    const dir = project("scope-adopt", { ".env": "NIRVANA_SCOPE=merge\n" });
+    expect(runInitWith(dir, "--adopt").status).toBe(0);
+    expect(manifest(dir).scope).toBe("merge");
+    expect(fs.readFileSync(path.join(dir, ".env"), "utf8")).toBe("NIRVANA_SCOPE=merge\n");
   }, INIT_TIMEOUT_MS);
 });
 
@@ -176,7 +227,7 @@ describe("streams carry meaning — PowerShell paints stderr red", () => {
     // Everything used to go to stderr, so a healthy init rendered as a wall of
     // red on Windows, [ok] lines included.
     const dir = project("streams", { "CLAUDE.md": "# Mine\n" });
-    const r = runInit(dir);
+    const r = runInit(dir, ALWAYS);
     expect(`${r.stdout}`).toContain("[ok]");
     expect(`${r.stderr}`).not.toContain("[ok]");
     expect(`${r.stderr}`).not.toContain("[info]");
@@ -196,8 +247,8 @@ describe("a contract written by an earlier engine is refreshed in place", () => 
       "## The user's own section", "KEEP-ME-BELOW", "",
     ].join("\n");
     const dir = project("refresh-v1", { "AGENTS.md": v1, "CLAUDE.md": v1 });
-    const r = runInit(dir);
-    expect(`${r.stdout}`).toContain("refreshed invocation contract (v1 → v3)");
+    const r = runInit(dir, ALWAYS);
+    expect(`${r.stdout}`).toContain("refreshed invocation contract (v1 → v4)");
     for (const f of ["AGENTS.md", "CLAUDE.md"]) {
       const c = fs.readFileSync(path.join(dir, f), "utf8");
       expect(c).toContain("KEEP-ME-ABOVE");
@@ -206,69 +257,64 @@ describe("a contract written by an earlier engine is refreshed in place", () => 
       expect(c).not.toContain("OLD-WRITING-LINE-MUST-GO");
       expect(c.indexOf("Gate flags = build fails")).toBeLessThan(c.indexOf("KEEP-ME-BELOW"));
       expect(c).not.toContain("nirvana-os:invocation-contract:v1");
-      expect(c).toContain("nirvana-os:invocation-contract:v3");
+      expect(c).toContain("nirvana-os:invocation-contract:v4");
       expect(c).toMatch(/Skill\("nirvana"/);
-      expect(c.indexOf("KEEP-ME-ABOVE")).toBeLessThan(c.indexOf("nirvana-os:invocation-contract:v3"));
-      expect(c.indexOf("nirvana-os:invocation-contract:v3")).toBeLessThan(c.indexOf("KEEP-ME-BELOW"));
+      expect(c.indexOf("KEEP-ME-ABOVE")).toBeLessThan(c.indexOf("nirvana-os:invocation-contract:v4"));
+      expect(c.indexOf("nirvana-os:invocation-contract:v4")).toBeLessThan(c.indexOf("KEEP-ME-BELOW"));
       expect(c.match(/nirvana-os:writing-contract:v2/g)!.length).toBe(1);
       expect(c).not.toContain("nirvana-os:writing-contract:v1");
       expect(c).toContain("is not a deliverable and is not judged by it");
     }
     // Idempotent: a second run changes nothing.
     const first = fs.readFileSync(path.join(dir, "AGENTS.md"), "utf8");
-    runInit(dir);
+    runInit(dir, ALWAYS);
     expect(fs.readFileSync(path.join(dir, "AGENTS.md"), "utf8")).toBe(first);
   }, INIT_TIMEOUT_MS);
 });
 
-describe("contracts from before the per-squad environments are refreshed", () => {
-  test("an invocation contract v2 becomes v3: the shared-store text goes, the user's lines above and below stay", () => {
-    const v2 = ["## Mine", "KEEP-ME-ABOVE", "", "<!-- nirvana-os:invocation-contract:v2 -->", "# Project guidelines (old)",
-      "## Dependencies — one home, `~/.nirvana`, never anywhere else", "nrv deps link <squad-slug|dir>       # point a directory at the store", "",
+describe("a v2 contract is refreshed to the current text", () => {
+  test("the old orchestration text goes, the user's lines and the writing contract stay", () => {
+    const v2 = ["## Mine", "KEEP-ME-ABOVE", "", "<!-- nirvana-os:invocation-contract:v2 -->", "# old contract", "## 3. Inside a business", "Employees execute work by calling squads.", "",
+      "---", "", "<!-- nirvana-os:writing-contract:v2 -->", "## Writing contract (for any prose deliverable)", "Gate flags = build fails. No auto-rewrite.", ""].join("\n");
+    const dir = project("refresh-v2", { "AGENTS.md": v2 });
+    const r = runInit(dir, ALWAYS);
+    expect(`${r.stdout}`).toContain("refreshed invocation contract (v2 → v4)");
+    const c = fs.readFileSync(path.join(dir, "AGENTS.md"), "utf8");
+    expect(c).toContain("KEEP-ME-ABOVE");
+    expect(c).toContain("nirvana-os:invocation-contract:v4");
+    expect(c).not.toContain("Employees execute work by calling squads.");
+    expect(c.match(/nirvana-os:writing-contract:v2/g)!.length).toBe(1);
+  }, INIT_TIMEOUT_MS);
+});
+
+describe("a v3 contract is refreshed to v4 (per-squad environments)", () => {
+  test("the shared-store text goes, the envs text arrives, the user's lines above and below stay", () => {
+    const v3 = ["## Mine", "KEEP-ME-ABOVE", "", "<!-- nirvana-os:invocation-contract:v3 -->", "# Project guidelines (any agent runtime)",
+      "## Dependencies: one home, `~/.nirvana`", "nrv deps link <squad-slug|dir>     # point a directory at the store", "",
       "---", "", "<!-- nirvana-os:writing-contract:v2 -->", "## Writing contract (for any prose deliverable)", "Gate flags = build fails. No auto-rewrite.", "",
       "## The user's own section", "KEEP-ME-BELOW", ""].join("\n");
-    const dir = project("refresh-v2", { "CLAUDE.md": v2 });
-    const r = runInit(dir);
-    expect(`${r.stdout}`).toContain("refreshed invocation contract (v2 → v3)");
+    const dir = project("refresh-v3", { "CLAUDE.md": v3 });
+    const r = runInit(dir, ALWAYS);
+    expect(`${r.stdout}`).toContain("refreshed invocation contract (v3 → v4)");
     const c = fs.readFileSync(path.join(dir, "CLAUDE.md"), "utf8");
     expect(c).toContain("KEEP-ME-ABOVE");
     expect(c).toContain("KEEP-ME-BELOW");
-    expect(c).not.toContain("nirvana-os:invocation-contract:v2");
-    expect(c.match(/nirvana-os:invocation-contract:v3/g)!.length).toBe(1);
+    expect(c).not.toContain("nirvana-os:invocation-contract:v3");
+    expect(c.match(/nirvana-os:invocation-contract:v4/g)!.length).toBe(1);
     expect(c).not.toContain("point a directory at the store");
     expect(c).toContain("~/.nirvana/envs/<squad>");
     expect(c.match(/nirvana-os:writing-contract:v2/g)!.length).toBe(1);
-    expect(c.indexOf("KEEP-ME-ABOVE")).toBeLessThan(c.indexOf("nirvana-os:invocation-contract:v3"));
+    expect(c.indexOf("KEEP-ME-ABOVE")).toBeLessThan(c.indexOf("nirvana-os:invocation-contract:v4"));
     expect(c.indexOf("Gate flags = build fails")).toBeLessThan(c.indexOf("KEEP-ME-BELOW"));
-  }, INIT_TIMEOUT_MS);
-
-  test("an on-demand note v1 becomes v2 in on-demand mode: the user's lines above and below stay", () => {
-    const v1 = ["# Mine", "KEEP-ME-ABOVE", "", "<!-- nirvana-os:on-demand-contract:v1 -->", "## Nirvana-OS — available on demand", "",
-      "Invoke it ONLY when the user explicitly asks. On that request, invoke the", "`harness` skill with the user's brief verbatim. Utility lookups on request:",
-      "`nrv find-clone \"<need>\"`, `nrv glance`.", "", "## Added later by the user", "KEEP-ME-BELOW", ""].join("\n");
-    const dir = project("refresh-od-v1", { "AGENTS.md": v1 });
-    const r = runInitWith(dir, "--orchestrators=on-demand");
-    expect(`${r.stdout}`).toContain("refreshed on-demand contract (v1 → v2)");
-    const c = fs.readFileSync(path.join(dir, "AGENTS.md"), "utf8");
-    expect(c).toContain("KEEP-ME-ABOVE");
-    expect(c).toContain("KEEP-ME-BELOW");
-    expect(c).not.toContain("nirvana-os:on-demand-contract:v1");
-    expect(c.match(/nirvana-os:on-demand-contract:v2/g)!.length).toBe(1);
-    expect(c).toContain("`nirvana` skill");
-    expect(c.indexOf("nirvana-os:on-demand-contract:v2")).toBeLessThan(c.indexOf("KEEP-ME-BELOW"));
-    expect(c).not.toContain("nirvana-os:invocation-contract");
-    // Idempotent: a second run changes nothing.
-    runInitWith(dir, "--orchestrators=on-demand");
-    expect(fs.readFileSync(path.join(dir, "AGENTS.md"), "utf8")).toBe(c);
   }, INIT_TIMEOUT_MS);
 });
 
 describe("a duplicated old block is collapsed by the refresh", () => {
   test("two v1 writing contracts become one v2, and the user's lines after them survive", () => {
     const block = ["<!-- nirvana-os:writing-contract:v1 -->", "## Writing contract (for any prose deliverable)", "OLD-W", "Gate flags = build fails. No auto-rewrite.", ""].join("\n");
-    const src = ["<!-- nirvana-os:invocation-contract:v3 -->", "# current contract", "", "---", "", block, "", "---", "", block, "## Mine", "KEEP-ME-LAST", ""].join("\n");
+    const src = ["<!-- nirvana-os:invocation-contract:v4 -->", "# current contract", "", "---", "", block, "", "---", "", block, "## Mine", "KEEP-ME-LAST", ""].join("\n");
     const dir = project("dup-writing", { "AGENTS.md": src });
-    runInit(dir);
+    runInit(dir, ALWAYS);
     const c = fs.readFileSync(path.join(dir, "AGENTS.md"), "utf8");
     expect(c.match(/nirvana-os:writing-contract:v2/g)!.length).toBe(1);
     expect(c).not.toContain("writing-contract:v1");

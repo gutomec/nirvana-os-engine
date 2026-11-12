@@ -2,8 +2,8 @@
 //
 // Replaces the two divergent injection paths (the `dna/` walk that preferred the
 // irregular LEGACY-SIMPLIFIED.md, and the assigned_mind_clones path that
-// concatenated AGENT+SOUL+MANIFEST). Both the business loader (employee-prompt)
-// and the squad loader resolve a clone's persona through THIS function, so the
+// concatenated AGENT+SOUL+MANIFEST). The business worker and the squad loader
+// resolve a clone's persona through THIS function, so the
 // same clone always yields the same, complete embodiment.
 //
 // depth="full"    → AGENT.md + SOUL.md + dna/dna-schema.md  (complete embodiment)
@@ -17,6 +17,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { resolveScope } from "./scope.ts";
+import { projectOwnsLibraryIndex } from "./paths.js";
 import { parseDnaSchema, type LayerKey } from "./dna-schema-parser.ts";
 
 export type CloneDepth = "full" | "concise" | "fragments" | "reference";
@@ -60,12 +61,14 @@ export type ClonePersona = {
 
 export function cloneRegistryPath(opts: { cwd?: string } = {}): string {
   // Scope from the DISPATCH's project when given, not from process.cwd(): the
-  // business dir already resolves per project_dir (employee-prompt), and the
+  // business dir already resolves per project_dir, and the
   // clone registry resolving per cwd made the two halves of one dispatch read
   // different scopes — a test run from the engine repo picked up the repo's
   // own derived .nirvana registry and injected clones its fixture never wrote.
+  // A project keeps its own registry only when it owns a library of its own
+  // (paths.js projectOwnsLibraryIndex); in global scope it reads the global one.
   const scope = resolveScope(opts.cwd ? { cwd: opts.cwd } : {});
-  const dir = scope.projectRoot
+  const dir = scope.projectRoot && projectOwnsLibraryIndex(scope.projectRoot, scope.mode)
     ? path.join(scope.projectRoot, ".nirvana")
     : path.join(os.homedir(), ".nirvana");
   return path.join(dir, ".mind-clones-registry.json");
@@ -140,7 +143,7 @@ export function resolveClonePersona(
     files = probed.files;
     resolved_by = "fs-probe";
     degraded = true;
-    degradeReason = "clone fora do registry (fs-probe) — rode nrv index";
+    degradeReason = "clone outside the registry (fs-probe); run nrv index";
   }
 
   const used: string[] = [];
@@ -214,7 +217,7 @@ export function resolveClonePersona(
       const overBudget = Boolean(opts.byteBudget && totalOf(units) > opts.byteBudget);
       if (overBudget) {
         degraded = true;
-        degradeReason = degradeReason || `fragmento acima do orçamento (${totalOf(units)}B > ${opts.byteBudget}B), entregue íntegro`;
+        degradeReason = degradeReason || `fragment over budget (${totalOf(units)}B > ${opts.byteBudget}B), delivered whole`;
       }
 
       if (dnaPath) used.push(dnaPath);
@@ -224,7 +227,7 @@ export function resolveClonePersona(
       // Schema missing/unreadable → fall back to full (never lose the persona).
       depth = "full";
       degraded = true;
-      degradeReason = degradeReason || (dnaRaw ? "dna-schema não parseável — fallback full" : "sem dna-schema.md — fallback full");
+      degradeReason = degradeReason || (dnaRaw ? "dna-schema not parseable, falling back to full" : "no dna-schema.md, falling back to full");
     }
     if (!content && depth === "fragments") depth = "full"; // empty soul+layers → falls back to full
   }
@@ -248,9 +251,9 @@ export function resolveClonePersona(
   if (depth !== "fragments" && opts.byteBudget && content.length > opts.byteBudget) {
     let cut = content.lastIndexOf("\n", opts.byteBudget);
     if (cut < opts.byteBudget * 0.6) cut = opts.byteBudget; // break too early → cut straight
-    content = content.slice(0, cut).trimEnd() + "\n\n…(persona truncada ao orçamento)";
+    content = content.slice(0, cut).trimEnd() + "\n\n…(persona truncated to budget)";
     degraded = true;
-    degradeReason = degradeReason || "persona truncada (byteBudget)";
+    degradeReason = degradeReason || "persona truncated (byteBudget)";
   }
 
   if (!content) return null;

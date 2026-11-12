@@ -34,12 +34,12 @@ describe("one version, told the same way everywhere", () => {
   });
 
   test("the newest changelog entry is the version being shipped", () => {
-    expect(read("CHANGELOG.md").match(/^## (\d+\.\d+\.\d+)/m)?.[1]).toBe(JSON.parse(read("package.json")).version);
+    expect(read("CHANGELOG.md").match(/^## (\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)/m)?.[1]).toBe(JSON.parse(read("package.json")).version);
   });
 
   test("the localized changelog leads with the same version", () => {
-    expect(read("CHANGELOG.pt-BR.md").match(/^## (\d+\.\d+\.\d+)/m)?.[1])
-      .toBe(read("CHANGELOG.md").match(/^## (\d+\.\d+\.\d+)/m)?.[1]);
+    expect(read("CHANGELOG.pt-BR.md").match(/^## (\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)/m)?.[1])
+      .toBe(read("CHANGELOG.md").match(/^## (\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)/m)?.[1]);
   });
 
   test("every README status line names the version being shipped", () => {
@@ -49,7 +49,7 @@ describe("one version, told the same way everywhere", () => {
     // one that stopped declaring its version is the drift, not an exemption.
     const pkg = JSON.parse(read("package.json")).version;
     for (const file of ["README.md", "README.pt-BR.md", "README.es.md", "README.zh.md", "README.hi.md", "README.ar.md"]) {
-      expect(`${file}: ${read(file).match(/0\.x[^\n)）]{0,40}?(\d+\.\d+\.\d+)/)?.[1] ?? "(none)"}`).toBe(`${file}: ${pkg}`);
+      expect(`${file}: ${read(file).match(/0\.x[^\n)）]{0,40}?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)/)?.[1] ?? "(none)"}`).toBe(`${file}: ${pkg}`);
     }
   });
 

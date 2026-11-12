@@ -26,9 +26,9 @@ export function statusGlyph(status) {
 
 /** One line of words for the reading, for the screen reader and the tooltip. */
 export function statusWord(status) {
-  if (status === 'up') return 'de pé';
-  if (status === 'down') return 'fora';
-  return 'não determinado';
+  if (status === 'up') return 'up';
+  if (status === 'down') return 'down';
+  return 'undetermined';
 }
 
 /** The tooltip: what was read, and where it was read from. */
@@ -56,9 +56,9 @@ export function buildSubsystemRow(payload) {
   };
 }
 
-/** `5/8 de pé` — and it never counts an undetermined cell as either side. */
+/** `5/8 up` — and it never counts an undetermined cell as either side. */
 export function rowSummary(row) {
   if (!row.cells.length) return UNKNOWN_LABEL;
-  const summary = `${row.up}/${row.cells.length} de pé`;
-  return row.unknown ? `${summary} · ${row.unknown} sem sinal` : summary;
+  const summary = `${row.up}/${row.cells.length} up`;
+  return row.unknown ? `${summary} · ${row.unknown} no signal` : summary;
 }

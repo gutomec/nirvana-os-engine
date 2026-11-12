@@ -61,19 +61,20 @@ export const COMMANDS: Command[] = [
   { name: "tui", aliases: ["cockpit-tui"], target: "harness/scripts/tui.ts", category: "core", summary: "Terminal cockpit (live audit + projects + registries)", visibility: "user" },
   { name: "doctor", aliases: ["capability-doctor"], custom: true, category: "core", args: "[--system|--capability]", summary: "Full system diagnostic", visibility: "user" },
   { name: "route", target: "harness/scripts/route.ts", category: "dev", args: '"<brief>"', summary: "Keyword-router diagnostic: what it would match, never what runs", visibility: "dev" },
-  { name: "find", target: "harness/scripts/find.ts", category: "dev", args: '"<query>"', summary: "Keyword-router diagnostic: capability discovery dry-run", visibility: "dev" },
+  { name: "decide", target: "harness/scripts/decide.ts", category: "qol", args: 'status | --state "<text>" --questions \'<json>\' [--provider <p>]', summary: "Ask a decision model (Jev, Gemini Decision, OpenAI Decisions, local JEV-27B) closed questions; status shows what is configured", visibility: "user" },
   { name: "validate", aliases: ["verify"], target: "_shared/scripts/verify.ts", category: "core", args: "<squad|business|mind-clone> <slug|path> [--fix] [--strict] [--json] | <kind> --all [--record] | --pack <dir>", summary: "Admission gate: verify an entity, --fix it, record debt (exit 0/1/2/64; bare = deprecated doctor alias)", visibility: "user" },
   { name: "index", target: "harness/scripts/index.ts", category: "core", summary: "Re-index squads + businesses", visibility: "user" },
   { name: "config", target: "harness/scripts/config.ts", category: "core", args: "list|get|set|unset|explain [<key> [<value>]] [--global|--project]", summary: "Operational settings: effective value + origin per key; set/unset write the project or the global config.yaml", visibility: "user" },
   { name: "deps", target: "_shared/scripts/deps.ts", category: "core", args: "[status|scan|adopt|link|install|env] [--apply] [--json]", summary: "Dependencies under ~/.nirvana: the per-squad environments, the shared store, the tool caches, and what escaped them", visibility: "user" },
 
   // dispatch & execute
-  { name: "dispatch", target: "harness/scripts/dispatch.ts", category: "dispatch", args: '<business> "<brief>"', summary: "Scaffold a run (brief + DNA injection + audit; no exec)", visibility: "user" },
+  { name: "dispatch", target: "harness/scripts/dispatch.ts", category: "dispatch", args: '<business> | --squad <slug>[:<capability>] | --agent-x | --auto  "<brief>" --exec', summary: "Run a business, a squad or the generalist: execute, verify, gate, deliver. Refuses without --exec; --scaffold-only only prepares; --mode <m> routes --auto", visibility: "user" },
   { name: "run", aliases: ["autopilot"], custom: true, category: "dispatch", args: '<business> "<brief>" [--zip --pdf --html]', summary: "Autopilot: dispatch + execute + verify + gate", visibility: "user" },
   { name: "auto", custom: true, category: "dispatch", args: '"<brief>" [--zip --pdf --html]', summary: "Autopilot with auto-selected business (= run --auto)", visibility: "user" },
   { name: "audit-where", target: "harness/scripts/audit-where.ts", category: "observability", args: "[--project <dir>] [--trace <id>]", summary: "Which audit files a run wrote, and why those", visibility: "user" },
   { name: "audit-tail", target: "harness/scripts/audit-tail.ts", category: "observability", args: "[--follow] [--trace <id>] [--only orchestration|hooks|all]", summary: "Follow a run's audit, normalized, from now on", visibility: "user" },
-  { name: "team", target: "harness/scripts/chain.ts", category: "dispatch", args: "plan|step|review|verdict ...", summary: "A business's org chart: plan the chain, get each seat's prompt, review it", visibility: "user" },
+  { name: "brief", target: "harness/scripts/brief.ts", category: "dispatch", args: 'template | templates | request <name> | check <file> | decide <file> "<decision>" | init <name>', summary: "The brief the orchestrator writes for one business, from a brief template", visibility: "user" },
+  { name: "cards", target: "harness/scripts/cards.ts", category: "dispatch", args: "squad <slug>", summary: "The work card of an installed squad: what a business reads to use it", visibility: "user" },
   { name: "revise", target: "harness/scripts/revise.ts", category: "dispatch", args: '<project>|--last [<target>] "<change>"', summary: "Apply a change keeping the same runtime session (a fresh seeded one when none can continue)", visibility: "user" },
   { name: "ask", target: "harness/scripts/ask.ts", category: "dispatch", args: "<clone> [question]", summary: "Talk to a single mind-clone (DNA injected)", visibility: "user" },
   { name: "exec", target: "harness/scripts/exec.ts", category: "dispatch", args: '[--runtime=<rt>] "<prompt>"', summary: "The runtime as itself: one prompt, its answer, no persona and no gate", visibility: "user" },
@@ -81,8 +82,8 @@ export const COMMANDS: Command[] = [
   { name: "eval-recall", target: "harness/scripts/eval-recall.ts", category: "observability", args: "[--corpus <f>] [--exclude-named] [--misses]", summary: "Does the shortlist contain the entity that actually delivered?", visibility: "user" },
   { name: "mine-briefs", target: "harness/scripts/mine-real-briefs.ts", category: "observability", args: "[--write] [--all] [--out <file>]", summary: "Build a routing eval corpus from dispatches that already ran", visibility: "user" },
   { name: "launch", target: "harness/scripts/launch.ts", category: "dispatch", args: "<name> [--pillars=...]", summary: "Scaffold a multi-pillar 360 launch", visibility: "user" },
-  { name: "clean", aliases: ["clean-project", "purge"], target: "harness/scripts/clean-project.ts", category: "dispatch", args: "<project> [--hard]", summary: "Remove a project scaffold (trash by default)", visibility: "user" },
-  { name: "run-track", target: "harness/scripts/run-track.ts", category: "dispatch", args: "open|beat|close|list|status|wait ...", summary: "Ledger door for agent-orchestrated runs — so nothing is ever forgotten", visibility: "user" },
+  { name: "clean", aliases: ["clean-project", "purge"], target: "harness/scripts/clean-project.ts", category: "dispatch", args: "<project> [--hard] [--force] [--dry-run]", summary: "Remove a project scaffold (trash by default) and close its open runs", visibility: "user" },
+  { name: "run-track", target: "harness/scripts/run-track.ts", category: "dispatch", args: "open|beat|close|stop|list|status|wait ...", summary: "Ledger door for agent-orchestrated runs — so nothing is ever forgotten", visibility: "user" },
   { name: "multi-target", aliases: ["mt"], target: "harness/scripts/multi-target.ts", category: "dispatch", args: "plan|run|status <plan.json>", summary: "Multi-target engine by plan file: plan compiles the waves, run executes them over the Run Kernel (opt-in), status reads the projection", visibility: "user" },
   { name: "supervisor", target: "harness/scripts/supervisor.ts", category: "dispatch", args: "sweep|status [--follow]|watch", summary: "Dispatch-ledger supervisor: what's running and what it's doing, resume/re-dispatch stalled runs (never-stall)", visibility: "user" },
 
@@ -92,6 +93,7 @@ export const COMMANDS: Command[] = [
   // quality of life
   { name: "audit-view", aliases: ["audit"], target: "harness/scripts/audit-view.ts", category: "qol", args: "<project>", summary: "Chronological viewer of a project's audit chain", visibility: "user" },
   { name: "search", target: "harness/scripts/search.ts", category: "qol", args: '"<query>"', summary: "Search your libraries for candidates to read", visibility: "user" },
+  { name: "find", target: "harness/scripts/find.ts", category: "qol", args: '"<request>"', summary: "Shortlist the businesses and squads (with capability ids) that fit a request, no model call; you read them and decide", visibility: "user" },
   { name: "export", target: "harness/scripts/export.ts", category: "qol", args: "<project>", summary: "Bundle a project's outputs (.zip/.tgz)", visibility: "user" },
 
   // project
@@ -121,7 +123,7 @@ export const COMMANDS: Command[] = [
   { name: "guard", target: "harness/scripts/guard.ts", category: "dev", args: "tick|status --project <dir> [--action <sig>]", summary: "Loop-guard tick — circuit breaker for the maestro loop; status reads it without recording", visibility: "dev" },
   { name: "fix-squad", aliases: ["doctor-squad"], target: "squads/scripts/fix-squad.ts", category: "libraries", args: "<slug|path> [--apply]", summary: "Diagnose and auto-fix a squad", visibility: "user" },
   { name: "migrate", aliases: ["migrate-squad"], target: "squads/scripts/migrate-squad.ts", category: "libraries", args: "<slug|path> --to 6 [--apply] [--all] [--map-refs] [--rollback <ts>]", summary: "Convert a squad to Squad Protocol 6.0: canonical workflow documents, extension-less refs, acceptance from success_indicators (dry-run by default; backup, report, rollback)", visibility: "user" },
-  { name: "changes", aliases: ["surface"], target: "_shared/scripts/nirvana-changes.ts", category: "libraries", args: "<gen|diff|show|pending|ack> ...", summary: "Superfície de contrato dos artefatos (gen/diff/pending/ack)", visibility: "user" },
+  { name: "changes", aliases: ["surface"], target: "_shared/scripts/nirvana-changes.ts", category: "libraries", args: "<gen|diff|show|pending|ack> ...", summary: "Artifact contract surface (gen/diff/pending/ack)", visibility: "user" },
   { name: "memory", aliases: ["mem"], target: "harness/scripts/memory.ts", category: "qol", args: "<add|list|supersede|gc> ...", summary: "Temporal cross-session memory (supersede-never-delete); `gc` runs TTL eviction + dedup", visibility: "user" },
   { name: "activate", aliases: ["activate-squad", "squad-activate"], target: "harness/scripts/activate.ts", category: "libraries", args: "<slug>|--all [--dry-run] [--confirm-heavy] [--only-declared]", summary: "Install what a squad's dependencies.yaml declares (--all walks the library)", visibility: "user" },
   { name: "serve", aliases: ["api", "server"], target: "harness/scripts/serve.ts", category: "dev", args: "[start|keygen|keys] [--port N] [--host H] [--max-concurrent N]", summary: "HTTP API: sessions, briefs, runs, artifacts (local by default)", visibility: "user" },
