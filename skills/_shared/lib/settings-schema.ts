@@ -198,7 +198,7 @@ export const SETTINGS = {
     { default: true, env: "NIRVANA_PRODUCES_TO_RUBRIC" }),
 
   // Decision models (System One): typed, calibrated answers to closed questions,
-  // used for routing, runtime choice and the gate's fallback. See _shared/DECISION_MODELS.md.
+  // used for routing, runtime choice on request and the gate's fallback. See _shared/DECISION_MODELS.md.
   "decision.provider": enumSetting("decision.provider",
     "Modelo de decisão: auto (padrão) = o primeiro disponível na ordem local, typesafe, gemini, openai, subscription; um nome = só ele; off = desligado.",
     ["auto", "local", "typesafe", "gemini", "openai", "subscription", "off"], { default: "auto", env: "NIRVANA_DECISION_PROVIDER" }),
@@ -208,9 +208,6 @@ export const SETTINGS = {
   "decision.min_confidence": numberSetting("decision.min_confidence",
     "Confiança mínima (0 a 1) para o engine agir sozinho sobre uma decisão; abaixo disso a decisão vira só um sinal.",
     { default: 0.7, env: "NIRVANA_DECISION_MIN_CONFIDENCE", type: z.number().min(0).max(1), expects: "número entre 0 e 1" }),
-  "decision.runtime_choice": booleanSetting("decision.runtime_choice",
-    "Quando nenhuma flag, menção no brief ou regra USE_* escolhe o runtime, um modelo de decisão (só API ou local) escolhe entre os runtimes instalados e fora de cooldown.",
-    { default: true, env: "NIRVANA_DECISION_RUNTIME_CHOICE" }),
 
   "execution.default_runtime": stringSetting("execution.default_runtime",
     "Runtime usado quando a sessão não é identificada; vazio = primeiro disponível no PATH.",

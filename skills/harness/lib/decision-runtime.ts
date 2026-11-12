@@ -1,10 +1,11 @@
 // decision-runtime.ts: a decision model picks the runtime when nothing else did.
 //
-// Precedence stays flag > brief mention > USE_* rule > default (runtime-rules.ts).
-// This only runs on the last rung, when the default would be taken for lack of
-// a better signal, and only with a hosted or local decision model: asking a CLI
-// which CLI to use would spend a subscription to save one. The pick must clear
-// decision.min_confidence; otherwise the default stands.
+// The default is always the session host: the user working in Claude Code gets
+// Claude Code. This runs only when the user asked the engine to choose the
+// runtime (`nrv dispatch --runtime auto`) and no brief mention or USE_* rule
+// named one, and only with a hosted or local decision model: asking a CLI which
+// CLI to use would spend a subscription to save one. The pick must clear
+// decision.min_confidence; otherwise the host stands.
 
 import type { Runtime } from "../../_shared/lib/host-agent-driver.ts";
 import { decide, isDecisionError, settingText, type DecisionResult } from "../../_shared/lib/decision-model.ts";
@@ -37,7 +38,6 @@ export async function chooseRuntimeByDecision(opts: {
   host: Runtime;
   decideFn?: typeof decide;
 }): Promise<RuntimePick | null> {
-  if (settingText("decision.runtime_choice") === "false") return null;
   const candidates = [...new Set(opts.candidates)];
   if (candidates.length < 2 || !opts.brief.trim()) return null;
   const options: Record<string, string> = {};

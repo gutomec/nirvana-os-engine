@@ -132,7 +132,7 @@ Never switch the runtime into its own plan mode (Claude Code plan mode, Codex pl
 
 The default runtime is the session the user is sitting in: Claude Code, Codex, Antigravity. An in-process dispatch (the `Agent` tool, codex `[agents]`, antigravity subagents) inherits it automatically; a scripted child (`nrv dispatch --exec`, `nrv chain`, `nrv run`, a business director) resolves it from the session's env markers. From a plain terminal or a cron job there is no session to inherit, so the engine takes `execution.default_runtime` if set, else the first runtime installed, and says so on stderr.
 
-The user may name another runtime (a flag, a mention in the brief such as "use o codex para isso", a `USE_*` rule in the `.env`). That wins, **provided it is installed here**; naming one that is not installed is refused with the installed list. So don't pass `--runtime` or `--exec=<name>` unless the user asked for that runtime. `nrv doctor` shows which runtimes are green.
+The user may name another runtime (a flag, a mention in the brief such as "use o codex para isso", a `USE_*` rule in the `.env`). That wins, **provided it is installed here**; naming one that is not installed is refused with the installed list. So don't pass `--runtime` or `--exec=<name>` unless the user asked for that runtime. When the user asks you to choose the runtime for them ("escolha o melhor runtime", "decide qual CLI usar"), pass `--runtime auto`: a decision model picks among the installed runtimes, and the session host stays when it is not confident. Never pass `auto` on your own initiative; without the request, the session the user is in runs the work. `nrv doctor` shows which runtimes are green.
 
 ---
 

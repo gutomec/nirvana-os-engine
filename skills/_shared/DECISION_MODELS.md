@@ -33,7 +33,7 @@ TypeSafe's own list, inherited by JEV-27B: literal reading of the question, weak
 |---|---|---|
 | `nrv decide` | Any closed question, from the orchestrator or a script | auto order |
 | Routing (Phase 3) | A second opinion over the finalists after Pass 2. Never the pick. | the orchestrator runs `nrv decide` |
-| Runtime choice | Only on the last rung: no flag, no brief mention, no `USE_*` rule. Picks among installed runtimes outside cooldown when the confidence clears `decision.min_confidence`. Audited as `x_runtime_decision`. | API or local only |
+| Runtime choice | Only when the user asks the engine to choose the runtime: the orchestrator passes `nrv dispatch --runtime auto`. Picks among installed runtimes outside cooldown when the confidence clears `decision.min_confidence`; otherwise the session host stays. Audited as `x_runtime_decision`. Without that request the session host always runs the work (in Claude Code, Claude Code). | API or local only |
 | Quality gate | When the LLM judge is out of quota, grades the file (meets the brief? quality 0-4). Decides only when both answers agree and the confidence clears the floor; otherwise the file stays unjudged (exit 3). | API or local only |
 
 Provider order under `decision.provider=auto`: `local` (when `decision.local_url` is set), `typesafe`, `gemini`, `openai`, `subscription`. The first that answers wins, and each failure is reported. Keys are read from the environment and the engine's `.env` chain, never printed.
@@ -45,7 +45,6 @@ Provider order under `decision.provider=auto`: `local` (when `decision.local_url
 | `decision.provider` | `auto` | `auto`, one provider name, or `off` |
 | `decision.local_url` | empty | URL of a JEV-27B server the user started |
 | `decision.min_confidence` | `0.7` | below it, a decision is only a signal |
-| `decision.runtime_choice` | `true` | let a decision model pick the runtime on the last rung |
 
 `nrv decide status` shows what is configured and whether this machine can host JEV-27B. It reads RAM and, through `nvidia-smi`, GPU memory; it never downloads or starts anything.
 

@@ -88,6 +88,7 @@ say exactly that and stop. A Nirvana answer with no engine behind it is fiction.
 | decision models: what is configured, can this machine host JEV-27B | `nrv decide status` |
 | use a local JEV-27B the user already started | `nrv config set decision.local_url http://localhost:8000 --global` |
 | turn the decision models off | `nrv config set decision.provider off --global` |
+| the user asks the engine to choose the runtime (never by default: the session host runs the work) | `nrv dispatch ... --runtime auto` |
 | the cockpit | `nrv glance` |
 | anything else | `nrv --help` |
 
