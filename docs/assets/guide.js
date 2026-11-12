@@ -5,10 +5,10 @@
 (function () {
   "use strict";
 
-  /* The current beta, in ONE place. Each page also writes it as the fallback
-     text of its .beta-tag spans, so a release means: change this constant and
+  /* The beta tag, in ONE place; a placeholder while no beta is in progress.
+     Each page also writes it as the fallback text of its .beta-tag spans, so a release means: change this constant and
      find-and-replace the old tag in docs/install.html and docs/beta.html. */
-  var BETA_TAG = "v0.15.0-beta.12";
+  var BETA_TAG = "v<versão>";
 
   var root = document.documentElement;
   root.classList.add("js");

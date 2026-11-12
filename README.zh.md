@@ -51,7 +51,7 @@ Nirvana-OS 是一个 Bun 原生、与运行时无关的多 agent 系统。它运
 
 ## 安装
 
-本 README 描述的是 0.15 beta，`v0.15.0-beta.12`。本页顶部的一行命令安装的是最新的**稳定版**（0.14.11）；要安装这个 beta，请使用 [Beta 版](#beta-版)一节中的命令。不需要 Node。如果缺少 [Bun](https://bun.sh)，两个安装器都会在不使用 sudo、也不需要管理员权限的情况下把它装进你的用户目录（`~/.bun`），然后继续。
+本 README 描述的是 0.15.0，即当前的**稳定版**，本页顶部的一行命令安装的就是它。不需要 Node。如果缺少 [Bun](https://bun.sh)，两个安装器都会在不使用 sudo、也不需要管理员权限的情况下把它装进你的用户目录（`~/.bun`），然后继续。
 
 运行之前：
 
@@ -68,7 +68,7 @@ Nirvana-OS 是一个 Bun 原生、与运行时无关的多 agent 系统。它运
 - Claude Code、Antigravity 和 Codex 中的审计 hook；
 - 空的内容文件夹 `~/squads`、`~/businesses` 和 `~/businesses/_library/dna`。
 
-再次运行是安全的。**关闭终端并打开一个新终端**，让 `nrv` 出现在你的 PATH 上，然后用 `nrv --version` 检查；这个 beta 会显示 `0.15.0-beta.12`。接着对你的 agent 说：*“检查 Nirvana-OS 是否安装正确。”* 它会运行 `nrv doctor`。退出码 1 表示只有警告；退出码 2 会列出失败的项目。
+再次运行是安全的。**关闭终端并打开一个新终端**，让 `nrv` 出现在你的 PATH 上，然后用 `nrv --version` 检查；它会显示 `0.15.0`。接着对你的 agent 说：*“检查 Nirvana-OS 是否安装正确。”* 它会运行 `nrv doctor`。退出码 1 表示只有警告；退出码 2 会列出失败的项目。
 
 通过 `curl | bash` 运行时，安装器不会提问。要在安装时选择性能档位，把它传进去：把末尾的 `bash` 换成 `bash -s -- --profile=balanced`。你也可以之后让你的 agent 来设置（见[设置](#设置)）。
 
@@ -84,7 +84,7 @@ Nirvana-OS 是一个 Bun 原生、与运行时无关的多 agent 系统。它运
 - 你点名或指向你的某家公司、某个 squad 或某个 mind-clone（“我的发布公司”、“文案 squad”、“用 Hormozi 的口吻”），包括 pack 的名字；
 - 你要求整个工作或其中一部分在另一个运行时上运行（“用 Codex 来审查”）。
 
-如果你想让 Nirvana 编排一个项目中的每一项交付物，就说 *“在这个项目里用 Nirvana 编排一切”*。agent 会运行 `nrv init . --orchestrators=always`。打开一个新会话，让这项改动生效。稳定版 0.14.11 正好相反：完整契约是它的默认值，只有当你自己在一个已经有这些文件之一的文件夹中运行 `nrv init .` 时，它才会询问。
+如果你想让 Nirvana 编排一个项目中的每一项交付物，就说 *“在这个项目里用 Nirvana 编排一切”*。agent 会运行 `nrv init . --orchestrators=always`。打开一个新会话，让这项改动生效。在 0.14 上设置的项目会保留完整契约，直到你再次运行 `nrv init .`，它会就地把契约换成按需说明（`--orchestrators=always` 则保留完整契约），并保留你自己写的内容。
 
 从那以后，你用平实的语言和你的 agent 对话，由它使用 Nirvana-OS。你日常不需要输入命令。
 
@@ -149,29 +149,29 @@ Pack 是在 [squads.sh](https://squads.sh/pt/packs) 上出售的精选公司、s
 
 让你的 agent 更新 Nirvana-OS，或者运行 `nrv update`。它会先备份 `~/.nirvana/skills`，并保留你的设置和内容。`nrv update --check` 会说出它将安装哪个版本，但不做任何改动。
 
-更新永远不会把引擎降到更旧的版本。稳定版引擎只会升到更新的稳定版。beta 版会升到最新的更高版本，无论是 beta 还是稳定版，所以 0.15 的 beta 会在 0.15.0 发布时变成 0.15.0。引擎更新后，`nrv update` 还会检查每一个带许可的已安装 pack，并在有新版本时告诉你。
+更新永远不会把引擎降到更旧的版本。稳定版引擎只会升到更新的稳定版，所以 0.14 的引擎会升到 0.15.0。beta 版会升到最新的更高版本，无论是 beta 还是稳定版，所以 beta 会变成它之后发布的稳定版。引擎更新后，`nrv update` 还会检查每一个带许可的已安装 pack，并在有新版本时告诉你。
 
 ## Beta 版
 
-Beta 版是 GitHub 上的预发布版本，而本 README 就是 beta 版的：`v0.15.0-beta.12`。顶部的一行命令安装的是最新稳定版，所以 beta 需要固定它的 tarball 来安装。标签以 `v` 开头；少了它，下载会返回 404。要安装更新的 beta，把这个标签换成[发布列表](https://github.com/gutomec/nirvana-os-engine/releases)中的标签。
+Beta 版是 GitHub 上的预发布版本，顶部的一行命令从不安装 beta。安装 beta 需要固定它的 tarball：把下面的 `v<version>` 换成[发布列表](https://github.com/gutomec/nirvana-os-engine/releases)中它的标签。标签以 `v` 开头；少了它，下载会返回 404。
 
 macOS、Linux 和 WSL：
 
 ```bash
-curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.12/nirvana-os-engine.tar.gz bash
+curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v<version>/nirvana-os-engine.tar.gz bash
 ```
 
 Windows（PowerShell），写成一行：
 
 ```powershell
-$env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.12/nirvana-os-engine.tar.gz'; irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
+$env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/download/v<version>/nirvana-os-engine.tar.gz'; irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
 ```
 
 之后，如果窗口还开着，运行 `Remove-Item Env:NIRVANA_ENGINE_URL`：只要这个变量还在，`nrv update` 就会重新安装固定的 tarball。Windows 命令使用单引号，是因为粘贴时丢失的双引号会让 PowerShell 停在 `>>` 提示符上等待。
 
-进入 beta 之后，`nrv update` 和每一次 pack setup 都会让你留在 beta 通道：先是更新的 beta，0.15.0 发布后就是 0.15.0。在 0.14.11 上设置的项目会保留完整契约，直到你在 beta 上运行 `nrv init .`，它会就地把契约换成按需说明（`--orchestrators=always` 则保留完整契约）；你写在 Nirvana 区块之上的内容会保留。
+进入 beta 之后，`nrv update` 和每一次 pack setup 都会让你留在 beta 通道：先是更新的 beta，然后是之后发布的稳定版。
 
-**回到稳定版。** 在 Windows 上，先打开一个新的 PowerShell 并运行 `Remove-Item Env:NIRVANA_ENGINE_URL`；提示它不存在的错误可以忽略。运行本页顶部的普通一行命令。它会在 beta 之上安装最新稳定版，并保留你的内容、pack 和设置。确认 `nrv --version` 不再显示 `beta`，然后在每个用 beta 用过的项目中删掉 beta 写入 `AGENTS.md`、`CLAUDE.md` 和 `GEMINI.md` 的区块，再重新运行 `nrv init .`（[详情](./INSTALL.md#back-to-stable-from-a-beta)）。
+**回到稳定版。** 在 Windows 上，先打开一个新的 PowerShell 并运行 `Remove-Item Env:NIRVANA_ENGINE_URL`；提示它不存在的错误可以忽略。运行本页顶部的普通一行命令。它会在 beta 之上安装最新稳定版，并保留你的内容、pack 和设置。确认 `nrv --version` 不再显示 `beta`，然后在每个用 beta 用过的项目中重新运行 `nrv init .`（[详情](./INSTALL.md#back-to-stable-from-a-beta)）。
 
 ## 设置
 
@@ -246,4 +246,4 @@ $env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/d
 
 许可：Nirvana-OS Sustainable Use License (SUL) v1.0。源码公开发布、可公开阅读，引擎可免费使用。它是 source-available，而非 OSI 批准的开源许可，某些商业用途需要单独的商业许可。在依赖任何摘要（包括这一段）之前，请先阅读 [LICENSE](./LICENSE)。
 
-状态：beta（0.x，当前为 0.15.0-beta.12）。引擎今天就能用，几分钟内即可安装。在 1.0 之前，预计接口表面会持续变动。
+状态：beta（0.x，当前为 0.15.0）。引擎今天就能用，几分钟内即可安装。在 1.0 之前，预计接口表面会持续变动。

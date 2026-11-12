@@ -51,7 +51,7 @@ El motor viene sin contenido. Creas empresas, squads y clones pidiéndoselo a tu
 
 ## Instalación
 
-Este README describe la beta de 0.15, `v0.15.0-beta.12`. El comando de una línea del principio de esta página instala la última release **estable** (0.14.11); para instalar esta beta, usa los comandos de [Betas](#betas). No hace falta Node. Si falta [Bun](https://bun.sh), cualquiera de los dos instaladores lo pone en tu carpeta de usuario (`~/.bun`) sin sudo ni permisos de administrador y sigue adelante.
+Este README describe la 0.15.0, la release **estable** actual, que instala el comando de una línea del principio de esta página. No hace falta Node. Si falta [Bun](https://bun.sh), cualquiera de los dos instaladores lo pone en tu carpeta de usuario (`~/.bun`) sin sudo ni permisos de administrador y sigue adelante.
 
 Antes de ejecutarlo:
 
@@ -68,11 +68,11 @@ Lo que cambia en tu máquina:
 - hooks de auditoría en Claude Code, Antigravity y Codex;
 - las carpetas de contenido vacías `~/squads`, `~/businesses` y `~/businesses/_library/dna`.
 
-Volver a ejecutarlo es seguro. **Cierra la terminal y abre una nueva** para que `nrv` esté en tu PATH, y compruébalo con `nrv --version`; esta beta muestra `0.15.0-beta.12`. Después pídele a tu agente: *"Comprueba que Nirvana-OS está bien instalado."* Ejecuta `nrv doctor`. La salida 1 significa solo avisos; la salida 2 lista lo que falló.
+Volver a ejecutarlo es seguro. **Cierra la terminal y abre una nueva** para que `nrv` esté en tu PATH, y compruébalo con `nrv --version`; muestra `0.15.0`. Después pídele a tu agente: *"Comprueba que Nirvana-OS está bien instalado."* Ejecuta `nrv doctor`. La salida 1 significa solo avisos; la salida 2 lista lo que falló.
 
 Con `curl | bash` el instalador no hace preguntas. Para elegir un perfil de rendimiento al instalar, pásalo así: cambia el `bash` final por `bash -s -- --profile=balanced`. También puedes fijarlo más tarde pidiéndoselo a tu agente (ver [Configuración](#configuración)).
 
-La guía paso a paso de cada sistema está en el [sitio de documentación](https://gutomec.github.io/nirvana-os-engine/install.html) (en portugués), con una [página para la beta](https://gutomec.github.io/nirvana-os-engine/beta.html), y en [INSTALL.md](./INSTALL.md), junto con las otras vías (la skill `nirvana` a través de skills.sh, instalar desde un clon).
+La guía paso a paso de cada sistema está en el [sitio de documentación](https://gutomec.github.io/nirvana-os-engine/install.html) (en portugués), con una [página para las betas](https://gutomec.github.io/nirvana-os-engine/beta.html), y en [INSTALL.md](./INSTALL.md), junto con las otras vías (la skill `nirvana` a través de skills.sh, instalar desde un clon).
 
 ## Empieza un proyecto
 
@@ -84,7 +84,7 @@ Esa nota mantiene a tu agente trabajando como siempre. Usa Nirvana solo cuando t
 - nombras o señalas una de tus empresas, squads o mind-clones ("mi empresa de lanzamientos", "el squad de copy", "con la voz de Hormozi"), incluido el nombre de un pack;
 - pides que el trabajo, o parte de él, corra en otro runtime ("usa Codex para revisarlo").
 
-Si quieres que Nirvana orqueste cada entregable de un proyecto, di *"orquesta todo en este proyecto con Nirvana"*. El agente ejecuta `nrv init . --orchestrators=always`. Abre una sesión nueva para que el cambio surta efecto. La estable 0.14.11 funciona al revés: el contrato completo es su valor predeterminado, y solo pregunta cuando tú mismo ejecutas `nrv init .` en una carpeta que ya tiene uno de esos archivos.
+Si quieres que Nirvana orqueste cada entregable de un proyecto, di *"orquesta todo en este proyecto con Nirvana"*. El agente ejecuta `nrv init . --orchestrators=always`. Abre una sesión nueva para que el cambio surta efecto. Un proyecto preparado en 0.14 conserva su contrato completo hasta que vuelves a ejecutar `nrv init .`, que lo cambia, en su sitio, por la nota bajo demanda (`--orchestrators=always` conserva el contrato completo) y mantiene tus propias líneas.
 
 A partir de ahí hablas con tu agente en lenguaje natural y él usa Nirvana-OS. No escribes comandos en el día a día.
 
@@ -150,29 +150,29 @@ Los packs son empresas, squads y mind-clones curados que se venden en [squads.sh
 
 Pídele a tu agente que actualice Nirvana-OS, o ejecuta `nrv update`. Primero hace una copia de `~/.nirvana/skills` y conserva tu configuración y tu contenido. `nrv update --check` dice qué release instalaría sin cambiar nada.
 
-Una actualización nunca lleva el motor a una release más antigua. Un motor estable solo pasa a una estable más nueva. Una beta pasa a la release mayor más nueva, beta o estable, así que una beta de 0.15 se convierte en 0.15.0 cuando esta salga. Después de actualizar el motor, `nrv update` también revisa cada pack instalado que tiene licencia y avisa cuando hay una versión nueva.
+Una actualización nunca lleva el motor a una release más antigua. Un motor estable solo pasa a una estable más nueva, así que un motor 0.14 pasa a la 0.15.0. Una beta pasa a la release mayor más nueva, beta o estable, así que una beta se convierte en la estable que sale después de ella. Después de actualizar el motor, `nrv update` también revisa cada pack instalado que tiene licencia y avisa cuando hay una versión nueva.
 
 ## Betas
 
-Las betas son prereleases en GitHub, y este README es el de la beta: `v0.15.0-beta.12`. El comando del principio instala la última estable, así que la beta se instala fijando su tarball. La etiqueta empieza con `v`; sin ella la descarga devuelve 404. Para una beta más nueva, cambia esa etiqueta por una de la [lista de releases](https://github.com/gutomec/nirvana-os-engine/releases).
+Las betas son prereleases en GitHub, y el comando del principio nunca instala una. Una beta se instala fijando su tarball: cambia `v<version>` abajo por su etiqueta de la [lista de releases](https://github.com/gutomec/nirvana-os-engine/releases). La etiqueta empieza con `v`; sin ella la descarga devuelve 404.
 
 macOS, Linux y WSL:
 
 ```bash
-curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.12/nirvana-os-engine.tar.gz bash
+curl -fsSL https://gutomec.github.io/nirvana-os-engine/install.sh | NIRVANA_ENGINE_URL=https://github.com/gutomec/nirvana-os-engine/releases/download/v<version>/nirvana-os-engine.tar.gz bash
 ```
 
 Windows (PowerShell), en una sola línea:
 
 ```powershell
-$env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/download/v0.15.0-beta.12/nirvana-os-engine.tar.gz'; irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
+$env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/download/v<version>/nirvana-os-engine.tar.gz'; irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
 ```
 
 Después, si la ventana sigue abierta, ejecuta `Remove-Item Env:NIRVANA_ENGINE_URL`: mientras la variable exista, `nrv update` reinstala el tarball fijado. Los comandos de Windows usan comillas simples porque una comilla doble perdida al pegar deja a PowerShell esperando en `>>`.
 
-Una vez en la beta, `nrv update` y cada setup de pack te mantienen en el canal beta: betas más nuevas y, cuando salga, la 0.15.0. Un proyecto preparado en 0.14.11 conserva su contrato completo hasta que ejecutas `nrv init .` en la beta, que lo cambia, en su sitio, por la nota bajo demanda (`--orchestrators=always` conserva el contrato completo); las líneas que escribiste encima del bloque de Nirvana se quedan.
+Una vez en una beta, `nrv update` y cada setup de pack te mantienen en el canal beta: betas más nuevas y luego la estable que sale después.
 
-**Volver a la estable.** En Windows, abre un PowerShell nuevo y ejecuta `Remove-Item Env:NIRVANA_ENGINE_URL`; un error que diga que no existe no es problema. Ejecuta el comando simple del principio de esta página. Instala la última estable sobre la beta y conserva tu contenido, los packs y la configuración. Comprueba que `nrv --version` ya no muestra `beta` y vuelve a ejecutar `nrv init .` en cada proyecto que usaste con la beta, después de quitar el bloque que la beta escribió en `AGENTS.md`, `CLAUDE.md` y `GEMINI.md` ([detalles](./INSTALL.md#back-to-stable-from-a-beta)).
+**Volver a la estable.** En Windows, abre un PowerShell nuevo y ejecuta `Remove-Item Env:NIRVANA_ENGINE_URL`; un error que diga que no existe no es problema. Ejecuta el comando simple del principio de esta página. Instala la última estable sobre la beta y conserva tu contenido, los packs y la configuración. Comprueba que `nrv --version` ya no muestra `beta` y vuelve a ejecutar `nrv init .` en cada proyecto que usaste con la beta ([detalles](./INSTALL.md#back-to-stable-from-a-beta)).
 
 ## Configuración
 
@@ -247,4 +247,4 @@ Autor: **Luiz Gustavo Vieira Rodrigues (gutomec / Prospecteezy)**. Sin coautores
 
 Licencia: la Nirvana-OS Sustainable Use License (SUL) v1.0. El código fuente está publicado y es abiertamente legible, y el motor es gratis para usar. Es source-available, no una licencia open-source aprobada por la OSI, y ciertos usos comerciales requieren una licencia comercial aparte. Lee [LICENSE](./LICENSE) antes de confiar en cualquier resumen, incluido este.
 
-Estado: beta (0.x, actualmente 0.15.0-beta.12). El motor funciona hoy y se instala en minutos. Espera que la superficie siga moviéndose hasta la 1.0.
+Estado: beta (0.x, actualmente 0.15.0). El motor funciona hoy y se instala en minutos. Espera que la superficie siga moviéndose hasta la 1.0.
