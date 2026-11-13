@@ -30,7 +30,7 @@ import { selectVoices, unsettledVoiceNotice, type VoiceRerank } from "./clone-vo
 import { jevVoiceRerank } from "./jev-voice.ts";
 import { jevEnabled } from "../../_shared/lib/typesafe-client.ts";
 import { cloneNamesOf } from "./clone-names.ts";
-import { summaryFileOf } from "./business-solo.ts";
+import { SUMMARY_HANDOFF_RULE, summaryFileOf } from "./business-solo.ts";
 import { paths } from "../../_shared/lib/bun-helpers.ts";
 import { scopeBoundary, scopeGuard } from "../../_shared/lib/scope-guard.ts";
 import { renderResourceMap } from "../../_shared/lib/entity-resource-map.ts";
@@ -510,7 +510,7 @@ If the brief mentions you by name (e.g. "use the ${squadSlug} squad"), prioritiz
 ${scopeGuard()} Scope is the brief above and the acceptance criteria of your sub-task. ${scopeBoundary()}
 
 ## OUTPUT
-Files in the directory above, then \`${summaryFileOf(outDir)}\`: one page at most with what you delivered and where, the decisions you took, what is still open and the out-of-scope notes. Do not print a summary to stdout: the deliverables and that file are the output. ${doneLine}`;
+Files in the directory above, then \`${summaryFileOf(outDir)}\`: one page at most with what you delivered and where, the decisions you took, what is still open and the out-of-scope notes. ${SUMMARY_HANDOFF_RULE} Do not print a summary to stdout: the deliverables and that file are the output. ${doneLine}`;
 }
 
 /**

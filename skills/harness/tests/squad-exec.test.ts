@@ -13,6 +13,7 @@ import { runSquadHeadless, squadCloneInjection, buildSquadPrompt, capabilityCont
 import { sessionKey, putSession } from "../lib/session-store.ts";
 import { SCOPE_GUARD_EN, scopeBoundary } from "../../_shared/lib/scope-guard.ts";
 import { LIMITS } from "../../_shared/validators/limits.ts";
+import { SUMMARY_HANDOFF_RULE } from "../lib/business-solo.ts";
 
 let tmp: string;
 const savedLogsDir = process.env.HARNESS_LOGS_DIR;
@@ -143,7 +144,7 @@ If the brief mentions you by name (e.g. "use the brandcraft squad"), prioritize 
 ${SCOPE_GUARD_EN} Scope is the brief above and the acceptance criteria of your sub-task. ${scopeBoundary()}
 
 ## OUTPUT
-Files in the directory above, then \`${path.join("/out/dir", "_SUMMARY.md")}\`: one page at most with what you delivered and where, the decisions you took, what is still open and the out-of-scope notes. Do not print a summary to stdout: the deliverables and that file are the output. Finish when the work is ready to hand to the user.`;
+Files in the directory above, then \`${path.join("/out/dir", "_SUMMARY.md")}\`: one page at most with what you delivered and where, the decisions you took, what is still open and the out-of-scope notes. ${SUMMARY_HANDOFF_RULE} Do not print a summary to stdout: the deliverables and that file are the output. Finish when the work is ready to hand to the user.`;
     const args = { squadSlug: "brandcraft", squadDir, brief: "the brief", outDir: "/out/dir", cloneInjection: { block: "", decision: "DEFAULT" } };
     expect(buildSquadPrompt(args)).toBe(expected);
     // The three ways of saying "no capability" all land on the same bytes.
