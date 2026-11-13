@@ -110,7 +110,10 @@ if ($installedVer -and -not $explicitSource -and (Test-Path $helper)) {
   elseif ($parts.Count -ge 3 -and $parts[0] -eq "current") {
     if ($Update) { Write-Host "Nirvana-OS engine $installedVer kept: nothing newer to install."; exit 0 }
     $url = $parts[2]
-  } else { $guard = $true }
+  } else {
+    if ($parts.Count -ge 3 -and $parts[0] -eq "fallback") { $url = $parts[2] }
+    $guard = $true
+  }
 }
 
 # 6-7. The tarball, extracted with RELATIVE paths (an absolute path carries a ":").

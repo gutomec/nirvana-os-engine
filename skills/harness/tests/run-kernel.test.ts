@@ -30,6 +30,10 @@ import {
 import { getRun as getLegacyRun, openLedger } from "../lib/run-ledger.ts";
 import { KERNEL_BUDGET_MS } from "./helpers/test-budgets.ts";
 
+/** The isolated root the test preload created. Captured before any test
+ *  mutates the env, so a teardown restores isolation instead of removing it. */
+const PRELOAD_LOGS_DIR = process.env.HARNESS_LOGS_DIR!;
+
 const roots: string[] = [];
 const handles: KernelHandle[] = [];
 
@@ -318,9 +322,6 @@ describe("two processes writing one kernel", () => {
     fs.writeFileSync(writer, `
 import { appendEvent, createRun, openKernel } from ${JSON.stringify(store)};
 
-/** The isolated root the test preload created. Captured before any test
- *  mutates the env, so a teardown restores isolation instead of removing it. */
-const PRELOAD_LOGS_DIR = process.env.HARNESS_LOGS_DIR!;
 const kernel = openKernel(process.argv[2]);
 const actor = { kind: "test", id: "child" };
 createRun(kernel, { projectId: "prj_busy", runId: "run_child", traceId: "trace_child", planId: "plan_child",
