@@ -6,6 +6,18 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que os instaladores de uma linha e os setups de pack consomem.
 
+## Não lançado
+
+### O fim de um despacho chega ao usuário
+
+Previsto para a 0.15.1. Um despacho terminou às 13:00 e o usuário só soube onze horas depois: o agente orquestrador abriu um diálogo de pergunta bloqueante depois de lançar a execução, e o runtime segurou o aviso de término até o diálogo ser respondido. Quando uma execução voltava, o agente informava uma URL de localhost e nenhum caminho de arquivo.
+
+- Entrega final: `nrv dispatch` e `nrv revise` terminam listando cada arquivo entregue pelo caminho absoluto completo (no máximo 25, depois uma contagem e a pasta), o caminho do `_SUMMARY.md` e o que o orquestrador informa ao usuário. Impresso para entregue, entregue com ressalvas e retido (caso em que diz que os arquivos estão no disco e não foram entregues). `skills/harness/lib/return-handoff.ts`.
+- `_SUMMARY.md`: todo worker (empresa, squad, agent-x) nomeia cada arquivo pelo caminho completo e, quando a entrega precisa ser executada, instalada, publicada ou implantada para ser usada, escreve uma seção `## Going live` com os passos que o usuário executa e o que o worker precisaria do usuário para fazer isso por ele.
+- Notificação na área de trabalho quando um despacho ou uma revisão termina, em qualquer estado final: "Nirvana-OS: <project> <state>" com a pasta das entregas. O macOS usa `osascript`, o Windows um balão `NotifyIcon` via PowerShell (Windows 10 e 11 de fábrica, nada para instalar), o Linux `notify-send` quando está instalado. Melhor esforço, nunca derruba uma execução, desligada em despacho aninhado. Nova configuração `notify.on_finish` (padrão `true`, `NIRVANA_NOTIFY_ON_FINISH`); o preload dos testes a desliga. `skills/harness/lib/finish-notice.ts`.
+- Protocolo do harness (`skills/harness/SKILL.md`): enquanto uma execução está fora, o orquestrador nunca mantém o turno aberto (sem diálogo de pergunta bloqueante, sem espera em primeiro plano) e diz o que saiu, com o id do projeto e a pasta; uma regra para escolher entre processo em segundo plano e subagente; e o relatório que todo retorno traz: o que foi feito, cada arquivo pelo caminho absoluto e como abrir, os passos para colocar no ar, o que está em aberto, e todo processo que o próprio orquestrador iniciou identificado como tal.
+- Automático de ponta a ponta, com as decisões informadas: um worker nunca pergunta, e agora o `_SUMMARY.md` traz uma seção `## Decisions made for you` (o que foi decidido, por quê, a alternativa descartada). A entrega final e o relatório do protocolo incluem essas decisões, e uma escolha diferente é `nrv revise <project> "<change>"`, que volta ao mesmo worker na mesma sessão. Nova configuração `orchestrator.decisions` (`ask` por padrão, `auto`; `NIRVANA_ORCHESTRATOR_DECISIONS`), pensada por projeto (`nrv config set orchestrator.decisions auto --project`): em `auto` o orquestrador não pergunta nada ao usuário, decide cada ponto em aberto com um padrão profissional e informa cada decisão e o motivo. Nos dois valores, uma pergunta que uma execução levanta é do orquestrador: ele responde a partir do pedido e da conversa; quando não consegue, pergunta ao usuário em texto simples (`ask`) ou decide e informa (`auto`), e repassa a resposta com `nrv brief decide` ou `nrv revise`.
+
 ## 0.15.0 — 2026-11-12
 
 ### A linha 0.15 é estável

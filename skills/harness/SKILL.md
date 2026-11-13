@@ -65,6 +65,12 @@ Talk with the user until you know what they want and why. Ask only what you
 cannot settle with a professional default. A request is often spread over many
 turns: the decisions made along the way are part of it.
 
+Before you start, read `nrv config get orchestrator.decisions`. When it is
+`auto`, ask the user nothing: decide every open point yourself with a
+professional default, and report each decision and its reason, in the message
+that says the run went out (§4) and in the return report (§6). The user changes
+one by asking, which is a revise (§7).
+
 ## 2. Pick the businesses
 
 One business when one covers the request; several when parts belong to
@@ -162,6 +168,22 @@ carrying `<result>` on runtimes that notify, a pollable handle on the others
 (OpenClaw: `bash background:true`, then `process poll`), or
 `nrv run-track status`.
 
+**Say it went out, then end the turn.** Tell the user which business or squad
+is running, the project id and the full path of the folder it writes to. The
+result reaches you only between turns, so while a run is out never hold the
+turn open: no blocking question dialog (Claude Code `AskUserQuestion` and the
+like), no foreground wait. Ask what you need in plain text and end the turn.
+
+**Background process or subagent.** Both run the same `nrv dispatch`; they
+differ in who waits. A background process is the default: long runs, several
+at once, on a runtime that notifies when a background process ends. Use a
+subagent, when your runtime has them, if the runtime does not notify on
+background processes, the user asked to watch the run, or you must act on the
+result within this same turn (a dependent business goes next). The subagent's
+whole job: run the dispatch, wait on it (`nrv run-track wait <run>`), read
+`_STATUS.json` and `_SUMMARY.md`, and return the report of §6. It never does
+the work itself and never edits the delivery.
+
 **Do not block the session on a dispatch.** A business can run for hours;
 blocking leaves the user's messages queued unread the whole time. Never poll the filesystem to infer
 completion, and never set a timeout on a dispatch: a file that exists is not a
@@ -180,6 +202,13 @@ worker re-reads its brief at every phase:
 ```bash
 nrv brief decide .nirvana/briefs/<business>.md "<the decision>"
 ```
+
+A question or an open decision a run raises (mid-run, in `_STATUS.json` or in
+`_SUMMARY.md`) is yours to answer, not the user's: answer it from the request
+and the conversation. Only when you cannot, ask the user in plain text, or
+under `orchestrator.decisions: auto` decide and report it. Pass
+the answer on with `nrv brief decide` while the run is live, `nrv revise` (§7)
+after it ended.
 
 `nrv brief decide` is only for a question the worker asked while it runs. Once
 the run is past that point, or has ended, a change goes through `nrv revise` (§7).
@@ -204,10 +233,26 @@ it when the run was withheld or is still correcting, and tell the user what
 the gate asked for. That is all you read: the engine already decided and ran the review,
 the quality gate and the delivery. The summary is a report, not proof; the
 proof is what the engine checked on disk (`verify-deliverable`, the gate) and
-the audit. Tell the user what was delivered and where,
-what is open, and continue with the next business or the next request. A
-notification you noticed and did not act on is the same failure as a receipt
-you mistook for a result: the run is finished and nobody knows.
+the audit. A notification you noticed and did not act on is the same failure
+as a receipt you mistook for a result: the run is finished and nobody knows.
+
+Report to the user as soon as it returns, then continue with the next business
+or the next request. The end of the dispatch output lists the files; the report
+carries:
+
+1. What was done.
+2. Every delivered file by its full absolute path, and how to open it. Never a
+   relative path, never only a localhost URL.
+3. For something that must be deployed, installed or published: the steps the
+   user takes to put it live, and what you need from them to do it for them
+   (the summary's "Going live" section).
+4. The decisions made on the user's behalf and why (the summary's "Decisions
+   made for you" section); a different choice goes back to the same worker
+   with `nrv revise` (§7).
+5. What is still open.
+
+A process you started yourself to show the work (a local server) is named as
+yours, with how to stop it, so nobody takes it for the run still going.
 
 | `nrv dispatch` exit | Meaning |
 |---|---|

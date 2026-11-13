@@ -6,6 +6,18 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that the
 one-line installers and pack setups consume.
 
+## Unreleased
+
+### The end of a dispatch reaches the user
+
+Planned for 0.15.1. A dispatch ended at 13:00 and its user learned of it eleven hours later: the orchestrating agent had opened a blocking question dialog after launching the run, and its runtime held the end-of-run notice until the dialog was answered. When a run did come back, the agent reported a localhost URL and no file paths.
+
+- Closing handoff: `nrv dispatch` and `nrv revise` end by listing every delivered file by its full absolute path (25 at most, then a count and the folder), the path of `_SUMMARY.md`, and what the orchestrator reports to the user. Printed for delivered, delivered with reservations and withheld (where it says the files are on disk and not delivered). `skills/harness/lib/return-handoff.ts`.
+- `_SUMMARY.md`: every worker (business, squad, agent-x) names each file by its full path and, when the delivery must be run, installed, published or deployed to be used, writes a `## Going live` section with the steps the user takes and what the worker would need from the user to do it for them.
+- Desktop notification when a dispatch or a revision ends, in any final state: "Nirvana-OS: <project> <state>" with the deliverables folder. macOS uses `osascript`, Windows a PowerShell `NotifyIcon` balloon (stock Windows 10 and 11, nothing to install), Linux `notify-send` when it is installed. Best effort, never fails a run, off for a nested dispatch. New setting `notify.on_finish` (default `true`, `NIRVANA_NOTIFY_ON_FINISH`); the test preload turns it off. `skills/harness/lib/finish-notice.ts`.
+- Harness protocol (`skills/harness/SKILL.md`): while a run is out the orchestrator never holds the turn open (no blocking question dialog, no foreground wait) and says what went out, with the project id and the folder; a rule for choosing between a background process and a subagent; and the report every return carries: what was done, each file by its absolute path and how to open it, the steps to put it live, what is open, and any process the orchestrator started itself named as such.
+- Full auto, with the decisions reported: a worker never asks, and now `_SUMMARY.md` carries a `## Decisions made for you` section (what was decided, why, the alternative passed over). The closing handoff and the protocol's report include those decisions, and a different choice is `nrv revise <project> "<change>"`, which goes back to the same worker in the same session. New setting `orchestrator.decisions` (`ask` by default, `auto`; `NIRVANA_ORCHESTRATOR_DECISIONS`), meant per project (`nrv config set orchestrator.decisions auto --project`): under `auto` the orchestrator asks the user nothing, decides every open point with a professional default and reports each decision and its reason. Under either value a question a run raises is the orchestrator's to answer from the request and the conversation; when it cannot, it asks the user in plain text (`ask`) or decides and reports (`auto`), then passes the answer on with `nrv brief decide` or `nrv revise`.
+
 ## 0.15.0 — 2026-11-12
 
 ### The 0.15 line is stable
