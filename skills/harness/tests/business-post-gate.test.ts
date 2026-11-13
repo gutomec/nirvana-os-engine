@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import * as path from "node:path";
 import { runBusinessPostGate, type BusinessPostGateDependencies, type BusinessPostGateInput } from "../lib/business-post-gate.ts";
 
 function fixture(overrides: Partial<BusinessPostGateInput> = {}, dependencyOverrides: Partial<BusinessPostGateDependencies> = {}) {
@@ -51,7 +52,9 @@ describe("Business post-gate boundary", () => {
     let prompt = "";
     const fx = fixture({}, { runPublisher: (input) => { prompt = input.prompt; return { ok: true, sessionId: "s", durationMs: 1, costUsd: 0 } as any; } });
     runBusinessPostGate(fx.input);
-    expect(prompt.startsWith("Work as the seat described in `/home/test/businesses/example/employees/report-publisher.md`")).toBeTrue();
+    // The engine names the seat file with the platform's separator (path.join).
+    const seat = path.join("/home/test", "businesses", "example", "employees", "report-publisher.md");
+    expect(prompt.startsWith(`Work as the seat described in \`${seat}\``)).toBeTrue();
   });
 
   test("keeps publication failures non-fatal and does not claim ZIP success", () => {
