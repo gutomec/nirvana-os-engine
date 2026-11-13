@@ -399,6 +399,13 @@ export const SETTINGS = {
       toEnv: (check) => (check ? null : "1"),
     }),
 
+  "notify.on_finish": booleanSetting("notify.on_finish",
+    "Shows a desktop notification when `nrv dispatch` or `nrv revise` ends, naming the project, the final state and the deliverables folder; false turns it off.",
+    { default: true, env: "NIRVANA_NOTIFY_ON_FINISH" }),
+  "orchestrator.decisions": enumSetting("orchestrator.decisions",
+    "Who settles an open point of a request: ask (default) = the orchestrator may ask the user what a professional default does not settle; auto = it asks nothing, decides every open point itself and reports each decision with its reason. Meant to be set per project.",
+    ["ask", "auto"], { default: "ask", env: "NIRVANA_ORCHESTRATOR_DECISIONS" }),
+
   "budget.default_max_cost_usd": numberSetting("budget.default_max_cost_usd",
     "Cost ceiling per run in USD; 0 = unlimited.", { default: 0, type: nonNegative, expects: "number >= 0 (USD)" }),
   "budget.default_max_tokens": numberSetting("budget.default_max_tokens",
