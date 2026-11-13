@@ -243,7 +243,7 @@ describe("the prompt", () => {
 
   test("small: the prompt stays well under the ~10k-token seat prompts it replaces", () => {
     const prompt = buildSoloPrompt({ ...baseArgs(), briefFile: "/b/brief.md" }, seats(), [], {});
-    expect(prompt.length).toBeLessThan(4000);
+    expect(prompt.length).toBeLessThan(4500);
   });
 
   test("no squad picked: the prompt says how to find one without dispatching", () => {

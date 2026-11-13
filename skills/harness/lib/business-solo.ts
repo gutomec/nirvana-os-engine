@@ -129,6 +129,10 @@ export interface BusinessSoloResult {
 
 export const workDir = (outputsRoot: string) => path.join(outputsRoot, "_work");
 export const summaryFileOf = (outputsRoot: string) => path.join(outputsRoot, "_SUMMARY.md");
+/** What every worker's `_SUMMARY.md` carries besides the account of the work:
+ *  the orchestrator reports to the user from it: paths, next steps and the
+ *  decisions the worker took in the user's place. */
+export const SUMMARY_HANDOFF_RULE = "Name every file by its full path. When the delivery must be run, installed, published or deployed to be used, add a `## Going live` section: the exact steps the user takes, and what you would need from them (an account, a credential, access) to do it for them. Add a `## Decisions made for you` section: every choice you made where the user could reasonably have wanted otherwise, one line each with what you decided, why, and the alternative you passed over. Omit either section when it would be empty.";
 export const claimsFileOf = (outputsRoot: string) => path.join(outputsRoot, "_CLAIMS.json");
 export const participationFile = (projectDir: string) => path.join(projectDir, "participation.json");
 
@@ -452,7 +456,7 @@ export function buildSoloPrompt(
 
   lines.push("## When you finish", "", "Write these, then end your turn:", "");
   lines.push(
-    `- \`${summaryFileOf(args.outputsRoot)}\`: one page at most. What you delivered and where, the decisions you took, what is still open. The orchestrator reads only this.`,
+    `- \`${summaryFileOf(args.outputsRoot)}\`: one page at most. What you delivered and where, the decisions you took, what is still open. ${SUMMARY_HANDOFF_RULE} The orchestrator reads only this.`,
     `- \`${claimsFileOf(args.outputsRoot)}\`: a JSON array with one entry per "Done when" item of the brief, in order: \`{"id": "d1", "evidence": "<file>:<lines>, <what it shows>"}\`. A file under \`_work/\` or \`_review/\` is run state, never proof.`,
     `- \`${participationFile(args.projectDir)}\` (outside the deliverables on purpose): \`{"seats": [{"seat": "<slug>", "files": ["<path>"]}], "squads": ["<slug>"], "clones": ["<slug>"]}\`, naming only what you actually used.`,
   );

@@ -27,14 +27,18 @@ const CRITERIA: Criterion[] = [
 ];
 
 beforeEach(() => {
-  tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "nrv-solo-review-")));
+  // `.native`: on Windows os.tmpdir() can be an 8.3 short path (RUNNER~1), which
+  // only the native realpath expands to the long form the engine resolves to.
+  tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "nrv-solo-review-")));
   outputs = path.join(tmp, "out");
   bizDir = path.join(tmp, "biz");
   briefFile = path.join(tmp, "brief.md");
   write(path.join(bizDir, "business.yaml"), "name: biz\n");
   write(briefFile, "## Request (verbatim)\nx\n## Decisions\nNone.\n## Your part\ny\n## Inputs\nNone.\n## Done when\n- The PRD lists every table (blocking)\n- A monthly cost estimate\n## Output\nout\n");
 });
-afterEach(() => { fs.rmSync(tmp, { recursive: true, force: true }); });
+// Closed before the rm: Windows refuses to delete a folder holding an open SQLite file (EBUSY).
+const ledgers: runLedger.LedgerHandle[] = [];
+afterEach(() => { while (ledgers.length) ledgers.pop()!.close(); fs.rmSync(tmp, { recursive: true, force: true }); });
 
 function deliver(claims: unknown = [{ id: "d1", evidence: "prd.md:10-40, the tables section" }, { id: "d2", evidence: "cost.md:1-20, the monthly table" }]) {
   write(path.join(outputs, "prd.md"), "tables");
@@ -199,6 +203,7 @@ describe("runSoloReviewStage", () => {
 
   function stoppableRun(): { handle: runLedger.LedgerHandle; runId: string } {
     const handle = runLedger.openLedger(path.join(tmp, "ledger.sqlite"));
+    ledgers.push(handle);
     const row = runLedger.openRun(handle, { traceId: "t", projectId: "p", targetSlug: "biz", targetKind: "business", runtime: "claude-code" });
     runLedger.markState(handle, row.run_id, "running");
     return { handle, runId: row.run_id };
@@ -370,7 +375,7 @@ describe("runSoloReviewStage", () => {
       expect(rejected.confirmed).toEqual(["d2"]);
       expect(rejected.gaps[0].why).toBe("the PRD has no table section");
       const correction = calls.find((c) => c.dispatchRole === "solo")!;
-      expect(correction.prompt).toContain("_review/answer-0.txt");
+      expect(correction.prompt).toContain(path.join("_review", "answer-0.txt"));
       expect(correction.prompt).toContain("Reviewer: the PRD has no table section");
     });
 

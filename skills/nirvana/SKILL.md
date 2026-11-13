@@ -201,6 +201,7 @@ user's words.
 | "volte ao padrão" | `nrv config unset <key> --global` |
 | "neste projeto, use o Nirvana só quando eu pedir" / "orquestre tudo neste projeto" | `nrv init . --orchestrators=on-demand` / `--orchestrators=always` |
 | "este projeto só com as empresas dele" / "as dele e as globais" / "a biblioteca toda" | `nrv init . --scope=project` / `merge` / `global` |
+| "decida tudo por mim neste projeto" / "pode me perguntar de novo" | `nrv config set orchestrator.decisions auto --project` / `ask` |
 | "limite cada execução a US$ 5" | `nrv config set budget.default_max_cost_usd 5 --global` |
 | "qual template de brief você está usando?" / "quais templates eu tenho?" | `nrv brief templates` (the active one has `*`, with its origin) |
 | "neste projeto use o template detailed" (`slim`, `standard`, `karpathy`, or one of the user's) | `nrv config set briefing.template detailed --project` |

@@ -51,7 +51,7 @@ The engine ships with no content. You create businesses, squads and clones by as
 
 ## Install
 
-This README describes 0.15.0, the current **stable** release, which the one-liner at the top of this page installs. Node is not needed. If [Bun](https://bun.sh) is missing, either installer puts it in your user folder (`~/.bun`) without sudo or admin rights and carries on.
+This README describes 0.15.1, the current **stable** release, which the one-liner at the top of this page installs. Node is not needed. If [Bun](https://bun.sh) is missing, either installer puts it in your user folder (`~/.bun`) without sudo or admin rights and carries on.
 
 Before you run it:
 
@@ -68,7 +68,7 @@ What it changes on your machine:
 - audit hooks in Claude Code, Antigravity and Codex;
 - the empty content folders `~/squads`, `~/businesses` and `~/businesses/_library/dna`.
 
-Running it again is safe. **Close the terminal and open a new one** so `nrv` is on your PATH, and check with `nrv --version`; it prints `0.15.0`. Then ask your agent: *"Check that Nirvana-OS is installed correctly."* It runs `nrv doctor`. Exit 1 means warnings only; exit 2 lists what failed.
+Running it again is safe. **Close the terminal and open a new one** so `nrv` is on your PATH, and check with `nrv --version`; it prints `0.15.1`. Then ask your agent: *"Check that Nirvana-OS is installed correctly."* It runs `nrv doctor`. Exit 1 means warnings only; exit 2 lists what failed.
 
 Through `curl | bash` the installer asks no questions. To pick a performance profile at install time, pass it through: replace the final `bash` with `bash -s -- --profile=balanced`. You can also set it later by asking your agent (see [Settings](#settings)).
 
@@ -150,7 +150,7 @@ Packs are curated businesses, squads and mind-clones sold on [squads.sh](https:/
 
 Ask your agent to update Nirvana-OS, or run `nrv update`. It backs up `~/.nirvana/skills` first and keeps your settings and content. `nrv update --check` names the release it would install without changing anything.
 
-An update never moves the engine to an older release. A stable engine moves only to a newer stable, so a 0.14 engine moves to 0.15.0. A beta moves to the newest greater release, beta or stable, so a beta becomes the stable release that follows it. After an engine update, `nrv update` also checks every installed pack that has a license and says when one has a newer version.
+An update never moves the engine to an older release. A stable engine moves only to a newer stable, so a 0.14 engine moves to 0.15.1. A beta moves to the newest greater release, beta or stable, so a beta becomes the stable release that follows it. After an engine update, `nrv update` also checks every installed pack that has a license and says when one has a newer version.
 
 ## Betas
 
@@ -247,4 +247,4 @@ Author: **Luiz Gustavo Vieira Rodrigues (gutomec / Prospecteezy)**. No co-author
 
 License: the Nirvana-OS Sustainable Use License (SUL) v1.0. The source is published and openly readable, and the engine is free to use. It is source-available, not an OSI-approved open-source license, and certain commercial uses require a separate commercial license. Read [LICENSE](./LICENSE) before relying on any summary, including this one.
 
-Status: beta (0.x, currently 0.15.0). The engine works today and installs in minutes. Expect the surface to keep moving until 1.0.
+Status: beta (0.x, currently 0.15.1). The engine works today and installs in minutes. Expect the surface to keep moving until 1.0.

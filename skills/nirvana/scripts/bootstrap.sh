@@ -151,6 +151,7 @@ if [ -n "$INSTALLED_VER" ] && [ -z "${NIRVANA_ENGINE_URL:-}" ] && [ -z "${NIRVAN
         exit 0
       fi
       URL="$3" ;;
+    fallback) URL="${3:-$URL}"; GUARD=1 ;;
     *) GUARD=1 ;;
   esac
 fi

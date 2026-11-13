@@ -38,6 +38,7 @@ import { briefExcerpt } from "../../_shared/lib/brief-excerpt.ts";
 import { loadCloneRegistry, resolveClonePersona } from "../../_shared/lib/clone-resolver.ts";
 import { missingVoiceNotice, selectVoices, unsettledVoiceNotice } from "./clone-voices.ts";
 import { cloneNamesOf } from "./clone-names.ts";
+import { SUMMARY_HANDOFF_RULE } from "./business-solo.ts";
 
 export type DispatchStepKind = "business" | "squad" | "agent-x";
 
@@ -427,7 +428,7 @@ export function runAgentX(args: RunAgentXArgs): AgentXResult {
     `Write every final deliverable as a file under: ${args.outputsRoot}`,
     "When the brief's work lives in another folder (a project to review or fix, a new project to create), do that work there and list every path you created or changed.",
     "Earlier runs beside this one are not your input unless the brief points to them.",
-    `End with ${summaryFile}: one page at most with what you delivered and where, the decisions you took, what is still open and the out-of-scope notes.`,
+    `End with ${summaryFile}: one page at most with what you delivered and where, the decisions you took, what is still open and the out-of-scope notes. ${SUMMARY_HANDOFF_RULE}`,
     "Do not print a summary to stdout in place of files. Record",
     'assumptions under "## Assumptions" (titled in the deliverable\'s language) in the main deliverable.',
     scopeBoundary(),

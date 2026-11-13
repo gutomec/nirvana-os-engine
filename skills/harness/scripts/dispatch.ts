@@ -105,6 +105,8 @@ import { RunAlreadyTerminalError, createHarnessLegacyAdapter, openKernel, type T
 import { inertStandardPublication, openStandardPublication } from "../lib/run-kernel/standard-publication.ts";
 import { freezeExecutionSnapshot } from "../lib/runtime-snapshot.ts";
 import * as runBudget from "../lib/run-budget.ts";
+import { returnHandoffLines } from "../lib/return-handoff.ts";
+import { notifyFinish } from "../lib/finish-notice.ts";
 
 // Back-compat re-exports: these helpers moved to lib/delivery-pipeline.ts in
 // routing-360 Phase 4.2 (the pipeline is shared by all three dispatch paths).
@@ -941,6 +943,7 @@ onLedgerStall((stall, result, opts) => {
   } else {
     console.error(c("red", `■ STALLED (exit ${STALLED_EXIT}): ${String(result.error ?? "the worker stalled")}`));
   }
+  notifyFinish(row?.project_id ?? projectId ?? "run", "stalled", typeof row?.meta?.outputs_root === "string" ? row.meta.outputs_root : "");
   process.exit(STALLED_EXIT);
 });
 
@@ -1763,6 +1766,9 @@ function printDeliverySummary(res: DeliveryResult, pid: string, oroot: string, z
   console.log(c("dim", `  Deliverables: ${oroot}`));
   console.log(c("dim", `  Status:       ${path.join(oroot, "_STATUS.json")}`));
   if (zipPath) console.log(c("dim", `  Zip:          ${zipPath}`));
+  const finalState = res.stopped ? "stopped" : res.quotaWait ? "quota_wait" : status.state;
+  for (const line of returnHandoffLines(oroot, finalState, pid)) console.log(line);
+  notifyFinish(pid, finalState.replace(/_/g, " "), oroot);
   console.log("");
   console.log(c("cyan", "  Ask for changes (keeps the session):"));
   console.log("    " + c("yellow", `nrv revise ${pid} "<change>"`));
@@ -2020,6 +2026,7 @@ if (pendingCascade?.kind === "squad-only") {
     publication.finish({ exitCode: kernelExit(outcome.exitCode), gateOutcome: outcome.result?.gateOutcome ?? "indeterminate", error: squadError }, oroot);
     if (!outcome.result) {
       console.error(c("red", `✗ nothing was produced in ${oroot} — nothing to judge.`));
+      notifyFinish(pid, "failed", oroot);
       process.exit(1);
     }
     printDeliverySummary(outcome.result!, pid, oroot, null, true);
@@ -2248,6 +2255,7 @@ if (pendingCascade?.kind === "agent-x") {
     publication.finish({ exitCode: kernelExit(outcome.exitCode), gateOutcome: outcome.result?.gateOutcome ?? "indeterminate", error: runtimeError }, oroot);
     if (!outcome.result) {
       console.error(c("red", `✗ nothing was produced in ${oroot} — nothing to judge.`));
+      notifyFinish(pid, "failed", oroot);
       process.exit(1);
     }
     printDeliverySummary(outcome.result!, pid, oroot, null, true);
@@ -2671,6 +2679,7 @@ if (wantExec) {
     publication.finish({ exitCode: kernelExit(outcome.exitCode), gateOutcome: outcome.result?.gateOutcome ?? "indeterminate", error: runtimeError }, oroot);
     if (!outcome.result) {
       console.error(c("red", `✗ nothing was produced in ${oroot} — nothing to judge.`));
+      notifyFinish(pid, "failed", oroot);
       process.exit(1);
     }
     delivery = outcome.result!;

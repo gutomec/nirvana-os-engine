@@ -155,7 +155,8 @@ describe("the tarball ships exactly what the zip ships", () => {
     made.push(path.dirname(out));
     const r = spawnSync(process.execPath, [SCRIPT, id, "--format=tgz", `--output=${out}`], { encoding: "utf8", cwd: CWD });
     expect(r.status, r.stderr).toBe(0);
-    const names = spawnSync("tar", ["-tzf", out], { encoding: "utf8" }).stdout.split("\n").filter(Boolean).sort();
+    // Relative name + cwd, as export.ts does: GNU tar (Git Bash) reads the ":" of `C:\...` as a remote host.
+    const names = spawnSync("tar", ["-tzf", path.basename(out)], { encoding: "utf8", cwd: path.dirname(out) }).stdout.split(/\r?\n/).filter(Boolean).sort();
     expect(names).toEqual([`${id}/relatorio.md`, `${id}/site/index.html`]);
   });
 });

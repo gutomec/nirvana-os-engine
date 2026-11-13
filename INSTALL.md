@@ -2,13 +2,13 @@
 
 The engine is free and installs on macOS, Windows (PowerShell), Windows with WSL (Ubuntu) and Linux. Once it is installed you do not drive it by hand: you talk to your AI agent (Claude Code, Codex, Antigravity, Pi…) and the agent runs Nirvana-OS. The commands on this page are for the install itself, and for anyone who wants them.
 
-This file describes **0.15.0**, the current stable release, which the plain one-liner installs. The illustrated guide, in Portuguese, with a tab per system, is at [gutomec.github.io/nirvana-os-engine/install.html](https://gutomec.github.io/nirvana-os-engine/install.html), and betas have [their own page](https://gutomec.github.io/nirvana-os-engine/beta.html).
+This file describes **0.15.1**, the current stable release, which the plain one-liner installs. The illustrated guide, in Portuguese, with a tab per system, is at [gutomec.github.io/nirvana-os-engine/install.html](https://gutomec.github.io/nirvana-os-engine/install.html), and betas have [their own page](https://gutomec.github.io/nirvana-os-engine/beta.html).
 
 There are two release channels:
 
 | Channel | Version | Who it is for |
 |---|---|---|
-| Stable | `v0.15.0` | everyone; the plain one-liner installs it |
+| Stable | `v0.15.1` | everyone; the plain one-liner installs it |
 | Beta | none right now | testers; see [Install a beta](#install-a-beta) |
 
 ## Before you start
@@ -26,7 +26,7 @@ You also need at least one agent CLI: [Claude Code](https://claude.com/claude-co
 
 ## Install
 
-The plain one-liner installs the latest stable release (0.15.0).
+The plain one-liner installs the latest stable release (0.15.1).
 
 macOS, Linux and WSL:
 
@@ -42,7 +42,7 @@ irm https://gutomec.github.io/nirvana-os-engine/install.ps1 | iex
 
 The script finds Bun or installs it, downloads the engine tarball, and runs the engine's installer with that Bun. Running it again is safe; over an earlier engine it keeps your content, packs and settings.
 
-**Close the terminal and open a new one** when it finishes, so `~/.local/bin` is on your PATH. Then check the version, which prints `0.15.0`:
+**Close the terminal and open a new one** when it finishes, so `~/.local/bin` is on your PATH. Then check the version, which prints `0.15.1`:
 
 ```bash
 nrv --version
