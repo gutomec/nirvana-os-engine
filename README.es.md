@@ -51,7 +51,7 @@ El motor viene sin contenido. Creas empresas, squads y clones pidiéndoselo a tu
 
 ## Instalación
 
-Este README describe la 0.15.0, la release **estable** actual, que instala el comando de una línea del principio de esta página. No hace falta Node. Si falta [Bun](https://bun.sh), cualquiera de los dos instaladores lo pone en tu carpeta de usuario (`~/.bun`) sin sudo ni permisos de administrador y sigue adelante.
+Este README describe la 0.15.1, la release **estable** actual, que instala el comando de una línea del principio de esta página. No hace falta Node. Si falta [Bun](https://bun.sh), cualquiera de los dos instaladores lo pone en tu carpeta de usuario (`~/.bun`) sin sudo ni permisos de administrador y sigue adelante.
 
 Antes de ejecutarlo:
 
@@ -68,7 +68,7 @@ Lo que cambia en tu máquina:
 - hooks de auditoría en Claude Code, Antigravity y Codex;
 - las carpetas de contenido vacías `~/squads`, `~/businesses` y `~/businesses/_library/dna`.
 
-Volver a ejecutarlo es seguro. **Cierra la terminal y abre una nueva** para que `nrv` esté en tu PATH, y compruébalo con `nrv --version`; muestra `0.15.0`. Después pídele a tu agente: *"Comprueba que Nirvana-OS está bien instalado."* Ejecuta `nrv doctor`. La salida 1 significa solo avisos; la salida 2 lista lo que falló.
+Volver a ejecutarlo es seguro. **Cierra la terminal y abre una nueva** para que `nrv` esté en tu PATH, y compruébalo con `nrv --version`; muestra `0.15.1`. Después pídele a tu agente: *"Comprueba que Nirvana-OS está bien instalado."* Ejecuta `nrv doctor`. La salida 1 significa solo avisos; la salida 2 lista lo que falló.
 
 Con `curl | bash` el instalador no hace preguntas. Para elegir un perfil de rendimiento al instalar, pásalo así: cambia el `bash` final por `bash -s -- --profile=balanced`. También puedes fijarlo más tarde pidiéndoselo a tu agente (ver [Configuración](#configuración)).
 
@@ -150,7 +150,7 @@ Los packs son empresas, squads y mind-clones curados que se venden en [squads.sh
 
 Pídele a tu agente que actualice Nirvana-OS, o ejecuta `nrv update`. Primero hace una copia de `~/.nirvana/skills` y conserva tu configuración y tu contenido. `nrv update --check` dice qué release instalaría sin cambiar nada.
 
-Una actualización nunca lleva el motor a una release más antigua. Un motor estable solo pasa a una estable más nueva, así que un motor 0.14 pasa a la 0.15.0. Una beta pasa a la release mayor más nueva, beta o estable, así que una beta se convierte en la estable que sale después de ella. Después de actualizar el motor, `nrv update` también revisa cada pack instalado que tiene licencia y avisa cuando hay una versión nueva.
+Una actualización nunca lleva el motor a una release más antigua. Un motor estable solo pasa a una estable más nueva, así que un motor 0.14 pasa a la 0.15.1. Una beta pasa a la release mayor más nueva, beta o estable, así que una beta se convierte en la estable que sale después de ella. Después de actualizar el motor, `nrv update` también revisa cada pack instalado que tiene licencia y avisa cuando hay una versión nueva.
 
 ## Betas
 
@@ -247,4 +247,4 @@ Autor: **Luiz Gustavo Vieira Rodrigues (gutomec / Prospecteezy)**. Sin coautores
 
 Licencia: la Nirvana-OS Sustainable Use License (SUL) v1.0. El código fuente está publicado y es abiertamente legible, y el motor es gratis para usar. Es source-available, no una licencia open-source aprobada por la OSI, y ciertos usos comerciales requieren una licencia comercial aparte. Lee [LICENSE](./LICENSE) antes de confiar en cualquier resumen, incluido este.
 
-Estado: beta (0.x, actualmente 0.15.0). El motor funciona hoy y se instala en minutos. Espera que la superficie siga moviéndose hasta la 1.0.
+Estado: beta (0.x, actualmente 0.15.1). El motor funciona hoy y se instala en minutos. Espera que la superficie siga moviéndose hasta la 1.0.

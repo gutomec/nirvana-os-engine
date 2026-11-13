@@ -6,11 +6,11 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que os instaladores de uma linha e os setups de pack consomem.
 
-## Não lançado
+## 0.15.1 — 2026-11-13
 
 ### O fim de um despacho chega ao usuário
 
-Previsto para a 0.15.1. Um despacho terminou às 13:00 e o usuário só soube onze horas depois: o agente orquestrador abriu um diálogo de pergunta bloqueante depois de lançar a execução, e o runtime segurou o aviso de término até o diálogo ser respondido. Quando uma execução voltava, o agente informava uma URL de localhost e nenhum caminho de arquivo.
+Um despacho terminou às 13:00 e o usuário só soube onze horas depois: o agente orquestrador abriu um diálogo de pergunta bloqueante depois de lançar a execução, e o runtime segurou o aviso de término até o diálogo ser respondido. Quando uma execução voltava, o agente informava uma URL de localhost e nenhum caminho de arquivo.
 
 - Entrega final: `nrv dispatch` e `nrv revise` terminam listando cada arquivo entregue pelo caminho absoluto completo (no máximo 25, depois uma contagem e a pasta), o caminho do `_SUMMARY.md` e o que o orquestrador informa ao usuário. Impresso para entregue, entregue com ressalvas e retido (caso em que diz que os arquivos estão no disco e não foram entregues). `skills/harness/lib/return-handoff.ts`.
 - `_SUMMARY.md`: todo worker (empresa, squad, agent-x) nomeia cada arquivo pelo caminho completo e, quando a entrega precisa ser executada, instalada, publicada ou implantada para ser usada, escreve uma seção `## Going live` com os passos que o usuário executa e o que o worker precisaria do usuário para fazer isso por ele.

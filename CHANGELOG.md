@@ -6,11 +6,11 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that the
 one-line installers and pack setups consume.
 
-## Unreleased
+## 0.15.1 — 2026-11-13
 
 ### The end of a dispatch reaches the user
 
-Planned for 0.15.1. A dispatch ended at 13:00 and its user learned of it eleven hours later: the orchestrating agent had opened a blocking question dialog after launching the run, and its runtime held the end-of-run notice until the dialog was answered. When a run did come back, the agent reported a localhost URL and no file paths.
+A dispatch ended at 13:00 and its user learned of it eleven hours later: the orchestrating agent had opened a blocking question dialog after launching the run, and its runtime held the end-of-run notice until the dialog was answered. When a run did come back, the agent reported a localhost URL and no file paths.
 
 - Closing handoff: `nrv dispatch` and `nrv revise` end by listing every delivered file by its full absolute path (25 at most, then a count and the folder), the path of `_SUMMARY.md`, and what the orchestrator reports to the user. Printed for delivered, delivered with reservations and withheld (where it says the files are on disk and not delivered). `skills/harness/lib/return-handoff.ts`.
 - `_SUMMARY.md`: every worker (business, squad, agent-x) names each file by its full path and, when the delivery must be run, installed, published or deployed to be used, writes a `## Going live` section with the steps the user takes and what the worker would need from the user to do it for them.
