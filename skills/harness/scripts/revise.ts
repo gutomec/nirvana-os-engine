@@ -68,6 +68,8 @@ import { scopeGuard } from "../../_shared/lib/scope-guard.ts";
 import { stamp } from "../../_shared/lib/audit-provenance.ts";
 import { briefWorkDirs, workElsewhereRule } from "../../_shared/lib/brief-work-dirs.ts";
 import { briefWithRequest } from "../lib/work-brief.ts";
+import { returnHandoffLines } from "../lib/return-handoff.ts";
+import { notifyFinish } from "../lib/finish-notice.ts";
 
 const ANSI = { reset: "\x1b[0m", bold: "\x1b[1m", dim: "\x1b[2m", green: "\x1b[32m", red: "\x1b[31m", yellow: "\x1b[33m", cyan: "\x1b[36m", lime: "\x1b[38;5;154m" };
 const noColor = process.argv.includes("--no-color") || !process.stdout.isTTY;
@@ -360,6 +362,7 @@ onLedgerStall((stall, result, opts) => {
   try { row = runLedger.getRun(ledgerRun?.handle ?? runLedger.openLedger(opts.ledger?.dbPath), opts.ledger!.runId); } catch { row = null; }
   if (row) reportStall(row, stall as never, { audit: (event, payload) => appendAudit({ event, ...payload, revision: true }, projectRoot) });
   else console.error(c("red", `■ STALLED (exit ${STALLED_EXIT}): ${String(result.error ?? "the worker stalled")}`));
+  notifyFinish(projectId!, "stalled", oroot);
   process.exit(STALLED_EXIT);
 });
 
@@ -574,6 +577,9 @@ function printOutcome(result: DeliveryResult): void {
   }
   console.log(c("dim", `  Deliverables: ${oroot}`));
   if (result.zipPath) console.log(c("dim", `  Zip:          ${result.zipPath}`));
+  const finalState = result.stopped ? "stopped" : result.quotaWait ? "quota_wait" : result.state;
+  for (const line of returnHandoffLines(oroot, finalState, projectId)) console.log(line);
+  notifyFinish(projectId!, finalState.replace(/_/g, " "), oroot);
   console.log("");
 }
 
@@ -586,7 +592,7 @@ if (!res.ok) {
   // abandoning it — same policy the dispatch path applies (deliverAfterRuntimeError).
   // No artifacts -> the historical exit 1 stands.
   const outcome = deliverAfterRuntimeError({ ...deliveryArgs, runtimeError, errorContext: { revision: true } });
-  if (!outcome.result) process.exit(1);
+  if (!outcome.result) { notifyFinish(projectId!, "failed", oroot); process.exit(1); }
   printOutcome(outcome.result!);
   process.exit(outcome.exitCode);
 }

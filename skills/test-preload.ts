@@ -85,3 +85,10 @@ if (process.env.TYPESAFE_ENDPOINT === undefined) process.env.TYPESAFE_ENDPOINT =
 // test may spend them. A test that exercises a provider passes it explicitly
 // with a fake fetch.
 if (!process.env.NIRVANA_DECISION_PROVIDER) process.env.NIRVANA_DECISION_PROVIDER = "off";
+
+// A dispatch or a revision a test runs to its end would otherwise put a
+// desktop notification on the developer's screen. A test that exercises the
+// notice builds its command and never spawns it. The dispatches a test spawns
+// with the NIRVANA_ variables stripped are covered by NODE_ENV=test, which
+// `bun test` sets and finish-notice.ts reads.
+if (process.env.NIRVANA_NOTIFY_ON_FINISH === undefined) process.env.NIRVANA_NOTIFY_ON_FINISH = "off";
