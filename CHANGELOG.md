@@ -6,6 +6,16 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that the
 one-line installers and pack setups consume.
 
+## Unreleased
+
+### An install name is a folder name, the log tail stays in the day, and a declaration cannot buy the engine
+
+Three inputs were joined onto a path or an allowlist as trusted text.
+
+- `nrv install` refuses a manifest whose `name` is not a plain slug (letters, digits, `.`, `_`, `-`), and a pack item whose `rename_to` is not one. `name: "../../squads/evil"` used to copy the whole tree outside the library and record that path in `~/.nirvana-installed.jsonl`, where `nrv uninstall` reads it back. The refusal is a normal `ok: false` answer, before anything is copied. `skills/_shared/lib/installer.ts`.
+- Glance's log tail (`/api/logs`, `/api/logs/stream`) reads a day only when `date` is `YYYY-MM-DD`, so `?date=../../` can no longer name a directory outside the log root; and the `limit` bounds what is parsed, not only what is returned, by walking the newest files backwards. `skills/harness/lib/glance/data-loader.ts`.
+- In the declared child environment, a squad's `dependencies.yaml` no longer reaches the engine's own paths, state database, log roots or audit key, and a runtime credential reaches a child only when that child is the runtime using it. `skills/_shared/lib/child-env.ts`.
+
 ## 0.15.1 — 2026-11-13
 
 ### The end of a dispatch reaches the user

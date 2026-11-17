@@ -22,8 +22,11 @@ describe("child-env allowlist", () => {
   test("inherit passes everything; declared keeps the base, the engine scope, the runtime's credentials and the declared names", () => {
     expect(childEnvFor(env, { mode: "inherit" })).toEqual(env);
     const c = childEnvFor(env, { mode: "declared", runtime: "claude-code", declared: ["ELEVENLABS_API_KEY"] });
-    for (const k of ["PATH", "HOME", "LANG", "TERM", "NIRVANA_SCOPE", "HARNESS_LOGS_DIR", "ANTHROPIC_API_KEY", "ELEVENLABS_API_KEY"]) expect(c[k]).toBe((env as any)[k]);
-    for (const k of ["OPENAI_API_KEY", "DATABASE_URL", "STRIPE_SECRET_KEY"]) expect(c[k]).toBeUndefined();
+    // HARNESS_LOGS_DIR is the engine's own log root, not a child's to see
+    // (2026-11-17: a squad could also declare it); everything else here is
+    // what the child legitimately receives.
+    for (const k of ["PATH", "HOME", "LANG", "TERM", "NIRVANA_SCOPE", "ANTHROPIC_API_KEY", "ELEVENLABS_API_KEY"]) expect(c[k]).toBe((env as any)[k]);
+    for (const k of ["OPENAI_API_KEY", "DATABASE_URL", "STRIPE_SECRET_KEY", "HARNESS_LOGS_DIR"]) expect(c[k]).toBeUndefined();
     expect(c.NIRVANA_CHILD_ENV).toBe("declared");
   });
 
