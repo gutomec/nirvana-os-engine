@@ -12,10 +12,28 @@
 //
 // `inherit` is the historical behaviour and the local default; `nrv serve`
 // runs `declared` unless told otherwise (NIRVANA_SERVE_CHILD_ENV=inherit).
+//
+// Two things a declaration cannot buy (2026-11-17). The engine's private
+// plumbing (`ENGINE_PRIVATE_ENV_NAMES`) never leaves the engine, and a runtime
+// credential reaches a child only when that child IS that runtime: a squad
+// declaring `ANTHROPIC_API_KEY` while dispatch runs on codex used to receive
+// the operator's Anthropic key.
 import * as fs from "node:fs";
 import * as path from "node:path";
 
 export type ChildEnvMode = "inherit" | "declared";
+
+/** Engine plumbing a declared child never receives, whatever a squad's
+ *  `dependencies.yaml` names: the paths the engine writes to, the state
+ *  database, the log roots, and the audit key (the HMAC that makes an event
+ *  read back as engine-provenance). A squad declaring one of these used to
+ *  receive it, because the whole `NIRVANA_*`/`HARNESS_*` scope was allowed
+ *  unconditionally. */
+export const ENGINE_PRIVATE_ENV_NAMES = [
+  "NIRVANA_AUDIT_KEY", "NIRVANA_STATE_DB", "NIRVANA_STATE_DIR", "NIRVANA_HOME",
+  "NIRVANA_SKILLS_DIR", "NIRVANA_PROJECT_ROOT", "HARNESS_LOGS_DIR", "MAESTRO_LOGS_DIR",
+  "NIRVANA_TEST_LOGS_HOME", "NIRVANA_OUTPUTS_DIR",
+];
 
 /** Names every child needs regardless of what it does. */
 export const BASE_ENV_NAMES = [
@@ -79,16 +97,25 @@ export function declaredEnvNames(opts: { registryPath?: string; env?: NodeJS.Pro
  *  `declared` returns the allowlist described at the top of this file. */
 export function childEnvFor(env: NodeJS.ProcessEnv, opts: { mode: ChildEnvMode; runtime?: string | null; extra?: string[]; declared?: string[] }): NodeJS.ProcessEnv {
   if (opts.mode !== "declared") return { ...env };
-  const allow = new Set<string>(BASE_ENV_NAMES);
   const runtimes = opts.runtime ? [opts.runtime] : Object.keys(RUNTIME_AUTH_ENV);
-  for (const r of runtimes) for (const n of RUNTIME_AUTH_ENV[r] ?? []) allow.add(n);
+  // Credentials of the runtime(s) being spawned: reachable by that runtime and
+  // by nobody else in the child.
+  const runtimeOwned = new Set<string>();
+  for (const r of runtimes) for (const n of RUNTIME_AUTH_ENV[r] ?? []) runtimeOwned.add(n);
+  const allow = new Set<string>(BASE_ENV_NAMES);
   for (const n of opts.declared ?? declaredEnvNames({ env })) allow.add(n);
   for (const n of opts.extra ?? []) allow.add(n);
   for (const n of (env.NIRVANA_CHILD_ENV_EXTRA ?? "").split(",").map((s) => s.trim()).filter(Boolean)) allow.add(n);
   const out: NodeJS.ProcessEnv = {};
   for (const [k, v] of Object.entries(env)) {
     if (v === undefined) continue;
-    if (k.startsWith("NIRVANA_") || k.startsWith("HARNESS_") || allow.has(k)) out[k] = v;
+    // Private wins over declaration: a variable a squad names in its manifest
+    // does not become the engine's.
+    if (ENGINE_PRIVATE_ENV_NAMES.includes(k)) continue;
+    // The engine's own scope travels; a runtime credential only for the runtime
+    // being spawned (a declaration does not buy one).
+    if (k.startsWith("NIRVANA_") || k.startsWith("HARNESS_")) { out[k] = v; continue; }
+    if (runtimeOwned.has(k) || allow.has(k)) out[k] = v;
   }
   // The child filters its own children the same way.
   out.NIRVANA_CHILD_ENV = "declared";

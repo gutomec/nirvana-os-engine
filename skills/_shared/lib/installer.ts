@@ -29,6 +29,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { InstallManifest, type AssetKind, type InstallEvent, type InstalledItem } from "./install-manifest.ts";
 import { resolveScope } from "./scope.ts";
 import { verifyHook } from "./verify/index.ts";
+import { isSafeId } from "./run-id.ts";
 
 // Lazy path resolution — picks up env changes (useful for tests + project scope).
 function nirvanaHome(): string { return process.env.NIRVANA_HOME ?? homedir(); }
@@ -260,6 +261,7 @@ export function readAssetMeta(dir: string, kind: AssetKind): AssetMeta {
     version = version ?? (mVersion?.[1]?.trim().replace(/^["']|["']$/g, ""));
   }
   if (!name) throw new Error(`${manifestFile} missing required 'name'`);
+  if (!isSafeId(name)) throw new Error(`${manifestFile} 'name' must be a plain slug (letters, digits, '.', '_', '-'), never a path: ${JSON.stringify(name)}`);
   return {
     name,
     version: version ?? "0.0.0",
@@ -478,7 +480,15 @@ export async function install(opts: InstallOptions): Promise<InstallResult> {
       return await installPack(resolved.workdir, opts, manifest, installId, resolved.origin_uri);
     }
 
-    const meta = readAssetMeta(resolved.workdir, kind);
+    // A name that is a path is an input error, answered the way every other
+    // input error here is (ok: false, one message), never a thrown stack.
+    let meta: AssetMeta;
+    try {
+      meta = readAssetMeta(resolved.workdir, kind);
+    } catch (e) {
+      errors.push((e as Error).message);
+      return failed();
+    }
     if (!opts.skipValidate) {
       const v = validateLight(resolved.workdir, kind);
       if (!v.ok) {
@@ -738,6 +748,9 @@ async function installPack(packDir: string, opts: InstallOptions, manifest: Inst
       try {
         const meta = readAssetMeta(srcDir, kind);
         const name = item.rename_to ?? meta.name;
+        // Same rule as the manifest name: a rename is a folder name. The pack
+        // is the second way into the library, so it gets the same gate.
+        if (!isSafeId(name)) throw new Error(`rename_to must be a plain slug (letters, digits, '.', '_', '-'), never a path: ${JSON.stringify(name)}`);
         // Flat layout: the category becomes metadata, not a subdirectory.
         const cloneCategory = kind === "mind-clone" ? (inferMindCloneCategory(srcDir) ?? undefined) : undefined;
         const targetDir = targetPathFor(kind, name, { scope: opts.scope ?? "global", projectRoot: opts.projectRoot });
