@@ -35,9 +35,11 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { parseArgs, EXIT, log, paths } from "../lib/bun-helpers.ts";
 import { ProjectService } from "../../harness/lib/control-plane/project-service.ts";
-import { isInvalidProjectRoot } from "../lib/project-root.js";
+import { globalStoreDir, isInvalidProjectRoot } from "../lib/project-root.js";
 import { openclawAgentFor, openclawBindCommand } from "../lib/openclaw.ts";
-import { detectOrca, orcaHostActive, orcaRegisterProject, orcaSetWorkspace, resolveOrcaExecutable } from "../lib/orca.ts";
+import { detectOrca, orcaHostActive, orcaRegisterProject, orcaSetWorkspace, orcaStatus, resolveOrcaExecutable } from "../lib/orca.ts";
+import { ensureOrcaSetupScript, ensureOrcaWorkspace, orcaAutoSetup, orcaBotAt, BOT_TOPIC_FILE } from "../lib/orca-bots.ts";
+import { resolveSetting } from "../lib/settings.ts";
 
 const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR
   || (fs.existsSync(path.join(os.homedir(), ".nirvana", "skills")) ? path.join(os.homedir(), ".nirvana", "skills") : path.join(os.homedir(), ".claude", "skills"));
@@ -346,6 +348,16 @@ async function main() {
   }
 
   const target = path.resolve(positional[0]);
+  // An Orca bot's folder is not a project: Orca owns its AGENTS.md and CLAUDE.md
+  // ("edits to them are replaced"), and they are the bot. The bot already
+  // reaches Nirvana through its memory note, which the engine keeps.
+  const botHere = orcaBotAt(target);
+  if (botHere) {
+    orcaAutoSetup();
+    log.fail(`${target} is the home of the Orca bot '${botHere.name ?? botHere.slug}', not a project: nothing was written.`);
+    log.info(`The bot already uses Nirvana-OS (memory/${BOT_TOPIC_FILE} in its folder). Dispatch from here as it is: nrv dispatch --auto --exec "<brief>"`);
+    process.exit(EXIT.INVALID_ARGS);
+  }
   const linkOnly = !!flags.link;
   const useCopy = !!flags.copy;
   // Skills materialization is opt-in. By default we do NOT create
@@ -700,23 +712,33 @@ async function main() {
       log.info(`Hermes: nrv-hermes from this directory (or hermes chat --in ${target}) — AGENTS.md is injected from cwd and the audit hooks already log here.`);
     }
     // Orca is a host: a project it knows is a workspace with a card that the
-    // ledger keeps current. Inside an Orca terminal the new project is
-    // registered here (that is what opening it in Orca means); outside, the
-    // one command is printed and nothing is called.
+    // ledger keeps current. When Orca is on this machine the engine does the
+    // whole setup itself: the project carries a setup script, so every worktree
+    // Orca creates for it starts as a Nirvana project, and the project is
+    // registered as a workspace whenever the app can answer. `host.orca: off`
+    // turns all of it off. No command is left for the user to type.
     const orcaExe = resolveOrcaExecutable();
     const orcaHere = detectOrca();
-    if (orcaHere && orcaHostActive()) {
+    let orcaOff = false;
+    try { orcaOff = resolveSetting("host.orca").value === "off"; } catch { /* default: not off */ }
+    if (!orcaOff && (orcaHere || binOnPath(orcaExe))) {
       const resolvedTarget = fs.realpathSync(target);
-      if (orcaHere.worktreeId && orcaHere.worktreeId.split("::").pop() === resolvedTarget) {
+      if (ensureOrcaSetupScript(resolvedTarget) === "written") log.ok("Orca: wrote orca.yaml — every worktree Orca creates for this project starts as a Nirvana project.");
+      if (orcaHere && orcaHostActive() && orcaHere.worktreeId && orcaHere.worktreeId.split("::").pop() === resolvedTarget) {
         orcaSetWorkspace({ comment: "nirvana project · ready", status: "todo" });
         log.ok("Orca: this directory is the current Orca workspace; its card now follows the ledger.");
       } else {
-        const reg = orcaRegisterProject(resolvedTarget);
-        if (reg.ok) log.ok(`Orca: registered as workspace '${reg.displayName ?? path.basename(target)}' — every run shows on its card.`);
-        else log.info(`Orca: could not register this directory (${reg.reason}); register it with: ${orcaExe} repo add --path ${target}`);
+        let displayName: string | null = null;
+        const outcome = ensureOrcaWorkspace(resolvedTarget, {
+          running: () => Boolean(orcaHere) || orcaStatus(3_000).running,
+          register: (dir) => { const reg = orcaRegisterProject(dir); displayName = reg.displayName; return reg; },
+          storeDir: globalStoreDir(),
+        });
+        if (outcome === "registered") log.ok(`Orca: registered as workspace '${displayName ?? path.basename(target)}' — every run shows on its card.`);
+        else if (outcome !== "known") log.info("Orca: the app did not answer, so the workspace was not registered yet; the first dispatch from this project with Orca open registers it.");
       }
-    } else if (binOnPath(orcaExe)) {
-      log.info(`Orca: ${orcaExe} repo add --path ${target} makes this project an Orca workspace; inside Orca every run shows on its card and headless dispatches run as worker terminals.`);
+      const prepared = orcaAutoSetup().bots.filter((b) => b.outcome === "written");
+      if (prepared.length) log.ok(`Orca: ${prepared.length} bot(s) now know how to use Nirvana-OS (${prepared.map((b) => b.bot.name ?? b.bot.slug).join(", ")}).`);
     }
   } catch { /* hints are best-effort */ }
   process.exit(EXIT.OK);

@@ -92,3 +92,11 @@ if (!process.env.NIRVANA_DECISION_PROVIDER) process.env.NIRVANA_DECISION_PROVIDE
 // with the NIRVANA_ variables stripped are covered by NODE_ENV=test, which
 // `bun test` sets and finish-notice.ts reads.
 if (process.env.NIRVANA_NOTIFY_ON_FINISH === undefined) process.env.NIRVANA_NOTIFY_ON_FINISH = "off";
+
+// And Orca's bots. `nrv dispatch`, `nrv init`, `nrv doctor` and `nrv setup`
+// prepare every bot under ~/.orca/bots on their own, so a test that runs any of
+// them wrote the engine's note into the owner's real bots. A test that
+// exercises the bots names its own home or sets its own value.
+if (process.env.NIRVANA_ORCA_BOTS_DIR === undefined) {
+  process.env.NIRVANA_ORCA_BOTS_DIR = path.join(process.env.HARNESS_LOGS_DIR!, "orca-bots");
+}

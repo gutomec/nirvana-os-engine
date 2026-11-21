@@ -6,7 +6,19 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que os instaladores de uma linha e os setups de pack consomem.
 
-## Não lançado
+## 0.15.2 — 2026-11-20
+
+### Orca: bots e projetos se configuram sozinhos
+
+O engine já rodava dentro do Orca como host. O que ficava para o usuário era a configuração: um comando `orca repo add` impresso depois do `nrv init`, nada para os worktrees e nada para os bots do Orca, que chegaram depois do Orca 1.4.200. A configuração agora acontece sozinha, nos comandos que já rodam. `host.orca: off` desliga a parte dos projetos.
+
+- Bots: `nrv setup` (instalação e atualização), `nrv init`, `nrv dispatch` e `nrv doctor` preparam todo bot em `~/.orca/bots`. O Orca reescreve o `AGENTS.md`, o `CLAUDE.md` e o `bot.json` do bot, e o `SOUL.md` é do dono, então o engine escreve onde um fato deve ficar: `memory/nirvana-os.md` e uma linha datada no `MEMORY.md`. A nota manda entregáveis concretos para `nrv dispatch --auto --exec`, pede o brief em inglês com o idioma do entregável dito dentro dele e pede os caminhos completos na resposta. O dono que remove a linha desligou a nota; ela não volta.
+- `nrv init` na pasta de um bot é recusado: ele escreveria os arquivos que pertencem ao Orca.
+- Projetos: `nrv init` grava o `orca.yaml` (`scripts.setup: nrv init . --adopt`) quando o projeto não tem um, de modo que todo worktree criado pelo Orca já nasce como projeto Nirvana, e registra o projeto como workspace quando o app responde, de qualquer terminal, uma vez por máquina. Nenhum comando é impresso.
+- Um `nrv dispatch` de nível superior a partir de um workspace do Orca que ainda não é projeto o adota (`.nirvana/project.yaml`, nada além disso) e grava o mesmo `orca.yaml`.
+- `nrv doctor`: `orca: bots` lista cada bot, seu agente e se ele usa o Nirvana-OS, e prepara os que estão sem a nota.
+- Testes: `NIRVANA_ORCA_BOTS_DIR` muda a raiz dos bots e o preload de testes a define, então uma execução de testes não escreve nos bots do dono.
+- Fora do escopo: um modo restrito para pedidos que o bot recebe de alguém que não é o dono (nada na execução do bot diz quem pediu), o script de setup medido num worktree real e a raiz dos bots no Windows.
 
 ### O Windows volta a iniciar um CLI de agente instalado pelo npm
 

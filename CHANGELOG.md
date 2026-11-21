@@ -6,7 +6,19 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that the
 one-line installers and pack setups consume.
 
-## Unreleased
+## 0.15.2 — 2026-11-20
+
+### Orca: bots and projects set themselves up
+
+The engine already ran inside Orca as a host. What it left to the user was setup: a printed `orca repo add` command after `nrv init`, nothing for worktrees, and nothing at all for Orca's bots, which arrived after Orca 1.4.200. Setup now happens on its own, in the commands that already run. `host.orca: off` turns the project half off.
+
+- Bots: `nrv setup` (install and update), `nrv init`, `nrv dispatch` and `nrv doctor` prepare every bot under `~/.orca/bots`. Orca rewrites a bot's `AGENTS.md`, `CLAUDE.md` and `bot.json`, and `SOUL.md` belongs to the owner, so the engine writes where a fact belongs: `memory/nirvana-os.md` and one dated line in `MEMORY.md`. The note sends concrete deliverables to `nrv dispatch --auto --exec`, asks for the brief in English with the deliverable's language stated inside it, and asks for full paths in the reply. An owner who removes the line has turned it off; it is not put back.
+- `nrv init` on a bot's folder is refused: it would write the files Orca owns.
+- Projects: `nrv init` writes `orca.yaml` (`scripts.setup: nrv init . --adopt`) when the project has none, so every worktree Orca creates starts as a Nirvana project, and registers the project as a workspace when the app answers, from any terminal, once per machine. No command is printed.
+- A top-level `nrv dispatch` from an Orca workspace that is not a project yet adopts it (`.nirvana/project.yaml`, nothing else) and writes the same `orca.yaml`.
+- `nrv doctor`: `orca: bots` lists each bot, its agent and whether it uses Nirvana-OS, and prepares the ones that lack the note.
+- Tests: `NIRVANA_ORCA_BOTS_DIR` moves the bots root and the test preload sets it, so a test run cannot write into the owner's bots.
+- Not covered: a restricted mode for requests a bot takes from someone other than its owner (nothing in a bot's run says who asked), the setup script measured in a real worktree, and the bots root on Windows.
 
 ### Windows starts an agent CLI installed through npm again
 

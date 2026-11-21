@@ -37,7 +37,7 @@ function childEnv(extra: Record<string, string>, withFake: boolean): Record<stri
     if (v === undefined || ORCA_KEYS.includes(k)) continue;
     env[k] = v;
   }
-  Object.assign(env, fakeHomeEnv(home, { NIRVANA_HOME: home, NIRVANA_SKILLS_DIR: SKILLS, NIRVANA_SCOPE_QUIET: "1" }) as Record<string, string>);
+  Object.assign(env, fakeHomeEnv(home, { NIRVANA_HOME: home, NIRVANA_SKILLS_DIR: SKILLS, NIRVANA_SCOPE_QUIET: "1", NIRVANA_ORCA_BOTS_DIR: path.join(home, ".orca", "bots") }) as Record<string, string>);
   // Without the fake, PATH keeps only the runtime and the system: a real
   // Orca installed on this machine must not leak into the "absent" case.
   const system = process.platform === "win32" ? [process.env.SYSTEMROOT ? path.join(process.env.SYSTEMROOT, "System32") : "C:\\Windows\\System32"] : ["/usr/bin", "/bin"];
@@ -135,12 +135,65 @@ describe("nrv init", () => {
     expect(seen).toContainEqual(["worktree", "set", "--worktree", `id:repo-1::${fs.realpathSync(dir)}`, "--comment", "nirvana project · ready", "--workspace-status", "todo", "--json"]);
   }, 150_000);
 
-  test("outside Orca, with the CLI installed, the one command is printed and nothing is called", () => {
+  test("outside Orca, with the app answering, the project is registered and carries the setup script: no command is printed", () => {
     fs.rmSync(calls, { force: true });
     const dir = path.join(root, "proj-outside");
     const r = runInit(dir, {});
     expect(r.status).toBe(0);
-    expect(r.stdout).toMatch(/Orca: orca(-ide)? repo add --path /);
+    expect(r.stdout).toContain("Orca: registered as workspace 'fresh'");
+    expect(r.stdout).not.toMatch(/repo add --path/);
+    expect(readCalls().find((c) => c[0] === "repo" && c[1] === "add")!.slice(0, 4)).toEqual(["repo", "add", "--path", fs.realpathSync(dir)]);
+    expect(fs.readFileSync(path.join(dir, "orca.yaml"), "utf8")).toContain("nrv init . --adopt");
+  }, 150_000);
+
+  test("a second init of the same project does not register it again, and an orca.yaml already there is left as it is", () => {
+    const dir = path.join(root, "proj-outside");
+    fs.writeFileSync(path.join(dir, "orca.yaml"), "scripts:\n  setup: |\n    echo mine\n");
+    fs.rmSync(calls, { force: true });
+    const r = runInit(dir, {});
+    expect(r.status).toBe(0);
+    expect(readCalls().some((c) => c[0] === "repo")).toBe(false);
+    expect(fs.readFileSync(path.join(dir, "orca.yaml"), "utf8")).toContain("echo mine");
+  }, 150_000);
+
+  test("host.orca off: nothing is written for Orca and nothing is called", () => {
+    fs.rmSync(calls, { force: true });
+    const dir = path.join(root, "proj-off");
+    const r = runInit(dir, { NIRVANA_ORCA_HOST: "off" });
+    expect(r.status).toBe(0);
+    expect(fs.existsSync(path.join(dir, "orca.yaml"))).toBe(false);
     expect(readCalls()).toEqual([]);
   }, 150_000);
+
+  test("an Orca bot's folder is refused, its files untouched, and the bot is left with its Nirvana note", () => {
+    const bot = path.join(home, ".orca", "bots", "helper");
+    fs.mkdirSync(path.join(bot, "memory"), { recursive: true });
+    fs.writeFileSync(path.join(bot, "bot.json"), JSON.stringify({ id: "b1", name: "Helper", agent: "claude" }));
+    fs.writeFileSync(path.join(bot, "AGENTS.md"), "# Helper\n\nOrca writes this file.\n");
+    fs.writeFileSync(path.join(bot, "MEMORY.md"), "# Memory\n\nOne line per fact, newest first. Longer notes go in memory/<topic>.md.\n");
+    const r = spawnSync(process.execPath, [INIT, "."], { cwd: bot, encoding: "utf8", env: childEnv({}, true), timeout: 120_000 });
+    expect(r.status).not.toBe(0);
+    expect(`${r.stdout}${r.stderr}`).toContain("home of the Orca bot 'Helper'");
+    expect(fs.readFileSync(path.join(bot, "AGENTS.md"), "utf8")).toBe("# Helper\n\nOrca writes this file.\n");
+    expect(fs.existsSync(path.join(bot, ".nirvana"))).toBe(false);
+    expect(fs.existsSync(path.join(bot, "CLAUDE.md"))).toBe(false);
+    expect(fs.readFileSync(path.join(bot, "memory", "nirvana-os.md"), "utf8")).toContain("nrv dispatch --auto --exec");
+    expect(fs.readFileSync(path.join(bot, "MEMORY.md"), "utf8")).toContain("memory/nirvana-os.md");
+  }, 150_000);
+});
+
+describe("nrv doctor and the bots", () => {
+  test("a bot on the machine is listed, and one without the note is prepared by the doctor itself", () => {
+    const bot = path.join(home, ".orca", "bots", "writer");
+    fs.mkdirSync(bot, { recursive: true });
+    fs.writeFileSync(path.join(bot, "bot.json"), JSON.stringify({ id: "b2", name: "Writer", agent: "codex" }));
+    fs.writeFileSync(path.join(bot, "MEMORY.md"), "# Memory\n\n- 2026-01-01: likes short answers.\n");
+    const line = runDoctor({}, true).find((c) => c.name === "orca: bots");
+    expect(line).toBeTruthy();
+    expect(line!.note).toContain("Writer (codex): prepared now");
+    const memory = fs.readFileSync(path.join(bot, "MEMORY.md"), "utf8").split("\n");
+    // Newest first: the engine's line sits above the fact that was already there.
+    expect(memory.findIndex((l) => l.includes("memory/nirvana-os.md"))).toBeLessThan(memory.findIndex((l) => l.includes("likes short answers")));
+    expect(runDoctor({}, true).find((c) => c.name === "orca: bots")!.note).toContain("Writer (codex): uses Nirvana-OS");
+  }, 240_000);
 });

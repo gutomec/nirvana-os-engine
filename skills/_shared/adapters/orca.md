@@ -39,8 +39,8 @@ Being inside an Orca terminal no longer moves workers into Orca tabs by itself. 
 | Seam | Outside Orca | Inside Orca |
 |---|---|---|
 | Audit events (`nrv audit emit`, hooks, engine) | unchanged | carry `orca: { worktree_id, terminal_handle, pane_key, app_version }` |
-| `nrv doctor` | no line when Orca is not installed; an informational line when it is | `orca: host` names the app version, the agents with Orca hooks, whether orchestration is advertised, and the enclosing workspace |
-| `nrv init` | prints the one `repo add` command when the CLI is on PATH | registers the project as a workspace (or claims the current one) and sets its card |
+| `nrv doctor` | no line when Orca is not installed; an informational line when it is | `orca: host` names the app version, the agents with Orca hooks, whether orchestration is advertised, and the enclosing workspace. On both sides `orca: bots` lists each bot with its agent and whether it uses Nirvana-OS, and prepares one that lacks the note (§7) |
+| `nrv init` | with the CLI on PATH: writes `orca.yaml` (§7) and, when the app answers, registers the project as a workspace, once per machine. Nothing is printed for the user to run | the same, and the current workspace's card is claimed instead of registering it again |
 | Ledger transitions (`openRun`, `markState`) | unchanged | the workspace card shows `nirvana · <kind>/<slug> · <state>` and moves between `in-progress`, `in-review`, `completed` |
 | Desktop notifications (`os-notify`) | unchanged | the same text lands on the card |
 | `nrv glance` | system browser | a tab in Orca's embedded browser, scoped to the workspace |
@@ -110,10 +110,41 @@ Hermes and OpenClaw are not Orca agents; they run as plain commands in an Orca t
 - **Orca's heartbeat field.** The silence budget reads `lastHeartbeatAt` (or `last_heartbeat_at`) from `worker-show`; on 2026-10-15 it stayed NULL for a hung worker. Its spelling on a live check-in is not yet confirmed against Orca; the file, hook and child-run signals do not depend on it.
 - **Attribution of plain children.** Orca's hooks attribute a `claude -p` that inherits the pane variables to that pane. The engine strips them; a script that spawns an agent by itself inside an Orca terminal does not get that courtesy.
 
-## 7. Measured
+## 7. Bots and projects: what the engine sets up on its own
+
+Nobody types a setup command for Orca. The seams that already run (`nrv setup` at install and update, `nrv init`, `nrv dispatch`, `nrv doctor`) leave the machine ready; `host.orca: off` turns the project half off. Code: `_shared/lib/orca-bots.ts`.
+
+**Bots.** A bot lives in `~/.orca/bots/<slug>/` with `AGENTS.md`, `CLAUDE.md` (`@AGENTS.md`), `SOUL.md`, `MEMORY.md`, `memory/` and `bot.json`, and runs on the owner's agent sign-in. Three facts decide where the engine may write:
+
+| File | Who owns it | What the engine does |
+|---|---|---|
+| `AGENTS.md`, `CLAUDE.md`, `bot.json` | Orca ("edits to them are replaced") | nothing |
+| `SOUL.md` | the owner ("change it only when your owner asks") | nothing |
+| `MEMORY.md`, `memory/<topic>.md` | the bot's memory, one line per fact | writes `memory/nirvana-os.md` and one dated line pointing to it |
+
+The note tells the bot to hand a concrete deliverable to `nrv dispatch --auto --exec "<brief>"`, to write the brief in English and state the deliverable's language inside it, to correct with `nrv revise`, to answer library questions with the `nrv list-*` commands and to report full paths. The topic file is the engine's and is rewritten when its marker (`<!-- nirvana-os:orca-bot:vN -->`) is older. The line in `MEMORY.md` is added once, with the topic file, and never again: an owner who takes it out has turned the note off. A `memory/nirvana-os.md` without the marker is somebody's own note and is left alone.
+
+A bot's run is not an Orca terminal (its audit events carry no `orca` block), so a bot is recognised by its folder. `nrv init` on a bot's folder is refused: the files it would write are the ones Orca owns.
+
+**Projects.** Orca has no "project created" hook; it has a per-project setup script that runs when a worktree is created.
+
+| Moment | What happens |
+|---|---|
+| `nrv init` with the Orca CLI on PATH | `orca.yaml` is written when the project has none (`scripts.setup: nrv init . --adopt`, the same line under bash and PowerShell); the project is registered as a workspace when the app answers |
+| Orca creates a worktree | its setup terminal runs `nrv init . --adopt`: `.nirvana/project.yaml` and nothing else, idempotent |
+| A top-level `nrv dispatch` from an Orca workspace that is not a project | the workspace is adopted (`.nirvana/project.yaml`) and gets the same `orca.yaml`, then the run proceeds in it |
+| A dispatch with the host active from a project Orca was never shown | registered as a workspace, once (`~/.nirvana/cache/orca-workspaces.json` remembers it per machine) |
+
+An `orca.yaml` already in the project is never edited. `NIRVANA_ORCA_BOTS_DIR` moves the bots root; the test preload sets it so a test run cannot reach the owner's bots.
+
+Not done, and why: a restricted mode for requests a bot takes from someone other than its owner. On 1.4.265 nothing in a bot's run says who asked, so the engine cannot tell the two apart.
+
+## 8. Measured
 
 On 2026-09-09, Orca 1.4.198, macOS: the transport sequence ran end to end from a shell outside Orca targeting a registered workspace (`run-create`, `task-create`, `terminal create` with `claude --dangerously-skip-permissions`, `wait tui-idle`, `dispatch --inject`, `check --run --wait`); the worker sent `worker_done` with `taskId`, `dispatchId`, `outcome: succeeded`, `filesModified` and `reportPath`, and the file the brief asked for existed eighteen seconds after injection. `worker-read` returned the provider transcript with `source: "transcript"`. Two headless `claude -p` children were spawned in Orca terminals: the one inheriting `ORCA_PANE_KEY` registered its pane as a `claude` agent; the one without it registered nothing. `run-create` from a shell outside any Orca terminal succeeded and bound the Run to a live agent terminal of the workspace, which is why the engine creates Runs only for its own dispatches and addresses every later call with `--run`.
 
-## 8. Sources
+On 2026-11-20, Orca 1.4.265, macOS: a bot created in the UI on Claude Code used Nirvana-OS with no instruction (the agent found the `nirvana` skill) and delivered through `nrv dispatch --auto --exec`; its hook events carried the bot folder as `cwd` and no `orca` block; its `AGENTS.md` carried the "edits to them are replaced" line quoted in §7. `nrv init . --adopt` was run twice in a row (written, then "already a Nirvana project"). A scaffold-only dispatch inside a simulated workspace (fake `orca`, `ORCA_WORKTREE_ID`) adopted it, wrote `orca.yaml` and registered once. Not measured: the setup script firing in a real worktree, the bots root on Windows, and whether a bot rereads `MEMORY.md` at the start of every chat.
+
+## 9. Sources
 
 Orca's own version-matched guides: `orca skills get orca-cli`, `orca skills get orchestration`, `orca agent-context --json` (234 commands with usage and notes on 1.4.198).
