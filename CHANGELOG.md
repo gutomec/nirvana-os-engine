@@ -6,7 +6,7 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that the
 one-line installers and pack setups consume.
 
-## Unreleased
+## 0.15.2 — 2026-11-20
 
 ### Orca: bots and projects set themselves up
 
