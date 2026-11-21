@@ -54,7 +54,10 @@ import { cardedSquads, creditSoloRun, namedSquadsIn, prepareBusinessSolo, runBus
 import { runSoloReviewStage, SERIOUS_EXTRA_ROUNDS, type ReviewPolicy } from "../lib/solo-review.ts";
 import { resolveEntityDir } from "../../_shared/lib/entity-resource-map.ts";
 import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
-import { globalStoreDir, outputsBaseDir } from "../../_shared/lib/project-root.js";
+import { globalStoreDir, isInvalidProjectRoot, outputsBaseDir } from "../../_shared/lib/project-root.js";
+import { ensureOrcaSetupScript, ensureOrcaWorkspace, orcaAutoSetup, orcaWorktreeRootFor } from "../../_shared/lib/orca-bots.ts";
+import { orcaHostActive, orcaRegisterProject, orcaStatus } from "../../_shared/lib/orca.ts";
+import { ProjectService } from "../lib/control-plane/project-service.ts";
 import { nestedOutputsBase, runFolderOf } from "../../_shared/lib/run-workspace.ts";
 import { briefExcerpt } from "../../_shared/lib/brief-excerpt.ts";
 import { agenticRoute, type AgenticRouteDecision } from "../lib/agentic-router.ts";
@@ -339,6 +342,36 @@ function defaultRegistries(): { squads: Record<string, unknown>; businesses: Rec
 // and the run's outputs go to `<store>/outputs/<pid>` (OUTPUTS_BASE) — the same
 // place scope.ts and the squad output resolver use. This used to be the cwd, so
 // a dispatch launched from any folder planted `outputs/` and `.nirvana/` in it.
+// Orca, before the project is resolved. Nobody types a setup command for any of
+// this: a dispatch is the moment the engine is certain to be running.
+//   - every Orca bot on the machine gets its Nirvana note (one readdir when
+//     there is no Orca);
+//   - a top-level dispatch from an Orca workspace that is not a project yet
+//     makes it one (`.nirvana/project.yaml`, nothing else) and leaves the setup
+//     script that does the same for the worktrees Orca creates later;
+//   - a project Orca does not know is registered as a workspace, once.
+// A dispatched child (NIRVANA_DISPATCH_DEPTH set) inherits all of it and skips.
+if (!process.env.NIRVANA_DISPATCH_DEPTH) {
+  try {
+    orcaAutoSetup();
+    if (orcaHostActive()) {
+      let root = runLedger.resolveProjectRoot();
+      const worktree = root ? null : orcaWorktreeRootFor(process.cwd());
+      if (worktree && !process.env.NIRVANA_PROJECT_ROOT && !isInvalidProjectRoot(worktree)) {
+        const service = new ProjectService();
+        const plan = service.planAdoption({ projectRoot: worktree });
+        service.adopt({ projectRoot: worktree }, plan.plan_hash);
+        ensureOrcaSetupScript(worktree);
+        console.error(`  orca: this workspace is now a Nirvana project (${path.join(worktree, ".nirvana", "project.yaml")})`);
+        runLedger.resetProjectRootMemo();
+        root = runLedger.resolveProjectRoot();
+      }
+      // The enclosing worktree is a workspace by definition: only a project
+      // Orca was never shown (`host.orca: on` from a plain terminal) is added.
+      if (root && !orcaWorktreeRootFor(root)) ensureOrcaWorkspace(root, { running: () => orcaStatus(3_000).running, register: (dir) => orcaRegisterProject(dir), storeDir: globalStoreDir() });
+    }
+  } catch { /* Orca is a projection: it never decides whether a run starts */ }
+}
 const DECLARED_PROJECT_ROOT = runLedger.resolveProjectRoot();
 const PROJECT_ROOT = DECLARED_PROJECT_ROOT ?? path.dirname(globalStoreDir());
 // A dispatch a confined worker starts itself (an employee's `nrv dispatch --squad`)

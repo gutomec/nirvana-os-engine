@@ -36,6 +36,7 @@ import { resolvePinnedEffort, resolveSystemModel } from "../../_shared/lib/syste
 import { classifySkillsLitter } from "../lib/skills-litter.ts";
 import { openclawAgentsOnProjects } from "../../_shared/lib/openclaw.ts";
 import { detectOrca, orcaHooksStatus, orcaHostActive, orcaStatus, resolveOrcaExecutable } from "../../_shared/lib/orca.ts";
+import { botUsesNirvana, orcaAutoSetup } from "../../_shared/lib/orca-bots.ts";
 import { codexConfigPath, codexHookTrustEntries, codexHooksPath } from "../../_shared/lib/codex-hooks.ts";
 import { expandEnv, findTempNrvEntries, readUserPath, tempRoots } from "../../_shared/lib/windows-user-path.ts";
 import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
@@ -227,6 +228,20 @@ if (which("openclaw")) {
       const mode = orcaHostActive() ? "host active" : "host inactive here (auto = inside an Orca terminal)";
       add("orca: host", "PASS", `app ${status.appVersion ?? "?"}; ${hookText}; ${orch}; ${mode}${session}`);
     }
+  }
+  // The bots. The doctor repairs what it can instead of printing a command: a
+  // bot without the Nirvana note gets it here. One whose owner took the line
+  // out of MEMORY.md is reported as such and left alone.
+  const bots = orcaAutoSetup().bots;
+  if (bots.length) {
+    const text = bots.map(({ bot, outcome }) => {
+      const state = outcome === "written" ? "prepared now"
+        : outcome === "refreshed" ? "note refreshed"
+        : outcome === "skipped" ? "not prepared (no MEMORY.md, or memory/nirvana-os.md is not the engine's)"
+        : botUsesNirvana(bot) ? "uses Nirvana-OS" : "note turned off by its owner";
+      return `${bot.name ?? bot.slug} (${bot.agent ?? "agent ?"}): ${state}`;
+    }).join("; ");
+    add("orca: bots", "PASS", text);
   }
 }
 

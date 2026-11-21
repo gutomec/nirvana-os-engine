@@ -220,6 +220,10 @@ let _rootMemo: { key: string; root: string | null } | null = null;
 /** The project root THIS process is serving, or null when it is not inside any
  *  project. Memoized per (env, cwd) so the marker walk runs once per process
  *  without ever going stale for a test that moves the root. */
+/** Forget the memoized root: for the one caller that creates the project it
+ *  is about to resolve (a dispatch adopting its Orca workspace). */
+export function resetProjectRootMemo(): void { _rootMemo = null; }
+
 export function resolveProjectRoot(cwd?: string): string | null {
   const base = cwd ?? process.cwd();
   const env = process.env.NIRVANA_PROJECT_ROOT || "";

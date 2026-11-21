@@ -36,6 +36,12 @@ Two limits are accepted for this cut. A worker's provider session id is not capt
 
 No abstraction of "execution host" is introduced: one module (`_shared/lib/orca.js` for detection, `_shared/lib/orca.ts` for the CLI, `_shared/lib/orca-worker.ts` for the transport) and a call at each existing seam, the same shape the OpenClaw integration took. A third host would be the moment to name the interface, with two real cases to copy from.
 
+## Amendment, 2026-11-20: setup needs no command
+
+Measured against Orca 1.4.265, which added bots. The owner's rule: the engine sets itself up when it finds Orca; a step the user has to type is a step most users never take.
+
+Invariant 1 is narrowed, not dropped. Runs, cards, workers and audit stamps still depend on detection alone. Setup does not: with the Orca CLI on PATH and `host.orca` not `off`, `nrv init` writes `orca.yaml` and asks the app to register the project from any terminal, and a top-level dispatch inside an Orca workspace adopts it as a project. Bots are files under `~/.orca/bots`, prepared by the seams that already run without calling the binary at all. The printed `orca repo add` hint is gone. Details and the ownership table: `skills/_shared/adapters/orca.md` §7.
+
 ## Alternatives rejected
 
 Orca's Run as the source of truth for a dispatch (the ledger already is, and works with Orca closed). Orca's decision gates in place of the engine's quality gate (a worker's report is not evidence about the files). Publishing artifacts automatically through `orca artifacts share` (human-gated in Orca by design; the engine may only offer). A generic host interface ahead of a second host. Enabling the host from any terminal by default (a plain terminal must not reach into the app).
