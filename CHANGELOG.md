@@ -19,6 +19,13 @@ The engine already ran inside Orca as a host. What it left to the user was setup
 - `nrv doctor`: `orca: bots` lists each bot, its agent and whether it uses Nirvana-OS, and prepares the ones that lack the note.
 - Tests: `NIRVANA_ORCA_BOTS_DIR` moves the bots root and the test preload sets it, so a test run cannot write into the owner's bots.
 - Not covered: a restricted mode for requests a bot takes from someone other than its owner (nothing in a bot's run says who asked), the setup script measured in a real worktree, and the bots root on Windows.
+### Windows starts an agent CLI installed through npm again
+
+On Windows every dispatch to Claude Code failed in one or two seconds, with no session and a generic "runtime returned an error verdict". npm installs three launchers side by side (`claude`, a POSIX shell script with no extension, `claude.cmd` and `claude.ps1`), `where claude` prints the bare one first, and the engine took the first line. Windows cannot start that file, so the spawn died with ENOENT before the CLI ran.
+
+- `firstExecutablePath` passes over a match Windows cannot start (no `.exe`, `.com`, `.cmd` or `.bat`) while another match can be started; a lone extensionless match is still returned, so the spawn reports the honest error.
+- The PATH scan that backs the probe tries the bare name last on Windows, for the same reason.
+- Applies to every runtime resolved through `whichSync` (claude, codex, agy, grok, kimi, pi, qwen, opencode) and to `nrv doctor`.
 
 ## 0.15.1 — 2026-11-13
 

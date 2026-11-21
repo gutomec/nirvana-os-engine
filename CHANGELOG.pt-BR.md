@@ -19,6 +19,13 @@ O engine já rodava dentro do Orca como host. O que ficava para o usuário era a
 - `nrv doctor`: `orca: bots` lista cada bot, seu agente e se ele usa o Nirvana-OS, e prepara os que estão sem a nota.
 - Testes: `NIRVANA_ORCA_BOTS_DIR` muda a raiz dos bots e o preload de testes a define, então uma execução de testes não escreve nos bots do dono.
 - Fora do escopo: um modo restrito para pedidos que o bot recebe de alguém que não é o dono (nada na execução do bot diz quem pediu), o script de setup medido num worktree real e a raiz dos bots no Windows.
+### O Windows volta a iniciar um CLI de agente instalado pelo npm
+
+No Windows todo despacho para o Claude Code falhava em um ou dois segundos, sem sessão e com um "runtime returned an error verdict" genérico. O npm instala três atalhos lado a lado (`claude`, um script de shell POSIX sem extensão, `claude.cmd` e `claude.ps1`), o `where claude` imprime primeiro o que não tem extensão, e o engine ficava com a primeira linha. O Windows não consegue iniciar esse arquivo, então o processo morria com ENOENT antes de o CLI abrir.
+
+- `firstExecutablePath` ignora um resultado que o Windows não consegue iniciar (sem `.exe`, `.com`, `.cmd` ou `.bat`) enquanto houver outro que ele consiga; um único resultado sem extensão continua sendo devolvido, e o erro real aparece na hora de iniciar.
+- A varredura do PATH que cobre a sonda tenta o nome sem extensão por último no Windows, pelo mesmo motivo.
+- Vale para todo runtime resolvido por `whichSync` (claude, codex, agy, grok, kimi, pi, qwen, opencode) e para o `nrv doctor`.
 
 ## 0.15.1 — 2026-11-13
 
