@@ -6,7 +6,7 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que os instaladores de uma linha e os setups de pack consomem.
 
-## 0.15.2 — não lançada
+## Não lançado
 
 ### O Windows volta a iniciar um CLI de agente instalado pelo npm
 
