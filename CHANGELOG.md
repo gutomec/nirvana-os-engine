@@ -6,6 +6,16 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that the
 one-line installers and pack setups consume.
 
+## 0.15.2 — unreleased
+
+### Windows starts an agent CLI installed through npm again
+
+On Windows every dispatch to Claude Code failed in one or two seconds, with no session and a generic "runtime returned an error verdict". npm installs three launchers side by side (`claude`, a POSIX shell script with no extension, `claude.cmd` and `claude.ps1`), `where claude` prints the bare one first, and the engine took the first line. Windows cannot start that file, so the spawn died with ENOENT before the CLI ran.
+
+- `firstExecutablePath` passes over a match Windows cannot start (no `.exe`, `.com`, `.cmd` or `.bat`) while another match can be started; a lone extensionless match is still returned, so the spawn reports the honest error.
+- The PATH scan that backs the probe tries the bare name last on Windows, for the same reason.
+- Applies to every runtime resolved through `whichSync` (claude, codex, agy, grok, kimi, pi, qwen, opencode) and to `nrv doctor`.
+
 ## 0.15.1 — 2026-11-13
 
 ### The end of a dispatch reaches the user

@@ -144,6 +144,21 @@ describe("firstExecutablePath", () => {
     expect(/\.(cmd|bat)$/i.test(found)).toBe(true);
   });
 
+  test("on Windows the extensionless npm shell script is passed over for a launcher the platform can start", () => {
+    // What `where claude` prints on a machine with the npm install: the POSIX script first.
+    const stdout = "C:\\Users\\a\\AppData\\Roaming\\npm\\claude\r\nC:\\Users\\a\\AppData\\Roaming\\npm\\claude.cmd\r\n";
+    expect(firstExecutablePath(stdout, "win32")).toBe("C:\\Users\\a\\AppData\\Roaming\\npm\\claude.cmd");
+    expect(firstExecutablePath("C:\\bin\\tool\r\nC:\\bin\\tool.EXE\r\n", "win32")).toBe("C:\\bin\\tool.EXE");
+  });
+
+  test("on Windows a lone extensionless match is still returned, so the spawn reports the honest error", () => {
+    expect(firstExecutablePath("C:\\bin\\tool\r\n", "win32")).toBe("C:\\bin\\tool");
+  });
+
+  test("on POSIX the first match wins whatever its name", () => {
+    expect(firstExecutablePath("/usr/local/bin/claude\n/opt/claude.cmd\n", "linux")).toBe("/usr/local/bin/claude");
+  });
+
   test("blank lines are skipped and no output is null", () => {
     expect(firstExecutablePath("\r\n\r\nC:\\bin\\claude.cmd\r\n")).toBe("C:\\bin\\claude.cmd");
     expect(firstExecutablePath("   \r\n")).toBeNull();
