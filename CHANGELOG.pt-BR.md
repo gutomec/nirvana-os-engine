@@ -6,6 +6,16 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que os instaladores de uma linha e os setups de pack consomem.
 
+## Não lançado
+
+### O Windows volta a iniciar um CLI de agente instalado pelo npm
+
+No Windows todo despacho para o Claude Code falhava em um ou dois segundos, sem sessão e com um "runtime returned an error verdict" genérico. O npm instala três atalhos lado a lado (`claude`, um script de shell POSIX sem extensão, `claude.cmd` e `claude.ps1`), o `where claude` imprime primeiro o que não tem extensão, e o engine ficava com a primeira linha. O Windows não consegue iniciar esse arquivo, então o processo morria com ENOENT antes de o CLI abrir.
+
+- `firstExecutablePath` ignora um resultado que o Windows não consegue iniciar (sem `.exe`, `.com`, `.cmd` ou `.bat`) enquanto houver outro que ele consiga; um único resultado sem extensão continua sendo devolvido, e o erro real aparece na hora de iniciar.
+- A varredura do PATH que cobre a sonda tenta o nome sem extensão por último no Windows, pelo mesmo motivo.
+- Vale para todo runtime resolvido por `whichSync` (claude, codex, agy, grok, kimi, pi, qwen, opencode) e para o `nrv doctor`.
+
 ## 0.15.1 — 2026-11-13
 
 ### O fim de um despacho chega ao usuário

@@ -296,12 +296,23 @@ export function whichProbe(cli: string, platform: NodeJS.Platform = process.plat
  * more than one match. `/\.(cmd|bat)$/i` then failed on a path that plainly ends in `.cmd`, and
  * resolveExecutable spawned it without a shell — the exact "probe says yes, invocation dies" split
  * this module exists to prevent. */
-export function firstExecutablePath(stdout: string): string | null {
+/** What Windows can start by path: CreateProcess takes `.exe`/`.com`, and resolveExecutable
+ * routes `.cmd`/`.bat` through the shim reader or the command interpreter. */
+const WINDOWS_STARTABLE = /\.(exe|com|cmd|bat)$/i;
+
+export function firstExecutablePath(stdout: string, platform: NodeJS.Platform = process.platform): string | null {
+  let first: string | null = null;
   for (const line of (stdout || "").split(/\r?\n/)) {
     const trimmed = line.trim();
-    if (trimmed) return trimmed;
+    if (!trimmed) continue;
+    if (platform !== "win32" || WINDOWS_STARTABLE.test(trimmed)) return trimmed;
+    // npm installs three launchers side by side: `claude` (a POSIX shell script for Git Bash,
+    // no extension), `claude.cmd` and `claude.ps1`. `where` prints the bare one FIRST, and
+    // Windows cannot start it: the spawn dies with ENOENT before the CLI runs, with no output
+    // and no session. Keep looking for a match the platform can start.
+    first ??= trimmed;
   }
-  return null;
+  return first;
 }
 
 export function whichSync(cli: string): string | null {
@@ -315,7 +326,9 @@ export function whichSync(cli: string): string | null {
   // Manual PATH scan. The Windows extension list is not decoration: an agent CLI
   // installed by npm is `<name>.cmd`, never a bare file, so a scan that only
   // tried `.exe` reported "not installed" for a runtime sitting right there.
-  const exts = process.platform === "win32" ? ["", ".cmd", ".bat", ".exe"] : ["", ".exe"];
+  // The bare name comes LAST on Windows: next to `<name>.cmd` npm leaves a `<name>` shell script
+  // that the platform cannot start (see firstExecutablePath).
+  const exts = process.platform === "win32" ? [".cmd", ".bat", ".exe", ""] : ["", ".exe"];
   const PATH = (process.env.PATH || "").split(path.delimiter);
   for (const dir of PATH) {
     for (const ext of exts) {
