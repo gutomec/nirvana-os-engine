@@ -1095,6 +1095,16 @@ export function findNonTerminal(handle: LedgerHandle, scope?: ScopeOpts): RunRow
   return rows.map(r => parseRow(r)!);
 }
 
+/** The newest ended runs (delivered, withheld, abandoned), most recent first:
+ *  what a status surface shows under the ones still open. */
+export function findRecentTerminal(handle: LedgerHandle, limit: number, scope?: ScopeOpts): RunRow[] {
+  const s = scopeClause(scope);
+  const rows = handle.db
+    .query(`SELECT * FROM runs WHERE state NOT IN (${ACTIVE_IN})${s.sql} ORDER BY updated_at DESC, rowid DESC LIMIT ?`)
+    .all(...ACTIVE_STATES, ...s.params, limit) as Record<string, unknown>[];
+  return rows.map(r => parseRow(r)!);
+}
+
 export function countNonTerminal(handle: LedgerHandle, scope?: ScopeOpts): number {
   const s = scopeClause(scope);
   const r = handle.db

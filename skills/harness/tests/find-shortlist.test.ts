@@ -97,3 +97,23 @@ describe("--jev", () => {
     expect(parts).toContain("below 0.8, a guess");
   });
 });
+
+describe("a request whose words do not meet the library", () => {
+  const line = (coverage: string) => ({ slug: "x", card: "business:x | produces: y", coverage });
+  const base = { named: null, clones: { named: [], ambiguous: [], missing: [] } };
+  test("the list says it is weak and sends the reader to the library, whatever the language", async () => {
+    const { renderShortlist, wordsBarelyMeet } = await import("../scripts/find.ts");
+    const weak: any = { ...base, businesses: [line("1/4")], squads: [{ ...line("1/4"), capability: null }] };
+    expect(wordsBarelyMeet(weak)).toBe(true);
+    const text = renderShortlist("Instagram-Werbekampagne für ein Autohaus", weak);
+    expect(text).toContain("Choose by meaning");
+    expect(text).not.toMatch(/in English/i);
+  });
+  test("a request that meets the cards carries no notice", async () => {
+    const { renderShortlist, wordsBarelyMeet } = await import("../scripts/find.ts");
+    const good: any = { ...base, businesses: [line("4/5")], squads: [{ ...line("1/4"), capability: null }] };
+    expect(wordsBarelyMeet(good)).toBe(false);
+    expect(renderShortlist("campanha de anúncios", good)).not.toContain("Choose by meaning");
+    expect(wordsBarelyMeet({ ...base, businesses: [], squads: [] } as any)).toBe(false);
+  });
+});

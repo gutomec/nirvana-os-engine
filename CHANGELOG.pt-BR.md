@@ -6,6 +6,26 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que os instaladores de uma linha e os setups de pack consomem.
 
+## 0.15.4 — 2026-11-22
+
+### Qualquer idioma na entrada, nenhuma regra pedindo inglês
+
+O Nirvana-OS roda sobre runtimes que leem todos os idiomas, então não pede tradução a ninguém. A 0.15.3 mandava os agentes escreverem a consulta do `nrv find` em inglês, e a nota dos bots do Orca mandava escrever o brief em inglês. As duas regras eram o engine repassando um limite seu a quem o usa, e a primeira veio de uma leitura errada: o pedido que a motivou (um poema) não tem quem o atenda na biblioteca em idioma nenhum.
+
+- A skill do harness e a nota dos bots do Orca levam o pedido nas palavras e no idioma em que ele chegou. A nota de um bot é atualizada na próxima instalação, init, dispatch ou doctor.
+- O `nrv find` ordena por palavras. Quando a melhor linha compartilha poucas palavras com o pedido (o mesmo portão de cobertura do roteador), ele agora avisa e manda ler `nrv list-businesses` e `nrv list-squads`, para escolher pelo significado. O `nrv dispatch --auto` já era decidido por um modelo que lê a biblioteca, em qualquer idioma.
+- Medido nos 20 pares PT/EN reservados e rejeitado: ordenar pelo embedder multilíngue (sobreposição das listas de 0,29 para 0,41, mas com a maioria dos cartões acrescentados sem relação) e indexar os sinônimos dos aliases (sobreposição de 0,16, acerto top-1 de 99,1% para 98,2%).
+
+### Orca: um plugin para workspaces, a barra de status e um painel de execuções
+
+O Orca agora tem plugins. O engine traz um em `skills/_shared/orca-plugin/`, para o Orca 1.4.248 ou mais novo, sem etapa de build e sem dependências.
+
+- Quando o Orca cria um workspace, worktree ou pasta, o worker do plugin roda `nrv init . --adopt` nele. Uma pasta que já é projeto, ou que fica em outro host, é pulada; um `nrv` que falha é registrado no log e nada quebra. O `orca.yaml` cobria só os worktrees de um projeto que tivesse o arquivo.
+- Um item na barra de status, `Nirvana: <n>`, conta as execuções em andamento na máquina. Um painel lateral lista essas execuções e as encerradas mais recentes, com id do projeto, estado, veredito do gate e pasta dos entregáveis. Os dois são somente leitura.
+- `nrv supervisor status --json [--recent <n>]` imprime as execuções que a tabela mostra como um único objeto JSON, seguidas das `n` encerradas mais recentes. Cada linha traz `in_progress`, a leitura de atividade do próprio ledger, além do veredito do gate e da pasta de saída.
+- O plugin pede `workspace:read` e `agent:read` e roda como `trusted-worker`. O Orca exige a aprovação do dono, uma única vez, para um plugin que executa código; o engine não aprova nem instala o plugin por ele. Detalhes: `skills/_shared/adapters/orca.md` §8.
+- `nrv doctor`: `orca: plugin` diz se o plugin está instalado e, quando não está, dá ao agente que lê a linha o comando a rodar depois que o usuário concordar.
+
 ## 0.15.3 — 2026-11-22
 
 ### Um entregável curto que o worker declarou é uma entrega

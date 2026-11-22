@@ -35,7 +35,7 @@ import { resolveRunRuntime } from "../lib/runtime-rules.ts";
 import { resolvePinnedEffort, resolveSystemModel } from "../../_shared/lib/system-model.ts";
 import { classifySkillsLitter } from "../lib/skills-litter.ts";
 import { openclawAgentsOnProjects } from "../../_shared/lib/openclaw.ts";
-import { detectOrca, orcaHooksStatus, orcaHostActive, orcaStatus, resolveOrcaExecutable } from "../../_shared/lib/orca.ts";
+import { detectOrca, orcaHooksStatus, orcaHostActive, orcaJson, orcaStatus, resolveOrcaExecutable } from "../../_shared/lib/orca.ts";
 import { botUsesNirvana, orcaAutoSetup } from "../../_shared/lib/orca-bots.ts";
 import { codexConfigPath, codexHookTrustEntries, codexHooksPath } from "../../_shared/lib/codex-hooks.ts";
 import { expandEnv, findTempNrvEntries, readUserPath, tempRoots } from "../../_shared/lib/windows-user-path.ts";
@@ -242,6 +242,18 @@ if (which("openclaw")) {
       return `${bot.name ?? bot.slug} (${bot.agent ?? "agent ?"}): ${state}`;
     }).join("; ");
     add("orca: bots", "PASS", text);
+  }
+  // The plugin. Orca asks its owner before a plugin that runs code is
+  // installed, so the engine cannot add it alone: the line tells the agent
+  // reading it what to offer and the one command that does it.
+  if (which(exe) && orcaStatus().running) {
+    const dir = path.join(import.meta.dir, "..", "..", "_shared", "orca-plugin");
+    const listed = orcaJson<{ plugins?: Array<{ pluginKey?: string; enabled?: boolean }> }>(["plugin", "list"], { timeoutMs: 5_000 });
+    const mine = listed.ok ? (listed.result?.plugins ?? []).find((p) => /(^|\.)nirvana-os$/.test(p.pluginKey ?? "")) : undefined;
+    if (mine) add("orca: plugin", "PASS", `installed (${mine.pluginKey})${mine.enabled === false ? ", disabled in Orca" : ""}`);
+    else if (listed.ok && fs.existsSync(path.join(dir, "orca-plugin.json"))) {
+      add("orca: plugin", "PASS", `not installed. It makes every new Orca workspace a Nirvana project and shows the runs in Orca. Offer it to the user; with their yes, run \`${exe} plugin install "${dir}" --json\` and follow the approval it prints`);
+    }
   }
 }
 
