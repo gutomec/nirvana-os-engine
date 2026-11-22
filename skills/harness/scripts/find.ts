@@ -30,10 +30,33 @@ export { rankShortlist, shortlist, SHORTLIST_SIZE, type Shortlist };
 const require_ = createRequire(import.meta.url);
 const router = require_(path.join(import.meta.dir, "..", "lib", "router.js"));
 const loader = require_(path.join(import.meta.dir, "..", "lib", "registry-loader.js"));
+const bm25 = require_(path.join(import.meta.dir, "..", "lib", "bm25.js"));
+
+/**
+ * True when the best line of the shortlist shares too few of the request's
+ * words to mean anything (the router's own coverage gate). The usual cause is a
+ * request in one language and cards in another: the ranking matches words, and
+ * the two share none. Measured 2026-11-22 on the 20 held-out PT/EN pairs: the
+ * shortlists of the two languages overlap 0.29. Ranking by the multilingual
+ * embedder (0.41, but mostly unrelated cards) and indexing alias siblings (0.16,
+ * top-1 accuracy 99.1% to 98.2%) were both measured and rejected, so the list
+ * says when it is weak and the reader, who understands any language, decides.
+ */
+export function wordsBarelyMeet(s: Shortlist): boolean {
+  const best = [s.businesses[0]?.coverage, s.squads[0]?.coverage]
+    .map((c) => /^(\d+)\/(\d+)$/.exec(c ?? ""))
+    .filter((m): m is RegExpExecArray => !!m)
+    .map((m) => ({ matched: Number(m[1]), total: Number(m[2]) }));
+  return best.length > 0 && best.every((c) => bm25.coverageBelowGate(c));
+}
 
 export function renderShortlist(brief: string, s: Shortlist): string {
   const out: string[] = [`request: ${brief}`, ""];
   if (s.named) out.push(`named in the request: ${s.named.kind} ${s.named.slug} — it is the target`, "");
+  if (!s.named && wordsBarelyMeet(s)) {
+    out.push("Few of this request's words are in the library's cards: the request and the cards are in different languages, or the library has nothing for it.",
+      "The lists below are weak. Choose by meaning: read `nrv list-businesses` and `nrv list-squads` (one line each) and pick from there.", "");
+  }
   out.push("businesses (best first):");
   s.businesses.forEach((b, i) => out.push(`  ${i + 1}. ${b.card}`));
   if (!s.businesses.length) out.push("  (none matched)");

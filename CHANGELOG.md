@@ -6,6 +6,16 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that the
 one-line installers and pack setups consume.
 
+## Unreleased
+
+### Any language in, no rule asking for English
+
+Nirvana-OS runs on runtimes that read every language, so it asks nobody to translate. 0.15.3 told agents to write the `nrv find` query in English, and the Orca bot note told bots to write the brief in English. Both were the engine passing its own limit to whoever uses it, and the first came from a wrong reading: the request that prompted it (a poem) has no provider in the library in any language.
+
+- The harness skill and the Orca bot note carry the request in the words and the language it came in. A bot's note is refreshed on the next install, init, dispatch or doctor.
+- `nrv find` ranks by words. When the best line shares too few of the request's words to mean anything (the router's own coverage gate), it now says so and sends the reader to `nrv list-businesses` and `nrv list-squads`, to choose by meaning. `nrv dispatch --auto` was already decided by a model that reads the library, in any language.
+- Measured on the 20 held-out PT/EN pairs and rejected: ranking by the multilingual embedder (shortlist overlap 0.29 to 0.41, but most added cards unrelated) and indexing alias siblings (overlap 0.16, top-1 accuracy 99.1% to 98.2%).
+
 ## 0.15.3 — 2026-11-22
 
 ### A short deliverable the worker declared is a delivery

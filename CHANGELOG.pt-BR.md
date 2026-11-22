@@ -6,6 +6,16 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que os instaladores de uma linha e os setups de pack consomem.
 
+## Não lançado
+
+### Qualquer idioma na entrada, nenhuma regra pedindo inglês
+
+O Nirvana-OS roda sobre runtimes que leem todos os idiomas, então não pede tradução a ninguém. A 0.15.3 mandava os agentes escreverem a consulta do `nrv find` em inglês, e a nota dos bots do Orca mandava escrever o brief em inglês. As duas regras eram o engine repassando um limite seu a quem o usa, e a primeira veio de uma leitura errada: o pedido que a motivou (um poema) não tem quem o atenda na biblioteca em idioma nenhum.
+
+- A skill do harness e a nota dos bots do Orca levam o pedido nas palavras e no idioma em que ele chegou. A nota de um bot é atualizada na próxima instalação, init, dispatch ou doctor.
+- O `nrv find` ordena por palavras. Quando a melhor linha compartilha poucas palavras com o pedido (o mesmo portão de cobertura do roteador), ele agora avisa e manda ler `nrv list-businesses` e `nrv list-squads`, para escolher pelo significado. O `nrv dispatch --auto` já era decidido por um modelo que lê a biblioteca, em qualquer idioma.
+- Medido nos 20 pares PT/EN reservados e rejeitado: ordenar pelo embedder multilíngue (sobreposição das listas de 0,29 para 0,41, mas com a maioria dos cartões acrescentados sem relação) e indexar os sinônimos dos aliases (sobreposição de 0,16, acerto top-1 de 99,1% para 98,2%).
+
 ## 0.15.3 — 2026-11-22
 
 ### Um entregável curto que o worker declarou é uma entrega

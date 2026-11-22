@@ -81,8 +81,10 @@ nrv find "<the request in a few words>"   # ranked candidates, zero tokens
 nrv list-businesses                        # the library, one line each
 ```
 
-Write the query in English whatever language the request is in: the library's
-cards are indexed in English, and a query in another language ranks by accident.
+The query goes in the request's own words, in whatever language it came. The
+list ranks by words, so it is a hint: when it says the words barely meet the
+library, choose by reading `nrv list-businesses` and `nrv list-squads`, which
+you understand in any language. Never ask the user to rephrase or translate.
 
 A business the user names by something other than its slug (a pack or product
 name, "a empresa de motion design") is the one whose description and squads

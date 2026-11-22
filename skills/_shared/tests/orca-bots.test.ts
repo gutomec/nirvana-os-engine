@@ -74,11 +74,12 @@ describe("the bot's Nirvana note", () => {
     expect(botUsesNirvana(bot)).toBe(true);
   });
 
-  test("the note tells the bot to dispatch, to write the brief in English and to report paths", () => {
+  test("the note tells the bot to dispatch, to keep the request in its own language and to report paths", () => {
     const text = botTopicText();
     expect(text.startsWith(BOT_TOPIC_MARKER)).toBe(true);
     expect(text).toContain('nrv dispatch --auto --exec "<brief>"');
-    expect(text).toContain("Write the brief in English");
+    expect(text).toContain("in the words and the language it came in");
+    expect(text).not.toMatch(/in English/i);
     expect(text).toContain("nrv revise <project>");
     expect(text).toContain("full path of each delivered file");
   });

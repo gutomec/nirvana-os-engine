@@ -122,7 +122,7 @@ Nobody types a setup command for Orca. The seams that already run (`nrv setup` a
 | `SOUL.md` | the owner ("change it only when your owner asks") | nothing |
 | `MEMORY.md`, `memory/<topic>.md` | the bot's memory, one line per fact | writes `memory/nirvana-os.md` and one dated line pointing to it |
 
-The note tells the bot to hand a concrete deliverable to `nrv dispatch --auto --exec "<brief>"`, to write the brief in English and state the deliverable's language inside it, to correct with `nrv revise`, to answer library questions with the `nrv list-*` commands and to report full paths. The topic file is the engine's and is rewritten when its marker (`<!-- nirvana-os:orca-bot:vN -->`) is older. The line in `MEMORY.md` is added once, with the topic file, and never again: an owner who takes it out has turned the note off. A `memory/nirvana-os.md` without the marker is somebody's own note and is left alone.
+The note tells the bot to hand a concrete deliverable to `nrv dispatch --auto --exec "<brief>"`, to pass the request in the words and the language it came in, to correct with `nrv revise`, to answer library questions with the `nrv list-*` commands and to report full paths. The topic file is the engine's and is rewritten when its marker (`<!-- nirvana-os:orca-bot:vN -->`) is older. The line in `MEMORY.md` is added once, with the topic file, and never again: an owner who takes it out has turned the note off. A `memory/nirvana-os.md` without the marker is somebody's own note and is left alone.
 
 A bot's run is not an Orca terminal (its audit events carry no `orca` block), so a bot is recognised by its folder. `nrv init` on a bot's folder is refused: the files it would write are the ones Orca owns.
 
