@@ -1,0 +1,49 @@
+{
+  "manifestVersion": 2,
+  "id": "nirvana-os",
+  "name": "Nirvana-OS",
+  "version": "0.1.0",
+  "description": "Makes every workspace Orca creates a Nirvana project, and shows the Nirvana runs in progress in the status bar and a sidebar panel.",
+  "repository": "https://github.com/gutomec/nirvana-os-engine",
+  "engines": {
+    "orca": ">=1.4.248"
+  },
+  "execution": "trusted-worker",
+  "pluginApi": 1,
+  "main": "src/worker.ts",
+  "contributes": {
+    "events": [
+      {
+        "on": "workspace.created"
+      },
+      {
+        "on": "agent.status.changed"
+      }
+    ],
+    "statusBarItems": [
+      {
+        "id": "runs",
+        "text": "Nirvana",
+        "icon": "activity",
+        "tooltip": "Nirvana-OS runs in progress"
+      }
+    ],
+    "panels": [
+      {
+        "id": "runs",
+        "title": "Nirvana",
+        "icon": "activity",
+        "entry": "src/panel.tsx",
+        "ui": "components"
+      }
+    ]
+  },
+  "capabilities": [
+    {
+      "kind": "workspace:read"
+    },
+    {
+      "kind": "agent:read"
+    }
+  ]
+}

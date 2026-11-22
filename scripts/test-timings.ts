@@ -59,14 +59,16 @@ export function posixPath(p: string): string {
   return p.split(sep).join("/").replace(/\\/g, "/");
 }
 
-/** Every `*.test.ts` under the given repo-relative roots, repo-relative, sorted. */
+/** Every `*.test.ts` under the given repo-relative roots, repo-relative, sorted.
+ *  The Orca plugin's tests are not Bun's (bunfig.toml ignores the folder): they
+ *  run with `orca plugin test`. */
 export function testFiles(dirs: string[] = ["skills"]): string[] {
   const out: string[] = [];
   for (const dir of dirs) {
     const glob = new Bun.Glob("**/*.test.ts");
     for (const hit of glob.scanSync({ cwd: resolve(ROOT, dir), absolute: true })) out.push(posixPath(relative(ROOT, hit)));
   }
-  return out.sort();
+  return out.filter((f) => !f.includes("/orca-plugin/")).sort();
 }
 
 /** The measured-slow set. Missing manifest = nothing is slow yet. */

@@ -139,12 +139,39 @@ An `orca.yaml` already in the project is never edited. `NIRVANA_ORCA_BOTS_DIR` m
 
 Not done, and why: a restricted mode for requests a bot takes from someone other than its owner. On 1.4.265 nothing in a bot's run says who asked, so the engine cannot tell the two apart.
 
-## 8. Measured
+## 8. The plugin
+
+Orca now has plugins. The engine ships one in `skills/_shared/orca-plugin/` (installed at `~/.nirvana/skills/_shared/orca-plugin/`): a manifest, a Node worker and a panel, with no build step and no dependencies. It needs Orca 1.4.248 or newer.
+
+| Piece | What it does |
+|---|---|
+| Worker, on `workspace.created` | Runs `nrv init . --adopt` in the new workspace's folder, worktree or plain folder. Skipped when `.nirvana/project.yaml` is already there, or when the folder is not on this machine (an SSH or paired-server workspace). A failing `nrv` is logged (`orca plugin logs local.nirvana-os`) and nothing else happens. This covers the workspaces §7's `orca.yaml` cannot: a project that has no `orca.yaml`, and folder workspaces, which run no setup script |
+| Status bar item "Nirvana" | `Nirvana: <n>`, the number of runs the ledger reads as in progress on this machine |
+| Sidebar panel "Nirvana" | The runs in progress, then the most recently updated ones (30 at most): project id, state, gate verdict and deliverables folder, with a refresh button. Read-only |
+
+`nrv` is a child process of the worker, never a terminal: Orca runs a `trusted-worker` plugin as a Node.js process with the user's own access, so nothing is opened or typed in a workspace. The worker starts `~/.local/bin/nrv` (`nrv.cmd` on Windows, through the shell a `.cmd` needs) and falls back to `nrv` on PATH.
+
+The status bar item and the panel read one command, added for them: `nrv supervisor status --all-projects --json --recent 20`. It prints `{ "scope", "runs": [...] }`, the open runs and then the 20 newest ended ones, each with `run_id`, `trace_id`, `project_id`, `project_root`, `target_kind`, `target_slug`, `state`, `in_progress`, `gate`, `outputs_root`, `created_at` and `updated_at`. `in_progress` is the ledger's own liveness reading: a failed or stalled row stays open until someone closes it and is not counted. The worker reads on start, when an agent changes status (at most once every 30 s) and every 2 minutes. An engine older than the flag prints its table instead, and the panel says to update.
+
+**What it asks for.** `orca plugin inspect` lists the execution profile `trusted-worker` and two capabilities:
+
+| Capability | Why |
+|---|---|
+| `workspace:read` | to hear `workspace.created` |
+| `agent:read` | to hear `agent.status.changed` |
+
+It asks for no terminal, storage, secrets or notification access. Updating the status bar item needs no capability.
+
+**Approval.** A plugin that runs code is never loaded silently: Orca shows the owner the list above and waits for a one-time approval, and asks again when a new version changes the code or the access. The engine does not approve it for the owner and does not install it by itself. `orca plugin install <folder>` answers `approval_required` with that list and the exact command to repeat with `--approve`; the owner runs it once.
+
+Tests: `orca plugin test skills/_shared/orca-plugin` (Orca's own kit, under Node; Bun's run skips the folder). Not measured: the plugin loaded in a running Orca (it was validated, checked and tested from the CLI, never approved), and the worker's child process on Windows.
+
+## 9. Measured
 
 On 2026-09-09, Orca 1.4.198, macOS: the transport sequence ran end to end from a shell outside Orca targeting a registered workspace (`run-create`, `task-create`, `terminal create` with `claude --dangerously-skip-permissions`, `wait tui-idle`, `dispatch --inject`, `check --run --wait`); the worker sent `worker_done` with `taskId`, `dispatchId`, `outcome: succeeded`, `filesModified` and `reportPath`, and the file the brief asked for existed eighteen seconds after injection. `worker-read` returned the provider transcript with `source: "transcript"`. Two headless `claude -p` children were spawned in Orca terminals: the one inheriting `ORCA_PANE_KEY` registered its pane as a `claude` agent; the one without it registered nothing. `run-create` from a shell outside any Orca terminal succeeded and bound the Run to a live agent terminal of the workspace, which is why the engine creates Runs only for its own dispatches and addresses every later call with `--run`.
 
 On 2026-11-20, Orca 1.4.265, macOS: a bot created in the UI on Claude Code used Nirvana-OS with no instruction (the agent found the `nirvana` skill) and delivered through `nrv dispatch --auto --exec`; its hook events carried the bot folder as `cwd` and no `orca` block; its `AGENTS.md` carried the "edits to them are replaced" line quoted in §7. `nrv init . --adopt` was run twice in a row (written, then "already a Nirvana project"). A scaffold-only dispatch inside a simulated workspace (fake `orca`, `ORCA_WORKTREE_ID`) adopted it, wrote `orca.yaml` and registered once. Not measured: the setup script firing in a real worktree, the bots root on Windows, and whether a bot rereads `MEMORY.md` at the start of every chat.
 
-## 9. Sources
+## 10. Sources
 
-Orca's own version-matched guides: `orca skills get orca-cli`, `orca skills get orchestration`, `orca agent-context --json` (234 commands with usage and notes on 1.4.198).
+Orca's own version-matched guides: `orca skills get orca-cli`, `orca skills get orchestration`, `orca skills get orca-plugin-authoring`, `orca agent-context --json` (234 commands with usage and notes on 1.4.198).
