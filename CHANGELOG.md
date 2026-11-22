@@ -6,7 +6,7 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that the
 one-line installers and pack setups consume.
 
-## Unreleased
+## 0.15.3 — 2026-11-22
 
 ### A short deliverable the worker declared is a delivery
 
