@@ -6,6 +6,17 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that the
 one-line installers and pack setups consume.
 
+## Unreleased
+
+### Orca: a plugin for workspaces, the status bar and a runs panel
+
+Orca now has plugins. The engine ships one in `skills/_shared/orca-plugin/`, for Orca 1.4.248 or newer, with no build step and no dependencies.
+
+- When Orca creates a workspace, worktree or folder, the plugin's worker runs `nrv init . --adopt` in it. A folder that is already a project, or that lives on another host, is skipped; a failing `nrv` is logged and nothing breaks. `orca.yaml` covered only worktrees of a project that carried the file.
+- A status bar item, `Nirvana: <n>`, counts the runs in progress on the machine. A sidebar panel lists them and the most recent ended ones with project id, state, gate verdict and deliverables folder. Both are read-only.
+- `nrv supervisor status --json [--recent <n>]` prints the runs the table shows as one JSON object, followed by the `n` newest ended runs. Each row carries `in_progress`, the ledger's own liveness reading, plus the gate verdict and the outputs folder.
+- The plugin asks for `workspace:read` and `agent:read`, and runs as a `trusted-worker`. Orca requires the owner's one-time approval for a plugin that runs code; the engine does not approve or install it for them. Details: `skills/_shared/adapters/orca.md` §8.
+
 ## 0.15.3 — 2026-11-22
 
 ### A short deliverable the worker declared is a delivery

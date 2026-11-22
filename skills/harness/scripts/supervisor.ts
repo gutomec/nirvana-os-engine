@@ -70,6 +70,7 @@
 // Subcommands: sweep [--quiet] [--all-projects] (stoppable: Ctrl+C or SIGTERM
 //              ends the sweep and every process it started) ·
 //              status [--all-projects] [--follow [--interval=5]] ·
+//              status --json [--recent=<n>] [--all-projects] ·
 //              watch [--interval=120] [--all-projects]
 //
 // PROJECT SCOPE — the supervisor is the exception, and the only one.
@@ -127,6 +128,7 @@ import {
   renewLease,
   incrementRetries,
   findNonTerminal,
+  findRecentTerminal,
   countNonTerminal,
   resumeInfo,
   pidAlive,
@@ -141,6 +143,7 @@ import {
   patchMeta,
   resolveProjectRoot,
   latestTraceActivity,
+  stillWorking,
   type LedgerHandle,
   type RunRow,
   type RunState,
@@ -1269,6 +1272,30 @@ async function followStatus(allProjects: boolean, intervalSec: number): Promise<
   }
 }
 
+/** One row as `status --json` prints it. `gate` and `outputs_root` are what
+ *  the delivery pipeline recorded on the row; null when it recorded none.
+ *  `in_progress` is the ledger's own liveness reading (stillWorking): an open
+ *  row whose processes are gone and whose lease ran out is not in progress. */
+export function statusJsonRow(r: RunRow): Record<string, unknown> {
+  const text = (v: unknown) => (typeof v === "string" && v ? v : null);
+  return {
+    run_id: r.run_id, trace_id: r.trace_id, project_id: r.project_id, project_root: r.project_root,
+    target_kind: r.target_kind, target_slug: r.target_slug, state: r.state, in_progress: stillWorking(r),
+    gate: text(r.meta?.gate), outputs_root: text(r.meta?.outputs_root) ?? text(r.meta?.project_dir),
+    created_at: r.created_at, updated_at: r.updated_at,
+  };
+}
+
+/** `nrv supervisor status --json [--recent=<n>]`: the open runs, then the
+ *  `n` newest ended ones, as one JSON object on stdout. Read-only, like the
+ *  table; a host surface (the Orca plugin) reads it instead of the table. */
+export function statusJson(allProjects: boolean, recent: number, handle: LedgerHandle = openLedger()): { scope: string; runs: Record<string, unknown>[] } {
+  const scope = resolveSweepScope(allProjects, true);
+  const opts = scope.allProjects ? { allProjects: true } : { projectRoot: scope.projectRoot };
+  const rows = [...findNonTerminal(handle, opts).reverse(), ...(recent > 0 ? findRecentTerminal(handle, recent, opts) : [])];
+  return { scope: scope.allProjects ? "all projects" : scope.projectRoot!, runs: rows.map(statusJsonRow) };
+}
+
 function cliStatus(allProjects: boolean): number {
   renderStatusOnce(allProjects);
   console.log("\nfollow live:  nrv supervisor status --follow   ·   watch one run's raw events:  nrv watch --trace <run>");
@@ -1341,6 +1368,11 @@ if (import.meta.main) {
       process.exit(0); // sweep ALWAYS exits 0 (anti-respawn guard)
     }
     case "status": {
+      if (process.argv.includes("--json")) {
+        const recent = Math.min(200, Math.max(0, parseInt(argValue("--recent", "0") || "0", 10) || 0));
+        console.log(JSON.stringify(statusJson(allProjects, recent)));
+        process.exit(0);
+      }
       if (process.argv.includes("--follow")) {
         const intervalSec = Math.max(2, parseInt(argValue("--interval", "5") || "5", 10));
         // Fire-and-forget: followStatus is async (it awaits between ticks so
@@ -1375,6 +1407,8 @@ if (import.meta.main) {
         "                         trail recorded for each (— when nothing was recorded)",
         "  status --follow [--interval=5]   re-render the table on a timer (Ctrl-C to stop);",
         "                         read-only — never sweeps, never recovers, never spawns anything",
+        "  status --json [--recent=<n>]     the same runs as one JSON object ({ scope, runs }),",
+        "                         followed by the n newest ended runs; read-only",
         "  watch [--interval=120] loop sweep forever, in the foreground (Ctrl-C to stop)",
         "",
         "  --all-projects         every project on the machine. Without it, sweep/status/watch",
