@@ -6,7 +6,7 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that the
 one-line installers and pack setups consume.
 
-## Unreleased
+## 0.15.4 — 2026-11-22
 
 ### Any language in, no rule asking for English
 
@@ -24,6 +24,7 @@ Orca now has plugins. The engine ships one in `skills/_shared/orca-plugin/`, for
 - A status bar item, `Nirvana: <n>`, counts the runs in progress on the machine. A sidebar panel lists them and the most recent ended ones with project id, state, gate verdict and deliverables folder. Both are read-only.
 - `nrv supervisor status --json [--recent <n>]` prints the runs the table shows as one JSON object, followed by the `n` newest ended runs. Each row carries `in_progress`, the ledger's own liveness reading, plus the gate verdict and the outputs folder.
 - The plugin asks for `workspace:read` and `agent:read`, and runs as a `trusted-worker`. Orca requires the owner's one-time approval for a plugin that runs code; the engine does not approve or install it for them. Details: `skills/_shared/adapters/orca.md` §8.
+- `nrv doctor`: `orca: plugin` says whether the plugin is installed and, when it is not, gives the agent reading it the one command to run after the user agrees.
 
 ## 0.15.3 — 2026-11-22
 
