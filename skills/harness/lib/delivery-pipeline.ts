@@ -107,6 +107,26 @@ export function briefNamedFiles(briefText: string): Set<string> {
   return out;
 }
 
+/** The files the worker declared as its delivery in HANDOFF.json (`files`),
+ * by basename. A worker that names a file there claims it as the work, which
+ * weighs what the brief naming it weighs: a 75-byte haiku the brief asked to
+ * hold "nothing else" is a delivery, not a stub. Only paths under the outputs
+ * root count, so a declared scratch file elsewhere changes nothing. */
+export function handoffNamedFiles(projectDir: string, outputsRoot: string): Set<string> {
+  const out = new Set<string>();
+  try {
+    const handoff = JSON.parse(fs.readFileSync(path.join(projectDir, "HANDOFF.json"), "utf8"));
+    const root = path.resolve(outputsRoot);
+    for (const f of Array.isArray(handoff?.files) ? handoff.files : []) {
+      if (typeof f !== "string" || !f.trim()) continue;
+      const abs = path.resolve(root, f);
+      const rel = path.relative(root, abs);
+      if (rel && !rel.startsWith("..") && !path.isAbsolute(rel)) out.add(path.basename(abs).toLowerCase());
+    }
+  } catch { /* no handoff, or not JSON: the brief alone names files */ }
+  return out;
+}
+
 export function isDeliverable(f: string, named: Set<string>): boolean {
   try {
     const size = fs.statSync(f).size;
@@ -887,7 +907,9 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
   // events this pipeline emits.
   const emit = args.audit;
 
+  // Read again at verify time: the worker writes HANDOFF.json during the run.
   const namedInBrief = briefNamedFiles(args.brief);
+  for (const n of handoffNamedFiles(args.projectDir, args.outputsRoot)) namedInBrief.add(n);
   let verifySource: DeliveryResult["verifySource"] = "scan";
   let produced: string[] = [];
   let gatedFiles: string[] = [];

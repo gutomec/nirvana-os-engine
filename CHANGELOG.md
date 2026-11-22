@@ -6,6 +6,14 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that the
 one-line installers and pack setups consume.
 
+## Unreleased
+
+### A short deliverable the worker declared is a delivery
+
+A bot asked for a haiku in a markdown file "with nothing else". The worker wrote it, 75 bytes, and the run ended `failed` with `verify: only run state`: the anti-stub floor reads any file under 200 bytes as a draft unless the brief names the file, and this brief named none.
+
+- A file the worker lists under `files` in its `HANDOFF.json` now counts as named, as a file named in the brief does. Only paths under the outputs root count, and an empty file never passes.
+
 ## 0.15.2 — 2026-11-20
 
 ### Orca: bots and projects set themselves up
