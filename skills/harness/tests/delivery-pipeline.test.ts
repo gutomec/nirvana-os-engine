@@ -210,6 +210,25 @@ describe("runDelivery — outcomes", () => {
     expect(delivered?.payload.gate).toBe("pass");
   }, spawnBudgetMs(2));
 
+  test("a tiny file the worker declared in HANDOFF.json is a delivery, not a stub", () => {
+    const oroot = path.join(tmp, "out-haiku");
+    const proj = path.join(tmp, "proj-haiku");
+    fs.mkdirSync(oroot); fs.mkdirSync(proj);
+    const haiku = path.join(oroot, "haiku-mar.md");
+    fs.writeFileSync(haiku, "# Mapa de sal\n\nManhã de verão:\no mar desenha no cais\num mapa de sal.\n");
+    expect(fs.statSync(haiku).size).toBeLessThan(200);
+    fs.writeFileSync(path.join(oroot, "_SUMMARY.md"), "# Summary\n" + "x".repeat(400));
+    // Undeclared, the brief not naming it: the floor still holds.
+    const before = runDelivery(baseArgs(oroot, { projectDir: proj }).args);
+    expect(before.exitCode).toBe(1);
+    fs.writeFileSync(path.join(proj, "HANDOFF.json"), JSON.stringify({ phase: "complete", files: [haiku, path.join(oroot, "_SUMMARY.md"), path.join(tmp, "elsewhere.md")] }));
+    const { args, calls } = baseArgs(oroot, { projectDir: proj });
+    const res = runDelivery(args);
+    expect(res.exitCode).not.toBe(1);
+    expect(calls.map(x => x.event)).not.toContain("verify_failed");
+    expect(res.gatedFiles.map(f => path.basename(f))).toEqual(["haiku-mar.md"]);
+  }, spawnBudgetMs(3));
+
   test("zero gateable artifacts → exit 3, NO gate_passed, NO delivered", () => {
     const oroot = path.join(tmp, "out-zip");
     fs.mkdirSync(oroot);

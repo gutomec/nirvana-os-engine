@@ -6,6 +6,18 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que os instaladores de uma linha e os setups de pack consomem.
 
+## 0.15.3 — 2026-11-22
+
+### Um entregável curto que o worker declarou é uma entrega
+
+Um bot pediu um haicai num arquivo markdown "sem mais nada". O worker escreveu o arquivo, de 75 bytes, e a execução terminou `failed` com `verify: only run state`: o piso contra rascunhos lê qualquer arquivo abaixo de 200 bytes como rascunho, a menos que o brief cite o arquivo, e esse brief não citava nenhum.
+
+- Um arquivo que o worker lista em `files` no seu `HANDOFF.json` passa a contar como citado, como conta um arquivo citado no brief. Só valem caminhos dentro da raiz de saídas, e um arquivo vazio nunca passa.
+
+### A consulta da lista curta é escrita em inglês
+
+- Skill do harness: o `nrv find` recebe a consulta em inglês, seja qual for o idioma do pedido. Um agente num projeto novo do Orca buscou em português e a lista curta trouxe casas de vídeo e narração para um poema.
+
 ## 0.15.2 — 2026-11-20
 
 ### Orca: bots e projetos se configuram sozinhos
