@@ -14,6 +14,10 @@ A bot asked for a haiku in a markdown file "with nothing else". The worker wrote
 
 - A file the worker lists under `files` in its `HANDOFF.json` now counts as named, as a file named in the brief does. Only paths under the outputs root count, and an empty file never passes.
 
+### The shortlist query is written in English
+
+- Harness skill: `nrv find` takes its query in English whatever the request's language. An agent in a fresh Orca project searched in Portuguese and the shortlist returned video and narration houses for a poem.
+
 ## 0.15.2 — 2026-11-20
 
 ### Orca: bots and projects set themselves up

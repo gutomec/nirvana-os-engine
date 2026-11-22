@@ -81,6 +81,9 @@ nrv find "<the request in a few words>"   # ranked candidates, zero tokens
 nrv list-businesses                        # the library, one line each
 ```
 
+Write the query in English whatever language the request is in: the library's
+cards are indexed in English, and a query in another language ranks by accident.
+
 A business the user names by something other than its slug (a pack or product
 name, "a empresa de motion design") is the one whose description and squads
 fit that name; `nrv list-businesses` and the squads the user mentions settle

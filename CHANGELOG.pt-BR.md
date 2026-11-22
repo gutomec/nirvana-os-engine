@@ -14,6 +14,10 @@ Um bot pediu um haicai num arquivo markdown "sem mais nada". O worker escreveu o
 
 - Um arquivo que o worker lista em `files` no seu `HANDOFF.json` passa a contar como citado, como conta um arquivo citado no brief. Só valem caminhos dentro da raiz de saídas, e um arquivo vazio nunca passa.
 
+### A consulta da lista curta é escrita em inglês
+
+- Skill do harness: o `nrv find` recebe a consulta em inglês, seja qual for o idioma do pedido. Um agente num projeto novo do Orca buscou em português e a lista curta trouxe casas de vídeo e narração para um poema.
+
 ## 0.15.2 — 2026-11-20
 
 ### Orca: bots e projetos se configuram sozinhos
