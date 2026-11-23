@@ -6,7 +6,7 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that the
 one-line installers and pack setups consume.
 
-## Unreleased
+## 0.15.5 — 2026-11-22
 
 ### OpenMausBot's bots use Nirvana-OS on their own
 
@@ -16,7 +16,7 @@ one-line installers and pack setups consume.
 - The owner stays in charge. Removing the line from `MEMORY.md` turns the note off and the engine does not put it back; a bot whose memory is switched off is not touched.
 - `nrv doctor` has a new line, `openmausbot: bots`, with each bot, its engine and its state. `nrv init` refuses to turn a bot's private folder into a project.
 - Orca's bots and OpenMausBot's bots now read the same rules, from one place (`_shared/lib/bot-note.ts`). The text of the Orca note did not change.
-- Checked with OpenMausBot's own parsers, not yet in a live conversation with a running OpenMausBot. Details and limits: `skills/_shared/adapters/openmausbot.md`.
+- Measured on OpenMausBot 0.1.177 (macOS): a new bot, asked in Portuguese for a short note in a file and never told about Nirvana-OS, ran `nrv dispatch`, received the delivery and attached the file to the chat. Details and limits: `skills/_shared/adapters/openmausbot.md`.
 
 ## 0.15.4 — 2026-11-22
 

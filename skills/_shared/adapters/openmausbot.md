@@ -78,11 +78,28 @@ conversation.
   engine reads the note and cannot act on it.
 - A Cloud or team home keeps its data on another machine; only the bots of the
   data folder on this computer are prepared.
-- Not yet measured against a running OpenMausBot: the note's wording was
-  checked with the host's own parsers (`parseMemoryEntries`,
-  `parseTopicHeader`, `renderTopicIndex`), not in a live conversation.
+- Measured on macOS only. Windows and Linux follow the same code path and are
+  not yet measured against a running OpenMausBot.
 
-## 6. Tests
+## 6. Measured
+
+OpenMausBot 0.1.177 (`npx openmausbot serve`, an isolated data folder), macOS,
+2026-11-22:
+
+- A bot created with `openmausbot new-bot` and never spoken to had no folder.
+  `nrv doctor` printed `openmausbot: bots … prepared now` and created
+  `workspaces/<botId>/MEMORY.md` and `memory/nirvana-os.md`.
+- Its first conversation, on the `claude` engine, was a request in Portuguese
+  for a five-line note in a file, with no mention of Nirvana-OS. The bot said it
+  would go through Nirvana-OS, ran `nrv dispatch --auto --exec`, the run was
+  delivered with the gate passed, and the bot copied the file into the
+  conversation's folder and attached it with `attach_file`.
+- The prepared folder read back with the host's own `parseMemoryEntries`,
+  `parseTopicHeader` and `renderTopicIndex`: the engine's line is not an entry
+  the upkeep can move, and the topic is listed with its title, description and
+  aliases.
+
+## 7. Tests
 
 `_shared/tests/openmausbot.test.ts`. The test preload points
 `NIRVANA_OPENMAUSBOT_DIR` at a temp folder, so no test run writes into the
