@@ -37,6 +37,7 @@ import { classifySkillsLitter } from "../lib/skills-litter.ts";
 import { openclawAgentsOnProjects } from "../../_shared/lib/openclaw.ts";
 import { detectOrca, orcaHooksStatus, orcaHostActive, orcaJson, orcaStatus, resolveOrcaExecutable } from "../../_shared/lib/orca.ts";
 import { botUsesNirvana, orcaAutoSetup } from "../../_shared/lib/orca-bots.ts";
+import { openMausBotAutoSetup, openMausBotUsesNirvana } from "../../_shared/lib/openmausbot.ts";
 import { codexConfigPath, codexHookTrustEntries, codexHooksPath } from "../../_shared/lib/codex-hooks.ts";
 import { expandEnv, findTempNrvEntries, readUserPath, tempRoots } from "../../_shared/lib/windows-user-path.ts";
 import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
@@ -254,6 +255,24 @@ if (which("openclaw")) {
     else if (listed.ok && fs.existsSync(path.join(dir, "orca-plugin.json"))) {
       add("orca: plugin", "PASS", `not installed. It makes every new Orca workspace a Nirvana project and shows the runs in Orca. Offer it to the user; with their yes, run \`${exe} plugin install "${dir}" --json\` and follow the approval it prints`);
     }
+  }
+}
+
+// SECTION 1a-openmausbot: OPENMAUSBOT'S BOTS — another host where a person
+// keeps bots of their own. As with Orca's, the doctor prepares each one here
+// instead of printing a command. No line on a machine without OpenMausBot.
+{
+  const bots = openMausBotAutoSetup().bots;
+  if (bots.length) {
+    const text = bots.map(({ bot, outcome }) => {
+      const state = outcome === "written" ? "prepared now"
+        : outcome === "refreshed" ? "note refreshed"
+        : outcome === "memory-off" ? "not prepared (its owner switched its memory off)"
+        : outcome === "skipped" ? "not prepared (its folder cannot be written, or memory/nirvana-os.md is not the engine's)"
+        : openMausBotUsesNirvana(bot) ? "uses Nirvana-OS" : "note turned off by its owner";
+      return `${bot.name ?? bot.id} (${bot.engine ?? "engine ?"}): ${state}`;
+    }).join("; ");
+    add("openmausbot: bots", "PASS", text);
   }
 }
 

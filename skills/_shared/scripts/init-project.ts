@@ -39,6 +39,7 @@ import { globalStoreDir, isInvalidProjectRoot } from "../lib/project-root.js";
 import { openclawAgentFor, openclawBindCommand } from "../lib/openclaw.ts";
 import { detectOrca, orcaHostActive, orcaRegisterProject, orcaSetWorkspace, orcaStatus, resolveOrcaExecutable } from "../lib/orca.ts";
 import { ensureOrcaSetupScript, ensureOrcaWorkspace, orcaAutoSetup, orcaBotAt, BOT_TOPIC_FILE } from "../lib/orca-bots.ts";
+import { openMausBotAt, openMausBotAutoSetup, OMB_TOPIC_FILE } from "../lib/openmausbot.ts";
 import { resolveSetting } from "../lib/settings.ts";
 
 const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR
@@ -356,6 +357,15 @@ async function main() {
     orcaAutoSetup();
     log.fail(`${target} is the home of the Orca bot '${botHere.name ?? botHere.slug}', not a project: nothing was written.`);
     log.info(`The bot already uses Nirvana-OS (memory/${BOT_TOPIC_FILE} in its folder). Dispatch from here as it is: nrv dispatch --auto --exec "<brief>"`);
+    process.exit(EXIT.INVALID_ARGS);
+  }
+  // The same for an OpenMausBot bot's private folders: its memory and its
+  // conversations' files, not a project.
+  const mausBotHere = openMausBotAt(target);
+  if (mausBotHere) {
+    openMausBotAutoSetup();
+    log.fail(`${target} is a private folder of the OpenMausBot bot '${mausBotHere.name ?? mausBotHere.id}', not a project: nothing was written.`);
+    log.info(`The bot already uses Nirvana-OS (memory/${OMB_TOPIC_FILE} in its folder). Dispatch from here as it is: nrv dispatch --auto --exec "<brief>"`);
     process.exit(EXIT.INVALID_ARGS);
   }
   const linkOnly = !!flags.link;
@@ -740,6 +750,8 @@ async function main() {
       const prepared = orcaAutoSetup().bots.filter((b) => b.outcome === "written");
       if (prepared.length) log.ok(`Orca: ${prepared.length} bot(s) now know how to use Nirvana-OS (${prepared.map((b) => b.bot.name ?? b.bot.slug).join(", ")}).`);
     }
+    const mausBots = openMausBotAutoSetup().bots.filter((b) => b.outcome === "written");
+    if (mausBots.length) log.ok(`OpenMausBot: ${mausBots.length} bot(s) now know how to use Nirvana-OS (${mausBots.map((b) => b.bot.name ?? b.bot.id).join(", ")}).`);
   } catch { /* hints are best-effort */ }
   process.exit(EXIT.OK);
 }

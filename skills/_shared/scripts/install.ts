@@ -33,6 +33,7 @@ import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import { backupConfig } from "../lib/config-backup.ts";
 import { orcaAutoSetup } from "../lib/orca-bots.ts";
+import { openMausBotAutoSetup } from "../lib/openmausbot.ts";
 import { parseArgs, EXIT, log } from "../lib/bun-helpers.ts";
 import {
   SKIP_PATH_PERSIST_ENV, skipPathPersist, isUnderTempRoot, broadcastEnvironmentChange,
@@ -832,6 +833,10 @@ inline, with no dispatch, no quality gate and no audit trail.
     try {
       const prepared = orcaAutoSetup().bots.filter((b) => b.outcome === "written" || b.outcome === "refreshed");
       if (prepared.length) console.log(`Orca: ${prepared.length} bot(s) prepared to use Nirvana-OS (${prepared.map((b) => b.bot.name ?? b.bot.slug).join(", ")}).`);
+    } catch { /* never fatal */ }
+    try {
+      const prepared = openMausBotAutoSetup().bots.filter((b) => b.outcome === "written" || b.outcome === "refreshed");
+      if (prepared.length) console.log(`OpenMausBot: ${prepared.length} bot(s) prepared to use Nirvana-OS (${prepared.map((b) => b.bot.name ?? b.bot.id).join(", ")}).`);
     } catch { /* never fatal */ }
     if (installedCount === 0) {
       console.log("Done. No agent runtime detected — the engine is installed anyway; install a runtime and re-run to wire its hooks.");

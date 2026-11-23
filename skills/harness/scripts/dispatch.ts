@@ -57,6 +57,7 @@ import { harnessLogsDir } from "../../_shared/lib/log-paths.ts";
 import { globalStoreDir, isInvalidProjectRoot, outputsBaseDir } from "../../_shared/lib/project-root.js";
 import { ensureOrcaSetupScript, ensureOrcaWorkspace, orcaAutoSetup, orcaWorktreeRootFor } from "../../_shared/lib/orca-bots.ts";
 import { orcaHostActive, orcaRegisterProject, orcaStatus } from "../../_shared/lib/orca.ts";
+import { openMausBotAutoSetup } from "../../_shared/lib/openmausbot.ts";
 import { ProjectService } from "../lib/control-plane/project-service.ts";
 import { nestedOutputsBase, runFolderOf } from "../../_shared/lib/run-workspace.ts";
 import { briefExcerpt } from "../../_shared/lib/brief-excerpt.ts";
@@ -354,6 +355,7 @@ function defaultRegistries(): { squads: Record<string, unknown>; businesses: Rec
 if (!process.env.NIRVANA_DISPATCH_DEPTH) {
   try {
     orcaAutoSetup();
+    openMausBotAutoSetup();
     if (orcaHostActive()) {
       let root = runLedger.resolveProjectRoot();
       const worktree = root ? null : orcaWorktreeRootFor(process.cwd());

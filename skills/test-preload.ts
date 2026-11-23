@@ -100,3 +100,7 @@ if (process.env.NIRVANA_NOTIFY_ON_FINISH === undefined) process.env.NIRVANA_NOTI
 if (process.env.NIRVANA_ORCA_BOTS_DIR === undefined) {
   process.env.NIRVANA_ORCA_BOTS_DIR = path.join(process.env.HARNESS_LOGS_DIR!, "orca-bots");
 }
+// The same for OpenMausBot's bots under ~/.openmausbot.
+if (process.env.NIRVANA_OPENMAUSBOT_DIR === undefined) {
+  process.env.NIRVANA_OPENMAUSBOT_DIR = path.join(process.env.HARNESS_LOGS_DIR!, "openmausbot");
+}
