@@ -6,6 +6,16 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que os instaladores de uma linha e os setups de pack consomem.
 
+## 0.15.6 — 2026-11-23
+
+### O juiz do gate de qualidade responde em segundos
+
+- O juiz de IA do gate de qualidade era a etapa mais lenta de uma entrega curta. Num post de LinkedIn ele levou 82 segundos e US$ 0,56: raciocinava no esforço padrão do modelo e abria uma sessão completa do Claude Code, com os servidores MCP, as skills e os hooks do usuário, para devolver um único veredito em JSON.
+- Agora o juiz começa só para responder, sem ferramentas, servidores MCP, skills ou hooks, como o roteador já fazia, e no esforço da nova configuração `quality_gate.judge_effort`. Os perfis definem o valor: `medium` no balanced, `low` no economy e o padrão do modelo no max, como antes.
+- Medido com o mesmo pedido enviado ao mesmo bot do OpenMausBot, antes e depois: o gate caiu de 86 para 36 segundos e o juiz de US$ 0,56 para US$ 0,18, julgando três arquivos em vez de dois. Rodando sozinho sobre um post, o juiz caiu de 44 a 47 s e US$ 0,42 para 17 a 20 s e US$ 0,03, com o mesmo veredito num post que passa e a mesma nota de reprovação num post escrito para falhar.
+- No codex o esforço entra como `model_reasoning_effort`; nos outros runtimes o juiz roda como antes.
+- `nrv config set quality_gate.judge_effort model` devolve o juiz ao esforço padrão do modelo.
+
 ## 0.15.5 — 2026-11-22
 
 ### Os bots do OpenMausBot usam o Nirvana-OS sozinhos

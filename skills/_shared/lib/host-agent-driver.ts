@@ -598,9 +598,41 @@ interface RuntimeAdapter {
   envHints: string[];  // env vars that signal this runtime is the host
 }
 
-function adapterCall(host: RuntimeAdapter, persona: string, userMsg: string): AdapterCall {
-  if (typeof host.buildCall === "function") return host.buildCall(persona, userMsg);
-  return { args: (host.buildArgs as NonNullable<RuntimeAdapter["buildArgs"]>)(persona, userMsg) };
+function adapterCall(host: RuntimeAdapter, persona: string, userMsg: string, opts: Pick<CallOpts, "answerOnly" | "effort"> = {}): AdapterCall {
+  const call: AdapterCall = typeof host.buildCall === "function"
+    ? host.buildCall(persona, userMsg)
+    : { args: (host.buildArgs as NonNullable<RuntimeAdapter["buildArgs"]>)(persona, userMsg) };
+  return withCallOpts(host, call, opts);
+}
+
+/** What `answerOnly` and `effort` add to an adapter's call. Only where the CLI
+ *  can say it: claude takes both, codex takes the effort as a config key, and
+ *  every other runtime runs as before. Measured on 2026-11-23 with the quality
+ *  judge (claude, Opus 5.5, one LinkedIn post): no flags took 44-47 s and
+ *  US$ 0.42 in two model turns; the same call answer-only at effort medium
+ *  took 17-20 s and US$ 0.03 in one, with the same verdict on a passing and on
+ *  a failing post. */
+function withCallOpts(host: RuntimeAdapter, call: AdapterCall, opts: Pick<CallOpts, "answerOnly" | "effort">): AdapterCall {
+  const effort = (opts.effort ?? "").trim().toLowerCase();
+  const level = isEffortLevel(effort) ? effort : null;
+  if (host.name === "claude-code") {
+    const args = [...call.args];
+    const tmpFiles = [...(call.tmpFiles ?? [])];
+    if (opts.answerOnly) {
+      // The same lean start runHeadless gives a noTools call: no tool, no MCP
+      // server, no skill, no hook; the user's model and other settings stay.
+      const lean = claudeLeanSettingsArg(resolveExecutable("claude").shell);
+      args.push("--tools", "", "--strict-mcp-config", "--disable-slash-commands", "--settings", lean.value);
+      tmpFiles.push(...lean.tmpFiles);
+    }
+    if (level) args.push("--effort", level);
+    return { ...call, args, ...(tmpFiles.length ? { tmpFiles } : {}) };
+  }
+  if (host.name === "codex" && level) {
+    // `exec` stays first: the config override is an option of the subcommand.
+    return { ...call, args: [...call.args, "-c", `model_reasoning_effort=${JSON.stringify(level)}`] };
+  }
+  return call;
 }
 
 /** Small-prompt argv / large-prompt bootstrap-file delivery for CLIs with no
@@ -846,7 +878,7 @@ export function callHostAgent(persona: string, userMessage: string, opts: CallOp
   if (!host) {
     return { error: "no host agent CLI found on PATH (tried: " + RUNTIMES.map(r => r.cli).join(", ") + ")" };
   }
-  const call = adapterCall(host, persona || "", userMessage);
+  const call = adapterCall(host, persona || "", userMessage, opts);
   let r!: SpawnSyncReturns<string>;
   try {
     const exec = resolveExecutable(host.cli);
@@ -949,6 +981,14 @@ export interface CallOpts {
   project_id?: string;
   /** Set to false to suppress cost_emission emission for this call. Default true. */
   emitCost?: boolean;
+  /** A call that only returns an answer (a verdict, a JSON): the child gets no
+   *  tools and starts without the user's MCP servers, skills and hooks, where
+   *  the CLI can say so (claude). Other runtimes run as before. */
+  answerOnly?: boolean;
+  /** Reasoning effort for this call (`low` ... `max`), where the CLI has one
+   *  (claude `--effort`, codex `model_reasoning_effort`). Omitted or not a
+   *  level: the CLI's own default, as before. */
+  effort?: string;
   /**
    * TEST-ONLY: bypass detectHost and use this adapter directly. Must conform to
    * the RuntimeAdapter shape ({ name, cli, buildCall|buildArgs, parseStdout }).
@@ -1020,7 +1060,7 @@ export function callHostAgentAsync(persona: string, userMessage: string, opts: C
     const minBytes = opts.minBytesPerHeartbeat ?? 1;
     const mode: HeartbeatMode = opts.heartbeatMode ?? "kill";
 
-    const call = adapterCall(host, persona || "", userMessage);
+    const call = adapterCall(host, persona || "", userMessage, opts);
     const exec = resolveExecutable(host.cli);
     const child = spawn(exec.command, exec.args(call.args), {
       windowsHide: true,
@@ -3146,6 +3186,7 @@ export const __testables = {
   promptFileBootstrap,
   envelopeErrorMessage,
   TMP_FILE_PREFIXES,
+  withCallOpts,
 };
 
 if (import.meta.main) {

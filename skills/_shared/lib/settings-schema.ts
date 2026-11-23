@@ -456,6 +456,12 @@ export const SETTINGS = {
     "Revisions before escalating (reserved; today it follows max_revisions).", { default: 2, type: nonNegativeInt, expects: "integer >= 0" }),
   "quality_gate.rubric_fallback": stringSetting("quality_gate.rubric_fallback",
     "Rubric used when produces[] matches none.", { default: "prose_shortform", type: z.string().min(1), expects: "rubric name" }),
+  // The judge returns a verdict in JSON; at the model's own default effort it
+  // spent 8,700 tokens reasoning about a 1,100-character post (82 s, US$ 0.56,
+  // measured 2026-11-23). `model` keeps that default; `max` sets it.
+  "quality_gate.judge_effort": enumSetting("quality_gate.judge_effort",
+    "Reasoning effort of the quality gate's LLM judge, on runtimes that take one (claude, codex): low | medium | high | xhigh | max, or model = the runtime's own default. The judge also starts answer-only, without tools, MCP servers, skills or hooks.",
+    ["low", "medium", "high", "xhigh", "max", "model"], { default: "medium", env: "NIRVANA_JUDGE_EFFORT" }),
   "quality_gate.default_judge_model": stringSetting("quality_gate.default_judge_model",
     "Judge model; inherit = the model configured in the user's runtime.", { default: "inherit", type: z.string().min(1), expects: "model id or inherit" }),
 

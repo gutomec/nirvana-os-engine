@@ -6,6 +6,16 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that the
 one-line installers and pack setups consume.
 
+## 0.15.6 — 2026-11-23
+
+### The quality gate's judge answers in seconds
+
+- The LLM judge of the quality gate was the slowest step of a short delivery. On a LinkedIn post it took 82 seconds and US$ 0.56: it reasoned at the model's own default effort and started a full Claude Code session, with the user's MCP servers, skills and hooks, for an answer that is one JSON verdict.
+- The judge now starts answer-only, without tools, MCP servers, skills or hooks, the way the router already did, and at the effort of the new setting `quality_gate.judge_effort`. The profiles set it: `medium` in balanced, `low` in economy, and the model's own default in max, as before.
+- Measured on the same request sent to the same OpenMausBot bot, before and after: the gate went from 86 to 36 seconds and the judge from US$ 0.56 to US$ 0.18, while judging three files instead of two. Run alone on one post, the judge went from 44-47 s and US$ 0.42 to 17-20 s and US$ 0.03, with the same verdict on a passing post and the same failing grade on a post written to fail.
+- On codex the effort goes in as `model_reasoning_effort`; on the other runtimes the judge runs as before.
+- `nrv config set quality_gate.judge_effort model` puts the judge back on the model's default effort.
+
 ## 0.15.5 — 2026-11-22
 
 ### OpenMausBot's bots use Nirvana-OS on their own

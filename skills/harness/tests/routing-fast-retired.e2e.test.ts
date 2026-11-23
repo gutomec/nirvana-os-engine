@@ -28,7 +28,9 @@ import * as path from "node:path";
 await Bun.stdin.text();
 const argv = Bun.argv.slice(2);
 const capture = process.env.FAKE_CAPTURE_DIR;
-if (argv.includes("--tools")) {
+// The quality judge starts answer-only too (\`--tools ""\`); it is not the router.
+const judgeCall = argv.some((a) => a.includes("You are the quality judge"));
+if (argv.includes("--tools") && !judgeCall) {
   fs.appendFileSync(path.join(capture, "router-calls"), "x");
   if (process.env.FAKE_ROUTER_FAILS) { process.stderr.write("connection reset by peer\n"); process.exit(1); }
   const answer = { target: "business:landing-house", voices: [], squads: [], done: ["The landing page is delivered"], reason: "It builds landing pages." };

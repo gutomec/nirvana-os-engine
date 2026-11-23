@@ -32,7 +32,9 @@ import * as path from "node:path";
 const prompt = await Bun.stdin.text();
 const argv = Bun.argv.slice(2);
 const capture = process.env.FAKE_CAPTURE_DIR;
-if (argv.includes("--tools")) {
+// The quality judge starts answer-only too (\`--tools ""\`); it is not the router.
+const judgeCall = argv.some((a) => a.includes("You are the quality judge"));
+if (argv.includes("--tools") && !judgeCall) {
   fs.writeFileSync(path.join(capture, "router-argv.json"), JSON.stringify(argv));
   const si = argv.indexOf("--settings");
   const sv = si >= 0 ? argv[si + 1] : "";

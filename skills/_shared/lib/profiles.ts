@@ -43,6 +43,7 @@ export const PROFILE_PRESETS: Record<ProfileName, Readonly<Record<string, Settin
     "review.max_rounds": 2,
     "routing.mode": "agentic",
     "quality_gate.judge_enabled": "reports",
+    "quality_gate.judge_effort": "model",
   },
   // The recommended default: a 400k ceiling, review when a rule asks for it,
   // and the judge on the text deliverables (.md, .txt, .html), which the
@@ -55,6 +56,7 @@ export const PROFILE_PRESETS: Record<ProfileName, Readonly<Record<string, Settin
     "review.max_rounds": 1,
     "routing.mode": "cards",
     "quality_gate.judge_enabled": "reports",
+    "quality_gate.judge_effort": "medium",
   },
   // Lowest token use: a 200k ceiling, medium effort, review only when the user
   // asks or the gate fails, no per-report judge.
@@ -66,6 +68,7 @@ export const PROFILE_PRESETS: Record<ProfileName, Readonly<Record<string, Settin
     "review.max_rounds": 1,
     "routing.mode": "cards",
     "quality_gate.judge_enabled": "false",
+    "quality_gate.judge_effort": "low",
     "gauntlet.default_intensity": "light",
   },
 };

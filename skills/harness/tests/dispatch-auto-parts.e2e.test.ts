@@ -33,7 +33,9 @@ import * as path from "node:path";
 await Bun.stdin.text();
 const argv = Bun.argv.slice(2);
 const capture = process.env.FAKE_CAPTURE_DIR;
-if (argv.includes("--tools")) {
+// The quality judge starts answer-only too (\`--tools ""\`); it is not the router.
+const judgeCall = argv.some((a) => a.includes("You are the quality judge"));
+if (argv.includes("--tools") && !judgeCall) {
   console.log(JSON.stringify({ type: "result", subtype: "success", is_error: false, result: ${JSON.stringify(JSON.stringify(ANSWER))}, session_id: "route", total_cost_usd: 0.001 }));
   process.exit(0);
 }

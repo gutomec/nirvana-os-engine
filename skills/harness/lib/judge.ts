@@ -19,6 +19,16 @@
  */
 
 import type { RubricMeta } from "./rubric-selector.ts";
+import { resolveSetting } from "../../_shared/lib/settings.ts";
+
+/** The judge's call: answer-only, at the effort `quality_gate.judge_effort`
+ *  names (`model` = the runtime's default, so no level is passed). A setting
+ *  that cannot be read leaves the effort to the runtime. */
+function judgeCallOpts(): { answerOnly: true; effort?: string } {
+  let effort = "";
+  try { effort = String(resolveSetting("quality_gate.judge_effort").value ?? ""); } catch { /* the runtime's default */ }
+  return effort && effort !== "model" ? { answerOnly: true, effort } : { answerOnly: true };
+}
 
 // Lazy-load audit + host-agent-driver because they're CommonJS / async respectively.
 let _audit: { emit: (e: string, payload: unknown, ctx?: unknown) => void } | null = null;
@@ -372,6 +382,7 @@ export async function judge(input: JudgeInput, opts: JudgeOpts = {}): Promise<Ju
     // a wall clock, and the verdict they produced was a runtime error.
     ...(typeof opts.timeoutMs === "number" ? { timeoutMs: opts.timeoutMs } : {}),
     ...(preferredHost ? { preferredHost } : {}),
+    ...judgeCallOpts(),
   });
 
   if ("error" in call) {
@@ -581,6 +592,7 @@ export async function judgeBatch(input: JudgeBatchInput, opts: JudgeOpts = {}): 
   const call = await driver.callHostAgentAsync(buildBatchPersona(rubrics), buildBatchUserMessage(input), {
     ...(typeof opts.timeoutMs === "number" ? { timeoutMs: opts.timeoutMs } : {}),
     ...(preferredHost ? { preferredHost } : {}),
+    ...judgeCallOpts(),
   });
   if ("error" in call) return { ok: false, reason: "call_failed", error: call.error };
 
