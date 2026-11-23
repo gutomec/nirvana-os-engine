@@ -35,7 +35,9 @@ import * as path from "node:path";
 const prompt = await Bun.stdin.text();
 const argv = Bun.argv.slice(2);
 const capture = process.env.FAKE_CAPTURE_DIR;
-if (argv.includes("--tools")) {
+// The quality judge starts answer-only too (\`--tools ""\`); it is not the router.
+const judgeCall = argv.some((a) => a.includes("You are the quality judge"));
+if (argv.includes("--tools") && !judgeCall) {
   fs.writeFileSync(path.join(capture, "router-argv.json"), JSON.stringify(argv));
   const answer = { target: "solo", voices: [], squads: [], done: ${JSON.stringify(DONE)}, reason: "Nothing installed produces this." };
   console.log(JSON.stringify({ type: "result", subtype: "success", is_error: false, result: JSON.stringify(answer), session_id: "route", total_cost_usd: 0.001 }));
