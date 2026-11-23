@@ -6,6 +6,18 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que os instaladores de uma linha e os setups de pack consomem.
 
+## 0.15.5 — 2026-11-22
+
+### Os bots do OpenMausBot usam o Nirvana-OS sozinhos
+
+- Quem mantém bots no [OpenMausBot](https://github.com/milind-soni/OpenMausBot) não precisa mais explicar o Nirvana-OS a cada um. O engine encontra os bots em `~/.openmausbot` (ou `OMB_DATA_DIR`) e deixa uma nota na memória de cada um: um arquivo de tópico, `memory/nirvana-os.md`, e uma linha no `MEMORY.md` apontando para ele. Daí em diante, um pedido de relatório, post, página ou qualquer outro entregável concreto passa pelo `nrv dispatch`, nas palavras e no idioma em que chegou.
+- Nada para rodar. O instalador, cada atualização, `nrv init`, `nrv dispatch` e `nrv doctor` fazem isso, como já fazem com os bots do Orca. Um bot que ainda não teve a primeira conversa também é preparado.
+- A nota segue as regras do próprio host, lidas no código dele: o arquivo de tópico abre com o frontmatter que o OpenMausBot lista sob a memória do bot a cada turno, a linha no `MEMORY.md` não tem data para que a manutenção do host nunca a arquive, e os arquivos são privados do dono e gravados de forma atômica.
+- O dono continua no comando. Remover a linha do `MEMORY.md` desliga a nota e o engine não a recoloca; um bot com a memória desligada não é tocado.
+- O `nrv doctor` tem uma linha nova, `openmausbot: bots`, com cada bot, o engine dele e o estado. O `nrv init` se recusa a transformar a pasta privada de um bot em projeto.
+- Os bots do Orca e os do OpenMausBot agora leem as mesmas regras, de um só lugar (`_shared/lib/bot-note.ts`). O texto da nota do Orca não mudou.
+- Medido no OpenMausBot 0.1.177 (macOS): um bot novo, que recebeu em português o pedido de uma nota curta em arquivo e nunca ouviu falar do Nirvana-OS, rodou `nrv dispatch`, recebeu a entrega e anexou o arquivo no chat. Detalhes e limites: `skills/_shared/adapters/openmausbot.md`.
+
 ## 0.15.4 — 2026-11-22
 
 ### Qualquer idioma na entrada, nenhuma regra pedindo inglês

@@ -6,6 +6,18 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that the
 one-line installers and pack setups consume.
 
+## 0.15.5 — 2026-11-22
+
+### OpenMausBot's bots use Nirvana-OS on their own
+
+- A person who keeps bots in [OpenMausBot](https://github.com/milind-soni/OpenMausBot) no longer has to explain Nirvana-OS to each one. The engine finds the bots in `~/.openmausbot` (or `OMB_DATA_DIR`) and leaves a note in each bot's memory: a topic file, `memory/nirvana-os.md`, and one line in `MEMORY.md` pointing at it. From then on a request for a report, a post, a page or any other concrete deliverable goes through `nrv dispatch`, in the words and the language it came in.
+- Nothing to run. The installer, every update, `nrv init`, `nrv dispatch` and `nrv doctor` do it, as they already do for Orca's bots. A bot that has not had its first conversation yet is prepared too.
+- The note follows the host's own rules, read from its source: the topic file opens with the frontmatter OpenMausBot lists under the bot's memory at every turn, the line in `MEMORY.md` has no date so the host's upkeep never archives it, and the files are owner-only and written atomically.
+- The owner stays in charge. Removing the line from `MEMORY.md` turns the note off and the engine does not put it back; a bot whose memory is switched off is not touched.
+- `nrv doctor` has a new line, `openmausbot: bots`, with each bot, its engine and its state. `nrv init` refuses to turn a bot's private folder into a project.
+- Orca's bots and OpenMausBot's bots now read the same rules, from one place (`_shared/lib/bot-note.ts`). The text of the Orca note did not change.
+- Measured on OpenMausBot 0.1.177 (macOS): a new bot, asked in Portuguese for a short note in a file and never told about Nirvana-OS, ran `nrv dispatch`, received the delivery and attached the file to the chat. Details and limits: `skills/_shared/adapters/openmausbot.md`.
+
 ## 0.15.4 — 2026-11-22
 
 ### Any language in, no rule asking for English

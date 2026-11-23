@@ -23,6 +23,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { nirvanaBotRules } from "./bot-note.ts";
 
 export const BOT_TOPIC_FILE = "nirvana-os.md";
 export const BOT_TOPIC_MARKER = "<!-- nirvana-os:orca-bot:v1 -->";
@@ -103,13 +104,7 @@ export function botTopicText(): string {
     "",
     "The Nirvana-OS engine wrote this note and keeps it current. To stop using it, take the line that points here out of MEMORY.md; the engine does not put it back.",
     "",
-    "Nirvana-OS is your owner's library of businesses, squads and mind-clones. Its command is `nrv`; when `nrv` is not on PATH, call `~/.local/bin/nrv`.",
-    "",
-    "- **A concrete deliverable goes to Nirvana-OS.** A report, a post, a document, a page, code, an analysis, a design: run `nrv dispatch --auto --exec \"<brief>\"` and wait for it to exit. It can take several minutes. Do not write the deliverable yourself.",
-    "- **The brief carries the request in the words and the language it came in.** Nirvana-OS reads any language and delivers in the request's language unless the request names another.",
-    "- **A correction** to something already dispatched is `nrv revise <project> \"<change>\"`, never a second dispatch.",
-    "- **Questions about the library** are answered by the command, not from memory: `nrv list-businesses`, `nrv list-squads`, `nrv list-clones`, `nrv find \"<need>\"`. Report only what it prints.",
-    "- **A delivery is real when the file is on disk.** Reply with the commands you ran and the full path of each delivered file. Exit code 0 means delivered; anything else, say what the command printed.",
+    ...nirvanaBotRules(),
     "",
   ].join("\n");
 }
