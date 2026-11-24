@@ -40,6 +40,7 @@ import { openclawAgentFor, openclawBindCommand } from "../lib/openclaw.ts";
 import { detectOrca, orcaHostActive, orcaRegisterProject, orcaSetWorkspace, orcaStatus, resolveOrcaExecutable } from "../lib/orca.ts";
 import { ensureOrcaSetupScript, ensureOrcaWorkspace, orcaAutoSetup, orcaBotAt, BOT_TOPIC_FILE } from "../lib/orca-bots.ts";
 import { openMausBotAt, openMausBotAutoSetup, OMB_TOPIC_FILE } from "../lib/openmausbot.ts";
+import { openBotAgentAt, openBotAutoSetup, openBotInstructionFile } from "../lib/openbot.ts";
 import { resolveSetting } from "../lib/settings.ts";
 
 const SKILLS_ROOT = process.env.NIRVANA_SKILLS_DIR
@@ -366,6 +367,15 @@ async function main() {
     openMausBotAutoSetup();
     log.fail(`${target} is a private folder of the OpenMausBot bot '${mausBotHere.name ?? mausBotHere.id}', not a project: nothing was written.`);
     log.info(`The bot already uses Nirvana-OS (memory/${OMB_TOPIC_FILE} in its folder). Dispatch from here as it is: nrv dispatch --auto --exec "<brief>"`);
+    process.exit(EXIT.INVALID_ARGS);
+  }
+  // And an OpenBot agent's workspace: OpenBot owns it, and its instruction file
+  // already carries the engine's section.
+  const openBotHere = openBotAgentAt(target);
+  if (openBotHere) {
+    openBotAutoSetup();
+    log.fail(`${target} is the workspace of the OpenBot agent ${openBotHere.id}, not a project: nothing was written.`);
+    log.info(`The agent already uses Nirvana-OS (a section in ${path.basename(openBotInstructionFile(openBotHere.dir))}). Dispatch from here as it is: nrv dispatch --auto --exec "<brief>"`);
     process.exit(EXIT.INVALID_ARGS);
   }
   const linkOnly = !!flags.link;
@@ -752,6 +762,8 @@ async function main() {
     }
     const mausBots = openMausBotAutoSetup().bots.filter((b) => b.outcome === "written");
     if (mausBots.length) log.ok(`OpenMausBot: ${mausBots.length} bot(s) now know how to use Nirvana-OS (${mausBots.map((b) => b.bot.name ?? b.bot.id).join(", ")}).`);
+    const openBotAgents = openBotAutoSetup().agents.filter((a) => a.outcome === "written");
+    if (openBotAgents.length) log.ok(`OpenBot: ${openBotAgents.length} agent(s) now know how to use Nirvana-OS.`);
   } catch { /* hints are best-effort */ }
   process.exit(EXIT.OK);
 }
