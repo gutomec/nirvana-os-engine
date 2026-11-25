@@ -6,6 +6,14 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que os instaladores de uma linha e os setups de pack consomem.
 
+## Não lançado
+
+### Os runtimes mudaram, e os registros acompanham
+
+- **O aviso do Grok diz a verdade.** O Grok ganhou `--add-dir` depois da 1.0.44, e o engine ainda dizia que o grok não tem flag de concessão de diretório. O aviso agora diz que o engine ainda não passa essa flag. Ela continua fora porque o grok recusa uma pasta que não é confiável, e essa recusa não pôde ser observada.
+- **`GROK_HOME` chega ao worker do grok no ambiente de filhos `declared`**, como `CLAUDE_CONFIG_DIR` e `CODEX_HOME` já chegavam. O OpenBot agora dá a cada servidor novo de um computador as próprias pastas de provedor por essas três variáveis, e um worker do grok sem `GROK_HOME` entraria com outra conta.
+- **Registros dos adapters conferidos em 2026-11-25** contra o agy 1.5.14, o Codex 0.164.0 e suas notas de release até a 0.172.0, o grok 1.0.92, o OpenClaw `v2026.11.10` e o branch principal do OpenBot. O que mudou nos upstreams e agora está escrito: o agy inicia execuções headless em modo Auto desde a 1.5.7 e não limita mais a 30 minutos a espera por tarefas em segundo plano desde a 1.5.0; o `codex exec` mantém a configuração própria do projeto e os servidores MCP desligados até a pasta ser confiável desde a 0.169.0; o OpenClaw deixa `~/.agents/skills` de fora quando a pasta de estado não é a padrão. Nenhum comando que o engine monta precisou mudar.
+
 ## 0.18.1 — 2026-11-25
 
 ### O juiz diz o que está errado, ou não diz nada

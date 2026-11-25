@@ -4,7 +4,7 @@
 > Covers the 3 protocols in a single doc. Canonical sections per Squad Protocol v6 §18.5.
 > System identity + capabilities (what Nirvana-OS is and can do): see `../NIRVANA-OS.md` (single source).
 
-> **Google's agent CLI.** `agy` replaced the Gemini CLI for individual tiers on 2026-06-18 (Google Developers Blog, "An important update: transitioning Gemini CLI to Antigravity CLI"). The Gemini CLI is no longer a Nirvana runtime; agy is how Nirvana reaches Gemini models directly. The CLI is versioned 1.x and ships every one or two days, so every flag below was read from `agy --help`, `agy changelog` and the docs bundled with the binary on **1.3.3** (2026-10-10). Re-check `agy --help` before relying on a flag on another build.
+> **Google's agent CLI.** `agy` replaced the Gemini CLI for individual tiers on 2026-06-18 (Google Developers Blog, "An important update: transitioning Gemini CLI to Antigravity CLI"). The Gemini CLI is no longer a Nirvana runtime; agy is how Nirvana reaches Gemini models directly. The CLI is versioned 1.x and ships every one or two days, so every flag below was read from `agy --help`, `agy changelog` and the docs bundled with the binary on **1.3.3** (2026-10-10). Re-check `agy --help` before relying on a flag on another build. The driver's flags were read again on **1.5.14**, and the changelog up to 1.5.17, on 2026-11-25; what changed since 1.3.3 is in §5, §6 and §15.
 
 ---
 
@@ -17,10 +17,10 @@
 | `cli` | `agy` (installed by the official installer to `~/.local/bin/agy` on macOS; `agy update` updates it in place) |
 | `min_version` | 1.2.10 recommended: from there a turn that fails mid-stream exits 3 instead of 0. `--output-format`, `--input-format stream-json` and `--conversation` exist on every build the engine supports (all three are on 1.3.3) |
 | `default_model` | Inherited from the runtime. The engine never sets a model; the user's agy config decides. A model is passed only when the user asks for one (`--model`). `agy models` lists the ids |
-| `tested_against` | agy 1.3.3 (flag surface, changelog, bundled docs). No model call was made for this doc |
+| `tested_against` | agy 1.3.3 (flag surface, changelog, bundled docs) and agy 1.5.14 (flag surface and changelog, 2026-11-25). No model call was made for this doc |
 | `config_root` | `~/.gemini/config/` (global customization root: `config.json`, `hooks.json`, `mcp_config.json`, `skills.json`, `rules.json`, `plugins.json`, `agents.json`, `skills/`, `rules/`). Workspace root: `<project>/.agents/`. CLI settings: `~/.gemini/antigravity-cli/settings.json` |
 | `nirvana_hook` | `~/.gemini/config/hooks.json`, named hook `nirvana-os`: a `PreInvocation` handler running `bun ".../gemini-session-start.ts" --agy`, timeout 10 s (written by `install.ts`) |
-| `skills_root` | `~/.gemini/config/skills/<name>/`, `~/.gemini/antigravity-cli/skills/<name>/`, `<workspace>/.agents/skills/<name>/` |
+| `skills_root` | `~/.gemini/config/skills/<name>/`, `~/.gemini/antigravity-cli/skills/<name>/`, `<workspace>/.agents/skills/<name>/`. Since 1.5.16 also the cross-tool `~/.agents/skills/<name>/`; a skill of the same name under `~/.gemini` wins |
 | `agents_root` | `<workspace>/.agents/agents/<name>.md` (Markdown custom agents); `agents.json` in a customization root or at a plugin root (1.3.3) |
 | `memory_root` | `GEMINI.md` / `AGENTS.md` walked up from cwd to the repo root; global rules in `~/.gemini/config/` |
 | `audit_log` | Hook payloads carry `transcriptPath` and `artifactDirectoryPath` (under an `antigravity-cli/` directory for the CLI). Nirvana keeps its own audit (`outputs/<trace>/audit.jsonl`) |
@@ -99,8 +99,9 @@ A Markdown custom agent in `.agents/agents/<name>.md`. The keys the changelog na
 ## 5. Tool whitelist mechanics
 
 - agy has no flag that lists allowed tools for one call. Restriction comes from three places: a custom agent's `tools` list (with `--agent`), `--mode plan` (plan before acting), and `PreToolUse` hooks that answer `allow`, `deny`, `ask` or `force_ask` per tool name (`run_command`, `view_file`, `browser_.*`, ...).
-- Approval: without `--dangerously-skip-permissions`, a headless run stops on the first tool that needs approval. Since 1.2.15 a denied request is respected and not worked around.
-- The engine passes `--dangerously-skip-permissions` unless the run asks for safety (`opts.yolo === false`, the `--safe` path).
+- Approval: without `--dangerously-skip-permissions`, a headless run stops on the first tool that needs approval. Since 1.2.15 a denied request is respected and not worked around. Which tools need approval depends on the build: up to 1.5.6 a session with no saved mode ran in Default; since 1.5.7 it starts in **Auto** wherever Auto is available, headless `-p` runs included, and Auto approves file edits and safe commands and still asks before an irreversible action. A user who wants the old behavior chooses Default in `/config`, which saves `"agentMode": ""` in `settings.json`; `--mode` takes only `accept-edits`, `auto` and `plan`.
+- Since 1.5.2 `--dangerously-skip-permissions` no longer approves a command on agy's system denylist: that command is blocked and every other one runs without asking.
+- The engine passes `--dangerously-skip-permissions` unless the run asks for safety (`opts.yolo === false`, the `--safe` path). The `--safe` path passes no mode, so it is Default on agy up to 1.5.6 and Auto from 1.5.7.
 - An answer-only call (`opts.noTools`, the routers) runs with `--mode plan` and never with `--dangerously-skip-permissions`, whatever `execution.headless_skip_permissions` says, and never with `--disable-slash-commands` (agy warns that plan mode "has no effect while slash command expansion is disabled"). Measured on 1.3.3 (2026-10-13): a JSON-only prompt answers normally (exit 0, `status: SUCCESS`, `response` holds the JSON); a tool that needs a permission (`write_file`, `command`) is auto-denied, nothing is written, and agy still exits 0 with `response: ""` and `denied_actions: [{"action": ..., "display_name": ...}]`. The driver reports that envelope as a failed run whose error names the denied actions, and does not run it again.
 
 ---
@@ -109,11 +110,11 @@ A Markdown custom agent in `.agents/agents/<name>.md`. The keys the changelog na
 
 agy exposes no turn or iteration limit on the command line. What exists:
 
-1. `--print-timeout <dur>` (Go duration, for example `20m`). Default `0s` waits until the turn completes; since 1.2.9 the run waits for background tasks up to that deadline, capped at 30 minutes.
+1. `--print-timeout <dur>` (Go duration, for example `20m`). Default `0s` waits until the turn completes. From 1.2.9 to 1.4.12 a run without the flag stopped its background tasks after a hidden 30 minutes and exited 0; since 1.5.0 it waits until they finish, and a `--print-timeout` that cuts a turn short exits 3 with an `AGY_ERROR` line naming the tasks it ended. Since 1.4.11 the result of a turn that ended early carries `finished_reason` (`print_timeout`, `interrupted` or `error`).
 2. agy's internal step limit, visible to a `Stop` hook as `terminationReason: "max_steps_exceeded"`.
 3. The engine's spawn timeout (`opts.timeoutMs`), which kills the process; the result reports exit 124 and nothing is parsed.
 
-A protocol `max_turns` is therefore not enforceable on agy. The engine does not pass `--print-timeout` today.
+A protocol `max_turns` is therefore not enforceable on agy. The engine does not pass `--print-timeout` today, so on agy 1.5.0 or later a background task that never ends is bounded only by the engine's own timeout and stall guard.
 
 ---
 
@@ -234,7 +235,7 @@ echo '{"type":"human_escalation_required","trigger_id":"budget","severity":"high
 
 ## 12. Runtime-specific validators
 
-- **Flags exist**: every flag the engine builds is in `agy --help` on 1.3.3. Re-run `agy --help` after an update before adding a new one.
+- **Flags exist**: every flag the engine builds is in `agy --help` on 1.3.3 and on 1.5.14. Re-run `agy --help` after an update before adding a new one.
 - **Approval coherent**: a run without `--dangerously-skip-permissions` must not need tools to start (the prompt arrives on stdin, so none is needed to read it).
 - **Model valid**: a model passed with `--model` must appear in `agy models`.
 - **Rules size**: a generated `AGENTS.md` / `GEMINI.md` must stay under 24 000 bytes or agy truncates it.
@@ -278,3 +279,4 @@ echo '{"type":"human_escalation_required","trigger_id":"budget","severity":"high
 | 2.0.0 | 2026-10-11 | Rewritten against agy 1.3.3. Removed flags that never existed (`--max-iterations`, `--tools`, `--resume`, `--checkpoint`), the `~/.antigravity/*` paths and the 2.0 versioning. Documents the real driver argv (one spawn, `--conversation` / `--continue`), exit 3 + `AGY_ERROR`, the 1.3.2 plan-mode change, hooks, rules, skills, plugins, subagents and Windows notes |
 | 2.1.0 | 2026-10-13 | Answer-only calls run in `--mode plan` without the skip flag, and an empty answer with `denied_actions` is a failed run. No system-prompt flag: the fixed part stays first in the message. Cost priced from tokens when the model is known, else unknown. The `nirvana-os` hook steps aside in dispatched and answer-only children |
 | 2.2.0 | 2026-10-14 | The prompt goes on stdin as one stream-json `user` event (`--input-format stream-json --output-format stream-json -p=`) for every call and size; the temp-file bootstrap is gone for agy. The result is the final `result` event |
+| 2.3.0 | 2026-11-25 | Checked against agy 1.5.14 (`--help`) and the changelog up to 1.5.17; the driver's argv is unchanged. Recorded: headless runs start in Auto mode since 1.5.7, which changes what the `--safe` path approves; a run without `--print-timeout` waits for background tasks with no 30-minute cap since 1.5.0; the skip flag blocks denylisted commands since 1.5.2; `finished_reason` in the result since 1.4.11; `~/.agents/skills` is a skills root since 1.5.16, which also added `-r` / `--resume` as aliases of `--conversation` |

@@ -14,7 +14,7 @@
 | `runtime` | `grok-cli` |
 | `vendor` | xAI |
 | `min_version` | Not pinned. The driver's argv needs `--prompt-file`, `--output-format json` and `--always-approve`; `--trust` is optional (a build that rejects it is retried without it, §7). Older builds fall back to `-p` and to `plain` output. |
-| `tested_against` | `grok 1.0.44 (5b807183dd79)`, released 2026-09-28, audited 2026-10-11. Latest published: 1.0.50 (2026-10-06), not installed on the audit machine. |
+| `tested_against` | `grok 1.0.44 (5b807183dd79)`, released 2026-09-28, audited 2026-10-11. Latest published then: 1.0.50 (2026-10-06). `--help` and the bundled user guide read again on `grok 1.0.92 (b06756fd6256)` on 2026-11-25: every flag the driver passes is there and `--trust` still parses. |
 | `default_model` | Inherited from the runtime. The engine NEVER sets a model; it comes from the `grok-cli:<model>` entry of `LLM_CASCADE` (or `opts.model`). Pass a model only when the user explicitly asks. `grok models` lists what the account can use. |
 | `config_paths` | `~/.grok/config.toml`, `~/.grok/trusted_folders.toml` (folder trust), `~/.grok/sandbox.toml`, `~/.grok/sessions/`, `<project>/.grok/`, `<project>/AGENTS.md`. `GROK_HOME` moves the whole `~/.grok` tree. |
 | `skills_root` | `./.grok/skills`, `<repo>/.grok/skills`, `~/.grok/skills`, plus `.agents/skills` at each tier and `~/.claude/skills` / `./.claude/skills` (Claude compatibility, on by default). Project skills load only in a trusted folder. |
@@ -169,7 +169,7 @@ Retries, in order, each only on proof that argv parsing refused the flag before 
 2. `--prompt-file` refused → rerun with `-p <prompt>` on argv (ARG_MAX-unsafe for large prompts; only for very old builds).
 3. `--output-format` refused → rerun without `--output-format` (plain text on stdout).
 
-Not passed today: `--effort`, `--no-subagents`, `--max-turns`, `--rules`, `--tools`, `--disallowed-tools`, `--permission-mode`, `--sandbox`, `--json-schema`. Grok is not in `EFFORT_CAPABLE`, so a requested effort is warned about once and dropped. There is no directory-grant flag (`--add-dir` equivalent): extra `addDirs` produce a warning.
+Not passed today: `--effort`, `--no-subagents`, `--max-turns`, `--rules`, `--tools`, `--disallowed-tools`, `--permission-mode`, `--sandbox`, `--json-schema`. Grok is not in `EFFORT_CAPABLE`, so a requested effort is warned about once and dropped. A directory grant exists on 1.0.92: `--add-dir <DIR>`, repeatable. The guide says it is refused when the folder is not trusted, and clap rejects it together with `-r` / `-c` (exit 2, seen on 1.0.92), since a resumed session keeps the folders it was created with. The engine does not pass it yet (§13), so extra `addDirs` still produce a warning.
 
 ### Light layer (`RUNTIMES` entry `grok-cli`)
 
@@ -339,6 +339,7 @@ Flags that exist in the CLI and that a hand-built command may add (the engine do
 10. **No `TeamCreate`** → teams are a file-system convention.
 11. **`agent` binary collision** (`~/.grok/bin/agent`), see §12.
 12. **Headless stdin.** 1.0.44 does not read piped stdin into the prompt (`--prompt-file` is the channel); release notes say 1.0.50 runs a bare `grok` with piped stdin headless. The engine does not rely on either.
+13. **`--add-dir` is not wired.** The flag was absent on 1.0.44 and is present on 1.0.92. How grok refuses an untrusted folder, and whether `--trust` covers an added folder, was not observed (grok was not signed in on the audit machine on 2026-11-25), so the driver keeps warning instead of passing a flag that could fail a run.
 
 **Compensating advantage:** built-in media generation, a $0-marginal subscription route, native hooks/subagents/sandbox/OTel, a resumable session store, and a json envelope with token and cost detail.
 
@@ -364,3 +365,4 @@ Flags that exist in the CLI and that a hand-built command may add (the engine do
 |---|---|---|
 | 1.0.0 | 2026-07-20 | Initial doc: covers Squad 5.0 + Business 1.0 + Harness 1.0 against Grok Build CLI (`grok 0.2.103`), Grok family (`grok-code` / `grok-4` / `grok-4-fast`). Dispatch via `grok -p --output-format json --always-approve --cwd`. |
 | 1.1.0 | 2026-10-11 | Rewritten against `grok 1.0.44` (latest 1.0.50). Real driver argv (`--prompt-file`, `-r` on resume, `--trust` on the autonomous path with a no-trust retry). Documents native subagents, hooks (incl. `~/.claude/settings.json`), `--tools` / `--allow` / `--deny`, folder trust, sandbox, effort, sessions, the json and error envelopes, the absence of a budget cap and the `agent` binary collision. Removes the false claims that the driver passes `--max-turns` and that grok lacks resume, subagents and hooks. |
+| 1.2.0 | 2026-11-25 | Checked against `grok 1.0.92`; the driver's argv is unchanged. Recorded `--add-dir` (new since 1.0.44, not passed by the engine) and corrected the claim that grok has no directory-grant flag. `GROK_HOME` now reaches a grok child under the `declared` child environment |

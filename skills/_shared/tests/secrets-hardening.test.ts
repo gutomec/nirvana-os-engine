@@ -36,6 +36,15 @@ describe("child-env allowlist", () => {
     expect(c.ELEVENLABS_API_KEY).toBeUndefined();
   });
 
+  test("a runtime's home override reaches its own child: the sign-in lives there", () => {
+    const homes = { ...env, CLAUDE_CONFIG_DIR: "/srv/homes/claude", CODEX_HOME: "/srv/homes/codex", GROK_HOME: "/srv/homes/grok" };
+    for (const [runtime, name] of [["claude-code", "CLAUDE_CONFIG_DIR"], ["codex", "CODEX_HOME"], ["grok-cli", "GROK_HOME"]] as const) {
+      const c = childEnvFor(homes, { mode: "declared", runtime, declared: [] });
+      expect(c[name]).toBe(homes[name]);
+    }
+    expect(childEnvFor(homes, { mode: "declared", runtime: "codex", declared: [] }).GROK_HOME).toBeUndefined();
+  });
+
   test("the base names cover what every child needs", () => {
     for (const k of ["PATH", "HOME", "LANG", "TERM", "TMPDIR"]) expect(BASE_ENV_NAMES).toContain(k);
   });

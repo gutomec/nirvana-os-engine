@@ -1487,6 +1487,9 @@ export const RUNTIME_DIR_GRANT_FLAG: Record<Runtime, string | null> = {
   // Kimi Code 2.x documents `--add-dir <dir>`, repeatable (kimi-command
   // reference, audited 2026-10-11); a build that rejects it is retried without.
   "kimi-cli": "--add-dir",
+  // grok has `--add-dir <DIR>` since some build after 1.0.44 (present on
+  // 1.0.92, audited 2026-11-25). Not passed: the guide says it is refused for a
+  // folder that is not trusted, and that refusal was not observed.
   "grok-cli": null,
   pi: null,
   opencode: null,
@@ -1494,7 +1497,8 @@ export const RUNTIME_DIR_GRANT_FLAG: Record<Runtime, string | null> = {
 
 function noDirGrantWarning(runtime: Runtime, dirs: string[] | undefined): { warnings: string[] } | {} {
   if (!dirs?.length) return {};
-  return { warnings: [`${runtime} has no directory-grant flag; not granted by the CLI: ${dirs.join(", ")}`] };
+  const why = runtime === "grok-cli" ? "the engine does not pass grok's --add-dir yet" : `${runtime} has no directory-grant flag`;
+  return { warnings: [`${why}; not granted by the CLI: ${dirs.join(", ")}`] };
 }
 
 /** Conservative allowlist used only when the caller asks for safe mode

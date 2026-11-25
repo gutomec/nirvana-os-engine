@@ -488,7 +488,9 @@ describe("directory grants — every runtime that has a flag passes it; the rest
       const r = runWith(runtime, { addDirs: dirs });
       expect(RUNTIME_DIR_GRANT_FLAG[runtime]).toBeNull();
       expect(r.warnings?.length).toBe(1);
-      expect(r.warnings![0]).toContain("no directory-grant flag");
+      // grok has the flag (1.0.92); the engine does not pass it, and says that instead.
+      expect(r.warnings![0]).toContain(runtime === "grok-cli" ? "does not pass grok's --add-dir" : "no directory-grant flag");
+      expect(r.warnings![0]).toContain("not granted by the CLI");
       expect(r.warnings![0]).toContain(dirs[0]);
     }, spawnBudgetMs(2));
   }
