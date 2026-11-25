@@ -185,6 +185,29 @@ const SEVERITY_LINES = [
   `did not ask for, and choices of method, format or length the brief left open.`,
 ];
 
+/** The fields of a verdict, spelled out for every rubric. Only prose-longform
+ *  declares them in its body; the others say "Default" or "Same as
+ *  prose-longform", so a judge that saw one of those alone made up the names of
+ *  the critique fields, and an item arrived with a severity and no text. */
+const OUTPUT_SCHEMA_LINES = [
+  `OUTPUT SCHEMA (the default: it applies whenever the rubric declares no JSON`,
+  `schema of its own). Use exactly these field names:`,
+  `{`,
+  `  "verdict": "pass" | "fail",`,
+  `  "total_score": <0-100>,`,
+  `  "criteria_scores": [`,
+  `    { "name": "<criterion>", "score": <0-10>, "weight": <number>,`,
+  `      "rationale": "<short>", "severity": "low"|"medium"|"high"|null,`,
+  `      "fixable": true|false }`,
+  `  ],`,
+  `  "critique": [`,
+  `    { "id": "<c1>", "severity": "high"|"medium"|"low",`,
+  `      "issue": "<the concrete problem, never empty>",`,
+  `      "suggested_fix": "<what to change, actionable>" }`,
+  `  ]`,
+  `}`,
+];
+
 function verdictLines(threshold: string): string[] {
   return [
     `Verdict: "fail" only when there is at least one "high" item or the total score`,
@@ -202,8 +225,11 @@ function buildPersona(rubric: RubricMeta): string {
     `You decide whether the deliverable does what the brief asked, and you name`,
     `what would make it better.`,
     ``,
-    `You MUST return ONLY a single JSON object matching the schema declared at`,
-    `the end of the rubric. No prose, no markdown fences, no preamble. JSON only.`,
+    `You MUST return ONLY a single JSON object matching the output schema below,`,
+    `or the JSON schema the rubric declares at its end when it declares one. No`,
+    `prose, no markdown fences, no preamble. JSON only.`,
+    ``,
+    ...OUTPUT_SCHEMA_LINES,
     ``,
     ...SEVERITY_LINES,
     ``,
@@ -259,6 +285,10 @@ function validateJudgeOutput(parsed: unknown, rubric: RubricMeta): { ok: true; d
   if (typeof o.total_score !== "number" || o.total_score < 0 || o.total_score > 100) errors.push("total_score_out_of_range");
   if (!Array.isArray(o.criteria_scores)) errors.push("criteria_scores_not_array");
   if (!Array.isArray(o.critique)) errors.push("critique_not_array");
+  // A critique item with a severity and no text is not a finding: nobody can
+  // read it or correct it, yet a `high` one withheld a delivery after two
+  // corrections with nothing to correct. The answer is not the schema.
+  else if (o.critique.some((it) => !String((it as CritiqueItem | null)?.issue ?? "").trim())) errors.push("critique_item_without_issue");
   if (errors.length > 0) return { ok: false, errors };
   return {
     ok: true,
@@ -502,8 +532,10 @@ function buildBatchPersona(rubrics: RubricMeta[]): string {
     `You MUST return ONLY a single JSON object {"verdicts": [ ... ]} with one entry`,
     `per (file, rubric) pair listed under "Your task". Each entry is`,
     `{"file": "<file id>", "rubric": "<rubric name>"} plus every field of the output`,
-    `schema declared at the end of that rubric. No prose, no markdown fences, no`,
-    `preamble. JSON only.`,
+    `schema below, or of the JSON schema that rubric declares at its end when it`,
+    `declares one. No prose, no markdown fences, no preamble. JSON only.`,
+    ``,
+    ...OUTPUT_SCHEMA_LINES,
     ``,
     ...SEVERITY_LINES,
     ``,
