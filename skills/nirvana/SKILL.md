@@ -244,6 +244,7 @@ user's words.
 | "este projeto só com as empresas dele" / "as dele e as globais" / "a biblioteca toda" | `nrv init . --scope=project` / `merge` / `global` |
 | "decida tudo por mim neste projeto" / "pode me perguntar de novo" | `nrv config set orchestrator.decisions auto --project` / `ask` |
 | "limite cada execução a US$ 5" | `nrv config set budget.default_max_cost_usd 5 --global` |
+| "quero que todos os meus bots usem sempre o Nirvana" / "meus bots só usam o Nirvana quando eu pedir" | `nrv config set bots.use always --global` / `on-demand` (the default) |
 | "qual template de brief você está usando?" / "quais templates eu tenho?" | `nrv brief templates` (the active one has `*`, with its origin) |
 | "neste projeto use o template detailed" (`slim`, `standard`, `karpathy`, or one of the user's) | `nrv config set briefing.template detailed --project` |
 | "quero editar o slim neste projeto" / "crie um template juridico a partir do standard" | `nrv brief init slim --project` / `nrv brief init juridico --from standard --project`, then tell the user the file path it printed; a new name also needs `nrv config set briefing.template juridico --project` |

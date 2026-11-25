@@ -40,7 +40,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { Database } from "bun:sqlite";
-import { nirvanaBotRules } from "./bot-note.ts";
+import { botUse, nirvanaBotRules, type BotUse } from "./bot-note.ts";
 import { nirvanaHome } from "./deps-home.ts";
 
 export const OPENBOT_BLOCK_BEGIN = "<!-- nirvana-os:openbot:v1 -->";
@@ -112,16 +112,16 @@ export function openBotAgentAt(dir: string, home?: string): OpenBotAgent | null 
 }
 
 /** The block the engine keeps in the agent's instruction file. */
-export function openBotBlockText(): string {
+export function openBotBlockText(use: BotUse = "on-demand"): string {
   return [
     OPENBOT_BLOCK_BEGIN,
     "## Nirvana-OS on this computer",
     "",
     "The Nirvana-OS engine wrote this section and keeps it current. To stop using it, delete the section; the engine does not put it back.",
     "",
-    ...nirvanaBotRules(),
+    ...nirvanaBotRules(use),
     "- **Show the delivery in the chat.** `attach_files_to_response` takes only files inside your workspace, and the delivery is outside it: copy each delivered file into your workspace, attach the copy, and give the original's full path too.",
-    "- **A team, when the person asks for one** or the request is a whole project across several areas (product, design, law and launch together, for example): the specialists become OpenBot agents the person can watch. Run `nrv team candidates \"<request>\"`, choose the roles, write the team file with `nrv team init`, then `nrv team sync --team <slug>` and do what it prints: it names the agents to create and who receives the request. Anything smaller is one `nrv dispatch`.",
+    `- **A team, when the person asks for one**${use === "always" ? " or the request is a whole project across several areas (product, design, law and launch together, for example)" : ""}: the specialists become OpenBot agents the person can watch. Run \`nrv team candidates "<request>"\`, choose the roles, write the team file with \`nrv team init\`, then \`nrv team sync --team <slug>\` and do what it prints: it names the agents to create and who receives the request. Anything smaller is one \`nrv dispatch\`.`,
     OPENBOT_BLOCK_END,
     "",
   ].join("\n");
@@ -170,12 +170,12 @@ function withBlock(text: string, block: string): string {
 }
 
 /** Leave one agent knowing how to use Nirvana-OS. Idempotent. */
-function ensureAgent(agent: OpenBotAgent, prepared: Set<string>): OpenBotOutcome {
+function ensureAgent(agent: OpenBotAgent, prepared: Set<string>, use: BotUse = "on-demand"): OpenBotOutcome {
   const key = comparable(agent.dir);
   const file = openBotInstructionFile(agent.dir);
   try {
     const current = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
-    const block = openBotBlockText();
+    const block = openBotBlockText(use);
     if (!BLOCK_RE.test(current)) {
       if (prepared.has(key)) return "turned-off";
       writePrivate(file, withBlock(current, block));
@@ -238,8 +238,8 @@ export function openBotDatabasePath(home?: string): string {
 /** Display name and provider of each agent this computer's server knows, read
  *  only, for the doctor's line. The app owns the database; the engine never
  *  writes it. Empty when it cannot be read. */
-export function openBotAgentLabels(home?: string): Map<string, { name: string | null; provider: string | null }> {
-  const out = new Map<string, { name: string | null; provider: string | null }>();
+export function openBotAgentLabels(home?: string): Map<string, { name: string | null; provider: string | null; about: string | null }> {
+  const out = new Map<string, { name: string | null; provider: string | null; about: string | null }>();
   const file = home === undefined && process.env.NIRVANA_OPENBOT_DB ? process.env.NIRVANA_OPENBOT_DB : openBotDatabasePath(home);
   if (!fs.existsSync(file)) return out;
   try {
@@ -250,7 +250,8 @@ export function openBotAgentLabels(home?: string): Map<string, { name: string | 
         try { doc = JSON.parse(row.agent_json); } catch { /* label stays empty */ }
         const name = doc?.name ?? doc?.profile?.name;
         const provider = doc?.provider ?? doc?.profile?.provider;
-        out.set(row.agent_id, { name: typeof name === "string" && name ? name : null, provider: typeof provider === "string" && provider ? provider : null });
+        const about = [doc?.title, doc?.description].filter((v) => typeof v === "string" && v).join(". ");
+        out.set(row.agent_id, { name: typeof name === "string" && name ? name : null, provider: typeof provider === "string" && provider ? provider : null, about: about || null });
       }
     } finally { db.close(); }
   } catch { /* an older or newer schema: no labels */ }
@@ -268,7 +269,13 @@ export function openBotAutoSetup(home?: string): OpenBotAutoSetupResult {
   if (!agents.length) return { agents: [] };
   const prepared = readPrepared(home);
   const before = prepared.size;
-  const result = agents.map((agent) => ({ agent, outcome: ensureAgent(agent, prepared) }));
+  // An agent made for Nirvana-OS, one whose name or description names it,
+  // sends every deliverable through it; any other uses it on demand.
+  const labels = openBotAgentLabels(home);
+  const result = agents.map((agent) => {
+    const label = labels.get(agent.id);
+    return { agent, outcome: ensureAgent(agent, prepared, botUse(label?.name, label?.about)) };
+  });
   if (prepared.size !== before) { try { writePrepared(prepared, home); } catch { /* next run retries */ } }
   return { agents: result };
 }

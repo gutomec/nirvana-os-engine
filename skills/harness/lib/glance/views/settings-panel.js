@@ -19,7 +19,7 @@ export const GROUP_LABELS = Object.freeze({
   multi_target: 'Multi-target', gauntlet: 'Gauntlet', execution: 'Execution', glance: 'Glance', runtime: 'Runtime',
   routing: 'Routing', supervisor: 'Supervisor', updates: 'Updates', notify: 'Notifications', orchestrator: 'Orchestrator', budget: 'Budget',
   baselines: 'Cost baselines', quality_gate: 'Quality gate', delivery: 'Delivery', verify: 'Admission gate',
-  audit: 'Audit', host: 'Host (Orca)', briefing: 'Briefing', review: 'Review', decision: 'Decision models',
+  audit: 'Audit', host: 'Host (Orca)', briefing: 'Briefing', review: 'Review', bots: 'Bots', decision: 'Decision models',
 });
 
 export const SOURCE_LABELS = Object.freeze({

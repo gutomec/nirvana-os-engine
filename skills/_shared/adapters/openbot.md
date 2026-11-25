@@ -36,7 +36,7 @@ without OpenBot costs one failed directory read.
 For every agent workspace, the engine keeps **one marked section** in the
 agent's instruction file, between `<!-- nirvana-os:openbot:v1 -->` and
 `<!-- /nirvana-os:openbot -->`. It carries the rules every host's bot gets
-(`_shared/lib/bot-note.ts`): a concrete deliverable goes through
+(`_shared/lib/bot-note.ts`): the bot uses Nirvana-OS **on demand**: when the request names it, names one of the owner's businesses, squads or mind-clones, or asks for a team, and works as it always did otherwise. A bot made for Nirvana-OS, one whose name or description names it, sends every concrete deliverable through it, and `bots.use: always` makes every bot do that. When Nirvana-OS is used, the deliverable goes through
 `nrv dispatch --auto --exec "<brief>"`, the brief keeps the request's words and
 language, a correction is `nrv revise`, library questions are answered by the
 command, and a delivery is real when the file is on disk. One line is this
