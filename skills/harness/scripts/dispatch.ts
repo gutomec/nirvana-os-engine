@@ -58,6 +58,7 @@ import { globalStoreDir, isInvalidProjectRoot, outputsBaseDir } from "../../_sha
 import { ensureOrcaSetupScript, ensureOrcaWorkspace, orcaAutoSetup, orcaWorktreeRootFor } from "../../_shared/lib/orca-bots.ts";
 import { orcaHostActive, orcaRegisterProject, orcaStatus } from "../../_shared/lib/orca.ts";
 import { openMausBotAutoSetup } from "../../_shared/lib/openmausbot.ts";
+import { openBotAutoSetup } from "../../_shared/lib/openbot.ts";
 import { ProjectService } from "../lib/control-plane/project-service.ts";
 import { nestedOutputsBase, runFolderOf } from "../../_shared/lib/run-workspace.ts";
 import { briefExcerpt } from "../../_shared/lib/brief-excerpt.ts";
@@ -356,6 +357,7 @@ if (!process.env.NIRVANA_DISPATCH_DEPTH) {
   try {
     orcaAutoSetup();
     openMausBotAutoSetup();
+    openBotAutoSetup();
     if (orcaHostActive()) {
       let root = runLedger.resolveProjectRoot();
       const worktree = root ? null : orcaWorktreeRootFor(process.cwd());

@@ -6,6 +6,18 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that the
 one-line installers and pack setups consume.
 
+## 0.15.7 — 2026-11-24
+
+### OpenBot's agents use Nirvana-OS on their own
+
+- A person who keeps agents in [OpenBot by Nightly Labs](https://github.com/nightly-labs/openbot) no longer has to explain Nirvana-OS to each one. The engine finds every agent workspace under `~/OpenBot/Agents` (and the agents of the local servers the app starts) and keeps one marked section in the agent's `AGENTS.md`, or `CLAUDE.md` when only that file exists. OpenBot reads that file at every turn, whatever the provider: Claude Code, Codex, Grok, OpenCode, Gemini and the others. From then on a request for a concrete deliverable goes through `nrv dispatch`, in the words and the language it came in.
+- Nothing to run. The installer, every update, `nrv init`, `nrv dispatch` and `nrv doctor` do it, as they already do for Orca's and OpenMausBot's bots.
+- The section is the engine's and the rest of the file is the owner's, kept byte for byte. Deleting the section turns it off and the engine does not put it back. The app's database is only read, for the agent names the doctor prints.
+- One rule is this host's own: OpenBot's `attach_files_to_response` takes only files inside the agent's workspace, so the agent copies the delivery there and attaches the copy.
+- `nrv doctor` has a new line, `openbot: agents`, with each agent, its provider and its state. `nrv init` refuses to turn an agent's workspace into a project.
+- This is not CopilotKit's OpenBot, an unrelated project of the same name that keeps its bots on a server out of reach of a local `nrv`.
+- Measured on OpenBot 0.78.0 (macOS): an agent asked in Portuguese for a LinkedIn post, and then for a checklist, never told about Nirvana-OS, ran `nrv dispatch`, passed the gate and attached the file to the chat, in 125 and 126 seconds from send to answer. Details and limits: `skills/_shared/adapters/openbot.md`.
+
 ## 0.15.6 — 2026-11-23
 
 ### The quality gate's judge answers in seconds

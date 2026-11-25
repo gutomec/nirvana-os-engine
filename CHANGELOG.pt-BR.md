@@ -6,6 +6,18 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que os instaladores de uma linha e os setups de pack consomem.
 
+## 0.15.7 — 2026-11-24
+
+### Os agentes do OpenBot usam o Nirvana-OS sozinhos
+
+- Quem mantém agentes no [OpenBot da Nightly Labs](https://github.com/nightly-labs/openbot) não precisa mais explicar o Nirvana-OS a cada um. O engine encontra todos os workspaces de agente em `~/OpenBot/Agents` (e os agentes dos servidores locais que o app inicia) e mantém uma seção marcada no `AGENTS.md` do agente, ou no `CLAUDE.md` quando só esse arquivo existe. O OpenBot lê esse arquivo a cada turno, qualquer que seja o provedor: Claude Code, Codex, Grok, OpenCode, Gemini e os outros. A partir daí, um pedido de entrega concreta passa pelo `nrv dispatch`, nas palavras e no idioma em que chegou.
+- Nada para rodar. O instalador, cada atualização, `nrv init`, `nrv dispatch` e `nrv doctor` fazem isso, como já fazem para os bots do Orca e do OpenMausBot.
+- A seção é do engine e o resto do arquivo é do dono, mantido byte a byte. Apagar a seção a desliga, e o engine não a coloca de volta. O banco do app é só lido, para os nomes dos agentes que o doctor mostra.
+- Uma regra é só deste host: o `attach_files_to_response` do OpenBot aceita apenas arquivos dentro do workspace do agente, então o agente copia a entrega para lá e anexa a cópia.
+- O `nrv doctor` ganhou a linha `openbot: agents`, com cada agente, seu provedor e seu estado. O `nrv init` se recusa a transformar o workspace de um agente em projeto.
+- Não é o OpenBot da CopilotKit, um projeto sem relação e de mesmo nome, que guarda os bots num servidor fora do alcance de um `nrv` local.
+- Medido no OpenBot 0.78.0 (macOS): um agente a quem se pediu, em português, um post para o LinkedIn e depois um checklist, sem nunca citar o Nirvana-OS, rodou o `nrv dispatch`, passou no gate e anexou o arquivo ao chat, em 125 e 126 segundos do envio à resposta. Detalhes e limites: `skills/_shared/adapters/openbot.md`.
+
 ## 0.15.6 — 2026-11-23
 
 ### O juiz do gate de qualidade responde em segundos

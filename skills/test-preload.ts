@@ -104,3 +104,14 @@ if (process.env.NIRVANA_ORCA_BOTS_DIR === undefined) {
 if (process.env.NIRVANA_OPENMAUSBOT_DIR === undefined) {
   process.env.NIRVANA_OPENMAUSBOT_DIR = path.join(process.env.HARNESS_LOGS_DIR!, "openmausbot");
 }
+// And OpenBot's agents under ~/OpenBot, with the engine's record of them and
+// the app's database it reads names from.
+if (process.env.NIRVANA_OPENBOT_DIR === undefined) {
+  process.env.NIRVANA_OPENBOT_DIR = path.join(process.env.HARNESS_LOGS_DIR!, "openbot");
+}
+if (process.env.NIRVANA_OPENBOT_STATE === undefined) {
+  process.env.NIRVANA_OPENBOT_STATE = path.join(process.env.HARNESS_LOGS_DIR!, "openbot-state.json");
+}
+if (process.env.NIRVANA_OPENBOT_DB === undefined) {
+  process.env.NIRVANA_OPENBOT_DB = path.join(process.env.HARNESS_LOGS_DIR!, "openbot.db");
+}
