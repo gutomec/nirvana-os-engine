@@ -121,6 +121,7 @@ export function openBotBlockText(): string {
     "",
     ...nirvanaBotRules(),
     "- **Show the delivery in the chat.** `attach_files_to_response` takes only files inside your workspace, and the delivery is outside it: copy each delivered file into your workspace, attach the copy, and give the original's full path too.",
+    "- **A team, when the person asks for one** or the request is a whole project across several areas (product, design, law and launch together, for example): the specialists become OpenBot agents the person can watch. Run `nrv team candidates \"<request>\"`, choose the roles, write the team file with `nrv team init`, then `nrv team sync --team <slug>` and do what it prints: it names the agents to create and who receives the request. Anything smaller is one `nrv dispatch`.",
     OPENBOT_BLOCK_END,
     "",
   ].join("\n");
@@ -187,6 +188,38 @@ function ensureAgent(agent: OpenBotAgent, prepared: Set<string>): OpenBotOutcome
     writePrivate(file, next);
     return "refreshed";
   } catch { return "skipped"; }
+}
+
+/** Hand these workspaces to a team (team-hosts.ts): the generic section, which
+ *  sends a deliverable to `nrv dispatch`, is taken out, because a team member is
+ *  the employee itself, and the workspace is recorded as prepared so the section
+ *  is not put back. The owner's text is kept. */
+export function openBotReserveForTeam(agents: OpenBotAgent[], home?: string): void {
+  if (!agents.length) return;
+  const prepared = readPrepared(home);
+  for (const agent of agents) {
+    prepared.add(comparable(agent.dir));
+    const file = openBotInstructionFile(agent.dir);
+    try {
+      const current = fs.readFileSync(file, "utf8");
+      if (BLOCK_RE.test(current)) writePrivate(file, current.replace(BLOCK_RE, ""));
+    } catch { /* no instruction file yet: nothing to take out */ }
+  }
+  try { writePrepared(prepared, home); } catch { /* next run retries */ }
+}
+
+/** Give workspaces back after a team let them go: the next run prepares them
+ *  like any other agent, generic section included. */
+export function openBotReleaseFromTeam(agents: OpenBotAgent[], home?: string): void {
+  if (!agents.length) return;
+  const prepared = readPrepared(home);
+  for (const agent of agents) prepared.delete(comparable(agent.dir));
+  try { writePrepared(prepared, home); } catch { /* next run retries */ }
+}
+
+/** Write an agent's instruction file as OpenBot does: owner-only and atomic. */
+export function openBotWriteInstructions(file: string, text: string): void {
+  writePrivate(file, text);
 }
 
 /** Does the agent's instruction file still carry the engine's block? */

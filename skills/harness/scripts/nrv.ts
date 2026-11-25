@@ -146,6 +146,7 @@ switch (cmd) {
   case "list-clones": case "clones-list": case "list-mind-clones": case "mind-clones": runScript(join(S, "list-clones.ts"), rest);
   case "inspect-clone": case "clone-inspect": case "inspect-mind-clone": runScript(join(S, "inspect-clone.ts"), rest);
   case "find-clone": case "clone-find": case "find-mind-clone": runScript(join(S, "find-clone.ts"), rest);
+  case "team": case "teams": runScript(join(SKILLS, "harness", "scripts", "team.ts"), rest);
   case "changes": case "surface": runScript(join(S, "nirvana-changes.ts"), rest);
   case "validate-starter": case "starter-validate": runScript(join(process.env.NIRVANA_PACKS_DIR ?? join(HOME, "nirvana-packs"), "scripts", "validate-starter.ts"), rest);
   case "license": case "verify-license": case "whoami": runScript(join(S, "license.ts"), rest);

@@ -38,7 +38,8 @@ import { openclawAgentsOnProjects } from "../../_shared/lib/openclaw.ts";
 import { detectOrca, orcaHooksStatus, orcaHostActive, orcaJson, orcaStatus, resolveOrcaExecutable } from "../../_shared/lib/orca.ts";
 import { botUsesNirvana, orcaAutoSetup } from "../../_shared/lib/orca-bots.ts";
 import { openMausBotAutoSetup, openMausBotUsesNirvana } from "../../_shared/lib/openmausbot.ts";
-import { openBotAgentLabels, openBotAutoSetup } from "../../_shared/lib/openbot.ts";
+import { openBotAgentLabels, openBotAutoSetup, openBotInstructionFile } from "../../_shared/lib/openbot.ts";
+import { teamOfText } from "../../_shared/lib/team-hosts.ts";
 import { codexConfigPath, codexHookTrustEntries, codexHooksPath } from "../../_shared/lib/codex-hooks.ts";
 import { expandEnv, findTempNrvEntries, readUserPath, tempRoots } from "../../_shared/lib/windows-user-path.ts";
 import { parseAuditLine } from "../../_shared/lib/cloudevents.js";
@@ -285,7 +286,11 @@ if (which("openclaw")) {
   if (agents.length) {
     const labels = openBotAgentLabels();
     const text = agents.map(({ agent, outcome }) => {
-      const state = outcome === "written" ? "prepared now"
+      // A team member carries its team's instructions in place of the generic section.
+      let team: string | null = null;
+      try { team = teamOfText(fs.readFileSync(openBotInstructionFile(agent.dir), "utf8")); } catch { /* no instruction file */ }
+      const state = team ? `member of the team ${team}`
+        : outcome === "written" ? "prepared now"
         : outcome === "refreshed" ? "section refreshed"
         : outcome === "turned-off" ? "section removed by its owner"
         : outcome === "skipped" ? "not prepared (its instruction file cannot be written)"

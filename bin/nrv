@@ -316,6 +316,8 @@ case "$cmd" in
     exec "$BUN_BIN" "$SKILLS/_shared/scripts/inspect-clone.ts" "$@" ;;
   find-clone|clone-find|find-mind-clone)
     exec "$BUN_BIN" "$SKILLS/_shared/scripts/find-clone.ts" "$@" ;;
+  team|teams)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/team.ts" "$@" ;;
 
   changes|surface)
     exec "$BUN_BIN" "$SKILLS/_shared/scripts/nirvana-changes.ts" "$@" ;;
