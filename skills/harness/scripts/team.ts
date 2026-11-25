@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 // team.ts — `nrv team`: a team of agents built from the library, for a host
-// that shows each agent working (OpenBot) or loads agents per project (Claude
-// Code). Written for an agent to run: every answer says what to do next.
+// that shows each agent working (OpenBot, Hermes Bot Mode) or loads agents per
+// project (Claude Code). Written for an agent to run: every answer says what to do next.
 //
 //   nrv team candidates "<request>"     businesses that fit, with their roles and clones
 //   nrv team init <slug> ["<purpose>"]  write the team.yaml skeleton (--here: in this project)
@@ -25,14 +25,16 @@ import { enumerate, resolveScope } from "../../_shared/lib/scope.ts";
 import {
   loadTeam, scopeLibrary, teamFileOf, teamHomeDir, teamSkeleton, TEAM_SLUG_RE, type TeamMember, type TeamSpec,
 } from "../../_shared/lib/team.ts";
-import { releaseOpenBot, syncClaudeCode, syncOpenBot, teamOfText, writeNeutral } from "../../_shared/lib/team-hosts.ts";
+import { hermesMemberId, releaseHermes, releaseOpenBot, syncClaudeCode, syncHermes, syncOpenBot, teamOfText, writeNeutral } from "../../_shared/lib/team-hosts.ts";
+import { hermesBinary, hermesProfileDir, hermesSoulFile, insideHermes } from "../../_shared/lib/hermes-bots.ts";
 import { flowPlan, forgetFlows, recordFlow, recordedFlows, squadWorkflows, workflowProblems } from "../../_shared/lib/team-flow.ts";
 
 const USAGE = [
   "usage: nrv team <command> [--team <slug> | --dir <folder>]",
   '  candidates "<request>"      businesses that fit the request, with their roles and clones',
   '  init <slug> ["<purpose>"]   write the team.yaml skeleton (--here: in the current project)',
-  "  sync [--host <h>]           validate, compile and write the team; host: openbot, claude-code or auto",
+  "  sync [--host <h>]           validate, compile and write the team; host: openbot, hermes, claude-code or auto",
+  "  sync --host hermes --create create the Hermes Bots the team has no profile for yet",
   "  status                      the team and where each member is",
   "  remove                      take the team's instructions out of the hosts; agents and files stay",
   "  flow <squad> [--workflow <name>]            the plan of a squad's workflow as an OpenBot workflow",
@@ -144,13 +146,14 @@ function init(slug: string, purpose: string): void {
 
 // ── sync ─────────────────────────────────────────────────────────────
 
-function pickHost(dir: string): "openbot" | "claude-code" | "neutral" {
+function pickHost(dir: string): "openbot" | "hermes" | "claude-code" | "neutral" {
   const asked = typeof flags.host === "string" ? flags.host : "auto";
-  if (asked === "openbot" || asked === "claude-code" || asked === "neutral") return asked;
-  if (asked !== "auto") fail("team: --host is openbot, claude-code, neutral or auto", EXIT.INVALID_ARGS);
+  if (asked === "openbot" || asked === "hermes" || asked === "claude-code" || asked === "neutral") return asked;
+  if (asked !== "auto") fail("team: --host is openbot, hermes, claude-code, neutral or auto", EXIT.INVALID_ARGS);
   // Whoever runs the command says where the team goes: an OpenBot agent wants
   // OpenBot teammates; anyone else in a project folder wants project agents.
   if (openBotAgentAt(process.cwd())) return "openbot";
+  if (insideHermes()) return "hermes";
   if (dir === process.cwd() || typeof flags.dir === "string") return "claude-code";
   return "neutral";
 }
@@ -200,10 +203,35 @@ function sync(): void {
       say("  It runs the project to the delivery and answers you; pass its answer and the project folder's path to the person.");
       say("  When the project ends, the person can hide the agents in OpenBot: a hidden agent keeps working when called.");
     }
+  } else if (host === "hermes") {
+    if (flags.create && !hermesBinary()) fail("team: the hermes command is not installed, so no Bot can be created. Install Hermes Agent and run this again.");
+    const r = syncHermes(spec, lib, { create: Boolean(flags.create) });
+    missing = r.missing.length;
+    say();
+    say(`Hermes: ${r.written.length} of ${spec.members.length} member(s) are Bots with their instructions.`);
+    for (const w of r.written) say(`  ✓ ${w.member.name} → @${w.id}${w.created ? " (created)" : ""}`);
+    for (const f of r.failed) say(`  ✗ ${f.member.name} (${f.id}): ${f.reason}`);
+    for (const id of r.released) say(`  - ${id}: no longer a member; this team's instructions were taken out. The profile stays.`);
+    say();
+    say("Next:");
+    if (r.missing.length) {
+      say("  1. Tell the person which Bots are about to be created in their Hermes:");
+      for (const x of r.missing) say(`       - "${x.member.name}" (profile ${x.id}) | ${roleOf(x.member).slice(0, 80)} | ${tierLine(spec, x.member)}`);
+      say("  2. Run this command again with --create. Each Bot is a new Hermes profile that takes its model and keys from the person's own profile.");
+    } else if (r.failed.length) {
+      say("  Fix the members marked ✗ above and run this command again.");
+    } else {
+      const id = hermesMemberId(spec, boss);
+      say(`  The team is ready. The orchestrator is ${boss.name} (@${id}).`);
+      say("  With Hermes Desktop: the Bots are in the Bots roster; the person opens the orchestrator's Bot Chat and sends the request there.");
+      say(`  From a terminal, in the folder the project should use: hermes -p ${id} -z "<the request, in the person's own words>"`);
+      say("  A Bot that should use another model: hermes -p <profile> model");
+    }
   } else {
     say();
-    say("No host was written: this command was not run by an OpenBot agent or inside a project folder.");
+    say("No host was written: this command was not run by an OpenBot or Hermes agent, or inside a project folder.");
     say("  --host openbot       the OpenBot agents that carry the members' names");
+    say("  --host hermes        one Bot of Hermes Agent's Bot Mode per member");
     say("  --host claude-code   subagents of the project in --dir <folder>");
   }
   emitAudit({ event: "x_team_synced", team: spec.team, host, members: spec.members.length, missing, team_dir: dir });
@@ -228,8 +256,11 @@ function status(): void {
   }
   for (const m of spec.members) {
     const marks = [m.id === spec.orchestrator && "orchestrator", m.id === spec.reviewer && "reviewer", m.reports_to && `answers to ${m.reports_to}`].filter(Boolean).join(", ");
+    let soul = "";
+    try { soul = fs.readFileSync(hermesSoulFile(hermesProfileDir(hermesMemberId(spec, m))), "utf8"); } catch { /* no such Bot */ }
     const where = [
       openbot.has(m.name.toLowerCase()) && `OpenBot ${openbot.get(m.name.toLowerCase())}`,
+      teamOfText(soul) === spec.team && `Hermes @${hermesMemberId(spec, m)}`,
       m.id !== spec.orchestrator && fs.existsSync(path.join(dir, ".claude", "agents", `${spec.team}-${m.id}.md`)) && `Claude Code ${spec.team}-${m.id}`,
     ].filter(Boolean).join(", ") || "not on a host yet";
     say(`  ${m.name} [${m.id}] ${roleOf(m)}${m.clones.length ? ` + ${m.clones.join(", ")}` : ""}${marks ? ` — ${marks}` : ""} — ${where}`);
@@ -249,10 +280,12 @@ function remove(): void {
     const file = path.join(agentsDir, f);
     try { if (teamOfText(fs.readFileSync(file, "utf8")) === spec.team) { fs.rmSync(file, { force: true }); removed.push(file); } } catch { /* not ours */ }
   }
-  say(`Team ${spec.team}: its instructions were taken out of ${released.length} OpenBot agent(s) and ${removed.length} Claude Code subagent file(s).`);
+  const hermes = releaseHermes(spec.team);
+  say(`Team ${spec.team}: its instructions were taken out of ${released.length} OpenBot agent(s), ${hermes.length} Hermes Bot(s) and ${removed.length} Claude Code subagent file(s).`);
   for (const a of released) say(`  - OpenBot ${a.id}: the agent stays; delete it in OpenBot if it is no longer wanted.`);
+  for (const id of hermes) say(`  - Hermes ${id}: the profile stays; the person deletes it with \`hermes profile delete ${id}\` if it is no longer wanted.`);
   say(`The team file stays: ${teamFileOf(dir)}`);
-  emitAudit({ event: "x_team_removed", team: spec.team, openbot_agents: released.length, claude_code_files: removed.length, team_dir: dir });
+  emitAudit({ event: "x_team_removed", team: spec.team, openbot_agents: released.length, hermes_bots: hermes.length, claude_code_files: removed.length, team_dir: dir });
 }
 
 // ── flow ─────────────────────────────────────────────────────────────

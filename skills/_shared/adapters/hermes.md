@@ -273,6 +273,7 @@ hermes send -t "slack:#nirvana-ops" "Escalação: budget_violation no trace <id>
 7. **Ephemeral backends** need Bun in the image.
 8. **`hermes acp`** (long-lived ACP server) would be the evolution for persistent orchestration; out of scope for v1 (which uses one-shot `-z`).
 9. **`nrv-hermes` is a bash script.** The wrapper that exports `NIRVANA_PROJECT_SKILLS` and starts the file watch has no Windows form. On Windows the bridge skill and the audit hooks work, and a project's own skills reach Hermes through its trusted-project discovery (§1) instead of the wrapper.
+11. **Bot Mode.** A team of the library becomes Bots (`nrv team sync --host hermes`) and a Bot in the roster can be called from any runtime (`nrv bot ask`); see `teams.md` §4b. The engine does not create the canonical Bot Chat, and a worker is not told about Hermes Bots on its own: only a profile the person put in the roster is callable, and there is no per-Bot switch like OpenBot's Local scripts.
 10. **Cost is not collected.** `--usage-file` exists; nothing in the engine reads it, because the engine does not spawn Hermes.
 
 ---
@@ -283,6 +284,7 @@ hermes send -t "slack:#nirvana-ops" "Escalação: budget_violation no trace <id>
 - Hooks: `~/.hermes/hermes-agent/agent/shell_hooks.py` (`ShellHookSpec.matches_tool`, `_serialize_payload`, `_record_approval`; at 0.23.4 the payload is built by `_payload_fields`), `hermes_cli/hooks.py` (`list`, `doctor`).
 - Tool and toolset names: `tools/file_tools.py` (`registry.register(name=…, toolset="file")`), `toolsets.py`.
 - One-shot and its usage report: `hermes_cli/_parser.py`, `hermes_cli/oneshot.py` (`_write_usage_file`).
+- Bot Mode, read at v0.23.4: `website/docs/user-guide/bot-mode.md`, `hermes_cli/profiles.py` (`read_profile_meta`, `PROFILE_ID_RE`), `hermes_cli/profile_provision.py` (what a fresh profile inherits), `tools/bot_mode_probe.py` (the roster marker and the Bot Chat title).
 - Releases: https://github.com/NousResearch/hermes-agent/releases (tags before 0.21.6 are dates: `v2026.5.7` is 0.13.0).
 - Context limit: `~/.hermes/hermes-agent/agent/prompt_builder.py` (`CONTEXT_FILE_MAX_CHARS = 20_000`).
 - Skills/external_dirs: `~/.hermes/hermes-agent/agent/skill_utils.py` (`get_external_skills_dirs`, `get_project_skills_dirs`, `PROJECT_SKILLS_SUBDIRS`), `~/.hermes/config.yaml`.

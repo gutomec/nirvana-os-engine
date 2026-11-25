@@ -147,7 +147,8 @@ engine-internal like the harness; neither is registered as a skill of its own.
 "crie os agentes deste projeto": the roles of the user's businesses become
 agents of the host, each with its mind-clone, and a role no business has
 becomes an expert-x. It is for a whole project across several areas, on a host
-that shows each agent (OpenBot) or loads agents per project (Claude Code);
+that shows each agent (OpenBot, Hermes Bot Mode) or loads agents per project
+(Claude Code);
 anything smaller is one dispatch.
 
 1. `nrv team candidates "<request>"` lists the businesses that fit, with their
@@ -157,7 +158,8 @@ anything smaller is one dispatch.
    request needs and a reviewer.
 3. `nrv team sync --team <slug>` validates it, writes each member's
    instructions and prints what to do next: on OpenBot, the agents to create
-   and who receives the request; on Claude Code, the subagents it wrote and the
+   and who receives the request; on Hermes, the Bots it would create (run it
+   again with `--create` after telling the user); on Claude Code, the subagents it wrote and the
    orchestrator's instructions for the main session.
 
 Tell the user which agents will be created before creating them. `nrv team
@@ -169,11 +171,11 @@ put on a schedule** becomes a workflow of the host: `nrv team flow <squad>`
 prints the plan and the call that builds it, and `--created <workflowId>`
 records it. OpenBot only; a squad the user just wants done is one dispatch.
 
-### An agent the user keeps in OpenBot
+### An agent the user keeps in OpenBot or in Hermes
 
-"use meu bot de imagem do OpenBot", "peça as imagens ao meu agente do OpenBot":
-the user has specialists configured in OpenBot (Nightly Labs) and wants one to
-do a part of the work, whatever runtime you are on.
+"use meu bot de imagem do OpenBot", "peça ao meu bot do Hermes": the user has
+specialists configured in OpenBot (Nightly Labs) or as Bots of Hermes Agent's
+Bot Mode and wants one to do a part of the work, whatever runtime you are on.
 
 - `nrv bot list` shows the agents that can be called and what each is for.
 - `nrv bot ask "<agent>" "<what you need>" --out <folder>` sends the task,
@@ -186,6 +188,11 @@ deliverable still goes to the harness; call `nrv bot ask` yourself only when
 the user asks one agent for one thing. Only an agent with **Local scripts** on
 can be called, and only the user turns that on: Agent settings → Rules →
 Permissions. Never try to turn it on for them.
+
+A Hermes Bot is any profile in Bot Mode's roster. It answers in one turn
+(`--host hermes` when the name also exists in OpenBot), there is nothing to
+pick up later, and a worker is not told about Hermes Bots: call one only when
+the user asks for it.
 
 ## 5. What a fresh install looks like
 
