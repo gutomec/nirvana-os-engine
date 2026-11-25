@@ -141,7 +141,13 @@ agent 负责编排，从不亲自撰写交付物。它挑选的每一家公司�
 
 ## Packs
 
-Pack 是在 [squads.sh](https://squads.sh/pt/packs) 上出售的精选公司、squad 和 mind-clone。旗舰是 [Genesis Circle](https://squads.sh/pt/nirvana-os)。
+Pack 是在 [squads.sh](https://squads.sh/pt/packs) 上出售的精选公司、squad 和 mind-clone。
+
+**创始套装 [Genesis Circle](https://squads.sh/pt/nirvana-os) 已售罄。** 已购买的用户可以继续下载和更新。在售的 pack：
+
+[Starter](https://squads.sh/pt/packs/starter) · [Marketing & Growth](https://squads.sh/pt/packs/marketing-growth) · [Creative Studio](https://squads.sh/pt/packs/creative-studio) · [Web Design](https://squads.sh/pt/packs/web-design) · [Motion Design Genius](https://squads.sh/pt/packs/motion-design-genius) · [Masterpiece](https://squads.sh/pt/packs/masterpiece) · [Creators](https://squads.sh/pt/packs/creators) · [Publishing & Knowledge](https://squads.sh/pt/packs/publishing-knowledge) · [Research & Intelligence](https://squads.sh/pt/packs/research-intelligence) · [Engineering & DevOps](https://squads.sh/pt/packs/engineering-devops) · [Game Development](https://squads.sh/pt/packs/game-development) · [Legal & Compliance](https://squads.sh/pt/packs/legal-compliance) · [Accounting & Consulting](https://squads.sh/pt/packs/accounting-consulting) · [Commerce & Backoffice](https://squads.sh/pt/packs/commerce-backoffice) · [Fintech & Crypto](https://squads.sh/pt/packs/fintech-crypto) · [Health Management](https://squads.sh/pt/packs/health-management) · [Education](https://squads.sh/pt/packs/education) · [Food & Hospitality](https://squads.sh/pt/packs/food-hospitality) · [Real Estate & Construction](https://squads.sh/pt/packs/realestate-construction)
+
+商店里总有新东西：限时闪购经常出现，特别版 pack 只在限定时间内出售。[pack 页面](https://squads.sh/pt/packs) 显示当前开放的内容。
 
 1. 在 squads.sh 购买 pack，并从你的控制台下载它的 zip。
 2. 解压整个压缩包，并在包含 `setup.sh` 的文件夹中打开终端：

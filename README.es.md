@@ -142,7 +142,13 @@ Dos cosas quedan en tus manos. Un agente de OpenBot solo responde a otros agente
 
 ## Packs
 
-Los packs son empresas, squads y mind-clones curados que se venden en [squads.sh](https://squads.sh/pt/packs). El buque insignia es [Genesis Circle](https://squads.sh/pt/nirvana-os).
+Los packs son empresas, squads y mind-clones curados que se venden en [squads.sh](https://squads.sh/pt/packs).
+
+**[Genesis Circle](https://squads.sh/pt/nirvana-os), el bundle fundador, está agotado.** Quien lo compró sigue descargándolo y actualizándolo. Los packs a la venta:
+
+[Starter](https://squads.sh/pt/packs/starter) · [Marketing & Growth](https://squads.sh/pt/packs/marketing-growth) · [Creative Studio](https://squads.sh/pt/packs/creative-studio) · [Web Design](https://squads.sh/pt/packs/web-design) · [Motion Design Genius](https://squads.sh/pt/packs/motion-design-genius) · [Masterpiece](https://squads.sh/pt/packs/masterpiece) · [Creators](https://squads.sh/pt/packs/creators) · [Publishing & Knowledge](https://squads.sh/pt/packs/publishing-knowledge) · [Research & Intelligence](https://squads.sh/pt/packs/research-intelligence) · [Engineering & DevOps](https://squads.sh/pt/packs/engineering-devops) · [Game Development](https://squads.sh/pt/packs/game-development) · [Legal & Compliance](https://squads.sh/pt/packs/legal-compliance) · [Accounting & Consulting](https://squads.sh/pt/packs/accounting-consulting) · [Commerce & Backoffice](https://squads.sh/pt/packs/commerce-backoffice) · [Fintech & Crypto](https://squads.sh/pt/packs/fintech-crypto) · [Health Management](https://squads.sh/pt/packs/health-management) · [Education](https://squads.sh/pt/packs/education) · [Food & Hospitality](https://squads.sh/pt/packs/food-hospitality) · [Real Estate & Construction](https://squads.sh/pt/packs/realestate-construction)
+
+Siempre hay algo nuevo en la tienda: las ofertas relámpago aparecen a menudo, y hay packs especiales a la venta por tiempo limitado. La [página de packs](https://squads.sh/pt/packs) muestra lo que está abierto hoy.
 
 1. Compra el pack en squads.sh y descarga su zip desde tu panel.
 2. Descomprime el archivo completo y abre una terminal en la carpeta que contiene `setup.sh`:

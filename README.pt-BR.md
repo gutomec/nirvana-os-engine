@@ -142,7 +142,13 @@ Duas coisas ficam na sua mão. Um agente do OpenBot só responde a outros agente
 
 ## Packs
 
-Packs são empresas, squads e mind-clones curados, vendidos no [squads.sh](https://squads.sh/pt/packs). O carro-chefe é o [Genesis Circle](https://squads.sh/pt/nirvana-os).
+Packs são empresas, squads e mind-clones curados, vendidos no [squads.sh](https://squads.sh/pt/packs).
+
+**O [Genesis Circle](https://squads.sh/pt/nirvana-os), o bundle fundador, esgotou.** Quem comprou continua baixando e atualizando normalmente. Os packs à venda:
+
+[Starter](https://squads.sh/pt/packs/starter) · [Marketing & Growth](https://squads.sh/pt/packs/marketing-growth) · [Creative Studio](https://squads.sh/pt/packs/creative-studio) · [Web Design](https://squads.sh/pt/packs/web-design) · [Motion Design Genius](https://squads.sh/pt/packs/motion-design-genius) · [Masterpiece](https://squads.sh/pt/packs/masterpiece) · [Creators](https://squads.sh/pt/packs/creators) · [Publishing & Knowledge](https://squads.sh/pt/packs/publishing-knowledge) · [Research & Intelligence](https://squads.sh/pt/packs/research-intelligence) · [Engineering & DevOps](https://squads.sh/pt/packs/engineering-devops) · [Game Development](https://squads.sh/pt/packs/game-development) · [Legal & Compliance](https://squads.sh/pt/packs/legal-compliance) · [Accounting & Consulting](https://squads.sh/pt/packs/accounting-consulting) · [Commerce & Backoffice](https://squads.sh/pt/packs/commerce-backoffice) · [Fintech & Crypto](https://squads.sh/pt/packs/fintech-crypto) · [Health Management](https://squads.sh/pt/packs/health-management) · [Education](https://squads.sh/pt/packs/education) · [Food & Hospitality](https://squads.sh/pt/packs/food-hospitality) · [Real Estate & Construction](https://squads.sh/pt/packs/realestate-construction)
+
+Sempre tem novidade na loja: promoções relâmpago aparecem com frequência, e packs especiais ficam à venda por tempo limitado. A [página de packs](https://squads.sh/pt/packs) mostra o que está aberto hoje.
 
 1. Compre o pack no squads.sh e baixe o zip pelo seu painel.
 2. Descompacte o arquivo inteiro e abra um terminal na pasta que tem o `setup.sh`:

@@ -142,7 +142,13 @@ Nirvana-OS का उपयोग करके एक लॉन्च पैक�
 
 ## Packs
 
-Packs क्यूरेट की गई कंपनियाँ, squads और mind-clones हैं, जो [squads.sh](https://squads.sh/pt/packs) पर बिकते हैं। फ़्लैगशिप [Genesis Circle](https://squads.sh/pt/nirvana-os) है।
+Packs क्यूरेट की गई कंपनियाँ, squads और mind-clones हैं, जो [squads.sh](https://squads.sh/pt/packs) पर बिकते हैं।
+
+**संस्थापक बंडल [Genesis Circle](https://squads.sh/pt/nirvana-os) बिक चुका है।** जिन्होंने इसे ख़रीदा है, वे इसे डाउनलोड और अपडेट करते रह सकते हैं। बिक्री पर उपलब्ध packs:
+
+[Starter](https://squads.sh/pt/packs/starter) · [Marketing & Growth](https://squads.sh/pt/packs/marketing-growth) · [Creative Studio](https://squads.sh/pt/packs/creative-studio) · [Web Design](https://squads.sh/pt/packs/web-design) · [Motion Design Genius](https://squads.sh/pt/packs/motion-design-genius) · [Masterpiece](https://squads.sh/pt/packs/masterpiece) · [Creators](https://squads.sh/pt/packs/creators) · [Publishing & Knowledge](https://squads.sh/pt/packs/publishing-knowledge) · [Research & Intelligence](https://squads.sh/pt/packs/research-intelligence) · [Engineering & DevOps](https://squads.sh/pt/packs/engineering-devops) · [Game Development](https://squads.sh/pt/packs/game-development) · [Legal & Compliance](https://squads.sh/pt/packs/legal-compliance) · [Accounting & Consulting](https://squads.sh/pt/packs/accounting-consulting) · [Commerce & Backoffice](https://squads.sh/pt/packs/commerce-backoffice) · [Fintech & Crypto](https://squads.sh/pt/packs/fintech-crypto) · [Health Management](https://squads.sh/pt/packs/health-management) · [Education](https://squads.sh/pt/packs/education) · [Food & Hospitality](https://squads.sh/pt/packs/food-hospitality) · [Real Estate & Construction](https://squads.sh/pt/packs/realestate-construction)
+
+स्टोर में हमेशा कुछ नया होता है: फ़्लैश सेल अक्सर आती हैं, और विशेष packs सीमित समय के लिए बिकते हैं। [packs पेज](https://squads.sh/pt/packs) दिखाता है कि आज क्या खुला है।
 
 1. squads.sh पर pack ख़रीदें और अपने डैशबोर्ड से उसकी zip डाउनलोड करें।
 2. पूरा आर्काइव अनज़िप करें और उस फ़ोल्डर में टर्मिनल खोलें जिसमें `setup.sh` है:

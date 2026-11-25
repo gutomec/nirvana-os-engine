@@ -142,7 +142,13 @@ Two things stay in your hands. An OpenBot agent answers other agents only after 
 
 ## Packs
 
-Packs are curated businesses, squads and mind-clones sold on [squads.sh](https://squads.sh/pt/packs). The flagship is [Genesis Circle](https://squads.sh/pt/nirvana-os).
+Packs are curated businesses, squads and mind-clones sold on [squads.sh](https://squads.sh/pt/packs).
+
+**[Genesis Circle](https://squads.sh/pt/nirvana-os), the founding bundle, is sold out.** Whoever bought it keeps downloading and updating it. The packs on sale:
+
+[Starter](https://squads.sh/pt/packs/starter) · [Marketing & Growth](https://squads.sh/pt/packs/marketing-growth) · [Creative Studio](https://squads.sh/pt/packs/creative-studio) · [Web Design](https://squads.sh/pt/packs/web-design) · [Motion Design Genius](https://squads.sh/pt/packs/motion-design-genius) · [Masterpiece](https://squads.sh/pt/packs/masterpiece) · [Creators](https://squads.sh/pt/packs/creators) · [Publishing & Knowledge](https://squads.sh/pt/packs/publishing-knowledge) · [Research & Intelligence](https://squads.sh/pt/packs/research-intelligence) · [Engineering & DevOps](https://squads.sh/pt/packs/engineering-devops) · [Game Development](https://squads.sh/pt/packs/game-development) · [Legal & Compliance](https://squads.sh/pt/packs/legal-compliance) · [Accounting & Consulting](https://squads.sh/pt/packs/accounting-consulting) · [Commerce & Backoffice](https://squads.sh/pt/packs/commerce-backoffice) · [Fintech & Crypto](https://squads.sh/pt/packs/fintech-crypto) · [Health Management](https://squads.sh/pt/packs/health-management) · [Education](https://squads.sh/pt/packs/education) · [Food & Hospitality](https://squads.sh/pt/packs/food-hospitality) · [Real Estate & Construction](https://squads.sh/pt/packs/realestate-construction)
+
+There is always something new in the store: flash sales come up often, and special packs go on sale for a limited time. The [packs page](https://squads.sh/pt/packs) shows what is open today.
 
 1. Buy the pack on squads.sh and download its zip from your dashboard.
 2. Unzip the whole archive and open a terminal in the folder that holds `setup.sh`:
