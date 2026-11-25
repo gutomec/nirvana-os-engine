@@ -155,6 +155,16 @@ measured).
 - A remote server, an OpenBot in Docker or on a VPS, keeps its agents on
   another machine; only the workspaces under `~/OpenBot` on this computer are
   prepared.
+- A server on this computer created by a build that has commit `ad44275`
+  (2026-11-25, #16138) gets its own provider homes: OpenBot starts its agents
+  with `CLAUDE_CONFIG_DIR`, `CODEX_HOME` and `GROK_HOME` pointing into the
+  server's user data (`GEMINI_HOME` is left alone). A dispatch started from
+  such an agent hands those variables to its workers, so a worker signs in as
+  that server and reads that home's settings: the hooks and skills the engine
+  installed under `~/.claude` and `~/.codex` are not loaded there. The dispatch
+  itself, the audit the engine writes and the delivery are unchanged. A server
+  made by an earlier build keeps the shared homes. Read from the commit, not
+  run.
 - OpenBot's license is PolyForm Noncommercial 1.0.0. The engine ships none of
   its code; whoever uses OpenBot for work needs Nightly Labs' commercial terms.
 

@@ -13,7 +13,7 @@
 | Runtime | OpenClaw (`openclaw`) |
 | Skills spec | [AgentSkills](https://agentskills.io): `SKILL.md` with YAML frontmatter |
 | Skills roots (precedence) | `<workspace>/skills` → `<workspace>/.agents/skills` → `~/.agents/skills` → `<state-dir>/skills` → bundled |
-| Where the engine installs | `~/.agents/skills` (personal), via `RUNTIME_SKILL_DIRS` |
+| Where the engine installs | `~/.agents/skills` (personal), via `RUNTIME_SKILL_DIRS`. OpenClaw reads that root only with the default state folder (§6) |
 | Discovery | scans up to 6 levels deep, matches on the frontmatter `name` field, **not** on the folder name |
 | Invocation | `/harness` (slash), `$harness` (reference in the prompt), or direct dispatch by tool |
 | Project contract | **there is no** equivalent of `CLAUDE.md` / `AGENTS.md` read by the runtime |
@@ -152,3 +152,9 @@ on any of them.
   CLI, for example). The engine links per skill, never the whole directory:
   a directory symlink into another runtime's tree makes each skill
   reachable twice and produces "Skill conflict detected".
+- **A custom state folder hides `~/.agents/skills`.** OpenClaw's skills page
+  at `v2026.11.10` lists the personal root as "default state only": when
+  `OPENCLAW_STATE_DIR` points anywhere but `~/.openclaw`, home-scoped roots such
+  as `~/.agents/skills` are left out, and the engine's skills are not seen.
+  Workspace, project and `<state-dir>/skills` roots still load. Read on
+  2026-11-25; the engine links nothing into a custom state folder today.

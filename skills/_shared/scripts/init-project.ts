@@ -87,9 +87,11 @@ const PER_AGENT_SYMLINKS: Array<{ name: string; rel: string }> = [
   { name: "bob",           rel: ".bob/skills" },
   { name: "adal",          rel: ".adal/skills" },
   { name: "codearts-agent", rel: ".codeartsdoer/skills" },
-  // Hermes does NOT auto-discover project skills by CWD (HOME-global + external_dirs
-  // only). This dir is created for portability/`--copy` deliveries; the `nrv-hermes`
-  // wrapper points Hermes at it (or at .agents/skills) per session. See bin/nrv-hermes.
+  // Hermes discovers `<git root>/.hermes/skills` and `.agents/skills` only for a
+  // project its owner listed in `skills.trusted_project_dirs` (0.20.5, 0.23.4);
+  // otherwise HOME-global + external_dirs only. This dir is created for
+  // portability/`--copy` deliveries; the `nrv-hermes` wrapper points Hermes at it
+  // (or at .agents/skills) per session, trusted or not. See bin/nrv-hermes.
   { name: "hermes",        rel: ".hermes/skills" },
 ];
 

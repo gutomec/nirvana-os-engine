@@ -87,7 +87,19 @@ export function patchHermesExternalDirs(raw: string, file: string, bridgeDir: st
   return rendered(doc, file);
 }
 
-/** Add a Nirvana Hermes audit hook only when that event has no existing Nirvana hook. */
+/** The tools the audit hook observes. Hermes matches with `re.fullmatch` over the
+ *  TOOL name (agent/shell_hooks.py, `matches_tool`), and the tools that write are
+ *  `terminal`, `write_file` and `patch`. `file` is the name of their toolset, not
+ *  of a tool: the matcher the engine wrote up to 0.18.1 never fired on a file
+ *  write (run against the installed 0.20.5 and read at v0.23.4, 2026-11-25). */
+export const HERMES_AUDIT_MATCHER = "terminal|write_file|patch";
+const HERMES_AUDIT_MATCHER_BEFORE = "terminal|file";
+
+/** Add a Nirvana Hermes audit hook only when that event has no existing Nirvana
+ *  hook, and bring a Nirvana hook that still carries the matcher of earlier
+ *  releases to the current one. A hook whose matcher someone changed, or took
+ *  out, is theirs and stays as it is. The allowlist keys on (event, command),
+ *  so a new matcher needs no new consent. */
 export function patchHermesAuditHooks(raw: string, file: string, token: string, hooks: Array<[string, string]>): string | null {
   const doc = parseYaml(raw, file);
   const root = rootMapping(doc, file);
@@ -95,8 +107,16 @@ export function patchHermesAuditHooks(raw: string, file: string, token: string, 
   let changed = false;
   for (const [event, command] of hooks) {
     const current = hookList(doc.getIn(["hooks", event]), file, `hooks.${event}`);
-    if (current.some((hook) => hook && typeof hook.command === "string" && hook.command.includes(token))) continue;
-    doc.setIn(["hooks", event], [...current, { matcher: "terminal|file", command, timeout: 5 }]);
+    const ours = (hook: any) => hook && typeof hook.command === "string" && hook.command.includes(token);
+    if (current.some(ours)) {
+      current.forEach((hook, index) => {
+        if (!ours(hook) || hook.matcher !== HERMES_AUDIT_MATCHER_BEFORE) return;
+        doc.setIn(["hooks", event, index, "matcher"], HERMES_AUDIT_MATCHER);
+        changed = true;
+      });
+      continue;
+    }
+    doc.setIn(["hooks", event], [...current, { matcher: HERMES_AUDIT_MATCHER, command, timeout: 5 }]);
     changed = true;
   }
   return changed ? rendered(doc, file) : null;

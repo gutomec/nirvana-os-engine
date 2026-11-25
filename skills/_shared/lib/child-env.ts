@@ -37,7 +37,10 @@ export const RUNTIME_AUTH_ENV: Record<string, string[]> = {
   "claude-code": ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "CLAUDE_CONFIG_DIR", "CLAUDECODE"],
   "codex": ["OPENAI_API_KEY", "OPENAI_BASE_URL", "CODEX_HOME"],
   "antigravity-cli": ["GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_CLOUD_PROJECT", "GOOGLE_APPLICATION_CREDENTIALS"],
-  "grok-cli": ["XAI_API_KEY", "GROK_API_KEY"],
+  // GROK_HOME moves the whole `~/.grok` tree, the sign-in included (grok's
+  // config guide). A host that gives a server its own provider homes sets it
+  // beside CLAUDE_CONFIG_DIR and CODEX_HOME (OpenBot, 2026-11-25).
+  "grok-cli": ["XAI_API_KEY", "GROK_API_KEY", "GROK_HOME"],
   "kimi-cli": ["MOONSHOT_API_KEY", "KIMI_API_KEY"],
   "qwen-code": ["DASHSCOPE_API_KEY", "QWEN_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL"],
   "opencode": ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "OPENCODE_CONFIG"],

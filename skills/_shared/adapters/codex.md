@@ -17,7 +17,7 @@
 | `vendor` | OpenAI |
 | `binary` | `codex` (headless entry point: `codex exec`, alias `codex e`) |
 | `min_version` | Codex CLI 0.153 (the driver's flag set was first audited there; older builds lose flags through the driver's retry, see §11) |
-| `tested_against` | Codex CLI 0.159.2 (installed, help pages read 2026-10-11) and 0.162.1 (latest stable, source at tag `rust-v0.162.1`) |
+| `tested_against` | Codex CLI 0.159.2 (installed, help pages read 2026-10-11) and 0.162.1 (latest stable then, source at tag `rust-v0.162.1`). `codex exec --help` read again on 0.164.0, and the release notes up to 0.172.0, on 2026-11-25 |
 | `default_model` | Inherited from the user's `~/.codex/config.toml`. The engine never pins a model; it passes `--model` only when the user or a cascade entry names an OpenAI id. The bundled catalog default is `gpt-6.1-sol`. |
 | `config_paths` | `~/.codex/config.toml` (or `$CODEX_HOME/config.toml`), `$CODEX_HOME/<name>.config.toml` (profile layered by `-p <name>`), `<repo>/.codex/config.toml` |
 | `instructions` | `~/.codex/AGENTS.md` (global), `AGENTS.md` from the repo root down to cwd (project) |
@@ -274,6 +274,7 @@ Failure contract used by the driver: exit 0 is not success. A terminal `error` o
 6. **Skills installed in the deprecated root** → `runtime-dirs.ts` still targets `~/.codex/skills`, and the OpenClaw target fills `~/.agents/skills`, so Codex lists `nirvana` twice.
 7. **No scheduler and no team primitive** → external cron and file-system conventions.
 8. **Mentions and tickets** depend on the harness fanning out between runs.
+9. **A project's own Codex config needs saved trust** → since 0.169.0 `codex exec` leaves `<repo>/.codex/config.toml` and the project's MCP servers off in a folder with no saved trust, even with a writable sandbox, and prints `warning: Untrusted project-local configuration is disabled` on stderr. Before that a writable sandbox was enough. `codex exec --trust` saves the trust for the folder; the engine never passes it, because granting trust is the owner's decision. Nirvana's hooks, skills and `-c` overrides are user scope or per run and are not affected.
 
 ---
 
@@ -298,3 +299,4 @@ Failure contract used by the driver: exit 0 is not success. A terminal `error` o
 |---|---|---|
 | 1.0.0 | 2026-05-02 | Initial doc: covers Squad 5.0 + Business 1.0 + Harness 1.0 against Codex CLI 0.2x |
 | 2.0.0 | 2026-10-11 | Rewritten against Codex CLI 0.159.2 / 0.162.1. Removed nonexistent `codex run`, `--max-turns`, `--output-format json`, `--checkpoint`, `--agent`/`--skill`/`--prompt`, Markdown custom agents and `[agents.<name>]`/`agents.max_depth`. Documented the real `runCodex` and Orca argv, the `exec`/`resume`/`fork`/`review` surface, the JSON events, the 12 hook events and trust, skills at `~/.agents/skills`, TOML custom agents, `agents.enabled` and the absence of a turn cap. |
+| 2.1.0 | 2026-11-25 | Checked against `codex exec --help` 0.164.0 and the release notes up to 0.172.0; the driver's argv is unchanged. Recorded: project-local config and MCP servers need saved project trust in `codex exec` since 0.169.0 (`--trust` saves it, the engine does not pass it); `features.multi_agent` is deprecated in favor of `agents.enabled` since 0.168.0, which is the key the driver already sets; `codex exec resume` restores the saved sandbox, working directory and workspace roots since 0.172.0 unless they are passed again, and the driver passes them on every run. Hook trust hashing for user hooks is unchanged (the 2026-10-16 change binds plugin hooks to plugin contents) |
