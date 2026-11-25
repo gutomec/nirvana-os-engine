@@ -126,6 +126,20 @@ Nirvana-OS نظام متعدد الوكلاء، أصيل في Bun ومستقل �
   <img src="./docs/assets/nirvana-promo-en-readme.gif" alt="أمر نثري واحد يدخل، فيتجمّع تكتّل ذكاء اصطناعي كامل ويسلّم" width="100%">
 </div>
 
+## بوتاتك وفِرقك
+
+إذا كنت تحتفظ بوكلائك في مستضيف بوتات، فإن Nirvana-OS يعمل هناك أيضاً: [OpenBot](https://github.com/nightly-labs/openbot) من Nightly Labs، و Bot Mode في [Hermes Agent](https://github.com/NousResearch/hermes-agent)، و Orca و OpenMausBot. لا تُعِدّ شيئاً ولا تكتب أي أمر: تطلب من البوت بكلماتك. البوت لك أولاً. يلجأ إلى Nirvana-OS عندما تذكره بالاسم، أو تذكر إحدى شركاتك أو squads أو mind-clones، أو تطلب فريقاً. وأي طلب آخر يجيب عنه كما اعتاد.
+
+| أنت تقول | ما الذي يحدث |
+|---|---|
+| "كوِّن فريقاً لهذا المشروع من شركاتي." | يختار وكيلك الأدوار، ويخبرك بالوكلاء الذين سينشئهم، ثم يجهّز وكيلاً لكل دور، كلٌّ مع mind-clone الخاص به. في OpenBot وفي Hermes ترى كل واحد منهم يعمل. |
+| "جهِّز هذا الفريق كبوتات في Hermes عندي." | Bot واحد لكل عضو، باسمه ودوره في قائمة Hermes. ترسل الطلب إلى المنسّق فيدير المشروع مع الآخرين. |
+| "أريد أن أرى هذا الـ squad يعمل كسير عمل هنا." | في OpenBot تصبح خطوات الـ squad سير عمل ينتظر موافقتك قبل تسليم النتيجة. ويمكنك جدولته. |
+| "استخدم بوت الصور عندي لصور هذه الصفحة." | الوكيل الذي تتحدث معه، على أي runtime، يسلّم هذا الجزء إلى بوتك في OpenBot أو Hermes ويعيد الملفات. |
+| "أريد أن تستخدم كل بوتاتي Nirvana دائماً." | كل بوت يمرّر كل تسليم عبر Nirvana-OS. وعبارة "فقط عندما أطلب" تعيده إلى الوضع الافتراضي. |
+
+أمران يبقيان بيدك. وكيل OpenBot لا يجيب الوكلاء الآخرين إلا بعد أن تفعّل له **Local scripts** (Agent settings → Rules → Permissions)؛ ولا يستطيع أي وكيل تفعيله عنك. وتُبلَّغ بالوكلاء الذين سيُنشأون قبل أن يوجد أي منهم.
+
 ## الحزم
 
 الحزم شركات وsquads وmind-clones منتقاة تُباع على [squads.sh](https://squads.sh/pt/packs). الحزمة الرئيسية هي [Genesis Circle](https://squads.sh/pt/nirvana-os).
@@ -218,6 +232,8 @@ $env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/d
 | `nrv config list\|get\|set\|unset\|explain` | الإعدادات، مع `--global` أو `--project` |
 | `nrv update [--check]` / `nrv update <pack>` | تحديث المحرك / حزمة |
 | `nrv validate <squad\|business\|clone> <slug> [--fix]` | بوابة قبول لكيان واحد |
+| `nrv team candidates\|init\|sync\|status\|remove\|flow` | فريق وكلاء مبني من مكتبتك، على OpenBot أو Bot Mode في Hermes أو Claude Code |
+| `nrv bot list\|ask\|status` | تسليم جزء من العمل إلى وكيل تحتفظ به في OpenBot أو إلى Bot في Hermes |
 | `nrv glance` | قمرة قيادة على الويب (`--read-only` للتصفح فقط) |
 | `nrv uninstall --engine` | إزالة المحرك مع الإبقاء على محتواك |
 

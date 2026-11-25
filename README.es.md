@@ -126,6 +126,20 @@ El agente orquesta y nunca escribe el entregable por sí mismo. Cada empresa que
   <img src="./docs/assets/nirvana-promo-en-readme.gif" alt="Entra una orden en prosa, y un conglomerado de IA entero se arma y entrega" width="100%">
 </div>
 
+## Tus bots y equipos
+
+Si tienes agentes en un host de bots, Nirvana-OS funciona ahí también: [OpenBot](https://github.com/nightly-labs/openbot), de Nightly Labs, el Bot Mode de [Hermes Agent](https://github.com/NousResearch/hermes-agent), Orca y OpenMausBot. No configuras nada y no escribes comandos: se lo pides al bot, con tus palabras. Un bot es tuyo ante todo. Recurre a Nirvana-OS cuando lo nombras, nombras una de tus empresas, squads o mind-clones, o pides un equipo. Cualquier otra petición la responde como siempre.
+
+| Tú dices | Qué ocurre |
+|---|---|
+| "Arma un equipo para este proyecto con mis empresas." | Tu agente elige los roles, te dice qué agentes va a crear y monta uno por rol, cada uno con su mind-clone. En OpenBot y en Hermes ves trabajar a cada uno. |
+| "Monta este equipo como bots en mi Hermes." | Un Bot por miembro, con su nombre y su rol en la lista de Hermes. Envías la petición al orquestador y él lleva el proyecto con los demás. |
+| "Quiero ver este squad funcionando como flujo aquí." | En OpenBot, los pasos del squad se convierten en un flujo que espera tu aprobación antes de entregar el resultado. Puedes programarlo. |
+| "Usa mi bot de imágenes para las figuras de esta página." | El agente con el que hablas, en cualquier runtime, entrega esa parte a tu bot de OpenBot o de Hermes y trae los archivos de vuelta. |
+| "Quiero que todos mis bots usen siempre Nirvana." | Cada bot pasa cada entrega por Nirvana-OS. "Solo cuando yo lo pida" lo devuelve al valor por defecto. |
+
+Dos cosas quedan en tus manos. Un agente de OpenBot solo responde a otros agentes después de que actives **Local scripts** para él (Agent settings → Rules → Permissions); ningún agente puede activarlo por ti. Y te enteras de qué agentes se van a crear antes de que exista ninguno.
+
 ## Packs
 
 Los packs son empresas, squads y mind-clones curados que se venden en [squads.sh](https://squads.sh/pt/packs). El buque insignia es [Genesis Circle](https://squads.sh/pt/nirvana-os).
@@ -218,6 +232,8 @@ Para agentes y usuarios avanzados. `nrv help` lo lista todo; `nrv <command> --he
 | `nrv config list\|get\|set\|unset\|explain` | Configuración, con `--global` o `--project` |
 | `nrv update [--check]` / `nrv update <pack>` | Actualiza el motor / un pack |
 | `nrv validate <squad\|business\|clone> <slug> [--fix]` | Puerta de admisión de una entidad |
+| `nrv team candidates\|init\|sync\|status\|remove\|flow` | Un equipo de agentes armado desde tu biblioteca, en OpenBot, el Bot Mode de Hermes o Claude Code |
+| `nrv bot list\|ask\|status` | Entrega una parte del trabajo a un agente que tienes en OpenBot o a un Bot de Hermes |
 | `nrv glance` | Cockpit web (`--read-only` para solo explorar) |
 | `nrv uninstall --engine` | Elimina el motor y conserva tu contenido |
 

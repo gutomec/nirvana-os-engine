@@ -126,6 +126,20 @@ The agent orchestrates and never writes the deliverable itself. Each business it
   <img src="./docs/assets/nirvana-promo-en-readme.gif" alt="One prose order in, a whole AI conglomerate assembles and delivers" width="100%">
 </div>
 
+## Your bots and teams
+
+If you keep agents in a bot host, Nirvana-OS works there too: [OpenBot](https://github.com/nightly-labs/openbot) by Nightly Labs, Bot Mode of [Hermes Agent](https://github.com/NousResearch/hermes-agent), Orca and OpenMausBot. You set nothing up and you type no command: you ask the bot, in your own words. A bot is yours first. It reaches for Nirvana-OS when you name it, name one of your businesses, squads or mind-clones, or ask for a team. Any other request it answers as it always did.
+
+| You say | What happens |
+|---|---|
+| "Build a team for this project from my businesses." | Your agent picks the roles, tells you which agents it will create and sets up one per role, each with its mind-clone. In OpenBot and in Hermes you watch each one work. |
+| "Set this team up as bots in my Hermes." | One Bot per member, with its name and role in Hermes's roster. You send the request to the orchestrator and it runs the project with the others. |
+| "I want to see this squad running as a workflow here." | In OpenBot, the squad's steps become a workflow that waits for your approval before the result goes out. You can put it on a schedule. |
+| "Use my image bot for the pictures of this page." | The agent you are talking to, on any runtime, hands that part to your bot in OpenBot or Hermes and brings the files back. |
+| "I want all my bots to always use Nirvana." | Every bot sends each deliverable through Nirvana-OS. "Only when I ask" puts it back. |
+
+Two things stay in your hands. An OpenBot agent answers other agents only after you turn on **Local scripts** for it (Agent settings → Rules → Permissions); no agent can turn that on for you. And you hear which agents will be created before any of them exists.
+
 ## Packs
 
 Packs are curated businesses, squads and mind-clones sold on [squads.sh](https://squads.sh/pt/packs). The flagship is [Genesis Circle](https://squads.sh/pt/nirvana-os).
@@ -218,6 +232,8 @@ For agents and power users. `nrv help` lists everything; `nrv <command> --help` 
 | `nrv config list\|get\|set\|unset\|explain` | Settings, with `--global` or `--project` |
 | `nrv update [--check]` / `nrv update <pack>` | Update the engine / a pack |
 | `nrv validate <squad\|business\|clone> <slug> [--fix]` | Admission gate for one entity |
+| `nrv team candidates\|init\|sync\|status\|remove\|flow` | A team of agents built from your library, on OpenBot, Hermes Bot Mode or Claude Code |
+| `nrv bot list\|ask\|status` | Hand a part of the work to an agent you keep in OpenBot or to a Hermes Bot |
 | `nrv glance` | Web cockpit (`--read-only` to browse only) |
 | `nrv uninstall --engine` | Remove the engine and keep your content |
 

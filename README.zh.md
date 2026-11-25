@@ -125,6 +125,20 @@ agent 负责编排，从不亲自撰写交付物。它挑选的每一家公司�
   <img src="./docs/assets/nirvana-promo-en-readme.gif" alt="一条散文指令进，一整个 AI 集团组装完成并交付" width="100%">
 </div>
 
+## 你的 bot 和团队
+
+如果你把 agent 放在 bot 宿主里，Nirvana-OS 在那里同样可用：Nightly Labs 的 [OpenBot](https://github.com/nightly-labs/openbot)、[Hermes Agent](https://github.com/NousResearch/hermes-agent) 的 Bot Mode、Orca 和 OpenMausBot。你不用做任何配置，也不用输入命令：用你自己的话对 bot 说就行。bot 首先是你的。只有当你提到 Nirvana、提到你的某个企业、squad 或 mind-clone，或者要求组建团队时，它才会使用 Nirvana-OS。其他请求它照常回答。
+
+| 你说 | 会发生什么 |
+|---|---|
+| “用我的企业为这个项目组一个团队。” | 你的 agent 挑选角色，告诉你它将创建哪些 agent，然后为每个角色建立一个，各自带着自己的 mind-clone。在 OpenBot 和 Hermes 里，你能看到每一个在工作。 |
+| “把这个团队做成我 Hermes 里的 bot。” | 每个成员一个 Bot，名字和角色出现在 Hermes 的列表里。你把请求发给协调者，它带着其他成员完成项目。 |
+| “我想在这里看到这个 squad 作为工作流运行。” | 在 OpenBot 里，squad 的各个步骤变成一个工作流，交付结果之前等待你的批准。你可以给它设定时间表。 |
+| “这个页面的图片用我的图像 bot 来做。” | 无论在哪个 runtime，正在和你对话的 agent 都会把这部分交给你在 OpenBot 或 Hermes 里的 bot，再把文件带回来。 |
+| “我要我所有的 bot 始终使用 Nirvana。” | 每个 bot 的每份交付都经过 Nirvana-OS。说“只在我要求时”即可恢复默认。 |
+
+有两件事始终由你决定。OpenBot 的 agent 只有在你为它打开 **Local scripts**（Agent settings → Rules → Permissions）之后才会回应其他 agent；任何 agent 都无法替你打开它。另外，在任何 agent 被创建之前，你会先被告知将要创建哪些。
+
 ## Packs
 
 Pack 是在 [squads.sh](https://squads.sh/pt/packs) 上出售的精选公司、squad 和 mind-clone。旗舰是 [Genesis Circle](https://squads.sh/pt/nirvana-os)。
@@ -217,6 +231,8 @@ $env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/d
 | `nrv config list\|get\|set\|unset\|explain` | 设置，配合 `--global` 或 `--project` |
 | `nrv update [--check]` / `nrv update <pack>` | 更新引擎 / 一个 pack |
 | `nrv validate <squad\|business\|clone> <slug> [--fix]` | 单个实体的准入门 |
+| `nrv team candidates\|init\|sync\|status\|remove\|flow` | 从你的库中组建的 agent 团队，运行在 OpenBot、Hermes 的 Bot Mode 或 Claude Code 上 |
+| `nrv bot list\|ask\|status` | 把一部分工作交给你在 OpenBot 里的 agent 或 Hermes 的 Bot |
 | `nrv glance` | Web 驾驶舱（`--read-only` 仅浏览） |
 | `nrv uninstall --engine` | 移除引擎并保留你的内容 |
 

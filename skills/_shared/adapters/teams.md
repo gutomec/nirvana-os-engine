@@ -84,8 +84,10 @@ and goes back to the generic section on the engine's next run.
 
 ## 4b. Hermes Agent: a team as Bots
 
-`nrv team sync --host hermes` (the default when the command is run by a Hermes
-agent) writes the team into [Hermes Agent](https://github.com/NousResearch/hermes-agent)'s
+The person asks in their own words ("set this team up as bots in my Hermes",
+"monte esse time como bots no meu Hermes") and their agent runs the commands;
+nobody types them. `nrv team sync --host hermes` (the default when the command
+is run by a Hermes agent) writes the team into [Hermes Agent](https://github.com/NousResearch/hermes-agent)'s
 Bot Mode. Code: `_shared/lib/hermes-bots.ts`, `syncHermes` in `team-hosts.ts`.
 
 - **A Bot is a profile.** Each member is the profile `<team>-<member id>`

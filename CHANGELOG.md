@@ -11,9 +11,10 @@ one-line installers and pack setups consume.
 ### Your team as Bots of Hermes Agent
 
 - **`nrv team sync --host hermes` turns a team into Bots.** [Hermes Agent](https://github.com/NousResearch/hermes-agent) by Nous Research has Bot Mode: each profile is a named Bot with its own role, model, memory and skills. A team built from your businesses now lands there, one Bot per member, with the member's instructions in the Bot's `SOUL.md` and its name and role in the roster. Ask your agent: "set this team up as bots in my Hermes".
-- **You hear before anything is created.** The first run names the Bots it would create and makes nothing. Run again with `--create` and the engine creates each one with Hermes's own command. A Bot is never deleted: `nrv team remove` takes the instructions out and leaves the profile.
+- **You hear before anything is created.** The first run names the Bots it would create and makes nothing. When you say yes, your agent runs it again with `--create` and the engine creates each one with Hermes's own command. A Bot is never deleted: `nrv team remove` takes the instructions out and leaves the profile.
 - **A new Bot works with your model and keys,** on the current Hermes and on older ones, where a fresh profile came with no provider at all.
-- **Call a Hermes Bot from any runtime.** `nrv bot list` now shows the Bots of your Hermes roster next to your OpenBot agents, and `nrv bot ask "<bot>" "<task>" --out <folder>` hands one a task and waits for the answer.
+- **Call a Hermes Bot from any runtime.** Ask the agent you are talking to: "use my Hermes bot for the copy of this page". Underneath, `nrv bot list` now shows the Bots of your Hermes roster next to your OpenBot agents, and `nrv bot ask "<bot>" "<task>" --out <folder>` hands one a task and waits for the answer.
+- **The READMEs say what to ask.** A new section, "Your bots and teams", in the six languages: what to say to your agent to build a team, turn it into bots, run a squad as a workflow or hand a part of the work to a bot. The CLI reference gained `nrv team` and `nrv bot`.
 - Measured on macOS with Hermes 0.20.5: a three-member team was created in one command, and its orchestrator, asked for a LinkedIn post, called the writer and the reviewer and delivered in 96 seconds. A single Bot answered a call in 6 seconds. The roster and the messaging between Bots inside Hermes Desktop were read in the source of 0.23.4 and not run.
 
 ### The runtimes moved, and the records follow

@@ -102,6 +102,23 @@ A project is where a run's audit, briefs and deliverables live, for every runtim
 | `nrv activate <slug>\|--all [--dry-run] [--confirm-heavy] [--only-declared] [--json] [--fix-with-agent[=<runtime>]]` | Install what a squad's `dependencies.yaml` declares. Node and Python packages go into the squad's own environment, `~/.nirvana/envs/<slug>/` (sub-apps under `subapps/<dir>/`, Python in `.venv`), with versions as declared. The squad folder only gets a best-effort `node_modules` link to the environment (never over a real folder, excluded through `.git/info/exclude`, not `.gitignore`); workers resolve packages through `NODE_PATH`, a Node ESM hook and an `npx` shim on `PATH`. Installs only when the declared specs changed, so an active squad costs milliseconds. A dispatch prepares the same environment on demand, so activation is optional for packages. `--all` walks the library one squad at a time. After a failure the output depends on who runs it: an agent session (detected by the same session markers routing uses) or a script gets a block between `=== nrv activate: issues for the agent ===` and its end marker, one entry per issue with the squad, the dependency, the useful error lines, the fix command, the `nrv activate <slug>` re-check and whether the fix needs the user's permission; `--json` prints the same data on stdout. Neither prompts, and the exit code is non-zero when something failed. A person at a terminal (stdin and stdout on a TTY, no agent marker) gets a summary and the offer to let an installed runtime fix the failures headless, scoped to them, after which those squads are checked again. `--fix-with-agent[=<runtime>]` runs that fix without asking, in any context (no value: the session's runtime, else the first installed). |
 | `nrv deps [status] [--json]` | The squad environments (count and apparent size), the legacy shared store `~/.nirvana/node_modules` and venv when present (squads no longer install there), the pinned tool caches, and any dependency tree found outside them. `nrv deps install <pkg>` / `link <dir>` keep working on the shared store for engine and manual use. |
 
+## Teams & bots
+
+Asked for in plain words: *"build a team for this project from my businesses"*, *"set this team up as bots in my Hermes"*, *"use my image bot for the pictures"*. The agent runs these.
+
+| Command | What it does |
+|---|---|
+| `nrv team candidates "<request>"` | The businesses whose roles fit a request, with their employees and mind-clones. The agent reads the list and chooses the roles. |
+| `nrv team init <slug> ["<purpose>"] [--here]` | Write the team file, `.nirvana/team.yaml`, under `~/.nirvana/teams/<slug>` or in the current project. |
+| `nrv team sync [--team <slug>\|--dir <folder>] [--host openbot\|hermes\|claude-code] [--create]` | Validate the team and write each member where the host reads it. On OpenBot it names the agents for the host's own agent to create. On Hermes it names the Bots it would create, and creates them with `--create`. On Claude Code it writes one subagent per member. |
+| `nrv team status` / `nrv team remove` | Where each member is; take the team's instructions out of the hosts. Agents and profiles are never deleted. |
+| `nrv team flow <squad> [--workflow <name>]` / `--created <workflowId>` / `--list` / `--forget` | A squad's workflow as an OpenBot workflow: the plan the agent builds, and the record that tells it when to run it. |
+| `nrv bot list [--host openbot\|hermes]` | The agents that can be handed work: OpenBot agents with Local scripts on, and the Bots of the Hermes roster. |
+| `nrv bot ask "<agent>" "<task>" [--out <dir>] [--timeout <90s\|10m\|2h>] [--host <h>]` | Send the task, wait for the answer and bring the files into the folder. Exit 2: an OpenBot agent waits for its person. |
+| `nrv bot status <deliveryId>` | Pick up an OpenBot call that waited for its person or ran out of time. |
+
+Hosts and their limits: [`skills/_shared/adapters/teams.md`](../skills/_shared/adapters/teams.md), [`openbot.md`](../skills/_shared/adapters/openbot.md), [`hermes.md`](../skills/_shared/adapters/hermes.md).
+
 ## Health & self-improvement
 
 | Command | What it does |
