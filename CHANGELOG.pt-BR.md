@@ -6,6 +6,16 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que os instaladores de uma linha e os setups de pack consomem.
 
+## 0.18.2 — 2026-11-25
+
+### Um squad como fluxo que você acompanha
+
+- **`nrv team flow <squad>` desenha o workflow de um squad no OpenBot.** Um squad que você roda sempre agora pode ser um fluxo do [OpenBot da Nightly Labs](https://github.com/nightly-labs/openbot): um nó para cada passo do squad, a sua aprovação antes de o resultado ser entregue, e um gatilho que você pode agendar. Peça ao seu agente: "quero ver este squad rodando como fluxo aqui".
+- **O engine planeja, o seu agente monta.** O comando lê o workflow que o squad declara e imprime a chamada única de `edit_workflow` que o cria, com cada passo sabendo o seu papel, o arquivo do agente do squad e o que ele recebe. Um passo roda no agente do OpenBot que tem o nome do agente do squad, ou no agente que pediu.
+- **O agente sabe quando rodar.** O OpenBot não mostra ao agente os fluxos que existem, então o engine registra cada um numa seção marcada das instruções do agente. `nrv team flow --list` avisa quando o squad mudou desde que o fluxo foi montado, e `--forget` tira o registro.
+- **Um squad que você só quer pronto continua sendo um dispatch,** com o gate e a auditoria do engine. O resultado de um fluxo é conferido pela sua aprovação, não pelo gate.
+- Medido no macOS com o OpenBot 0.78.0: um agente montou um fluxo de seis nós a partir de um squad de três passos em 82 segundos, e a execução fez os três passos em cerca de 65 segundos e parou na aprovação.
+
 ## 0.18.1 — 2026-11-25
 
 ### O juiz diz o que está errado, ou não diz nada

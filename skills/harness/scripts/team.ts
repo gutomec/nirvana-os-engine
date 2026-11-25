@@ -8,6 +8,7 @@
 //   nrv team sync                       validate, compile and write the team where the host reads it
 //   nrv team status                     the team and where each member is
 //   nrv team remove                     take the team's instructions out of the hosts; agents and files stay
+//   nrv team flow <squad>               a squad's workflow as a host workflow: the plan, then the record
 //
 // A team is found by `--dir <folder>`, by `--team <slug>` (under ~/.nirvana/teams)
 // or, with neither, in the current folder's `.nirvana/team.yaml`.
@@ -25,6 +26,7 @@ import {
   loadTeam, scopeLibrary, teamFileOf, teamHomeDir, teamSkeleton, TEAM_SLUG_RE, type TeamMember, type TeamSpec,
 } from "../../_shared/lib/team.ts";
 import { releaseOpenBot, syncClaudeCode, syncOpenBot, teamOfText, writeNeutral } from "../../_shared/lib/team-hosts.ts";
+import { flowPlan, forgetFlows, recordFlow, recordedFlows, squadWorkflows, workflowProblems } from "../../_shared/lib/team-flow.ts";
 
 const USAGE = [
   "usage: nrv team <command> [--team <slug> | --dir <folder>]",
@@ -33,6 +35,9 @@ const USAGE = [
   "  sync [--host <h>]           validate, compile and write the team; host: openbot, claude-code or auto",
   "  status                      the team and where each member is",
   "  remove                      take the team's instructions out of the hosts; agents and files stay",
+  "  flow <squad> [--workflow <name>]            the plan of a squad's workflow as an OpenBot workflow",
+  "  flow <squad> --created <workflowId>         record the workflow you built, so you know when to run it",
+  "  flow --list | flow <squad> --forget         the workflows recorded for you; stop using one",
 ].join("\n");
 
 const { positional, flags } = parseArgs();
@@ -250,7 +255,99 @@ function remove(): void {
   emitAudit({ event: "x_team_removed", team: spec.team, openbot_agents: released.length, claude_code_files: removed.length, team_dir: dir });
 }
 
+// ── flow ─────────────────────────────────────────────────────────────
+
+function flow(squad: string | undefined): void {
+  const self = openBotAgentAt(process.cwd());
+  const labels = openBotAgentLabels();
+  const nameOf = (id: string): string => labels.get(id)?.name ?? id;
+
+  if (flags.list) {
+    if (!self) fail("team flow: run this from an OpenBot agent's workspace; workflows are recorded per agent.");
+    const flows = recordedFlows(self!.id);
+    if (!flows.length) { say("No workflow built from a squad is recorded for you."); return; }
+    const squads = new Map(enumerate(resolveScope(), "squads").filter((e) => !e.overridden).map((e) => [e.slug, e.dir]));
+    say(`Workflows recorded for you (${flows.length}):`);
+    for (const f of flows) {
+      const dir = squads.get(f.squad);
+      const wf = dir ? squadWorkflows(dir).find((w) => w.name === f.workflow) : undefined;
+      const state = !dir ? "the squad is no longer installed"
+        : !wf ? "the squad no longer declares this workflow"
+        : flowPlan(f.squad, dir, wf, { self: null, agents: new Map() }).revision === f.revision ? "current"
+        : `the squad changed since: run nrv team flow ${f.squad} --workflow ${f.workflow} and apply it to the workflow`;
+      say(`  ${f.title} (workflow ${f.workflowId}): ${state}`);
+    }
+    return;
+  }
+
+  if (!squad) fail(USAGE, EXIT.INVALID_ARGS);
+  if (flags.forget) {
+    if (!self) fail("team flow: run this from an OpenBot agent's workspace.");
+    const gone = forgetFlows(self!, squad!, typeof flags.workflow === "string" ? flags.workflow : undefined);
+    if (!gone.length) { say(`Nothing recorded for you from the squad ${squad}.`); return; }
+    for (const f of gone) say(`No longer in your instructions: ${f.title} (workflow ${f.workflowId}). The workflow itself stays in OpenBot; delete it there when the person asks.`);
+    emitAudit({ event: "x_flow_forgotten", host: "openbot", squad, agent_id: self!.id, workflows: gone.length });
+    return;
+  }
+
+  const entry = enumerate(resolveScope(), "squads").find((e) => e.slug === squad && !e.overridden);
+  if (!entry) fail(`team flow: no squad "${squad}" in the library. See them: nrv list-squads`);
+  const workflows = squadWorkflows(entry!.dir);
+  if (!workflows.length) fail(`team flow: the squad ${squad} declares no workflow with steps (${path.join(entry!.dir, "workflows")}). It runs as one piece: nrv dispatch --squad=${squad} "<brief>" --exec`);
+  const wanted = typeof flags.workflow === "string" ? flags.workflow : null;
+  const wf = wanted ? workflows.find((w) => w.name === wanted) : workflows.length === 1 ? workflows[0] : null;
+  if (!wf) {
+    console.error(wanted ? `team flow: the squad ${squad} has no workflow "${wanted}".` : `team flow: the squad ${squad} declares ${workflows.length} workflows. Name one with --workflow:`);
+    for (const w of workflows) console.error(`  ${w.name} (${w.steps.length} steps)${w.description ? `: ${w.description}` : ""}`);
+    process.exit(EXIT.INVALID_ARGS);
+  }
+  const problems = workflowProblems(wf!, entry!.dir);
+  if (problems.length) {
+    console.error(`team flow: ${wf!.file} cannot be drawn as a workflow. Nothing was written.`);
+    for (const p of problems) console.error(`  - ${p}`);
+    process.exit(EXIT.FAILURES);
+  }
+
+  const agents = new Map<string, { id: string; name: string }>();
+  for (const a of listOpenBotAgents().filter((x) => x.server === null)) {
+    const name = labels.get(a.id)?.name;
+    if (name) agents.set(name.toLowerCase(), { id: a.id, name });
+  }
+  const plan = flowPlan(squad!, entry!.dir, wf!, { self: self ? { id: self.id, name: nameOf(self.id) } : null, agents });
+
+  if (typeof flags.created === "string") {
+    if (!self) fail("team flow: run --created from the workspace of the OpenBot agent that built the workflow.");
+    recordFlow(self!, { squad: squad!, workflow: plan.workflow, workflowId: flags.created, title: plan.title, description: plan.description, revision: plan.revision });
+    say(`Recorded: ${plan.title} is the workflow ${flags.created}.`);
+    say(`Your instruction file now says when to run it: ${openBotInstructionFile(self!.dir)}`);
+    say("Tell the person the workflow is in OpenBot's Workflows page, that it waits for their approval before delivering, and that they can give its trigger a schedule there.");
+    say("When you run it, do not wait for it in the same turn: a step that runs on you starts only after your turn ends.");
+    emitAudit({ event: "x_flow_recorded", host: "openbot", squad, workflow: plan.workflow, workflow_id: flags.created, agent_id: self!.id, steps: plan.steps.length });
+    return;
+  }
+
+  if (flags.json) { console.log(JSON.stringify({ ok: true, ...plan })); return; }
+  say(`Workflow plan: ${plan.title}`);
+  if (plan.description) say(plan.description);
+  say();
+  say(`Steps (${plan.steps.length}), each after the ones it requires:`);
+  for (const s of plan.steps) {
+    say(`  ${s.id} — ${s.role} — runs on ${s.agentName ? `${s.agentName} (${s.agentId})` : "an agent you choose"}${s.requires.length ? ` — after ${s.requires.join(", ")}` : " — first"}`);
+  }
+  say("Then the person approves, and the result is delivered to them.");
+  say();
+  say("Build it with one call (only in a turn the person started):");
+  say(`  edit_workflow { "title": ${JSON.stringify(plan.title)}, "tidy": true, "ops": <the ops below> }`);
+  say(JSON.stringify(plan.ops, null, 2));
+  say();
+  if (!self) say("This was not run by an OpenBot agent, so no agent was chosen for the steps: put an agent id in each agentId.");
+  say("If the tool refuses a field, fix that field as its message says and call it again; keep the steps and their order.");
+  say("When it answers with the workflow id, record it so you know when to run it:");
+  say(`  nrv team flow ${squad} --workflow ${plan.workflow} --created <workflowId>`);
+}
+
 switch (cmd) {
+  case "flow": flow(rest[0]); break;
   case "candidates": await candidates(rest.join(" ").trim()); break;
   case "init": init(rest[0], rest.slice(1).join(" ").trim()); break;
   case "sync": sync(); break;
