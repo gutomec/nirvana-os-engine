@@ -23,7 +23,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { nirvanaBotRules } from "./bot-note.ts";
+import { botUse, nirvanaBotRules, nirvanaMemorySentence, withCurrentMemorySentence, type BotUse } from "./bot-note.ts";
 
 export const BOT_TOPIC_FILE = "nirvana-os.md";
 export const BOT_TOPIC_MARKER = "<!-- nirvana-os:orca-bot:v1 -->";
@@ -97,14 +97,14 @@ export function orcaBotAt(dir: string, home?: string): OrcaBot | null {
 
 /** The note the bot keeps about Nirvana-OS. English, like every string the
  *  engine writes for an agent; the deliverable's language is the request's. */
-export function botTopicText(): string {
+export function botTopicText(use: BotUse = "on-demand"): string {
   return [
     BOT_TOPIC_MARKER,
     "# Nirvana-OS on this computer",
     "",
     "The Nirvana-OS engine wrote this note and keeps it current. To stop using it, take the line that points here out of MEMORY.md; the engine does not put it back.",
     "",
-    ...nirvanaBotRules(),
+    ...nirvanaBotRules(use),
     "",
   ].join("\n");
 }
@@ -113,7 +113,7 @@ export function botTopicText(): string {
 function botMemoryLine(now: Date): string {
   // The owner's calendar day, not UTC's: an evening install must not be dated tomorrow.
   const day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-  return `- ${day}: Nirvana-OS is installed on this computer. A request for a concrete deliverable goes through it; how is in ${BOT_MEMORY_POINTER}.`;
+  return `- ${day}: ${nirvanaMemorySentence(BOT_MEMORY_POINTER)}`;
 }
 
 /** Put the line first among the facts ("newest first"): right before the first
@@ -142,11 +142,14 @@ export function ensureBotKnowsNirvana(bot: OrcaBot, now: Date = new Date()): Bot
   const topicFile = path.join(bot.dir, "memory", BOT_TOPIC_FILE);
   try {
     if (!fs.existsSync(memoryFile)) return "skipped";
-    const wanted = botTopicText();
+    const wanted = botTopicText(botUse(bot.name));
     if (fs.existsSync(topicFile)) {
       const current = fs.readFileSync(topicFile, "utf8");
       // A file of that name without the engine's marker is somebody else's note.
       if (!BOT_TOPIC_MARKER_RE.test(current)) return "skipped";
+      const memory = fs.readFileSync(memoryFile, "utf8");
+      const renewed = withCurrentMemorySentence(memory, BOT_MEMORY_POINTER);
+      if (renewed !== memory) fs.writeFileSync(memoryFile, renewed, "utf8");
       if (current === wanted) return "current";
       fs.writeFileSync(topicFile, wanted, "utf8");
       return "refreshed";

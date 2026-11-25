@@ -156,6 +156,7 @@ First match wins. A catch-all pattern is ignored and flagged. `auto_routes` live
 | `review.policy` | `rule` | `always`, `rule`, `on-request`, `never`: when the delivery is reviewed |
 | `review.runtime` | `other` | Reviewer on a different available runtime, or `same` |
 | `review.max_rounds` | `1` | Correction rounds after a failed review, then `_QA-RESERVATIONS.md` |
+| `bots.use` | `on-demand` | How the bots of a bot host use Nirvana-OS: `on-demand` (only when the request names it, the owner's businesses, squads or mind-clones, or asks for a team) or `always` |
 | `quality_gate.max_revisions` | `2` | Automatic revisions before holding a delivery back |
 | `verify.mode` | `report` | How the admission-gate hooks treat a finding: `report`, `warn`, `block` |
 

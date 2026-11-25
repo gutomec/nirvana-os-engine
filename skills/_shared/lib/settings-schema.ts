@@ -476,6 +476,9 @@ export const SETTINGS = {
   "review.max_rounds": numberSetting("review.max_rounds",
     "Fix rounds after a failed review; once exhausted, the delivery ships with _QA-RESERVATIONS.md.",
     { default: 1, type: nonNegativeInt, env: "NIRVANA_REVIEW_MAX_ROUNDS", expects: "integer >= 0" }),
+  "bots.use": enumSetting("bots.use",
+    "How the bots of a bot host (Orca, OpenMausBot, OpenBot) use Nirvana-OS: on-demand (default) = only when the request names Nirvana-OS, one of the owner's businesses, squads or mind-clones, or asks for a team; always = every concrete deliverable goes through it. A bot whose name or description names Nirvana always does.",
+    ["on-demand", "always"], { default: "on-demand", env: "NIRVANA_BOTS_USE" }),
 
   // The admission gate's rollout switches. `verify.mode` is what the HOOKS
   // read (creation, install, activation, pack build); the explicit CLI

@@ -34,8 +34,8 @@ For every bot in `bots.json` whose memory is on:
 1. **`workspaces/<botId>/memory/nirvana-os.md`**, the engine's own file. Its
    frontmatter is what OpenMausBot lists under the bot's memory, so the bot sees
    at every turn that the note exists and when to read it. The body carries the
-   same rules every host's bot gets (`_shared/lib/bot-note.ts`): a concrete
-   deliverable goes through `nrv dispatch --auto --exec "<brief>"`, the brief
+   same rules every host's bot gets (`_shared/lib/bot-note.ts`): the bot uses Nirvana-OS **on demand**: when the request names it, names one of the owner's businesses, squads or mind-clones, or asks for a team, and works as it always did otherwise. A bot made for Nirvana-OS, one whose name or description names it, sends every concrete deliverable through it, and `bots.use: always` makes every bot do that. When Nirvana-OS is used, the deliverable goes
+   through `nrv dispatch --auto --exec "<brief>"`, the brief
    keeps the request's words and language, a correction is `nrv revise`,
    library questions are answered by the command, and a delivery is real when
    the file is on disk. One line is this host's own: attach the delivered file

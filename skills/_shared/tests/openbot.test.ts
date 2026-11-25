@@ -155,8 +155,8 @@ describe("names from the app's database", () => {
     db.run("INSERT INTO projection_agents VALUES (?, ?)", ["agent-2", "{}"]);
     db.close();
     const labels = openBotAgentLabels(home);
-    expect(labels.get("agent-1")).toEqual({ name: "Ada", provider: "claude" });
-    expect(labels.get("agent-2")).toEqual({ name: null, provider: null });
+    expect(labels.get("agent-1")).toEqual({ name: "Ada", provider: "claude", about: null });
+    expect(labels.get("agent-2")).toEqual({ name: null, provider: null, about: null });
     fs.writeFileSync(file, "not a database");
     expect(openBotAgentLabels(home).size).toBe(0);
   });
