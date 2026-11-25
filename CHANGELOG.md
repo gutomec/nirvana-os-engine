@@ -6,6 +6,17 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that the
 one-line installers and pack setups consume.
 
+## 0.17.0 — 2026-11-25
+
+### The agents you keep in OpenBot work for a dispatch
+
+- **A dispatch can hand a part of the work to your OpenBot agent.** Someone who keeps specialists in [OpenBot by Nightly Labs](https://github.com/nightly-labs/openbot), an image agent for example, can now ask for a web page from Claude Code in a terminal and have the images come from that agent. The worker is told which agents can be called and what each is for, decides whether one fits a part of the work, and gets the files back in its own folder.
+- **You decide who can be called, in OpenBot.** An agent answers only with **Local scripts** on: Agent settings → Rules → Permissions. No agent can turn that switch on, and the engine never tries. With no agent open, or with OpenBot closed, nothing changes in a dispatch.
+- **`nrv bot`, for your agent to run.** `nrv bot list` shows who can be called. `nrv bot ask "<agent>" "<task>" --out <folder>` sends the task, waits and copies every file the agent made into the folder. When the agent stops to ask you something, the command says what it asks and exits 2; you answer in OpenBot and `nrv bot status <deliveryId>` finishes the call.
+- **The engine does not answer for you.** The Local scripts switch also lets a script answer an agent's questions and accept its approvals. The engine does neither: an agent that waits for you is reported as waiting.
+- `nrv doctor` has a new line, `openbot: callable`, with the agents that are open.
+- Measured on macOS with OpenBot 0.78.0 and an image agent on the ChatGPT provider: a 1536×1024 hero image in 85 seconds, and a square icon in 30 seconds up to the agent's question. Not checked on Windows or Linux, nor with video. Details and limits: `skills/_shared/adapters/openbot.md`, section 4b.
+
 ## 0.16.0 — 2026-11-25
 
 ### A team of agents, built from your library

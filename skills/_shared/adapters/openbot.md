@@ -74,6 +74,70 @@ or the request is a whole project across several areas) and how: `nrv team`.
 A team member's `AGENTS.md` carries its team's section in place of this one,
 and `nrv doctor` shows it as `member of the team <slug>`. See `teams.md`.
 
+## 4b. Handing work to an OpenBot agent: `nrv bot`
+
+The other direction: a dispatch running anywhere on this computer (Claude Code
+in a terminal, Codex, another bot host) hands a part of the work to an agent
+the person already configured in OpenBot, an image agent for example. Code:
+`_shared/lib/openbot-call.ts` and `harness/scripts/bot.ts`. The engine talks to
+the app's local automation API, the one its bundled `cli/openbot-cli.mjs` uses
+(read at app 0.78.0), so nothing depends on where the app is installed.
+
+**The person decides who can be called.** Agent settings → **Rules** →
+**Permissions** → **Local scripts**, per agent. No agent tool can set it
+(`update_profile` refuses the field) and the engine never tries. The switch
+also lets a script answer the agent's questions and accept its approvals; the
+engine does neither. It belongs on a specialist, and deserves a second thought
+on an agent that creates and deletes others.
+
+**What the engine does, with no command from the person:**
+
+- `nrv dispatch` and `nrv revise` read which agents are open (name, title,
+  description and provider, from the app's database, read only) and, when the
+  app is running, add a short block to the worker's directive: who can be
+  called, for what, and the command. The worker decides. With no agent open, or
+  the app closed, the block is empty and nothing changes.
+- `nrv doctor` prints `openbot: callable` with their names.
+
+**The command, for an agent to run:**
+
+```
+nrv bot list
+nrv bot ask "<agent>" "<task>" [--out <dir>] [--timeout 30m] [--json]
+nrv bot status <deliveryId> [--out <dir>]
+```
+
+`ask` sends the task with one added line (nobody is reading the chat: do not
+ask before saving, keep every file in the workspace and give its path), waits,
+and copies every file the agent made in its workspace since the call started
+into `--out` (default `./from-openbot/<agent>`), keeping the relative path.
+Hidden folders and the agent's own instruction files are never copied. The
+audit gets `x_bot_called` with the agent, the state, the file count and the
+seconds.
+
+| Exit | Meaning |
+|---|---|
+| 0 | the agent finished; its answer and the copied files are printed |
+| 1 | the turn failed, the wait ran out, or OpenBot could not be reached |
+| 2 | the agent waits for its person: the question is printed, the person answers in OpenBot, `nrv bot status <deliveryId>` finishes the call |
+| 4 | wrong arguments |
+
+What does not work:
+
+- **Relaying through another agent.** An orchestrator that forwards the task
+  with `send_message` ends its turn at once; the caller never learns when the
+  work is done. `nrv bot ask` calls the specialist itself.
+- **Running a workflow.** The automation API has no route for one. An agent
+  with the switch on can create one with `edit_workflow` and run it with
+  `run_workflow` when asked.
+- **A remote server.** Only this computer's own OpenBot is reached.
+
+Not checked: Windows and Linux (the automation folder is read from
+`%APPDATA%\\OpenBot\\automation` and `~/.config/OpenBot/automation`, as the app's
+CLI does, but no call was made there), video generation, and the hourly limit
+OpenBot applies to local scripts (its error text names one; the number was not
+measured).
+
 ## 5. Known limits
 
 - An agent created after the last `nrv` command ran is prepared by the next one
@@ -109,3 +173,14 @@ Nirvana-OS.
 Both times the agent attached the delivered file to the chat, gave the
 original's full path, and listed the decisions the squad made. The audit
 showed `brief_received`, `dispatch_squad` and `gate_passed` for each run.
+
+On 2026-11-25, same machine, the calls of section 4b, made with the app's own `openbot-cli` before `nrv bot` existed. "Estúdio de
+Imagem" is an agent on the ChatGPT provider (`gpt-6-luna`) that generates
+images with the provider's own image tool.
+
+| Call | Result | Time |
+|---|---|---|
+| `run "Nirvana Prime"`: a small SVG icon | exit 0, file in the agent's workspace, path in the answer | 16 s |
+| `run "Nirvana Prime"`: create a four-node workflow (trigger, two agents, output) and run it | exit 0; the run and its four steps `done` in OpenBot's database | 34 s, the run itself 15 s |
+| A hero image relayed by Nirvana Prime to the image agent | the call returned "queued" in 4 s; the PNG (1536×1024) existed 85 s later | not observable by the caller |
+| `run "Estúdio de Imagem"`: a square icon | exit 3 after 30 s, the agent asked whether to attach; answered in the chat, `status` returned exit 0 | 30 s + 10 s |
