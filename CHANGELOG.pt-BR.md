@@ -6,6 +6,14 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que os instaladores de uma linha e os setups de pack consomem.
 
+## 0.18.1 — 2026-11-25
+
+### O juiz diz o que está errado, ou não diz nada
+
+- **Um achado sem texto não retém mais uma entrega.** Um post de LinkedIn foi retido depois de duas correções, e o relatório do gate mostrava um achado grave sem nada escrito, então as correções não tinham o que corrigir. Só uma das rubricas do juiz declarava os campos da resposta; nas outras, um juiz rodando no Codex nomeava os campos do jeito dele e o texto do achado se perdia. Agora toda rubrica recebe os nomes dos campos, e uma resposta com um achado sem texto é tratada como ausência de veredito: o arquivo cai nas checagens heurísticas em vez de ser reprovado.
+- **O juiz avalia o conteúdo, não a entrega em volta dele.** Ele lê só o texto de cada arquivo, e chamou aquele post de materialmente defeituoso por não informar o próprio caminho, porque o brief pedia que o caminho fosse informado. Agora ele é avisado de que o lugar onde o arquivo é salvo, o nome, a codificação e o que o executor relata são conferidos em outro ponto e nunca são um achado.
+- Medido repetindo três vezes no Codex a execução retida: aprovado com 88,5, 88 e 80, onde antes reprovava com 76 e 69.
+
 ## 0.18.0 — 2026-11-25
 
 ### Os seus bots usam o Nirvana-OS quando você pede
