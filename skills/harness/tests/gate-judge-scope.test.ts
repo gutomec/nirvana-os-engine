@@ -76,9 +76,15 @@ function judgedByFile(judgeEnabled: HarnessConfig["quality_gate"]["judge_enabled
 }
 
 describe("quality_gate.judge_enabled decides which files the judge takes", () => {
+  test("a screenplay (.fountain) is gated and judged, with only the leak check beside the judge", () => {
+    expect(REPORT_EXTS.has(".fountain")).toBe(true);
+    expect(alwaysRubricsForExt(".fountain")).toEqual(["secret-leak"]);
+    expect(pickJudgeRubricName(".fountain", [])).toBe("prose_shortform");
+  });
+
   test("reports: the text deliverables (HTML reports included) go to the judge, code and images keep their heuristics", () => {
     expect(judgedByFile("reports", "reports")).toEqual({ "report.md": true, "notes.txt": true, "report.html": true, "app.ts": false, "cover.png": false });
-    expect([...REPORT_EXTS].sort()).toEqual([".html", ".md", ".txt"]);
+    expect([...REPORT_EXTS].sort()).toEqual([".fountain", ".html", ".md", ".txt"]);
   }, spawnBudgetMs(5));
 
   test("true: every gateable file goes to the judge (the old `true`)", () => {

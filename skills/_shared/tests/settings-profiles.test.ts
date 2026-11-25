@@ -51,9 +51,9 @@ describe("the presets", () => {
     for (const name of PROFILE_NAMES) expect(profileValue(name, "execution.model")).toBeUndefined();
   });
 
-  test("the reviewer runs on the session's runtime by default, in every profile and without one", () => {
-    for (const name of PROFILE_NAMES) expect(profileValue(name, "review.runtime"), name).toBe("same");
-    expect(getSettingSpec("review.runtime")!.default).toBe("same");
+  test("the reviewer runs on another runtime by default, in every profile and without one", () => {
+    for (const name of PROFILE_NAMES) expect(profileValue(name, "review.runtime"), name).toBe("other");
+    expect(getSettingSpec("review.runtime")!.default).toBe("other");
   });
 
   test("balanced turns the judge on for text deliverables; economy keeps it off; max is unchanged", () => {

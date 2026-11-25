@@ -173,7 +173,7 @@ export async function jevRoute(args: JevRouteArgs): Promise<JevRouteResult> {
   let voiceCands: string[] = [];
   if (!namesVoice) {
     let search: string[] = [];
-    try { search = findCloneForTask(brief, { limit: SEARCH_VOICES, cwd }).map((h) => h.slug); } catch { search = []; }
+    try { search = findCloneForTask(brief, { limit: SEARCH_VOICES, cwd, gated: true }).map((h) => h.slug); } catch { search = []; }
     const seatOf = named?.kind === "business" ? named.slug : (!named ? biz[0] : undefined);
     const seat = seatOf ? seatVoices(seatOf, brief, cwd, cloneRegistry) : [];
     voiceCands = [...new Set([...search, ...seat])].filter((x) => cloneRegistry[x]);

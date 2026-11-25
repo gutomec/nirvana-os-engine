@@ -68,7 +68,7 @@ export type GateVerdict = {
  * outside the gate and counts toward the INDETERMINATE outcome when it is
  * all a run produced. Exported for lib/delivery-pipeline.ts. */
 export const GATEABLE_EXTS: ReadonlySet<string> = new Set([
-  ".md", ".txt", ".json", ".yaml", ".yml",
+  ".md", ".txt", ".fountain", ".json", ".yaml", ".yml",
   ".png", ".jpg", ".jpeg", ".webp",
   ".html", ".css", ".ts", ".js", ".py",
   ".pdf",
@@ -82,6 +82,10 @@ export function rubricsForExt(ext: string): string[] {
     case ".md":
     case ".txt":
       return ["correctness", "structure-bounds", "wiki-lint", "secret-leak"];
+    // A screenplay in Fountain is plain text with its own syntax: the markdown
+    // structure and wiki checks do not apply, the leak check does.
+    case ".fountain":
+      return ["secret-leak"];
     case ".json":
       return ["json-valid", "secret-leak"];
     case ".yaml":

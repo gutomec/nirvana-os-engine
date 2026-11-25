@@ -121,10 +121,12 @@ function stage1IntentClassify(brief, ctx) {
     if (knownSet.has(w) && !domains.includes(w)) domains.push(w);
   }
 
-  // Verbs: keep matched verbs from either set
+  // Verbs: keep matched verbs from either set, as whole words like the intent
+  // check above. A substring match added `edit` to every brief about credit
+  // and `run` to one about a brunch, and the verbs go into the BM25 query.
   const verbs = [];
   for (const v of [...RUN_ORG_VERBS, ...WORK_VERBS]) {
-    if (text.includes(v) && !verbs.includes(v)) verbs.push(v);
+    if (hasAny(text, [v]) && !verbs.includes(v)) verbs.push(v);
   }
 
   return { intent, domains, verbs, confidence };

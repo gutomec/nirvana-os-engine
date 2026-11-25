@@ -115,6 +115,15 @@ describe("stage1IntentClassify — WORK vs RUN_ORG", () => {
       router.stage1IntentClassify("monte o funil de vendas do infoproduto do meu cliente", {}).intent,
     ).toBe("WORK");
   });
+
+  // The verbs join the BM25 query, so a verb hiding inside another word
+  // ("credit" ⊃ "edit", "brunch" ⊃ "run") pulled unrelated entities up.
+  test("verbs are whole words: no `edit` in credit, no `run` in brunch", () => {
+    const verbs = router.stage1IntentClassify("credit for small farmers and a sunday brunch menu", {}).verbs;
+    expect(verbs).not.toContain("edit");
+    expect(verbs).not.toContain("run");
+    expect(router.stage1IntentClassify("edit the video and plan the launch", {}).verbs).toEqual(expect.arrayContaining(["edit", "plan"]));
+  });
 });
 
 // ── Stage 2/3 — matching + decision ────────────────────────────────────────

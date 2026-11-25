@@ -31,15 +31,16 @@ export function isProfileName(value: unknown): value is ProfileName {
 export const PROFILE_PRESETS: Record<ProfileName, Readonly<Record<string, SettingValue>>> = {
   // Highest quality, highest token use: the deepest effort, no context ceiling,
   // every delivery reviewed, two correction rounds, and agents that render
-  // their visual work to check it. The reviewer runs on the
-  // session's runtime like every other profile; `review.runtime: other` is the
-  // user's choice to make, never a profile's.
+  // their visual work to check it. The reviewer runs on another installed
+  // runtime when there is one, in every profile: the same model misses the same
+  // errors, and the review falls back to the session's runtime when the other
+  // one is absent, paused or fails.
   max: {
     "execution.effort": "xhigh",
     "execution.context_window": 0,
     "execution.visual_checks": true,
     "review.policy": "always",
-    "review.runtime": "same",
+    "review.runtime": "other",
     "review.max_rounds": 2,
     "routing.mode": "agentic",
     "quality_gate.judge_enabled": "reports",
@@ -52,7 +53,7 @@ export const PROFILE_PRESETS: Record<ProfileName, Readonly<Record<string, Settin
     "execution.effort": "high",
     "execution.context_window": 400000,
     "review.policy": "rule",
-    "review.runtime": "same",
+    "review.runtime": "other",
     "review.max_rounds": 1,
     "routing.mode": "cards",
     "quality_gate.judge_enabled": "reports",
@@ -64,7 +65,7 @@ export const PROFILE_PRESETS: Record<ProfileName, Readonly<Record<string, Settin
     "execution.effort": "medium",
     "execution.context_window": 200000,
     "review.policy": "on-request",
-    "review.runtime": "same",
+    "review.runtime": "other",
     "review.max_rounds": 1,
     "routing.mode": "cards",
     "quality_gate.judge_enabled": "false",
