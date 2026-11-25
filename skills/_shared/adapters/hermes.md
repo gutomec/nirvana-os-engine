@@ -3,8 +3,11 @@
 > Runtime adapter for Squad Protocol v6 + Business Protocol v2 + Harness Protocol v1.
 > Covers the 3 protocols in a single doc. Canonical sections per Squad Protocol v6 §18.5.
 > System identity + capabilities (what Nirvana-OS is and can do): see `../NIRVANA-OS.md` (single source).
-> Mirrors `codex.md` (sub-process dispatch). Everything verified against the real Hermes
-> install (`~/.hermes/`, v0.13.x) and the code (`agent/shell_hooks.py`, `agent/prompt_builder.py`).
+> Mirrors `codex.md` (sub-process dispatch). First written against Hermes v0.13.0. Checked again on
+> 2026-11-25 in two ways, kept apart below: **run** on the installed v0.20.5 (`--help` pages,
+> `hermes skills list`, `hermes hooks list`, and the hook matcher and payload serializer executed from
+> its source), and **read** in the source of v0.23.4, the newest release, at its tag. No model call was
+> made for this doc.
 
 ---
 
@@ -13,12 +16,12 @@
 | Field | Value |
 |---|---|
 | `runtime` | `hermes` |
-| `vendor` | Hermes Agent (OpenClaw lineage) |
+| `vendor` | Nous Research, `github.com/NousResearch/hermes-agent` |
 | `min_version` | `0.13+` (Hermes CLI) |
 | `default_model` | defined by the user's provider/profile (e.g. via OpenRouter); no default of its own |
-| `tested_against` | Hermes Agent v0.13.0 (2026.5.7) |
+| `tested_against` | Run: Hermes Agent v0.20.5 (2026.8.19), installed. Read: v0.23.4 (released 2026-11-24, commit `3ac54e1`), source at the tag. First written against v0.13.0 (2026.5.7) |
 | `config_paths` | `~/.hermes/config.yaml`, `~/.hermes/profiles/<p>/config.yaml`, `<project>/AGENTS.md`, `~/.hermes/SOUL.md` |
-| `skills_root` | `~/.hermes/skills/` (HOME-global) + `skills.external_dirs` in `config.yaml` (`SKILL.md` format identical to Claude Code) |
+| `skills_root` | `~/.hermes/skills/` (HOME-global) + `skills.external_dirs` in `config.yaml` (`SKILL.md` format identical to Claude Code; entries take `~` and `${VAR}`, and one that does not resolve to a folder is skipped). Also `<git root>/.hermes/skills` and `<git root>/.agents/skills`, only for a project listed in `skills.trusted_project_dirs` and unless `skills.project_discovery` is `false` (run on 0.20.5, read at 0.23.4). At 0.23.4 the order is trusted project, then local, then `skills.create_dir`, then `external_dirs`, and two different skills of one name in the same tier are refused as ambiguous |
 | `agents_root` | no per-file agent profile like Codex; the persona goes in the `hermes -z` prompt (see §7) or via `hermes profile` |
 | `memory_root` | `<project>/AGENTS.md` (auto-load from the CWD), SOUL.md/USER.md in the system prompt, SQLite+FTS5, Honcho |
 | `audit_log` | `~/.harness-logs/<date>/audit.jsonl` via shell hooks (§10) + fs-watch (`nrv-hermes`) |
@@ -38,7 +41,7 @@
 | `audit_trail` | ~ | ~ | ~ | `pre/post_tool_call` shell hooks → `audit-emit-from-hermes-hook.ts` → jsonl; + fs-watch. Not native |
 | `scheduled_invocation` | ✓ | ✓ | ✓ | **Native `hermes cron`**, an advantage over Codex/Antigravity |
 | `event_bus` | ~ | ~ | ~ | Mentions/tickets via file-system (`.handoffs/`); no broker |
-| `hooks` | ~ | ~ | ~ | `pre/post_tool_call`, `on_session_start/end`, `transform_*`, etc.: shell-based, consent-gated; no per-arg granularity like Claude |
+| `hooks` | ~ | ~ | ~ | `pre/post_tool_call`, `on_session_start/end`, `pre_llm_call`, `transform_*`, etc.: shell-based, consent-gated; the matcher is a regular expression over the tool name, with no per-arg granularity like Claude |
 | `sandboxing` | ✓ | ✓ | ✓ | 6 terminal backends (local, Docker, SSH, Daytona, Modal, Singularity); Tirith pre-execution scanner |
 | `session_memory` | ✓ | ✓ | ✓ | Per-session context + automatic compression |
 | `project_memory` | ✓ | ✓ | ✓ | CWD `AGENTS.md` loaded automatically (including in `hermes -z`) |
@@ -97,7 +100,7 @@ Reply ONLY with a single JSON object: {...}
 
 ## 5. Tool Whitelist Mechanics
 
-- Hermes has 47 tools in 19 toolsets. The per-employee whitelist is applied via `-t/--toolsets` on the `hermes -z` invocation: what is not in the toolset does not exist in the session.
+- Hermes groups its tools in toolsets (`hermes tools list`). The per-employee whitelist is applied via `-t/--toolsets` on the `hermes -z` invocation: what is not in the toolset does not exist in the session. A toolset name is not a tool name: the toolset `file` holds the tools `read_file`, `write_file`, `patch` and `search_files`, and a hook matcher sees the tool name (§10).
 - Semantic tools → Hermes toolset mapping:
   - `read` / `write` / `edit` → `file`
   - `bash` → `terminal`
@@ -122,7 +125,7 @@ Hermes has a global `agent.max_turns` (config/profile), not per-subagent. The ad
 
 ## 7. Subagent Spawning
 
-Hermes **has no** `hermes run` and no in-process subagent primitive. The one-shot is `hermes -z "<prompt>"` (**plain text** output, no `--output-format json`, no `--agent`/`--soul`). The adapter dispatches like this:
+Hermes **has no** `hermes run` and no in-process subagent primitive. The one-shot is `hermes -z "<prompt>"` (**plain text** output, no `--output-format json`, no `--agent`/`--soul`). In one-shot mode approvals are bypassed by Hermes itself, and `--usage-file <path>` writes a JSON report after the run, failed runs included: `estimated_cost_usd`, `cost_status`, the token counts, `api_calls`, `model`, `provider`, `session_id`, `completed`, `failed`. `--reasoning <level>` sets the effort and `--in <dir>` the working folder. All of these are in `hermes --help` on 0.20.5 and in the parser of 0.23.4; the engine's own dispatch never starts Hermes, so none is passed by engine code. The adapter dispatches like this:
 
 ```bash
 # Adapter spawn (pseudocode of what the wrapper runs)
@@ -148,7 +151,7 @@ hermes -z "$PROMPT" \
 # Parse text→JSON: extract the 1st balanced {...} object from stdout (noise tolerant).
 ```
 
-**DNA / context limit.** The Hermes system prompt truncates context files at `CONTEXT_FILE_MAX_CHARS = 20_000` (head 70% + tail 20%, `agent/prompt_builder.py:824`). That is why the DNA goes in the **body of the `-z` prompt**, not in a context file (it avoids truncation). If `injectMindClones().total_bytes > ~14_000`, the adapter degrades to the top-1 clone + a deterministic summary of the others and emits `dispatch_degraded`. Each injection emits `mind_clone_injected` with a sha256 (`harness/lib/dispatch.ts:123-130`); `validateTrace()` (`dispatch.ts:193`) confirms after dispatch that the declared DNA == the injected DNA (anti-fabrication invariant).
+**DNA / context limit.** The Hermes system prompt truncates context files at `CONTEXT_FILE_MAX_CHARS = 20_000` (head 70% + tail 20%, `agent/prompt_builder.py`; the same three constants on 0.20.5 and at 0.23.4). That is why the DNA goes in the **body of the `-z` prompt**, not in a context file (it avoids truncation). If `injectMindClones().total_bytes > ~14_000`, the adapter degrades to the top-1 clone + a deterministic summary of the others and emits `dispatch_degraded`. Each injection emits `mind_clone_injected` with a sha256 (`harness/lib/dispatch.ts:123-130`); `validateTrace()` (`dispatch.ts:193`) confirms after dispatch that the declared DNA == the injected DNA (anti-fabrication invariant).
 
 **Mention `@x`:** detected in `mentions[]` in the handoff → new `hermes -z` sub-process. Multi-level fan-out stays in the Nirvana wrapper (Hermes' native `delegation` is single-level, `max_spawn_depth: 1`).
 
@@ -183,16 +186,18 @@ Hermes has shell hooks declared in `~/.hermes/config.yaml` (`hooks:`). `nrv setu
 ```yaml
 hooks:
   pre_tool_call:
-    - matcher: "terminal|file"        # re.fullmatch over tool_name
+    - matcher: "terminal|write_file|patch"   # re.fullmatch over the TOOL name
       command: "bun ~/.nirvana/skills/_shared/scripts/audit-emit-from-hermes-hook.ts pre"
       timeout: 5
   post_tool_call:
-    - matcher: "terminal|file"
+    - matcher: "terminal|write_file|patch"
       command: "bun ~/.nirvana/skills/_shared/scripts/audit-emit-from-hermes-hook.ts post"
       timeout: 5
 ```
 
-- JSON payload via stdin (`{hook_event_name, tool_name, tool_input, session_id, cwd}`); the shim normalizes `terminal→Bash`, `file→Write/Edit` and delegates to `audit-emit-from-hook.ts` (host `hermes-cli-hook`).
+- **The matcher names tools, not toolsets.** `matches_tool` runs `re.fullmatch` over the tool name, and the tools that write are `terminal`, `write_file` and `patch`. Up to engine 0.18.1 the installer wrote `terminal|file`; `file` is a toolset, so the hook fired for commands and never for a file write. Executed against the matcher of the installed 0.20.5: `terminal|file` matches `terminal` only, `terminal|write_file|patch` matches the three. The installer now writes the second, and `nrv setup --with-hermes` (the only path that touches Hermes; a plain update does not) brings a Nirvana hook that still carries the first to it; a hook whose matcher its owner changed is left alone. The allowlist keys on (event, command), so the new matcher asks for no new consent.
+- JSON payload via stdin: `{hook_event_name, tool_name, tool_input, session_id, cwd, extra}`, plus `profile` at 0.23.4. A post-tool payload carries the outcome under `extra` (`status`: `ok`, `error` or `blocked`; `result`: the tool's return as a string). The shim normalizes `terminal→Bash`, `write_file→Write`, `patch→Edit` (in `patch` mode the file name is read from the patch text) and delegates to `audit-emit-from-hook.ts` (host `hermes-cli-hook`).
+- `hermes hooks list` shows each hook with its consent, and marks the script as "modified since approval" after every engine update, because the approval records the script's modification time. It is a notice from `hermes hooks list` and `hermes hooks doctor`; the code that runs hooks does not read that field on 0.20.5 or at 0.23.4.
 - **Golden rule:** the shim keeps stdout empty + exit 0, because Hermes blocks the tool if the response looks like `{"action":"block"}`. The hook only observes.
 - The command runs via `shlex.split`, `shell=False` (no shell operators). Consent on first run is pre-approved by the installer (`shell-hooks-allowlist.json`) when the user opts into the hooks.
 
@@ -202,6 +207,7 @@ hooks:
 | `PostToolUse` | `post_tool_call` |
 | `SessionStart` | `on_session_start` |
 | `Stop` / `SubagentStop` | `on_session_end` / `subagent_stop` |
+| (before a model call) | `pre_llm_call`, which can add context and, since 2026-11-01 upstream, stop a turn before any request |
 | `UserPromptSubmit` | inject into the `-z` prompt |
 
 ---
@@ -239,7 +245,8 @@ hermes -z "<persona alex-hormozi + DNA + context + JSON contract>" ... \
 
 ```bash
 # Wrapper detects budget_violation → Hermes notifies via a channel
-hermes slack send "#nirvana-ops" "Escalação: budget_violation no trace <id>"
+hermes send -t "slack:#nirvana-ops" "Escalação: budget_violation no trace <id>"
+# `hermes send` needs no model and no running gateway; `hermes slack` only writes the app manifest.
 ```
 
 ---
@@ -249,6 +256,7 @@ hermes slack send "#nirvana-ops" "Escalação: budget_violation no trace <id>"
 - **`bun` + `nrv` on the PATH** of the Hermes terminal backend (`command -v bun`, `command -v nrv`). On an ephemeral backend (Modal/Singularity), install Bun in the image.
 - **Coherent toolset**: if `employee.tools` includes `bash`, `-t` must include `terminal`.
 - **Non-blocking hook**: the audit shim never writes `{"action":"block"}` and never exits != 0.
+- **Matcher alternatives are tool names**: `hermes hooks list` prints the matcher of each hook; every alternative must be a name from `hermes tools list`, not a toolset.
 - **Resolvable external_dirs**: the bridge path is absolute (not `~`); `${NIRVANA_PROJECT_SKILLS}` resolves only when `nrv-hermes` exports the var.
 - **JSON contract**: tolerant parser (extracts the 1st balanced `{...}`); 1 retry with a reinforced instruction if the model returns loose text.
 
@@ -264,15 +272,20 @@ hermes slack send "#nirvana-ops" "Escalação: budget_violation no trace <id>"
 6. **20K chars limit** on context files → large DNA goes in the prompt body + degradation gate.
 7. **Ephemeral backends** need Bun in the image.
 8. **`hermes acp`** (long-lived ACP server) would be the evolution for persistent orchestration; out of scope for v1 (which uses one-shot `-z`).
+9. **`nrv-hermes` is a bash script.** The wrapper that exports `NIRVANA_PROJECT_SKILLS` and starts the file watch has no Windows form. On Windows the bridge skill and the audit hooks work, and a project's own skills reach Hermes through its trusted-project discovery (§1) instead of the wrapper.
+10. **Cost is not collected.** `--usage-file` exists; nothing in the engine reads it, because the engine does not spawn Hermes.
 
 ---
 
 ## 14. Source References
 
 - Hermes CLI: `hermes --help`, `hermes chat --help`, `hermes hooks --help`, `hermes skills --help`.
-- Hooks: `~/.hermes/hermes-agent/agent/shell_hooks.py` (`_serialize_payload`, `_record_approval`, `_is_allowlisted`).
-- Context limit: `~/.hermes/hermes-agent/agent/prompt_builder.py:824` (`CONTEXT_FILE_MAX_CHARS = 20_000`).
-- Skills/external_dirs: `~/.hermes/hermes-agent/agent/skill_utils.py` (`get_external_skills_dirs`), `~/.hermes/config.yaml`.
+- Hooks: `~/.hermes/hermes-agent/agent/shell_hooks.py` (`ShellHookSpec.matches_tool`, `_serialize_payload`, `_record_approval`; at 0.23.4 the payload is built by `_payload_fields`), `hermes_cli/hooks.py` (`list`, `doctor`).
+- Tool and toolset names: `tools/file_tools.py` (`registry.register(name=…, toolset="file")`), `toolsets.py`.
+- One-shot and its usage report: `hermes_cli/_parser.py`, `hermes_cli/oneshot.py` (`_write_usage_file`).
+- Releases: https://github.com/NousResearch/hermes-agent/releases (tags before 0.21.6 are dates: `v2026.5.7` is 0.13.0).
+- Context limit: `~/.hermes/hermes-agent/agent/prompt_builder.py` (`CONTEXT_FILE_MAX_CHARS = 20_000`).
+- Skills/external_dirs: `~/.hermes/hermes-agent/agent/skill_utils.py` (`get_external_skills_dirs`, `get_project_skills_dirs`, `PROJECT_SKILLS_SUBDIRS`), `~/.hermes/config.yaml`.
 - Bridge + shim: `skills/_shared/adapters/hermes/skills/nirvana/`, `skills/_shared/scripts/audit-emit-from-hermes-hook.ts`.
 - Wrapper: `bin/nrv-hermes`. Installer: `scripts/install.ts` (`offerHermesBridge`).
 - DNA injection: `harness/lib/dispatch.ts` (`injectMindClones`, `validateTrace`).
@@ -285,3 +298,4 @@ hermes slack send "#nirvana-ops" "Escalação: budget_violation no trace <id>"
 | Version | Date | Changes |
 |---|---|---|
 | 1.0.0 | 2026-06-05 | Initial doc: Squad 5.0 + Business 1.0 + Harness 1.0 against Hermes Agent v0.13.0. Dispatch via `hermes -z` (sub-process, text→JSON). Bridge + audit hooks + nrv-hermes. |
+| 1.1.0 | 2026-11-25 | Checked against Hermes v0.20.5 (run) and v0.23.4 (read). Fixed the audit hook matcher: `terminal|file` never matched a file tool, the installer now writes `terminal|write_file|patch` and migrates the earlier value; the shim maps `patch` and reads the outcome from `extra.status`. Recorded `--usage-file`, `--reasoning`, `--in`, approvals bypassed in one-shot mode, the `extra` and `profile` payload fields, trusted-project skill discovery and the skill tiers, `pre_llm_call`, and `hermes send` in place of the nonexistent `hermes slack send`. Vendor corrected to Nous Research. Removed the tool and toolset counts and a source line number that no longer held |

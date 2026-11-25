@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { patchHermesAllowlist, patchHermesAuditHooks, patchHermesExternalDirs, publishHermesJson, publishHermesYaml } from "../../_shared/lib/hermes-config.ts";
+import { HERMES_AUDIT_MATCHER, patchHermesAllowlist, patchHermesAuditHooks, patchHermesExternalDirs, publishHermesJson, publishHermesYaml, readHermesYaml } from "../../_shared/lib/hermes-config.ts";
 
 const roots: string[] = [];
 afterEach(() => { while (roots.length) fs.rmSync(roots.pop()!, { recursive: true, force: true }); });
@@ -46,6 +46,39 @@ describe("Hermes installer configuration", () => {
       ["pre_tool_call", "bun /bridge/audit-emit-from-hermes-hook.ts pre"],
       ["post_tool_call", "bun /bridge/audit-emit-from-hermes-hook.ts post"],
     ])).toBeNull();
+  });
+
+  test("the audit matcher names tools Hermes has, and a hook with the earlier matcher is brought to it", () => {
+    const file = "/tmp/config.yaml";
+    const pairs: Array<[string, string]> = [
+      ["pre_tool_call", "bun /bridge/audit-emit-from-hermes-hook.ts pre"],
+      ["post_tool_call", "bun /bridge/audit-emit-from-hermes-hook.ts post"],
+    ];
+    // Hermes matches with re.fullmatch over the tool name: every alternative must be a whole tool name.
+    expect(HERMES_AUDIT_MATCHER.split("|")).toEqual(["terminal", "write_file", "patch"]);
+    const fresh = patchHermesAuditHooks("hooks: {}\n", file, "audit-emit-from-hermes-hook.ts", pairs)!;
+    expect((fresh.match(/matcher: terminal\|write_file\|patch/g) ?? [])).toHaveLength(2);
+
+    const before = [
+      "hooks:",
+      "  pre_tool_call:",
+      "    - matcher: terminal|file",
+      "      command: bun /bridge/audit-emit-from-hermes-hook.ts pre",
+      "      timeout: 5",
+      "    - matcher: terminal|file",
+      "      command: echo user",
+      "  post_tool_call:",
+      "    - matcher: terminal",
+      "      command: bun /bridge/audit-emit-from-hermes-hook.ts post",
+      "",
+    ].join("\n");
+    const migrated = patchHermesAuditHooks(before, file, "audit-emit-from-hermes-hook.ts", pairs)!;
+    const hooks = readHermesYaml(migrated, file).hooks as any;
+    expect(hooks.pre_tool_call[0]).toEqual({ matcher: "terminal|write_file|patch", command: "bun /bridge/audit-emit-from-hermes-hook.ts pre", timeout: 5 });
+    // Someone else's hook, and a Nirvana hook whose matcher its owner changed, stay as they are.
+    expect(hooks.pre_tool_call[1].matcher).toBe("terminal|file");
+    expect(hooks.post_tool_call[0].matcher).toBe("terminal");
+    expect(patchHermesAuditHooks(migrated, file, "audit-emit-from-hermes-hook.ts", pairs)).toBeNull();
   });
 
   test("retrying already-wired hooks still requires a valid allowlist", () => {

@@ -4,17 +4,20 @@
  * (pre_tool_call / post_tool_call) and the harness audit log.
  *
  * Hermes hooks speak a different wire protocol than Claude Code / Codex:
- * the payload tool names are `terminal` (shell) and `file` (write/edit), not
- * `Bash`/`Write`/`Edit`. This shim reads the Hermes envelope on stdin,
+ * the payload tool names are `terminal` (shell), `write_file` and `patch`
+ * (`file` is the name of their toolset, not of a tool), not `Bash`/`Write`/`Edit`. This shim reads the Hermes envelope on stdin,
  * normalizes it to the Claude Code hook contract, and delegates to the canonical
  * audit-emit-from-hook.ts (3rd arg "hermes-cli" → host:"hermes-cli-hook"), which
  * already owns the Nirvana-scope filter and the audit append.
  *
  * Hermes payload (agent/shell_hooks.py :_serialize_payload):
  *   { "hook_event_name": "pre_tool_call"|"post_tool_call",
- *     "tool_name": "terminal"|"file"|...,
- *     "tool_input": { "command": "..." } | { "path": "...", "operation": "write" },
- *     "session_id": "...", "cwd": "..." }
+ *     "tool_name": "terminal"|"write_file"|"patch"|...,
+ *     "tool_input": { "command": "..." } | { "path": "...", "content": "..." }
+ *                 | { "mode": "replace", "path": "...", ... } | { "mode": "patch", "patch": "..." },
+ *     "session_id": "...", "cwd": "...", "profile": "..." (0.23),
+ *     "extra": { "status": "ok"|"error"|"blocked", "result": "<string>", ... } }
+ * Checked against the serializer of the installed 0.20.5 and read at v0.23.4.
  *
  * GOLDEN RULE: this script MUST keep stdout empty and exit 0 — Hermes blocks the
  * tool if the hook prints something that parses as {"action":"block"} / a non-zero
@@ -70,20 +73,25 @@ function readStdin(): Promise<string> {
         if (ti.command) {
           mapped = { tool_name: "Bash", tool_input: { command: ti.command }, session_id: p.session_id };
         }
-      } else if (tool === "file" || tool === "write_file" || tool === "edit_file" || tool === "fs") {
-        const fp = ti.path || ti.file_path || ti.filename || ti.filepath || ti.target;
+      } else if (tool === "file" || tool === "write_file" || tool === "patch" || tool === "edit_file" || tool === "fs") {
+        // `patch` in its V4A mode names its files inside the patch text, not in `path`.
+        const inPatch = typeof ti.patch === "string" ? /^\*\*\* (?:Update|Add|Delete) File:\s*(.+?)\s*$/m.exec(ti.patch)?.[1] : undefined;
+        const fp = ti.path || ti.file_path || ti.filename || ti.filepath || ti.target || inPatch;
         if (fp) {
           const op = String(ti.operation || ti.mode || ti.action || "").toLowerCase();
-          const isEdit = op.includes("edit") || op.includes("patch") || op.includes("append") || op.includes("replace") || op.includes("insert");
+          const isEdit = tool === "patch" || op.includes("edit") || op.includes("patch") || op.includes("append") || op.includes("replace") || op.includes("insert");
           mapped = { tool_name: isEdit ? "Edit" : "Write", tool_input: { file_path: fp }, session_id: p.session_id };
         }
       }
 
       if (mapped) {
         // PostToolUse: pass any result through so success/exit can be recorded.
+        // Hermes puts the outcome under `extra`: `status` is "ok", "error" or "blocked".
         if (stage === "post") {
           const res = p.tool_result || p.result || p.tool_response;
+          const status = p.extra && typeof p.extra === "object" ? p.extra.status : undefined;
           if (res && typeof res === "object") mapped.tool_response = res;
+          else if (typeof status === "string") mapped.tool_response = { success: status === "ok" };
         }
         spawnSync(process.execPath, [TARGET, stage, "hermes-cli"], {
           windowsHide: true,
