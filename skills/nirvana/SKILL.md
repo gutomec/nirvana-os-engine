@@ -141,6 +141,29 @@ squad W": these are lifecycle operations, not production. Read
 or `~/.nirvana/skills/squads/SKILL.md` (squads) and follow it. Both are
 engine-internal like the harness; neither is registered as a skill of its own.
 
+### A team of agents
+
+"monte uma equipe para este projeto", "quero ver cada especialista trabalhando",
+"crie os agentes deste projeto": the roles of the user's businesses become
+agents of the host, each with its mind-clone, and a role no business has
+becomes an expert-x. It is for a whole project across several areas, on a host
+that shows each agent (OpenBot) or loads agents per project (Claude Code);
+anything smaller is one dispatch.
+
+1. `nrv team candidates "<request>"` lists the businesses that fit, with their
+   roles and clones. Read it and choose roles, not whole businesses.
+2. `nrv team init <slug> "<purpose>"` writes the team file (`--here` puts it in
+   the current project). Fill it in: start with the orchestrator, the leads the
+   request needs and a reviewer.
+3. `nrv team sync --team <slug>` validates it, writes each member's
+   instructions and prints what to do next: on OpenBot, the agents to create
+   and who receives the request; on Claude Code, the subagents it wrote and the
+   orchestrator's instructions for the main session.
+
+Tell the user which agents will be created before creating them. `nrv team
+status` shows the team; `nrv team remove` takes its instructions out of the
+host and leaves the agents and the file.
+
 ## 5. What a fresh install looks like
 
 The engine ships **no content**. On a new machine the registries are empty and

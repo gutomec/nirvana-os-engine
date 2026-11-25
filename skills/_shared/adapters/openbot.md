@@ -67,6 +67,13 @@ section, which is what OpenBot itself would create.
 - `nrv init` inside an agent's workspace refuses: OpenBot owns that folder. A
   dispatch from there works as it is and delivers under `~/.nirvana/outputs`.
 
+## 4a. Teams
+
+The section also tells the agent when to build a team (the person asks for one,
+or the request is a whole project across several areas) and how: `nrv team`.
+A team member's `AGENTS.md` carries its team's section in place of this one,
+and `nrv doctor` shows it as `member of the team <slug>`. See `teams.md`.
+
 ## 5. Known limits
 
 - An agent created after the last `nrv` command ran is prepared by the next one

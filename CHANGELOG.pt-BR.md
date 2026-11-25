@@ -6,6 +6,18 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que os instaladores de uma linha e os setups de pack consomem.
 
+## 0.16.0 — 2026-11-25
+
+### Uma equipe de agentes, montada a partir da sua biblioteca
+
+- **Os cargos das suas empresas viram agentes que você vê trabalhando.** Num host que mostra cada agente em ação, um projeto que cruza várias áreas não precisa mais rodar como um único worker escondido. O `nrv team` monta uma equipe a partir da biblioteca: cada cargo vem de um funcionário de uma empresa instalada, cada persona de um mind-clone, e um cargo que nenhuma empresa tem vira um **expert-x** com uma ficha de três linhas (qual é o papel, o que entrega, quando está pronto) e sem persona, para o modelo trabalhar livre.
+- **A equipe é um arquivo que o seu agente escreve.** `.nirvana/team.yaml`, num projeto ou em `~/.nirvana/teams/<slug>/`. `nrv team candidates "<pedido>"` lista as empresas que servem, com os cargos e os clones; `nrv team init` escreve o esqueleto; `nrv team sync` valida o arquivo e escreve as instruções de cada membro. Um arquivo com problema não escreve nada e nomeia cada problema: funcionário ou clone não instalado, nome usado duas vezes, linha de subordinação em círculo.
+- **Claude Code:** cada membro é um subagente do projeto (`.claude/agents/<team>-<id>.md`), carregado quando o projeto abre, e a sessão principal é o orquestrador.
+- **OpenBot (Nightly Labs):** cada membro é o agente do OpenBot que tem o nome dele. O engine não consegue criar um agente no OpenBot, então o `nrv team sync` diz quais criar, o seu agente os cria, e um segundo sync escreve as instruções e diz quem recebe o pedido. Um agente do OpenBot agora sabe quando montar uma equipe: quando você pede, ou quando o pedido é um projeto inteiro que cruza várias áreas. O `nrv doctor` mostra um membro como `member of the team <slug>`.
+- **Regras que todo membro segue,** escritas depois que uma equipe de 15 agentes rodou um projeto completo: o esforço cabe na pergunta; nunca encerrar um turno esperando algo que ninguém vai avisar; a máquina é do dono, então nada de abrir aplicativos, subir serviços ou instalar sem pedir; o revisor revisa uma lista de arquivos numa passada; um ponto de decisão para escopo e custo; o orquestrador cobra uma vez a resposta atrasada e segue.
+- **Nada muda a menos que você peça uma equipe.** O `nrv dispatch` nunca lê uma. `nrv team remove` tira as instruções da equipe do host; os agentes e o arquivo ficam, e um agente do OpenBot volta ao Nirvana-OS comum na próxima execução.
+- Fora desta versão: a entrega de uma equipe não passa pelo quality gate do engine, e o OpenMausBot ainda não tem adaptador. Detalhes e limites: `skills/_shared/adapters/teams.md`.
+
 ## 0.15.8 — 2026-11-24
 
 ### Escolhas mais certeiras em qualquer runtime

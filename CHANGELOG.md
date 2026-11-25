@@ -6,6 +6,18 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that the
 one-line installers and pack setups consume.
 
+## 0.16.0 — 2026-11-25
+
+### A team of agents, built from your library
+
+- **The roles of your businesses become agents you can watch.** On a host that shows each agent working, a project that crosses several areas no longer has to run as one hidden worker. `nrv team` builds a team from the library: each role comes from an employee of an installed business, each persona from a mind-clone, and a role no business has becomes an **expert-x** with a three-line card (what the role is, what it delivers, when it is done) and no persona, so the model works freely.
+- **The team is one file your agent writes.** `.nirvana/team.yaml`, in a project or under `~/.nirvana/teams/<slug>/`. `nrv team candidates "<request>"` lists the businesses that fit with their roles and clones; `nrv team init` writes the skeleton; `nrv team sync` validates the file and writes each member's instructions. A file with a problem writes nothing and names every problem: an employee or clone that is not installed, a name used twice, a reporting line that loops.
+- **Claude Code:** each member is a subagent of the project (`.claude/agents/<team>-<id>.md`), loaded when the project opens, and the main session is the orchestrator.
+- **OpenBot (Nightly Labs):** each member is the OpenBot agent that carries its name. The engine cannot create an OpenBot agent, so `nrv team sync` names the ones to create, your agent creates them, and a second sync writes their instructions and says who receives the request. An OpenBot agent now knows when to build a team: when you ask for one, or the request is a whole project across several areas. `nrv doctor` shows a member as `member of the team <slug>`.
+- **Rules every member obeys,** written after a 15-agent team ran a full project: effort fits the question; never end a turn waiting on something nobody will wake you for; the machine is its owner's, so no applications, services or installs unasked; the reviewer reviews a list of files in one pass; one decision point for scope and cost; the orchestrator asks once for a late answer and goes on.
+- **Nothing changes unless you ask for a team.** `nrv dispatch` never reads one. `nrv team remove` takes a team's instructions out of the host; the agents and the file stay, and an OpenBot agent goes back to plain Nirvana-OS on the next run.
+- Not in this release: a team's delivery does not go through the engine's quality gate, and OpenMausBot has no adapter yet. Details and limits: `skills/_shared/adapters/teams.md`.
+
 ## 0.15.8 — 2026-11-24
 
 ### Sharper choices on every runtime
