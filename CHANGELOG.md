@@ -6,6 +6,14 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that the
 one-line installers and pack setups consume.
 
+## 0.18.1 — 2026-11-25
+
+### The judge says what is wrong, or says nothing
+
+- **A finding with no text no longer withholds a delivery.** A LinkedIn post was held back after two corrections, and the gate's report showed a serious finding with nothing written in it, so the corrections had nothing to correct. Only one of the judge's rubrics spelled out the fields of its answer; on the others, a judge running on Codex named the fields its own way and the text of the finding was lost. Every rubric now gets the field names, and an answer with a finding that has no text is treated as no verdict: the file falls back to the heuristic checks instead of being failed.
+- **The judge grades the content, not the delivery around it.** It reads only the text of each file, and it called that post materially defective for not stating its own path, because the brief asked for the path to be reported. It is now told that where a file is saved, its name, its encoding and what the executor reports are checked elsewhere and are never a finding.
+- Measured by replaying the withheld run on Codex three times: pass at 88.5, 88 and 80, where it failed at 76 and 69 before.
+
 ## 0.18.0 — 2026-11-25
 
 ### Your bots use Nirvana-OS when you ask for it
