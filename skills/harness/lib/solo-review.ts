@@ -31,6 +31,7 @@ import { doneWhenCriteria, requestFile, type Criterion } from "./work-brief.ts";
 import { soloDirective } from "./business-solo.ts";
 import { loadRuntimeRules, matchedVetoes, type RuntimeRule } from "./runtime-rules.ts";
 import * as runLedger from "./run-ledger.ts";
+import { isInCooldown } from "./cooldown-registry.ts";
 
 export type ReviewPolicy = "always" | "rule" | "on-request" | "never";
 
@@ -449,6 +450,8 @@ export interface SoloReviewArgs {
   /** Test seams. */
   runImpl?: (opts: Parameters<typeof runHeadless>[0]) => RunHeadlessResult;
   available?: (rt: Runtime) => boolean;
+  /** A runtime paused after a quota error or a missing binary (cooldown-registry); never picked as the reviewer. */
+  cooling?: (rt: Runtime) => boolean;
   /** The NOT_USE_* rules to honour when picking another runtime (default: the project's). */
   rules?: RuntimeRule[];
 }
@@ -553,7 +556,8 @@ export function runSoloReviewStage(a: SoloReviewArgs): SoloReviewOutcome {
       catch { return new Set<string>(); }
     })()
     : new Set<string>();
-  const reviewer = pickReviewRuntime(a.runtimePref, a.worker.runtime, a.available, (rt) => vetoes.has(rt));
+  const cooling = a.cooling ?? ((rt: Runtime) => { try { return isInCooldown(a.projectRoot, rt); } catch { return false; } });
+  let reviewer = pickReviewRuntime(a.runtimePref, a.worker.runtime, a.available, (rt) => vetoes.has(rt) || cooling(rt));
   const reviewDir = path.join(a.outputsRoot, "_review");
   fs.mkdirSync(reviewDir, { recursive: true });
   let score: ReviewScore | null = null;
@@ -576,6 +580,15 @@ export function runSoloReviewStage(a: SoloReviewArgs): SoloReviewOutcome {
     // The reviewer's own answer; a runtime that also reports its event stream
     // (codex) keeps it out of the file the worker is pointed to.
     fs.writeFileSync(path.join(reviewDir, `answer-${pass}.txt`), (r as { answer?: string }).answer ?? r.result ?? "", "utf8");
+    if (!r.ok && reviewer !== a.worker.runtime) {
+      // Another runtime is the better reviewer, not the only one: installed is
+      // all the engine knows of it, and it may be signed out or out of quota.
+      // The review then runs on the worker's own runtime rather than not at all.
+      emit("x_review_fallback", { business_slug: a.business, reviewer_runtime: reviewer, fallback_runtime: a.worker.runtime, round: pass, error: r.error ?? null });
+      log(`  the reviewer on ${reviewer} failed (${r.error ?? "unknown"}); reviewing on ${a.worker.runtime} instead`);
+      reviewer = a.worker.runtime;
+      continue;
+    }
     if (!r.ok) {
       // A reviewer that died said nothing about the work. Counting it as a
       // rejection sent sound deliveries back for correction; the claims check

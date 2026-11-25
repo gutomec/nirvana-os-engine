@@ -146,10 +146,11 @@ export function buildCardsStatic(cards: string): string {
       "- Support squads: only when the target is a business, 0 to 2 squads for parts of the request that no role of the business covers. A squad that would repeat the roles' work slows the delivery; then, none.",
       "- Several deliverables that belong to different businesses (or squads): list each in parts, one target per part, what it delivers in a few words, and after: the targets whose output it needs. target is then the part the others build on, or the largest. One deliverable is one part, whatever the request says about its circumstances.",
       "- Done when: 3 to 5 observable states that are true once the request is met. States, not steps.",
+      "- Measures: every size, length, duration or count the request states for what it wants delivered (\"2 pages\", \"up to 120 words\", \"a 3-minute short\", \"10 slides\"), whatever its language. unit is one of word, character, page, minute, second, item; bound is at_most, at_least or about. None when the request states none: never invent one.",
       "- Write the done states and the reason in the language of the request.",
     ].join("\n"),
     "# Answer",
-    '{"target": "business:<slug> | squad:<slug> | solo", "parts": [{"target": "business:<slug> | squad:<slug>", "part": "<what it delivers>", "after": ["business:<slug>"]}], "voices": ["<slug>"], "squads": ["<slug>"], "done": ["<state>"], "reason": "<one sentence>"}',
+    '{"target": "business:<slug> | squad:<slug> | solo", "parts": [{"target": "business:<slug> | squad:<slug>", "part": "<what it delivers>", "after": ["business:<slug>"]}], "voices": ["<slug>"], "squads": ["<slug>"], "done": ["<state>"], "measures": [{"quantity": 2, "unit": "page", "bound": "about"}], "reason": "<one sentence>"}',
     cards.trim(),
   ].join("\n\n");
 }
@@ -184,7 +185,39 @@ export interface CardsAnswer {
   voices: string[];
   squads: string[];
   done: string[];
+  /** The sizes, lengths, durations and counts the request states, in a closed vocabulary. */
+  measures: Measure[];
   reason: string;
+}
+
+export const MEASURE_UNITS = ["word", "character", "page", "minute", "second", "item"] as const;
+export const MEASURE_BOUNDS = ["at_most", "at_least", "about"] as const;
+export interface Measure { quantity: number; unit: typeof MEASURE_UNITS[number]; bound: typeof MEASURE_BOUNDS[number] }
+const MAX_MEASURES = 4;
+
+/** The measures of an answer that use the closed vocabulary; anything else is dropped. */
+export function parseMeasures(v: unknown): Measure[] {
+  if (!Array.isArray(v)) return [];
+  const out: Measure[] = [];
+  for (const m of v) {
+    const quantity = typeof m?.quantity === "number" ? m.quantity : Number(m?.quantity);
+    const unit = String(m?.unit ?? "").trim().toLowerCase().replace(/s$/, "");
+    const bound = String(m?.bound ?? "").trim().toLowerCase();
+    if (!Number.isFinite(quantity) || quantity <= 0) continue;
+    if (!(MEASURE_UNITS as readonly string[]).includes(unit) || !(MEASURE_BOUNDS as readonly string[]).includes(bound)) continue;
+    out.push({ quantity, unit: unit as Measure["unit"], bound: bound as Measure["bound"] });
+    if (out.length >= MAX_MEASURES) break;
+  }
+  return out;
+}
+
+/** One measure as a blocking "Done when" line: the executor checks it, the
+ *  reviewer and the claims check hold it, and the judge counts it in the
+ *  deliverable itself. Engine text, so English whatever the request's language. */
+export function measureLine(m: Measure): string {
+  const bound = { at_most: "at most", at_least: "at least", about: "about" }[m.bound];
+  const unit = m.quantity === 1 ? m.unit : `${m.unit}s`;
+  return `Measure: ${bound} ${m.quantity} ${unit}, counted in the deliverable itself, not in its notes or a rendered copy (blocking)`;
 }
 
 /** The answer text of a runtime result. A runtime that hands back a JSON
@@ -223,6 +256,7 @@ export function parseCardsAnswer(raw: string): { ok: true; answer: CardsAnswer }
       voices: unprefix(strings(parsed.voices), "clone:"),
       squads: unprefix(strings(parsed.squads), "squad:"),
       done: strings(parsed.done).slice(0, MAX_DONE),
+      measures: parseMeasures(parsed.measures),
       reason: typeof parsed.reason === "string" ? parsed.reason.trim() : "",
     },
   };
@@ -291,7 +325,7 @@ export function toCardsDecision(
   }
   const base = {
     optional_squads: [] as string[], suggested_mind_clones: voices, candidates: [],
-    rationale: answer.reason, runtime: null, warnings, done: answer.done, dropped,
+    rationale: answer.reason, runtime: null, warnings, done: [...answer.done, ...(answer.measures ?? []).map(measureLine)], dropped,
     parts: parts.length > 1 ? parts : [],
   };
   if (target.kind === "business") return { kind: "decision", primary_business: target.slug, mandatory_squads: support, ...base };
@@ -360,7 +394,7 @@ export async function cardsRoute(args: CardsRouteArgs): Promise<CardsRouteDecisi
   }
 
   const search = args.cloneSearchImpl
-    ?? ((brief: string, limit: number) => findCloneForTask(brief, { limit, cwd: args.cwd }));
+    ?? ((brief: string, limit: number) => findCloneForTask(brief, { limit, cwd: args.cwd, gated: true }));
   let clones: string[] = [];
   try { clones = search(args.brief, CLONE_CANDIDATES).map(cloneCandidateLine); } catch { clones = []; }
   const slugs = loadRegistrySlugs(paths);

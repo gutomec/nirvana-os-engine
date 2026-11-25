@@ -413,6 +413,33 @@ describe("runSoloReviewStage", () => {
     expect(runtimes).toEqual(["antigravity-cli"]);
   });
 
+  test("with `other`, a paused runtime is skipped as the reviewer", () => {
+    deliver();
+    const runtimes: string[] = [];
+    runSoloReviewStage(args({
+      policy: "always", maxRounds: 0, runtimePref: "other",
+      available: (rt) => ["codex", "claude-code", "antigravity-cli"].includes(rt),
+      cooling: (rt) => rt === "codex",
+      runImpl: (o: any) => { runtimes.push(o.runtime); return ok("{}"); },
+    }));
+    expect(runtimes).toEqual(["antigravity-cli"]);
+  });
+
+  test("a reviewer on another runtime that fails hands the review to the worker's own runtime", () => {
+    deliver();
+    const runtimes: string[] = [];
+    const out = runSoloReviewStage(args({
+      policy: "always", maxRounds: 0, runtimePref: "other", cooling: () => false,
+      runImpl: (o: any) => {
+        runtimes.push(o.runtime);
+        return o.runtime === "codex" ? ({ ok: false, runtime: "codex", sessionId: null, result: "", error: "not signed in", costUsd: null, durationMs: 1 } as any) : ok("{}");
+      },
+    }));
+    expect(runtimes).toEqual(["codex", "claude-code"]);
+    expect(out.reviewer).toBe("claude-code");
+    expect(out.skipped).not.toBe("reviewer-failed");
+  });
+
   test("corrections run as the solo worker, with the solo directive, the budget and the ledger", () => {
     deliver();
     const calls: any[] = [];
@@ -464,7 +491,7 @@ describe("runSoloReviewStage", () => {
     expect(events).toContain("x_review_skipped");
   });
 
-  test("a reviewer that dies is skipped with an event, never counted as a rejection", () => {
+  test("a reviewer that dies, here and on the worker's runtime, is skipped with an event, never counted as a rejection", () => {
     deliver();
     const calls: any[] = [];
     const events: Array<[string, any]> = [];
@@ -472,7 +499,8 @@ describe("runSoloReviewStage", () => {
       policy: "always", emit: (e, p) => events.push([e, p]),
       runImpl: (o: any) => { calls.push(o); return { ok: false, runtime: o.runtime, sessionId: null, result: "", costUsd: null, durationMs: 1, error: "quota exhausted" } as any; },
     }));
-    expect(calls).toHaveLength(1);
+    expect(calls.map((c) => c.runtime)).toEqual(["codex", "claude-code"]);
+    expect(events.map(([e]) => e)).toContain("x_review_fallback");
     expect(out.approved).toBeNull();
     expect(out.skipped).toBe("reviewer-failed");
     expect(out.blockingMissed).toEqual([]);

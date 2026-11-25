@@ -6,6 +6,15 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that the
 one-line installers and pack setups consume.
 
+## 0.15.8 — 2026-11-24
+
+### Sharper choices on every runtime
+
+- **A clone is offered only when it fits the task.** The clone search ranks by the best hit, so some clone always came first at 1.00: "chef and menu creation" put a sales-funnel marketer at the top, covering one of the three terms. The router's candidates, the Jev router and `nrv find-clone` now leave out a clone that covers too little of the task, using the coverage gate the search already computed. A task no clone covers gets none, and the work runs on the role itself. `nrv find-clone` prints how many of the task's terms each clone covers, and `--all` lists the ones below the gate, marked.
+- **The size the request asks for is checked.** "A 2-page scene" came back as about a page and a half and passed the gate: nothing measured size. The router now reads every size, length, duration or count the request states, in any language, into a closed vocabulary (word, character, page, minute, second, item; at most, at least, about) and adds each as a blocking line of the brief's "Done when". The worker sees it before it starts; the reviewer and the claims check hold it; the judge counts it in the deliverable itself, not in its notes or a rendered copy, and a miss of more than about a fifth is a serious defect. Screenplays (`.fountain`) now go to the gate and the judge. This rides the default router (cards); the agentic router of the max profile is unchanged.
+- **The reviewer runs on another runtime.** `review.runtime` now defaults to `other` in every profile: with Claude Code and Codex installed, one reviews the other's work, because the same model misses the same errors. A runtime paused after a quota error is skipped, and when the other reviewer fails (signed out, out of quota) the review runs on the worker's own runtime instead of being skipped. With one runtime installed nothing changes. `nrv config set review.runtime same --global` keeps the reviewer on the session's runtime.
+- **Verbs are matched as whole words.** The router added `edit` to every request about credit and `run` to one about a brunch, and those verbs join the search query. They now match whole words, as the intent check already did.
+
 ## 0.15.7 — 2026-11-24
 
 ### OpenBot's agents use Nirvana-OS on their own

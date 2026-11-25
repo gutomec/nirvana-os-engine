@@ -58,6 +58,10 @@ const OUT_OF_DOMAIN = [
   "qual o melhor pneu para caminhonete andar na lama",
   "trocar a resistência do chuveiro que parou de esquentar",
   "adestrar um filhote de pastor alemão a não puxar a guia",
+  // 2026-11-24: the library has no chef or restaurateur; the top hits were a
+  // sales-funnel marketer and two frontend designers.
+  "chef and menu creation",
+  "restaurant hospitality operator",
 ];
 
 // In-domain sanity: the gate must NOT starve legitimate need-phrased briefs

@@ -193,10 +193,15 @@ function cloneIndex(cwd: string | undefined, only?: string[]): unknown | null {
  *  must skip `below_gate` hits, so an out-of-domain brief injects NOTHING.
  *  The ranked list itself still surfaces below-gate hits (agentic-override /
  *  diagnostic display); `minNormalized` is kept for callers that filter by
- *  normalized score. Empty array when registry is empty or brief is blank. */
+ *  normalized score. `gated: true` drops the below-gate hits, for every caller
+ *  that offers or assigns a clone (the CLI, the routers' candidate lists): an
+ *  irrelevant clone is worse than none, and the max-normalized score cannot
+ *  tell (measured 2026-11-24: "chef and menu creation" ranked russell-brunson
+ *  first at 1.00, covering 1 of 3 terms). Empty array when registry is empty or
+ *  brief is blank. */
 export function findCloneForTask(
   brief: string,
-  opts: { limit?: number; minNormalized?: number; cwd?: string; gateQuery?: string; only?: string[] } = {},
+  opts: { limit?: number; minNormalized?: number; cwd?: string; gateQuery?: string; only?: string[]; gated?: boolean } = {},
 ): CloneHit[] {
   if (!brief) return [];
   const idx = cloneIndex(opts.cwd, opts.only);
@@ -208,7 +213,8 @@ export function findCloneForTask(
   // that only helps the ranking).
   const briefTokens = bm25.tokenize(opts.gateQuery || brief);
 
-  return hits.filter((h: any) => h.normalized >= minNorm).map((h: any) => toHit(h, briefTokens));
+  const ranked = hits.filter((h: any) => h.normalized >= minNorm).map((h: any) => toHit(h, briefTokens));
+  return opts.gated ? ranked.filter((h: CloneHit) => !h.below_gate) : ranked;
 }
 
 // NO dense arm here — deliberately (routing-360 Phase 3.4).

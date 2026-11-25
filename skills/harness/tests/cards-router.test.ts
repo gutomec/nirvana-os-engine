@@ -17,7 +17,7 @@ import * as path from "node:path";
 import { businessCard, clip, renderRoutingCards, squadCard } from "../lib/routing-cards.ts";
 import {
   buildCardsPrompt, cardsRoute, routerCwd, cloneCandidateLine, ensureFreshCards, parseCardsAnswer,
-  resolveCardsTarget, toCardsDecision, withDoneWhen, type CardsRouterPaths,
+  resolveCardsTarget, toCardsDecision, withDoneWhen, measureLine, parseMeasures, type CardsRouterPaths,
 } from "../lib/cards-router.ts";
 import type { RegistrySlugs } from "../lib/agentic-router.ts";
 import type { RunHeadlessOpts, RunHeadlessResult } from "../lib/host-agent-driver.ts";
@@ -108,7 +108,7 @@ describe("parseCardsAnswer", () => {
     const r = parseCardsAnswer('Here:\n```json\n{"target":"business:acme-web","voices":["clone:jane-doe","jane-doe"],"squads":["squad:squad-a"],"done":["a","b","c","d","e","f"],"reason":"Web object."}\n```');
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.answer).toEqual({ target: "business:acme-web", parts: [], voices: ["jane-doe"], squads: ["squad-a"], done: ["a", "b", "c", "d", "e"], reason: "Web object." });
+    expect(r.answer).toEqual({ target: "business:acme-web", parts: [], voices: ["jane-doe"], squads: ["squad-a"], done: ["a", "b", "c", "d", "e"], measures: [], reason: "Web object." });
   });
 
   test("a JSON envelope is unwrapped to the model's text", () => {
@@ -133,6 +133,33 @@ describe("resolveCardsTarget", () => {
     expect(resolveCardsTarget("business:ghost", SLUGS)).toEqual({ error: '"business:ghost" is not installed' });
     expect(resolveCardsTarget("squad:acme-web", SLUGS)).toEqual({ error: '"squad:acme-web" is not installed' });
     expect(resolveCardsTarget("", SLUGS)).toEqual({ error: "the answer named no target" });
+  });
+});
+
+describe("measures — the sizes the request states, in a closed vocabulary", () => {
+  test("parsed from the answer; plurals folded; anything outside the vocabulary dropped", () => {
+    const r = parseCardsAnswer('{"target":"business:acme-web","done":["x"],"measures":[{"quantity":2,"unit":"pages","bound":"about"},{"quantity":"120","unit":"word","bound":"at_most"},{"quantity":3,"unit":"furlong","bound":"about"},{"quantity":0,"unit":"page","bound":"about"},{"quantity":1,"unit":"page","bound":"exactly"}],"reason":"r"}');
+    expect(r.ok && r.answer.measures).toEqual([
+      { quantity: 2, unit: "page", bound: "about" },
+      { quantity: 120, unit: "word", bound: "at_most" },
+    ]);
+    expect(parseMeasures(undefined)).toEqual([]);
+  });
+
+  test("each becomes a blocking done line, in the engine's words, after the router's states", () => {
+    expect(measureLine({ quantity: 120, unit: "word", bound: "at_most" })).toBe(
+      "Measure: at most 120 words, counted in the deliverable itself, not in its notes or a rendered copy (blocking)");
+    expect(measureLine({ quantity: 1, unit: "minute", bound: "about" })).toStartWith("Measure: about 1 minute,");
+    const d = toCardsDecision({ target: "", parts: [], voices: [], squads: [], done: ["page is live"], measures: [{ quantity: 2, unit: "page", bound: "about" }], reason: "r" },
+      { kind: "business", slug: "acme-web" }, SLUGS);
+    expect(d.done).toEqual(["page is live", measureLine({ quantity: 2, unit: "page", bound: "about" })]);
+    expect(withDoneWhen("brief", d.done)).toContain("- Measure: about 2 pages, counted in the deliverable itself");
+  });
+
+  test("the prompt asks for them and forbids inventing one", () => {
+    const p = buildCardsPrompt("a brief", "CARDS", []);
+    expect(p).toContain('"measures": [{"quantity": 2, "unit": "page", "bound": "about"}]');
+    expect(p).toContain("never invent one");
   });
 });
 

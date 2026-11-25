@@ -6,6 +6,15 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que os instaladores de uma linha e os setups de pack consomem.
 
+## 0.15.8 — 2026-11-24
+
+### Escolhas mais certeiras em qualquer runtime
+
+- **Um clone só é oferecido quando serve para a tarefa.** A busca de clones ordena pelo melhor resultado, então algum clone sempre aparecia em primeiro com 1,00: "chef and menu creation" pôs um especialista em funis de venda no topo, cobrindo um dos três termos. Os candidatos do roteador, o roteador Jev e o `nrv find-clone` agora deixam de fora o clone que cobre pouco da tarefa, usando o gate de cobertura que a busca já calculava. Uma tarefa que nenhum clone cobre fica sem clone, e o trabalho roda pelo próprio cargo. O `nrv find-clone` mostra quantos termos da tarefa cada clone cobre, e `--all` lista os que ficaram abaixo do gate, marcados.
+- **O tamanho pedido é conferido.** "Uma cena de 2 páginas" voltou com cerca de uma página e meia e passou no gate: nada media tamanho. O roteador agora lê cada tamanho, extensão, duração ou quantidade que o pedido declara, em qualquer idioma, num vocabulário fechado (palavra, caractere, página, minuto, segundo, item; no máximo, no mínimo, cerca de) e acrescenta cada um como uma linha bloqueante do "Done when" do brief. O worker vê isso antes de começar; o revisor e a checagem de claims o seguram; o juiz conta na própria entrega, não nas notas nem numa cópia renderizada, e errar por mais de cerca de um quinto é um defeito grave. Roteiros (`.fountain`) passam a ir para o gate e para o juiz. Isso vale para o roteador padrão (cards); o roteador agentic do perfil max não muda.
+- **O revisor roda em outro runtime.** `review.runtime` passa a ter `other` como padrão em todos os perfis: com o Claude Code e o Codex instalados, um revisa o trabalho do outro, porque o mesmo modelo deixa passar os mesmos erros. Um runtime em pausa por erro de cota é pulado, e quando o outro revisor falha (sem login, sem cota) a revisão roda no próprio runtime do worker em vez de ser pulada. Com um runtime instalado, nada muda. `nrv config set review.runtime same --global` mantém o revisor no runtime da sessão.
+- **Os verbos são comparados como palavras inteiras.** O roteador acrescentava `edit` a todo pedido sobre crédito e `run` a um sobre brunch, e esses verbos entram na busca. Agora a comparação é por palavra inteira, como a checagem de intenção já fazia.
+
 ## 0.15.7 — 2026-11-24
 
 ### Os agentes do OpenBot usam o Nirvana-OS sozinhos

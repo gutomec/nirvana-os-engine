@@ -312,9 +312,9 @@ export function producesForRubric(produces: readonly string[] | null | undefined
 
 /** The deliverables `judge_enabled: "reports"` sends to the LLM judge: the
  *  text deliverables, reports and research the offline heuristics cannot hold
- *  to the brief, HTML reports included. The gate hands the judge no text for a
+ *  to the brief, HTML reports and screenplays (.fountain) included. The gate hands the judge no text for a
  *  PDF, so it keeps its heuristics. */
-export const REPORT_EXTS: ReadonlySet<string> = new Set([".md", ".txt", ".html"]);
+export const REPORT_EXTS: ReadonlySet<string> = new Set([".md", ".txt", ".html", ".fountain"]);
 
 /** Rubrics whose failure is SERIOUS (owner rule A): a leaked secret, or a file
  *  that is not what its extension promises. Style, wiki-lint and structure
