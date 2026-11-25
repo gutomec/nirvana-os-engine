@@ -164,6 +164,11 @@ Tell the user which agents will be created before creating them. `nrv team
 status` shows the team; `nrv team remove` takes its instructions out of the
 host and leaves the agents and the file.
 
+A squad the user wants to **watch step by step, approve before it goes out or
+put on a schedule** becomes a workflow of the host: `nrv team flow <squad>`
+prints the plan and the call that builds it, and `--created <workflowId>`
+records it. OpenBot only; a squad the user just wants done is one dispatch.
+
 ### An agent the user keeps in OpenBot
 
 "use meu bot de imagem do OpenBot", "peça as imagens ao meu agente do OpenBot":
