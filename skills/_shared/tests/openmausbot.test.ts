@@ -15,7 +15,7 @@ afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
 
 // The seed OpenMausBot writes for a new bot (server/workspace.ts, English).
 const SEED = "# Memory\n\nDurable notes this bot keeps between tasks. The first 200 lines\nload at the start of every session — keep this file short and curated.\nLonger notes belong in memory/<topic>.md files, read on demand.\n";
-const LINE = "- Nirvana-OS is installed on this computer. A request for a concrete deliverable goes through it; how is in memory/nirvana-os.md.";
+const LINE = "- Nirvana-OS is installed on this computer. When to use it, and how, is in memory/nirvana-os.md.";
 
 type Rec = { id: unknown; name?: string; memoryEnabled?: boolean; modelSelection?: unknown };
 

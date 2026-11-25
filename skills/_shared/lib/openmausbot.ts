@@ -36,7 +36,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { nirvanaBotRules } from "./bot-note.ts";
+import { botUse, nirvanaBotRules, nirvanaBotWhen, nirvanaMemorySentence, withCurrentMemorySentence, type BotUse } from "./bot-note.ts";
 
 export const OMB_TOPIC_FILE = "nirvana-os.md";
 export const OMB_TOPIC_MARKER = "<!-- nirvana-os:openmausbot:v1 -->";
@@ -115,18 +115,18 @@ export function openMausBotAt(dir: string, home?: string): OpenMausBot | null {
 
 /** The note the bot keeps about Nirvana-OS: a topic file whose frontmatter is
  *  what OpenMausBot lists under the bot's memory at every turn. */
-export function openMausBotTopicText(): string {
+export function openMausBotTopicText(use: BotUse = "on-demand"): string {
   return [
     "---",
     "title: Nirvana-OS on this computer",
-    "description: Read before producing any concrete deliverable (report, post, document, page, code, analysis, design). It goes through the nrv command.",
+    `description: ${nirvanaBotWhen(use)}`,
     "aliases: [nirvana, nrv, businesses, squads, mind-clones]",
     "---",
     OMB_TOPIC_MARKER,
     "",
     "The Nirvana-OS engine wrote this note and keeps it current. To stop using it, take the line that points here out of MEMORY.md; the engine does not put it back.",
     "",
-    ...nirvanaBotRules(),
+    ...nirvanaBotRules(use),
     "- **Show the delivery in the chat.** The delivered file is outside your working folder, and the chat opens only files from there: attach it with `attach_file` when you have that tool, otherwise copy it into your current working folder. Give its full path either way.",
     "",
   ].join("\n");
@@ -134,7 +134,7 @@ export function openMausBotTopicText(): string {
 
 /** The line in MEMORY.md. No date on purpose: see the header of this file. */
 function memoryLine(): string {
-  return `- Nirvana-OS is installed on this computer. A request for a concrete deliverable goes through it; how is in ${OMB_MEMORY_POINTER}.`;
+  return `- ${nirvanaMemorySentence(OMB_MEMORY_POINTER)}`;
 }
 
 /** Put the line first among the bullet lines, else at the end of the file. */
@@ -177,11 +177,16 @@ export function ensureOpenMausBotKnowsNirvana(bot: OpenMausBot): OpenMausBotOutc
   const memoryFile = path.join(bot.dir, "MEMORY.md");
   const topicFile = path.join(bot.dir, "memory", OMB_TOPIC_FILE);
   try {
-    const wanted = openMausBotTopicText();
+    const wanted = openMausBotTopicText(botUse(bot.name));
     if (fs.existsSync(topicFile)) {
       const current = fs.readFileSync(topicFile, "utf8");
       // A file of that name without the engine's marker is somebody else's note.
       if (!OMB_TOPIC_MARKER_RE.test(current)) return "skipped";
+      if (fs.existsSync(memoryFile)) {
+        const memory = fs.readFileSync(memoryFile, "utf8");
+        const renewed = withCurrentMemorySentence(memory, OMB_MEMORY_POINTER);
+        if (renewed !== memory) writePrivate(memoryFile, renewed);
+      }
       if (current === wanted) return "current";
       writePrivate(topicFile, wanted);
       return "refreshed";

@@ -6,6 +6,16 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that the
 one-line installers and pack setups consume.
 
+## 0.18.0 — 2026-11-25
+
+### Your bots use Nirvana-OS when you ask for it
+
+- **A bot is yours first.** Until now the engine told every bot of a bot host (Orca, OpenMausBot, OpenBot) to send any concrete deliverable through Nirvana-OS, so a person who wanted their agent to answer as it always did had to delete the engine's note. The note is now **on demand**, the way the `nirvana` skill is on Claude Code: the bot reaches for Nirvana-OS when the request names it, names one of your businesses, squads or mind-clones, or asks for a team of agents. Any other request is the bot's, and it does not bring Nirvana-OS up.
+- **A bot made for Nirvana-OS still uses it for everything.** An agent whose name or description names Nirvana ("Nirvana Prime", "delivers through Nirvana-OS") sends every concrete deliverable through it, as before.
+- **One setting for every bot:** `nrv config set bots.use always --global` brings back the old behaviour for all of them; `on-demand` is the default. Ask your agent: "I want all my bots to always use Nirvana".
+- **Nothing to run.** The next `nrv` command rewrites the note of each bot already prepared, and brings the pointer line in its `MEMORY.md` to the new wording where it stands. A bot whose owner removed the note stays without it.
+- On OpenBot, an on-demand agent builds a team only when you ask for one; it no longer decides that a large request deserves a team.
+
 ## 0.17.0 — 2026-11-25
 
 ### The agents you keep in OpenBot work for a dispatch
