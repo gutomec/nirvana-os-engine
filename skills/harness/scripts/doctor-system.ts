@@ -39,6 +39,7 @@ import { detectOrca, orcaHooksStatus, orcaHostActive, orcaJson, orcaStatus, reso
 import { botUsesNirvana, orcaAutoSetup } from "../../_shared/lib/orca-bots.ts";
 import { openMausBotAutoSetup, openMausBotUsesNirvana } from "../../_shared/lib/openmausbot.ts";
 import { openBotAgentLabels, openBotAutoSetup, openBotInstructionFile } from "../../_shared/lib/openbot.ts";
+import { openBotReachable, openBotSpecialists } from "../../_shared/lib/openbot-call.ts";
 import { teamOfText } from "../../_shared/lib/team-hosts.ts";
 import { codexConfigPath, codexHookTrustEntries, codexHooksPath } from "../../_shared/lib/codex-hooks.ts";
 import { expandEnv, findTempNrvEntries, readUserPath, tempRoots } from "../../_shared/lib/windows-user-path.ts";
@@ -300,6 +301,12 @@ if (which("openclaw")) {
       return `${who}: ${state}`;
     }).join("; ");
     add("openbot: agents", "PASS", text);
+    // The agents the person opened to local scripts: a worker can hand them a
+    // part of the work (`nrv bot ask`). No line when none is open.
+    const callable = openBotSpecialists();
+    if (callable.length) {
+      add("openbot: callable", "PASS", `${callable.map((a) => a.name).join(", ")}${openBotReachable() ? "" : " (OpenBot is closed now)"}`);
+    }
   }
 }
 

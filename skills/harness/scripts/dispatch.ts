@@ -59,6 +59,7 @@ import { ensureOrcaSetupScript, ensureOrcaWorkspace, orcaAutoSetup, orcaWorktree
 import { orcaHostActive, orcaRegisterProject, orcaStatus } from "../../_shared/lib/orca.ts";
 import { openMausBotAutoSetup } from "../../_shared/lib/openmausbot.ts";
 import { openBotAutoSetup } from "../../_shared/lib/openbot.ts";
+import { openBotSpecialistsDirective } from "../../_shared/lib/openbot-call.ts";
 import { ProjectService } from "../lib/control-plane/project-service.ts";
 import { nestedOutputsBase, runFolderOf } from "../../_shared/lib/run-workspace.ts";
 import { briefExcerpt } from "../../_shared/lib/brief-excerpt.ts";
@@ -1124,7 +1125,9 @@ if (runtimeAutoRequested) {
 }
 // Block appended to the AUTONOMOUS_DIRECTIVE: the maestro honors the rules when
 // DELEGATING sub-tasks ("" when there are no rules = no-op).
-const rulesDirective = formatRulesForDirective(runtimeRules);
+// It also names the OpenBot agents the person opened to local scripts ("" when
+// there is none), so a worker can hand one a part of the work with `nrv bot ask`.
+const rulesDirective = formatRulesForDirective(runtimeRules) + openBotSpecialistsDirective();
 
 // --auto: agentic routing → dispatch cascade (Business → Squad → agent-x).
 // The router decision maps to a plan in lib/dispatch-cascade.ts; squad-only

@@ -115,3 +115,6 @@ if (process.env.NIRVANA_OPENBOT_STATE === undefined) {
 if (process.env.NIRVANA_OPENBOT_DB === undefined) {
   process.env.NIRVANA_OPENBOT_DB = path.join(process.env.HARNESS_LOGS_DIR!, "openbot.db");
 }
+if (process.env.NIRVANA_OPENBOT_AUTOMATION_DIR === undefined) {
+  process.env.NIRVANA_OPENBOT_AUTOMATION_DIR = path.join(process.env.HARNESS_LOGS_DIR!, "openbot-automation");
+}

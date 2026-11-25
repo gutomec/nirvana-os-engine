@@ -74,64 +74,69 @@ or the request is a whole project across several areas) and how: `nrv team`.
 A team member's `AGENTS.md` carries its team's section in place of this one,
 and `nrv doctor` shows it as `member of the team <slug>`. See `teams.md`.
 
-## 4b. Calling an OpenBot agent from a terminal
+## 4b. Handing work to an OpenBot agent: `nrv bot`
 
-The engine does not do this yet. It is the path a dispatch will use to hand a
-part of the work to an agent the person already configured in OpenBot, an image
-agent for example, and it works by hand today. Read from the app's bundled
-`cli/openbot-cli.mjs` (app 0.78.0) and run on macOS on 2026-11-25.
+The other direction: a dispatch running anywhere on this computer (Claude Code
+in a terminal, Codex, another bot host) hands a part of the work to an agent
+the person already configured in OpenBot, an image agent for example. Code:
+`_shared/lib/openbot-call.ts` and `harness/scripts/bot.ts`. The engine talks to
+the app's local automation API, the one its bundled `cli/openbot-cli.mjs` uses
+(read at app 0.78.0), so nothing depends on where the app is installed.
 
-**1. The person turns Local scripts on, per agent.** Agent settings →
-**Rules** → **Permissions** → **Local scripts**. No agent tool can set it:
-`update_profile` refuses the field, so an orchestrator cannot open another
-agent. The switch lets any program on this computer send the agent messages,
-run its routines, answer its questions and accept or decline its approvals. It
-belongs on a specialist, and deserves a second thought on an agent that creates
-and deletes others. The engine never turns it on.
+**The person decides who can be called.** Agent settings → **Rules** →
+**Permissions** → **Local scripts**, per agent. No agent tool can set it
+(`update_profile` refuses the field) and the engine never tries. The switch
+also lets a script answer the agent's questions and accept its approvals; the
+engine does neither. It belongs on a specialist, and deserves a second thought
+on an agent that creates and deletes others.
 
-**2. The CLI ships inside the app** and runs under Bun:
+**What the engine does, with no command from the person:**
+
+- `nrv dispatch` and `nrv revise` read which agents are open (name, title,
+  description and provider, from the app's database, read only) and, when the
+  app is running, add a short block to the worker's directive: who can be
+  called, for what, and the command. The worker decides. With no agent open, or
+  the app closed, the block is empty and nothing changes.
+- `nrv doctor` prints `openbot: callable` with their names.
+
+**The command, for an agent to run:**
 
 ```
-bun /Applications/OpenBot.app/Contents/Resources/cli/openbot-cli.mjs list
-bun <cli> run "<agent>" "<task>" --wait --timeout 10m --json
-bun <cli> status "<agent>" <deliveryId> --json
+nrv bot list
+nrv bot ask "<agent>" "<task>" [--out <dir>] [--timeout 30m] [--json]
+nrv bot status <deliveryId> [--out <dir>]
 ```
 
-`list` shows only the agents with the switch on. With none, or with the app
-closed, the CLI finds no `automation` folder (`~/Library/Application
-Support/OpenBot/automation` on macOS, `%APPDATA%\OpenBot\automation` on
-Windows, `~/.config/OpenBot/automation` on Linux) and exits 5.
+`ask` sends the task with one added line (nobody is reading the chat: do not
+ask before saving, keep every file in the workspace and give its path), waits,
+and copies every file the agent made in its workspace since the call started
+into `--out` (default `./from-openbot/<agent>`), keeping the relative path.
+Hidden folders and the agent's own instruction files are never copied. The
+audit gets `x_bot_called` with the agent, the state, the file count and the
+seconds.
 
 | Exit | Meaning |
 |---|---|
-| 0 | the agent finished |
-| 1 | the agent failed |
-| 2 | wrong usage |
-| 3 | the agent waits for a person: a question, an approval or a browser takeover |
-| 4 | the wait timed out (default 30 minutes) |
-| 5 | OpenBot is closed, or no agent has Local scripts on |
-
-**3. The answer is text.** `--json` carries `status`, `answer`, `deliveryId`
-and, on exit 3, `pending` with the question and its options. There is no field
-for files: the agent writes the path in its answer, and the file stays in its
-workspace (`~/OpenBot/Agents/<agent-id>/…`). A caller copies it from there.
-
-**4. An agent that asks stops the call.** The CLI has no subcommand to answer;
-the person answers in the chat and `status` then returns the final answer. A
-task that says what to do with the result ("attach it without asking") avoids
-the stop.
+| 0 | the agent finished; its answer and the copied files are printed |
+| 1 | the turn failed, the wait ran out, or OpenBot could not be reached |
+| 2 | the agent waits for its person: the question is printed, the person answers in OpenBot, `nrv bot status <deliveryId>` finishes the call |
+| 4 | wrong arguments |
 
 What does not work:
 
 - **Relaying through another agent.** An orchestrator that forwards the task
-  with `send_message` ends its turn at once; the caller gets "queued" and never
-  learns when the work is done. Call the specialist itself.
-- **Running a workflow.** The CLI has no workflow subcommand. An agent with the
-  switch on can create one with `edit_workflow` and run it with `run_workflow`.
+  with `send_message` ends its turn at once; the caller never learns when the
+  work is done. `nrv bot ask` calls the specialist itself.
+- **Running a workflow.** The automation API has no route for one. An agent
+  with the switch on can create one with `edit_workflow` and run it with
+  `run_workflow` when asked.
+- **A remote server.** Only this computer's own OpenBot is reached.
 
-Not checked: the CLI's path on Windows and Linux, video generation, and the
-hourly limit OpenBot applies to local scripts (its error text names one; the
-number was not measured).
+Not checked: Windows and Linux (the automation folder is read from
+`%APPDATA%\\OpenBot\\automation` and `~/.config/OpenBot/automation`, as the app's
+CLI does, but no call was made there), video generation, and the hourly limit
+OpenBot applies to local scripts (its error text names one; the number was not
+measured).
 
 ## 5. Known limits
 
@@ -169,7 +174,7 @@ Both times the agent attached the delivered file to the chat, gave the
 original's full path, and listed the decisions the squad made. The audit
 showed `brief_received`, `dispatch_squad` and `gate_passed` for each run.
 
-On 2026-11-25, same machine, the terminal path of section 4b. "Estúdio de
+On 2026-11-25, same machine, the calls of section 4b, made with the app's own `openbot-cli` before `nrv bot` existed. "Estúdio de
 Imagem" is an agent on the ChatGPT provider (`gpt-6-luna`) that generates
 images with the provider's own image tool.
 

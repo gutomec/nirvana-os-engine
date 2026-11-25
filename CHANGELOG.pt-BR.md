@@ -6,6 +6,17 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que os instaladores de uma linha e os setups de pack consomem.
 
+## 0.17.0 — 2026-11-25
+
+### Os agentes que você mantém no OpenBot trabalham para um dispatch
+
+- **Um dispatch pode passar uma parte do trabalho ao seu agente do OpenBot.** Quem mantém especialistas no [OpenBot da Nightly Labs](https://github.com/nightly-labs/openbot), um agente de imagem por exemplo, agora pode pedir uma página web no Claude Code, pelo terminal, e receber as imagens feitas por esse agente. O worker fica sabendo quais agentes podem ser chamados e para que serve cada um, decide se algum serve para uma parte do trabalho e recebe os arquivos na própria pasta.
+- **Você decide quem pode ser chamado, no OpenBot.** Um agente só responde com **Scripts locais** ligado: Configurações do agente → Regras → Permissões. Nenhum agente consegue ligar essa chave, e o engine nunca tenta. Sem agente liberado, ou com o OpenBot fechado, nada muda num dispatch.
+- **`nrv bot`, para o seu agente rodar.** `nrv bot list` mostra quem pode ser chamado. `nrv bot ask "<agente>" "<tarefa>" --out <pasta>` manda a tarefa, espera e copia para a pasta cada arquivo que o agente fez. Quando o agente para e pergunta algo a você, o comando diz o que ele pergunta e sai com 2; você responde no OpenBot e `nrv bot status <deliveryId>` conclui a chamada.
+- **O engine não responde por você.** A chave Scripts locais também deixa um script responder às perguntas de um agente e aceitar as aprovações dele. O engine não faz nenhuma das duas coisas: um agente que espera por você é relatado como esperando.
+- O `nrv doctor` tem uma linha nova, `openbot: callable`, com os agentes liberados.
+- Medido no macOS com o OpenBot 0.78.0 e um agente de imagem no provedor ChatGPT: uma imagem hero de 1536×1024 em 85 segundos, e um ícone quadrado em 30 segundos até a pergunta do agente. Não conferido no Windows nem no Linux, nem com vídeo. Detalhes e limites: `skills/_shared/adapters/openbot.md`, seção 4b.
+
 ## 0.16.0 — 2026-11-25
 
 ### Uma equipe de agentes, montada a partir da sua biblioteca

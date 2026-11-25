@@ -164,6 +164,24 @@ Tell the user which agents will be created before creating them. `nrv team
 status` shows the team; `nrv team remove` takes its instructions out of the
 host and leaves the agents and the file.
 
+### An agent the user keeps in OpenBot
+
+"use meu bot de imagem do OpenBot", "peça as imagens ao meu agente do OpenBot":
+the user has specialists configured in OpenBot (Nightly Labs) and wants one to
+do a part of the work, whatever runtime you are on.
+
+- `nrv bot list` shows the agents that can be called and what each is for.
+- `nrv bot ask "<agent>" "<what you need>" --out <folder>` sends the task,
+  waits and copies the files the agent made into the folder. Exit 2 means the
+  agent waits for the user in OpenBot: tell the user what it asks, and pick the
+  result up with `nrv bot status <deliveryId>`.
+
+A dispatch tells its worker about these agents on its own, so a request for a
+deliverable still goes to the harness; call `nrv bot ask` yourself only when
+the user asks one agent for one thing. Only an agent with **Local scripts** on
+can be called, and only the user turns that on: Agent settings → Rules →
+Permissions. Never try to turn it on for them.
+
 ## 5. What a fresh install looks like
 
 The engine ships **no content**. On a new machine the registries are empty and
