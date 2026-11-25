@@ -106,7 +106,7 @@ export const COMMANDS: Command[] = [
   { name: "list-clones", aliases: ["clones-list", "list-mind-clones", "mind-clones"], target: "_shared/scripts/list-clones.ts", category: "libraries", summary: "List mind-clones in your DNA library", visibility: "user" },
   { name: "inspect-clone", aliases: ["clone-inspect", "inspect-mind-clone"], target: "_shared/scripts/inspect-clone.ts", category: "libraries", args: "<slug>", summary: "Inspect a single mind-clone", visibility: "user" },
   { name: "find-clone", aliases: ["clone-find", "find-mind-clone"], target: "_shared/scripts/find-clone.ts", category: "libraries", args: '"<query>"', summary: "Find a mind-clone by query", visibility: "user" },
-  { name: "team", aliases: ["teams"], target: "harness/scripts/team.ts", category: "libraries", args: 'candidates "<request>" | init <slug> | sync | status | remove  [--team <slug> | --dir <folder>]', summary: "A team of agents built from the library, for a host that shows each one working (OpenBot) or loads agents per project (Claude Code)", visibility: "user" },
+  { name: "team", aliases: ["teams"], target: "harness/scripts/team.ts", category: "libraries", args: 'candidates "<request>" | init <slug> | sync | status | remove | flow <squad>  [--team <slug> | --dir <folder>]', summary: "A team of agents built from the library, for a host that shows each one working (OpenBot) or loads agents per project (Claude Code)", visibility: "user" },
   { name: "bot", aliases: ["bots"], target: "harness/scripts/bot.ts", category: "libraries", args: 'list | ask "<agent>" "<task>" [--out <dir>] | status <deliveryId>', summary: "Hand a part of the work to an agent the person keeps in OpenBot and opened to local scripts", visibility: "user" },
 
   // license

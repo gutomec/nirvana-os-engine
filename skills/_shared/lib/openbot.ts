@@ -122,6 +122,7 @@ export function openBotBlockText(use: BotUse = "on-demand"): string {
     ...nirvanaBotRules(use),
     "- **Show the delivery in the chat.** `attach_files_to_response` takes only files inside your workspace, and the delivery is outside it: copy each delivered file into your workspace, attach the copy, and give the original's full path too.",
     `- **A team, when the person asks for one**${use === "always" ? " or the request is a whole project across several areas (product, design, law and launch together, for example)" : ""}: the specialists become OpenBot agents the person can watch. Run \`nrv team candidates "<request>"\`, choose the roles, write the team file with \`nrv team init\`, then \`nrv team sync --team <slug>\` and do what it prints: it names the agents to create and who receives the request. Anything smaller is one \`nrv dispatch\`.`,
+    "- **A squad as a workflow, when the person asks to see one run step by step**, to approve its result before it goes out, or to put it on a schedule: run `nrv team flow <squad>` and do what it prints. It gives the `edit_workflow` call that builds the workflow, one node per step of the squad, and the command that records it so you know when to run it. A squad the person just wants done is one `nrv dispatch`.",
     OPENBOT_BLOCK_END,
     "",
   ].join("\n");

@@ -81,6 +81,51 @@ On OpenBot an agent belongs to one team at a time. A member taken out of the
 file, or a removed team, has its section taken out; the agent is never deleted
 and goes back to the generic section on the engine's next run.
 
+## 4a. A squad as a workflow: `nrv team flow`
+
+A squad that declares a workflow (`workflows/<name>.md`, steps with `id`,
+`agent` and `requires`) can be drawn as a workflow of OpenBot: a node per step,
+the person's approval before the result goes out, and a trigger they can put on
+a schedule. Code: `_shared/lib/team-flow.ts`. It is for the squad the person
+runs again and again and wants to watch; a squad they just want done is one
+`nrv dispatch`, which keeps the engine's gate and audit.
+
+```
+nrv team flow <squad> [--workflow <name>]      the plan: steps, and the edit_workflow call that builds it
+nrv team flow <squad> --created <workflowId>   record the workflow the agent built
+nrv team flow --list                           the workflows recorded for this agent, and which are stale
+nrv team flow <squad> --forget                 take them out of the agent's instructions
+```
+
+- **The engine plans, the agent builds.** OpenBot's database is the app's own,
+  so the engine writes no workflow. It prints the `ops` of one `edit_workflow`
+  call: a manual trigger, an `agent` node per step linked as `requires` says,
+  an `approval` node after the last steps and an `output` node. The agent that
+  ran the command makes the call, in a turn its person started.
+- **Each step is told its role.** The node's task names the squad agent's file
+  by its full path and what the step receives: the request, or the result of
+  the steps it requires. A step runs on the OpenBot agent that carries the
+  squad agent's name when there is one, and on the agent that asked otherwise.
+- **The agent is told when to run it.** OpenBot does not list workflows in an
+  agent's context, so a workflow nobody mentions is never used. `--created`
+  writes a marked section in the agent's instruction file
+  (`<!-- nirvana-os:flows:v1 -->`) with one line per workflow. The owner's text
+  around it is kept.
+- **The squad stays the source.** The record keeps a revision of the workflow
+  file and its agents' files; `--list` says when the squad changed since, and
+  running the plan again gives the new `ops`.
+
+Seen live on 2026-11-25 (OpenBot 0.78.0, an agent on the ChatGPT provider):
+asked in Portuguese to "see the squad running as a workflow here", the agent
+ran the three commands and built a six-node workflow in 82 s. Its run did the
+three steps in about 65 s and stopped at the approval. A step that runs on the
+agent that started the run waits in that agent's queue until its turn ends, so
+the section tells the agent not to wait for the run in the same turn.
+
+Not covered: a workflow's result does not pass the engine's quality gate (the
+approval node is the check), a squad whose workflow has no `steps` cannot be
+drawn, and no other host has an adapter for this.
+
 ## 5. Known limits
 
 - The engine does not decide the team: `nrv team candidates` is a keyword

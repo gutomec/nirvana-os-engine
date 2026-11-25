@@ -15,6 +15,16 @@ one-line installers and pack setups consume.
 - **`GROK_HOME` reaches a grok worker under the `declared` child environment**, as `CLAUDE_CONFIG_DIR` and `CODEX_HOME` already did. OpenBot now gives each new server on a computer its own provider homes through those three variables, and a grok worker without `GROK_HOME` would have signed in as another account.
 - **Adapter records checked on 2026-11-25** against agy 1.5.14, Codex 0.164.0 and its release notes up to 0.172.0, grok 1.0.92, OpenClaw `v2026.11.10` and OpenBot's main branch. What changed upstream and is now written down: agy starts headless runs in Auto mode since 1.5.7 and no longer caps the wait for background tasks at 30 minutes since 1.5.0; `codex exec` keeps a project's own config and MCP servers off until the folder is trusted since 0.169.0; OpenClaw leaves `~/.agents/skills` out when its state folder is not the default one. No command the engine builds had to change.
 
+## 0.18.2 — 2026-11-25
+
+### A squad as a workflow you can watch
+
+- **`nrv team flow <squad>` draws a squad's workflow in OpenBot.** A squad you run again and again can now be a workflow of [OpenBot by Nightly Labs](https://github.com/nightly-labs/openbot): a node for each step of the squad, your approval before the result is delivered, and a trigger you can put on a schedule. Ask your agent: "I want to see this squad running as a workflow here".
+- **The engine plans, your agent builds.** The command reads the workflow the squad declares and prints the one `edit_workflow` call that creates it, with each step told its role, the squad agent's file and what it receives. A step runs on the OpenBot agent that carries the squad agent's name, or on the agent that asked.
+- **The agent knows when to run it.** OpenBot does not show an agent the workflows that exist, so the engine records each one in a marked section of the agent's instructions. `nrv team flow --list` says when the squad changed since the workflow was built, and `--forget` takes it out.
+- **A squad you just want done is still one dispatch,** with the engine's gate and audit. A workflow's result is checked by your approval, not by the gate.
+- Measured on macOS with OpenBot 0.78.0: an agent built a six-node workflow from a three-step squad in 82 seconds, and its run did the three steps in about 65 seconds and stopped at the approval.
+
 ## 0.18.1 — 2026-11-25
 
 ### The judge says what is wrong, or says nothing

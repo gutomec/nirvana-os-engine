@@ -15,6 +15,16 @@ do engine que os instaladores de uma linha e os setups de pack consomem.
 - **`GROK_HOME` chega ao worker do grok no ambiente de filhos `declared`**, como `CLAUDE_CONFIG_DIR` e `CODEX_HOME` já chegavam. O OpenBot agora dá a cada servidor novo de um computador as próprias pastas de provedor por essas três variáveis, e um worker do grok sem `GROK_HOME` entraria com outra conta.
 - **Registros dos adapters conferidos em 2026-11-25** contra o agy 1.5.14, o Codex 0.164.0 e suas notas de release até a 0.172.0, o grok 1.0.92, o OpenClaw `v2026.11.10` e o branch principal do OpenBot. O que mudou nos upstreams e agora está escrito: o agy inicia execuções headless em modo Auto desde a 1.5.7 e não limita mais a 30 minutos a espera por tarefas em segundo plano desde a 1.5.0; o `codex exec` mantém a configuração própria do projeto e os servidores MCP desligados até a pasta ser confiável desde a 0.169.0; o OpenClaw deixa `~/.agents/skills` de fora quando a pasta de estado não é a padrão. Nenhum comando que o engine monta precisou mudar.
 
+## 0.18.2 — 2026-11-25
+
+### Um squad como fluxo que você acompanha
+
+- **`nrv team flow <squad>` desenha o workflow de um squad no OpenBot.** Um squad que você roda sempre agora pode ser um fluxo do [OpenBot da Nightly Labs](https://github.com/nightly-labs/openbot): um nó para cada passo do squad, a sua aprovação antes de o resultado ser entregue, e um gatilho que você pode agendar. Peça ao seu agente: "quero ver este squad rodando como fluxo aqui".
+- **O engine planeja, o seu agente monta.** O comando lê o workflow que o squad declara e imprime a chamada única de `edit_workflow` que o cria, com cada passo sabendo o seu papel, o arquivo do agente do squad e o que ele recebe. Um passo roda no agente do OpenBot que tem o nome do agente do squad, ou no agente que pediu.
+- **O agente sabe quando rodar.** O OpenBot não mostra ao agente os fluxos que existem, então o engine registra cada um numa seção marcada das instruções do agente. `nrv team flow --list` avisa quando o squad mudou desde que o fluxo foi montado, e `--forget` tira o registro.
+- **Um squad que você só quer pronto continua sendo um dispatch,** com o gate e a auditoria do engine. O resultado de um fluxo é conferido pela sua aprovação, não pelo gate.
+- Medido no macOS com o OpenBot 0.78.0: um agente montou um fluxo de seis nós a partir de um squad de três passos em 82 segundos, e a execução fez os três passos em cerca de 65 segundos e parou na aprovação.
+
 ## 0.18.1 — 2026-11-25
 
 ### O juiz diz o que está errado, ou não diz nada
