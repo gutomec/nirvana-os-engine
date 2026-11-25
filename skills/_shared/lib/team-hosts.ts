@@ -12,6 +12,11 @@
 //                agent (they live in the app's database, which it only reads):
 //                it reports the members with no agent, for the host's own agent
 //                to create.
+//   hermes       one Bot of Hermes Agent's Bot Mode per member: the profile
+//                `<team>-<member id>`, the member's instructions in a marked
+//                section of its SOUL.md, and its name and role in the roster.
+//                A profile is created with `hermes profile create`, and only
+//                when the caller asks for it.
 //
 // The engine owns its marked section and its generated files, and nothing else.
 // A member taken out of team.yaml has its section or its file removed; the
@@ -22,6 +27,9 @@ import {
   listOpenBotAgents, openBotAgentLabels, openBotInstructionFile, openBotReleaseFromTeam, openBotReserveForTeam, openBotWriteInstructions,
   type OpenBotAgent,
 } from "./openbot.ts";
+import {
+  createHermesProfile, HERMES_PROFILE_ID_RE, hermesProfileDir, hermesSoulFile, listHermesProfiles, markHermesBot,
+} from "./hermes-bots.ts";
 import { compileMember, type TeamLibrary, type TeamMember, type TeamSpec } from "./team.ts";
 
 const TEAM_BLOCK_RE = /<!-- nirvana-os:team:v\d+ ([a-z0-9-]+) -->[\s\S]*?<!-- \/nirvana-os:team -->\r?\n?/;
@@ -180,5 +188,73 @@ export function releaseOpenBot(team: string, home?: string): OpenBotAgent[] {
     try { openBotWriteInstructions(file, text.replace(TEAM_BLOCK_RE, "")); released.push(a); } catch { /* left as it is */ }
   }
   openBotReleaseFromTeam(released, home);
+  return released;
+}
+
+// ── Hermes (Bot Mode) ────────────────────────────────────────────────
+
+export interface HermesSync {
+  /** Members whose Bot exists and now carries their instructions. */
+  written: Array<{ member: TeamMember; id: string; created: boolean }>;
+  /** Members with no profile yet: created when the caller asks for it. */
+  missing: Array<{ member: TeamMember; id: string }>;
+  /** Members that could not be written, with why. */
+  failed: Array<{ member: TeamMember; id: string; reason: string }>;
+  /** Profiles that carried this team's section and are no longer members. */
+  released: string[];
+}
+
+/** The Hermes profile of a member: `<team>-<member id>`. */
+export const hermesMemberId = (spec: TeamSpec, m: TeamMember): string => `${spec.team}-${m.id}`;
+
+const hermesRole = (m: TeamMember): string => (m.expert ? m.expert.role : `The role ${m.role_from}`).replace(/\s+/g, " ").trim();
+
+/** Write each member into the Hermes Bot `<team>-<id>`. A missing profile is
+ *  created only with `create`; without it the member is reported as missing. */
+export function syncHermes(spec: TeamSpec, lib: TeamLibrary, opts: { create?: boolean } = {}): HermesSync {
+  const out: HermesSync = { written: [], missing: [], failed: [], released: [] };
+  const ref = (m: TeamMember) => `**${m.name}** (\`@${hermesMemberId(spec, m)}\`)`;
+  const kept = new Set<string>();
+  for (const m of spec.members) {
+    const id = hermesMemberId(spec, m);
+    kept.add(id);
+    if (!HERMES_PROFILE_ID_RE.test(id)) { out.failed.push({ member: m, id, reason: "the team slug and the member id together are longer than a Hermes profile id (64 characters)" }); continue; }
+    const dir = hermesProfileDir(id);
+    let created = false;
+    if (!fs.existsSync(dir)) {
+      if (!opts.create) { out.missing.push({ member: m, id }); continue; }
+      const made = createHermesProfile(id, `${m.name}: ${hermesRole(m)}`);
+      if (!made.ok) { out.failed.push({ member: m, id, reason: made.message }); continue; }
+      created = true;
+    }
+    try {
+      const file = hermesSoulFile(dir);
+      let current = "";
+      try { current = fs.readFileSync(file, "utf8"); } catch { /* a profile with no SOUL.md yet */ }
+      const other = teamOfText(current);
+      if (other && other !== spec.team) { out.failed.push({ member: m, id, reason: `the profile carries the team "${other}"` }); continue; }
+      const block = `${begin(spec.team)}\n${compileMember(spec, m, { host: "hermes", lib, ref }).trimEnd()}\n${END}\n`;
+      const next = withTeamBlock(current, block);
+      if (next !== current) writeFile(file, next);
+      markHermesBot(dir, { title: m.name, description: hermesRole(m) });
+      out.written.push({ member: m, id, created });
+    } catch (e: any) { out.failed.push({ member: m, id, reason: e?.message ?? "its files could not be written" }); }
+  }
+  out.released = releaseHermes(spec.team, kept);
+  return out;
+}
+
+/** Take a team's section out of every Hermes profile that carries it, except
+ *  the ones in `keep`. The profiles stay. */
+export function releaseHermes(team: string, keep: Set<string> = new Set()): string[] {
+  const released: string[] = [];
+  for (const p of listHermesProfiles()) {
+    if (keep.has(p.id)) continue;
+    const file = hermesSoulFile(p.dir);
+    let text = "";
+    try { text = fs.readFileSync(file, "utf8"); } catch { continue; }
+    if (teamOfText(text) !== team) continue;
+    try { fs.writeFileSync(file, text.replace(TEAM_BLOCK_RE, ""), "utf8"); released.push(p.id); } catch { /* left as it is */ }
+  }
   return released;
 }

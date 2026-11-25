@@ -51,7 +51,7 @@ Nirvana-OS نظام متعدد الوكلاء، أصيل في Bun ومستقل �
 
 ## التثبيت
 
-يصف هذا الملف README الإصدار 0.18.2، وهو الإصدار **المستقر** الحالي الذي يثبّته الأمر ذو السطر الواحد في أعلى هذه الصفحة. لا حاجة إلى Node. إذا لم يكن [Bun](https://bun.sh) موجوداً، يضعه أيٌّ من المثبّتَين في مجلد المستخدم (`~/.bun`) دون sudo ودون صلاحيات المسؤول ويتابع عمله.
+يصف هذا الملف README الإصدار 0.18.3، وهو الإصدار **المستقر** الحالي الذي يثبّته الأمر ذو السطر الواحد في أعلى هذه الصفحة. لا حاجة إلى Node. إذا لم يكن [Bun](https://bun.sh) موجوداً، يضعه أيٌّ من المثبّتَين في مجلد المستخدم (`~/.bun`) دون sudo ودون صلاحيات المسؤول ويتابع عمله.
 
 قبل التشغيل:
 
@@ -68,7 +68,7 @@ Nirvana-OS نظام متعدد الوكلاء، أصيل في Bun ومستقل �
 - خطافات تدقيق في Claude Code وAntigravity وCodex؛
 - مجلدات المحتوى الفارغة `~/squads` و`~/businesses` و`~/businesses/_library/dna`.
 
-إعادة تشغيله آمنة. **أغلق الطرفية وافتح واحدة جديدة** ليصبح `nrv` على PATH لديك، وتحقّق بالأمر `nrv --version`؛ يُظهر `0.18.2`. ثم اطلب من وكيلك: *"تحقق من أن Nirvana-OS مثبّت بشكل صحيح."* فيشغّل `nrv doctor`. رمز الخروج 1 يعني تحذيرات فقط؛ والرمز 2 يسرد ما فشل.
+إعادة تشغيله آمنة. **أغلق الطرفية وافتح واحدة جديدة** ليصبح `nrv` على PATH لديك، وتحقّق بالأمر `nrv --version`؛ يُظهر `0.18.3`. ثم اطلب من وكيلك: *"تحقق من أن Nirvana-OS مثبّت بشكل صحيح."* فيشغّل `nrv doctor`. رمز الخروج 1 يعني تحذيرات فقط؛ والرمز 2 يسرد ما فشل.
 
 عبر `curl | bash` لا يطرح المثبّت أسئلة. لاختيار ملف أداء عند التثبيت، مرّره إليه: استبدل `bash` في آخر الأمر بـ `bash -s -- --profile=balanced`. يمكنك أيضاً ضبطه لاحقاً بطلب ذلك من وكيلك (انظر [الإعدادات](#الإعدادات)).
 
@@ -126,9 +126,29 @@ Nirvana-OS نظام متعدد الوكلاء، أصيل في Bun ومستقل �
   <img src="./docs/assets/nirvana-promo-en-readme.gif" alt="أمر نثري واحد يدخل، فيتجمّع تكتّل ذكاء اصطناعي كامل ويسلّم" width="100%">
 </div>
 
+## بوتاتك وفِرقك
+
+إذا كنت تحتفظ بوكلائك في مستضيف بوتات، فإن Nirvana-OS يعمل هناك أيضاً: [OpenBot](https://github.com/nightly-labs/openbot) من Nightly Labs، و Bot Mode في [Hermes Agent](https://github.com/NousResearch/hermes-agent)، و Orca و OpenMausBot. لا تُعِدّ شيئاً ولا تكتب أي أمر: تطلب من البوت بكلماتك. البوت لك أولاً. يلجأ إلى Nirvana-OS عندما تذكره بالاسم، أو تذكر إحدى شركاتك أو squads أو mind-clones، أو تطلب فريقاً. وأي طلب آخر يجيب عنه كما اعتاد.
+
+| أنت تقول | ما الذي يحدث |
+|---|---|
+| "كوِّن فريقاً لهذا المشروع من شركاتي." | يختار وكيلك الأدوار، ويخبرك بالوكلاء الذين سينشئهم، ثم يجهّز وكيلاً لكل دور، كلٌّ مع mind-clone الخاص به. في OpenBot وفي Hermes ترى كل واحد منهم يعمل. |
+| "جهِّز هذا الفريق كبوتات في Hermes عندي." | Bot واحد لكل عضو، باسمه ودوره في قائمة Hermes. ترسل الطلب إلى المنسّق فيدير المشروع مع الآخرين. |
+| "أريد أن أرى هذا الـ squad يعمل كسير عمل هنا." | في OpenBot تصبح خطوات الـ squad سير عمل ينتظر موافقتك قبل تسليم النتيجة. ويمكنك جدولته. |
+| "استخدم بوت الصور عندي لصور هذه الصفحة." | الوكيل الذي تتحدث معه، على أي runtime، يسلّم هذا الجزء إلى بوتك في OpenBot أو Hermes ويعيد الملفات. |
+| "أريد أن تستخدم كل بوتاتي Nirvana دائماً." | كل بوت يمرّر كل تسليم عبر Nirvana-OS. وعبارة "فقط عندما أطلب" تعيده إلى الوضع الافتراضي. |
+
+أمران يبقيان بيدك. وكيل OpenBot لا يجيب الوكلاء الآخرين إلا بعد أن تفعّل له **Local scripts** (Agent settings → Rules → Permissions)؛ ولا يستطيع أي وكيل تفعيله عنك. وتُبلَّغ بالوكلاء الذين سيُنشأون قبل أن يوجد أي منهم.
+
 ## الحزم
 
-الحزم شركات وsquads وmind-clones منتقاة تُباع على [squads.sh](https://squads.sh/pt/packs). الحزمة الرئيسية هي [Genesis Circle](https://squads.sh/pt/nirvana-os).
+الحزم شركات وsquads وmind-clones منتقاة تُباع على [squads.sh](https://squads.sh/pt/packs).
+
+**[Genesis Circle](https://squads.sh/pt/nirvana-os)، الحزمة التأسيسية، نفدت.** من اشتراها يواصل تنزيلها وتحديثها. الحزم المعروضة للبيع:
+
+[Starter](https://squads.sh/pt/packs/starter) · [Marketing & Growth](https://squads.sh/pt/packs/marketing-growth) · [Creative Studio](https://squads.sh/pt/packs/creative-studio) · [Web Design](https://squads.sh/pt/packs/web-design) · [Motion Design Genius](https://squads.sh/pt/packs/motion-design-genius) · [Masterpiece](https://squads.sh/pt/packs/masterpiece) · [Creators](https://squads.sh/pt/packs/creators) · [Publishing & Knowledge](https://squads.sh/pt/packs/publishing-knowledge) · [Research & Intelligence](https://squads.sh/pt/packs/research-intelligence) · [Engineering & DevOps](https://squads.sh/pt/packs/engineering-devops) · [Game Development](https://squads.sh/pt/packs/game-development) · [Legal & Compliance](https://squads.sh/pt/packs/legal-compliance) · [Accounting & Consulting](https://squads.sh/pt/packs/accounting-consulting) · [Commerce & Backoffice](https://squads.sh/pt/packs/commerce-backoffice) · [Fintech & Crypto](https://squads.sh/pt/packs/fintech-crypto) · [Health Management](https://squads.sh/pt/packs/health-management) · [Education](https://squads.sh/pt/packs/education) · [Food & Hospitality](https://squads.sh/pt/packs/food-hospitality) · [Real Estate & Construction](https://squads.sh/pt/packs/realestate-construction)
+
+في المتجر جديد دائماً: عروض خاطفة تظهر كثيراً، وحزم خاصة تُباع لفترة محدودة. [صفحة الحزم](https://squads.sh/pt/packs) تعرض ما هو متاح اليوم.
 
 1. اشترِ الحزمة على squads.sh ونزّل ملف zip الخاص بها من لوحة التحكم.
 2. فكّ ضغط الأرشيف كاملاً وافتح طرفية في المجلد الذي يحتوي على `setup.sh`:
@@ -150,7 +170,7 @@ Nirvana-OS نظام متعدد الوكلاء، أصيل في Bun ومستقل �
 
 اطلب من وكيلك تحديث Nirvana-OS، أو شغّل `nrv update`. ينسخ `~/.nirvana/skills` احتياطياً أولاً ويحتفظ بإعداداتك ومحتواك. يذكر `nrv update --check` الإصدار الذي سيثبّته دون أن يغيّر شيئاً.
 
-لا يعيد التحديث المحرك أبداً إلى إصدار أقدم. المحرك المستقر ينتقل فقط إلى إصدار مستقر أحدث، فينتقل محرك 0.14 إلى 0.18.2. والإصدار التجريبي ينتقل إلى أحدث إصدار أكبر، تجريبياً كان أو مستقراً، فيصبح الإصدار التجريبي هو الإصدار المستقر الذي يليه. بعد تحديث المحرك، يفحص `nrv update` أيضاً كل حزمة مثبّتة لها ترخيص ويخبرك حين يتوفر لها إصدار أحدث.
+لا يعيد التحديث المحرك أبداً إلى إصدار أقدم. المحرك المستقر ينتقل فقط إلى إصدار مستقر أحدث، فينتقل محرك 0.14 إلى 0.18.3. والإصدار التجريبي ينتقل إلى أحدث إصدار أكبر، تجريبياً كان أو مستقراً، فيصبح الإصدار التجريبي هو الإصدار المستقر الذي يليه. بعد تحديث المحرك، يفحص `nrv update` أيضاً كل حزمة مثبّتة لها ترخيص ويخبرك حين يتوفر لها إصدار أحدث.
 
 ## إصدارات بيتا
 
@@ -218,6 +238,8 @@ $env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/d
 | `nrv config list\|get\|set\|unset\|explain` | الإعدادات، مع `--global` أو `--project` |
 | `nrv update [--check]` / `nrv update <pack>` | تحديث المحرك / حزمة |
 | `nrv validate <squad\|business\|clone> <slug> [--fix]` | بوابة قبول لكيان واحد |
+| `nrv team candidates\|init\|sync\|status\|remove\|flow` | فريق وكلاء مبني من مكتبتك، على OpenBot أو Bot Mode في Hermes أو Claude Code |
+| `nrv bot list\|ask\|status` | تسليم جزء من العمل إلى وكيل تحتفظ به في OpenBot أو إلى Bot في Hermes |
 | `nrv glance` | قمرة قيادة على الويب (`--read-only` للتصفح فقط) |
 | `nrv uninstall --engine` | إزالة المحرك مع الإبقاء على محتواك |
 
@@ -247,4 +269,4 @@ $env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/d
 
 الترخيص: Nirvana-OS Sustainable Use License (SUL) v1.0. المصدر منشور ومقروء علناً، والمحرك مجاني الاستخدام. إنه متاح المصدر، لا ترخيص مفتوح المصدر معتمداً من OSI، وبعض الاستخدامات التجارية تتطلب ترخيصاً تجارياً منفصلاً. اقرأ [LICENSE](./LICENSE) قبل الاعتماد على أي ملخص، بما في ذلك هذا.
 
-الحالة: بيتا (0.x، حالياً 0.18.2). المحرك يعمل اليوم ويُثبَّت في دقائق. توقّع أن تستمر الواجهة في التغيّر حتى الإصدار 1.0.
+الحالة: بيتا (0.x، حالياً 0.18.3). المحرك يعمل اليوم ويُثبَّت في دقائق. توقّع أن تستمر الواجهة في التغيّر حتى الإصدار 1.0.

@@ -51,7 +51,7 @@ El motor viene sin contenido. Creas empresas, squads y clones pidiéndoselo a tu
 
 ## Instalación
 
-Este README describe la 0.18.2, la release **estable** actual, que instala el comando de una línea del principio de esta página. No hace falta Node. Si falta [Bun](https://bun.sh), cualquiera de los dos instaladores lo pone en tu carpeta de usuario (`~/.bun`) sin sudo ni permisos de administrador y sigue adelante.
+Este README describe la 0.18.3, la release **estable** actual, que instala el comando de una línea del principio de esta página. No hace falta Node. Si falta [Bun](https://bun.sh), cualquiera de los dos instaladores lo pone en tu carpeta de usuario (`~/.bun`) sin sudo ni permisos de administrador y sigue adelante.
 
 Antes de ejecutarlo:
 
@@ -68,7 +68,7 @@ Lo que cambia en tu máquina:
 - hooks de auditoría en Claude Code, Antigravity y Codex;
 - las carpetas de contenido vacías `~/squads`, `~/businesses` y `~/businesses/_library/dna`.
 
-Volver a ejecutarlo es seguro. **Cierra la terminal y abre una nueva** para que `nrv` esté en tu PATH, y compruébalo con `nrv --version`; muestra `0.18.2`. Después pídele a tu agente: *"Comprueba que Nirvana-OS está bien instalado."* Ejecuta `nrv doctor`. La salida 1 significa solo avisos; la salida 2 lista lo que falló.
+Volver a ejecutarlo es seguro. **Cierra la terminal y abre una nueva** para que `nrv` esté en tu PATH, y compruébalo con `nrv --version`; muestra `0.18.3`. Después pídele a tu agente: *"Comprueba que Nirvana-OS está bien instalado."* Ejecuta `nrv doctor`. La salida 1 significa solo avisos; la salida 2 lista lo que falló.
 
 Con `curl | bash` el instalador no hace preguntas. Para elegir un perfil de rendimiento al instalar, pásalo así: cambia el `bash` final por `bash -s -- --profile=balanced`. También puedes fijarlo más tarde pidiéndoselo a tu agente (ver [Configuración](#configuración)).
 
@@ -126,9 +126,29 @@ El agente orquesta y nunca escribe el entregable por sí mismo. Cada empresa que
   <img src="./docs/assets/nirvana-promo-en-readme.gif" alt="Entra una orden en prosa, y un conglomerado de IA entero se arma y entrega" width="100%">
 </div>
 
+## Tus bots y equipos
+
+Si tienes agentes en un host de bots, Nirvana-OS funciona ahí también: [OpenBot](https://github.com/nightly-labs/openbot), de Nightly Labs, el Bot Mode de [Hermes Agent](https://github.com/NousResearch/hermes-agent), Orca y OpenMausBot. No configuras nada y no escribes comandos: se lo pides al bot, con tus palabras. Un bot es tuyo ante todo. Recurre a Nirvana-OS cuando lo nombras, nombras una de tus empresas, squads o mind-clones, o pides un equipo. Cualquier otra petición la responde como siempre.
+
+| Tú dices | Qué ocurre |
+|---|---|
+| "Arma un equipo para este proyecto con mis empresas." | Tu agente elige los roles, te dice qué agentes va a crear y monta uno por rol, cada uno con su mind-clone. En OpenBot y en Hermes ves trabajar a cada uno. |
+| "Monta este equipo como bots en mi Hermes." | Un Bot por miembro, con su nombre y su rol en la lista de Hermes. Envías la petición al orquestador y él lleva el proyecto con los demás. |
+| "Quiero ver este squad funcionando como flujo aquí." | En OpenBot, los pasos del squad se convierten en un flujo que espera tu aprobación antes de entregar el resultado. Puedes programarlo. |
+| "Usa mi bot de imágenes para las figuras de esta página." | El agente con el que hablas, en cualquier runtime, entrega esa parte a tu bot de OpenBot o de Hermes y trae los archivos de vuelta. |
+| "Quiero que todos mis bots usen siempre Nirvana." | Cada bot pasa cada entrega por Nirvana-OS. "Solo cuando yo lo pida" lo devuelve al valor por defecto. |
+
+Dos cosas quedan en tus manos. Un agente de OpenBot solo responde a otros agentes después de que actives **Local scripts** para él (Agent settings → Rules → Permissions); ningún agente puede activarlo por ti. Y te enteras de qué agentes se van a crear antes de que exista ninguno.
+
 ## Packs
 
-Los packs son empresas, squads y mind-clones curados que se venden en [squads.sh](https://squads.sh/pt/packs). El buque insignia es [Genesis Circle](https://squads.sh/pt/nirvana-os).
+Los packs son empresas, squads y mind-clones curados que se venden en [squads.sh](https://squads.sh/pt/packs).
+
+**[Genesis Circle](https://squads.sh/pt/nirvana-os), el bundle fundador, está agotado.** Quien lo compró sigue descargándolo y actualizándolo. Los packs a la venta:
+
+[Starter](https://squads.sh/pt/packs/starter) · [Marketing & Growth](https://squads.sh/pt/packs/marketing-growth) · [Creative Studio](https://squads.sh/pt/packs/creative-studio) · [Web Design](https://squads.sh/pt/packs/web-design) · [Motion Design Genius](https://squads.sh/pt/packs/motion-design-genius) · [Masterpiece](https://squads.sh/pt/packs/masterpiece) · [Creators](https://squads.sh/pt/packs/creators) · [Publishing & Knowledge](https://squads.sh/pt/packs/publishing-knowledge) · [Research & Intelligence](https://squads.sh/pt/packs/research-intelligence) · [Engineering & DevOps](https://squads.sh/pt/packs/engineering-devops) · [Game Development](https://squads.sh/pt/packs/game-development) · [Legal & Compliance](https://squads.sh/pt/packs/legal-compliance) · [Accounting & Consulting](https://squads.sh/pt/packs/accounting-consulting) · [Commerce & Backoffice](https://squads.sh/pt/packs/commerce-backoffice) · [Fintech & Crypto](https://squads.sh/pt/packs/fintech-crypto) · [Health Management](https://squads.sh/pt/packs/health-management) · [Education](https://squads.sh/pt/packs/education) · [Food & Hospitality](https://squads.sh/pt/packs/food-hospitality) · [Real Estate & Construction](https://squads.sh/pt/packs/realestate-construction)
+
+Siempre hay algo nuevo en la tienda: las ofertas relámpago aparecen a menudo, y hay packs especiales a la venta por tiempo limitado. La [página de packs](https://squads.sh/pt/packs) muestra lo que está abierto hoy.
 
 1. Compra el pack en squads.sh y descarga su zip desde tu panel.
 2. Descomprime el archivo completo y abre una terminal en la carpeta que contiene `setup.sh`:
@@ -150,7 +170,7 @@ Los packs son empresas, squads y mind-clones curados que se venden en [squads.sh
 
 Pídele a tu agente que actualice Nirvana-OS, o ejecuta `nrv update`. Primero hace una copia de `~/.nirvana/skills` y conserva tu configuración y tu contenido. `nrv update --check` dice qué release instalaría sin cambiar nada.
 
-Una actualización nunca lleva el motor a una release más antigua. Un motor estable solo pasa a una estable más nueva, así que un motor 0.14 pasa a la 0.18.2. Una beta pasa a la release mayor más nueva, beta o estable, así que una beta se convierte en la estable que sale después de ella. Después de actualizar el motor, `nrv update` también revisa cada pack instalado que tiene licencia y avisa cuando hay una versión nueva.
+Una actualización nunca lleva el motor a una release más antigua. Un motor estable solo pasa a una estable más nueva, así que un motor 0.14 pasa a la 0.18.3. Una beta pasa a la release mayor más nueva, beta o estable, así que una beta se convierte en la estable que sale después de ella. Después de actualizar el motor, `nrv update` también revisa cada pack instalado que tiene licencia y avisa cuando hay una versión nueva.
 
 ## Betas
 
@@ -218,6 +238,8 @@ Para agentes y usuarios avanzados. `nrv help` lo lista todo; `nrv <command> --he
 | `nrv config list\|get\|set\|unset\|explain` | Configuración, con `--global` o `--project` |
 | `nrv update [--check]` / `nrv update <pack>` | Actualiza el motor / un pack |
 | `nrv validate <squad\|business\|clone> <slug> [--fix]` | Puerta de admisión de una entidad |
+| `nrv team candidates\|init\|sync\|status\|remove\|flow` | Un equipo de agentes armado desde tu biblioteca, en OpenBot, el Bot Mode de Hermes o Claude Code |
+| `nrv bot list\|ask\|status` | Entrega una parte del trabajo a un agente que tienes en OpenBot o a un Bot de Hermes |
 | `nrv glance` | Cockpit web (`--read-only` para solo explorar) |
 | `nrv uninstall --engine` | Elimina el motor y conserva tu contenido |
 
@@ -247,4 +269,4 @@ Autor: **Luiz Gustavo Vieira Rodrigues (gutomec / Prospecteezy)**. Sin coautores
 
 Licencia: la Nirvana-OS Sustainable Use License (SUL) v1.0. El código fuente está publicado y es abiertamente legible, y el motor es gratis para usar. Es source-available, no una licencia open-source aprobada por la OSI, y ciertos usos comerciales requieren una licencia comercial aparte. Lee [LICENSE](./LICENSE) antes de confiar en cualquier resumen, incluido este.
 
-Estado: beta (0.x, actualmente 0.18.2). El motor funciona hoy y se instala en minutos. Espera que la superficie siga moviéndose hasta la 1.0.
+Estado: beta (0.x, actualmente 0.18.3). El motor funciona hoy y se instala en minutos. Espera que la superficie siga moviéndose hasta la 1.0.

@@ -100,6 +100,11 @@ if (process.env.NIRVANA_NOTIFY_ON_FINISH === undefined) process.env.NIRVANA_NOTI
 if (process.env.NIRVANA_ORCA_BOTS_DIR === undefined) {
   process.env.NIRVANA_ORCA_BOTS_DIR = path.join(process.env.HARNESS_LOGS_DIR!, "orca-bots");
 }
+// And Hermes Agent's profiles: `nrv team sync --host hermes` writes a profile's
+// SOUL.md and `profile.yaml`, and with --create runs `hermes profile create`.
+if (process.env.NIRVANA_HERMES_HOME === undefined) {
+  process.env.NIRVANA_HERMES_HOME = path.join(process.env.HARNESS_LOGS_DIR!, "hermes");
+}
 // The same for OpenMausBot's bots under ~/.openmausbot.
 if (process.env.NIRVANA_OPENMAUSBOT_DIR === undefined) {
   process.env.NIRVANA_OPENMAUSBOT_DIR = path.join(process.env.HARNESS_LOGS_DIR!, "openmausbot");

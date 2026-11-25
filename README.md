@@ -51,7 +51,7 @@ The engine ships with no content. You create businesses, squads and clones by as
 
 ## Install
 
-This README describes 0.18.2, the current **stable** release, which the one-liner at the top of this page installs. Node is not needed. If [Bun](https://bun.sh) is missing, either installer puts it in your user folder (`~/.bun`) without sudo or admin rights and carries on.
+This README describes 0.18.3, the current **stable** release, which the one-liner at the top of this page installs. Node is not needed. If [Bun](https://bun.sh) is missing, either installer puts it in your user folder (`~/.bun`) without sudo or admin rights and carries on.
 
 Before you run it:
 
@@ -68,7 +68,7 @@ What it changes on your machine:
 - audit hooks in Claude Code, Antigravity and Codex;
 - the empty content folders `~/squads`, `~/businesses` and `~/businesses/_library/dna`.
 
-Running it again is safe. **Close the terminal and open a new one** so `nrv` is on your PATH, and check with `nrv --version`; it prints `0.18.2`. Then ask your agent: *"Check that Nirvana-OS is installed correctly."* It runs `nrv doctor`. Exit 1 means warnings only; exit 2 lists what failed.
+Running it again is safe. **Close the terminal and open a new one** so `nrv` is on your PATH, and check with `nrv --version`; it prints `0.18.3`. Then ask your agent: *"Check that Nirvana-OS is installed correctly."* It runs `nrv doctor`. Exit 1 means warnings only; exit 2 lists what failed.
 
 Through `curl | bash` the installer asks no questions. To pick a performance profile at install time, pass it through: replace the final `bash` with `bash -s -- --profile=balanced`. You can also set it later by asking your agent (see [Settings](#settings)).
 
@@ -126,9 +126,29 @@ The agent orchestrates and never writes the deliverable itself. Each business it
   <img src="./docs/assets/nirvana-promo-en-readme.gif" alt="One prose order in, a whole AI conglomerate assembles and delivers" width="100%">
 </div>
 
+## Your bots and teams
+
+If you keep agents in a bot host, Nirvana-OS works there too: [OpenBot](https://github.com/nightly-labs/openbot) by Nightly Labs, Bot Mode of [Hermes Agent](https://github.com/NousResearch/hermes-agent), Orca and OpenMausBot. You set nothing up and you type no command: you ask the bot, in your own words. A bot is yours first. It reaches for Nirvana-OS when you name it, name one of your businesses, squads or mind-clones, or ask for a team. Any other request it answers as it always did.
+
+| You say | What happens |
+|---|---|
+| "Build a team for this project from my businesses." | Your agent picks the roles, tells you which agents it will create and sets up one per role, each with its mind-clone. In OpenBot and in Hermes you watch each one work. |
+| "Set this team up as bots in my Hermes." | One Bot per member, with its name and role in Hermes's roster. You send the request to the orchestrator and it runs the project with the others. |
+| "I want to see this squad running as a workflow here." | In OpenBot, the squad's steps become a workflow that waits for your approval before the result goes out. You can put it on a schedule. |
+| "Use my image bot for the pictures of this page." | The agent you are talking to, on any runtime, hands that part to your bot in OpenBot or Hermes and brings the files back. |
+| "I want all my bots to always use Nirvana." | Every bot sends each deliverable through Nirvana-OS. "Only when I ask" puts it back. |
+
+Two things stay in your hands. An OpenBot agent answers other agents only after you turn on **Local scripts** for it (Agent settings → Rules → Permissions); no agent can turn that on for you. And you hear which agents will be created before any of them exists.
+
 ## Packs
 
-Packs are curated businesses, squads and mind-clones sold on [squads.sh](https://squads.sh/pt/packs). The flagship is [Genesis Circle](https://squads.sh/pt/nirvana-os).
+Packs are curated businesses, squads and mind-clones sold on [squads.sh](https://squads.sh/pt/packs).
+
+**[Genesis Circle](https://squads.sh/pt/nirvana-os), the founding bundle, is sold out.** Whoever bought it keeps downloading and updating it. The packs on sale:
+
+[Starter](https://squads.sh/pt/packs/starter) · [Marketing & Growth](https://squads.sh/pt/packs/marketing-growth) · [Creative Studio](https://squads.sh/pt/packs/creative-studio) · [Web Design](https://squads.sh/pt/packs/web-design) · [Motion Design Genius](https://squads.sh/pt/packs/motion-design-genius) · [Masterpiece](https://squads.sh/pt/packs/masterpiece) · [Creators](https://squads.sh/pt/packs/creators) · [Publishing & Knowledge](https://squads.sh/pt/packs/publishing-knowledge) · [Research & Intelligence](https://squads.sh/pt/packs/research-intelligence) · [Engineering & DevOps](https://squads.sh/pt/packs/engineering-devops) · [Game Development](https://squads.sh/pt/packs/game-development) · [Legal & Compliance](https://squads.sh/pt/packs/legal-compliance) · [Accounting & Consulting](https://squads.sh/pt/packs/accounting-consulting) · [Commerce & Backoffice](https://squads.sh/pt/packs/commerce-backoffice) · [Fintech & Crypto](https://squads.sh/pt/packs/fintech-crypto) · [Health Management](https://squads.sh/pt/packs/health-management) · [Education](https://squads.sh/pt/packs/education) · [Food & Hospitality](https://squads.sh/pt/packs/food-hospitality) · [Real Estate & Construction](https://squads.sh/pt/packs/realestate-construction)
+
+There is always something new in the store: flash sales come up often, and special packs go on sale for a limited time. The [packs page](https://squads.sh/pt/packs) shows what is open today.
 
 1. Buy the pack on squads.sh and download its zip from your dashboard.
 2. Unzip the whole archive and open a terminal in the folder that holds `setup.sh`:
@@ -150,7 +170,7 @@ Packs are curated businesses, squads and mind-clones sold on [squads.sh](https:/
 
 Ask your agent to update Nirvana-OS, or run `nrv update`. It backs up `~/.nirvana/skills` first and keeps your settings and content. `nrv update --check` names the release it would install without changing anything.
 
-An update never moves the engine to an older release. A stable engine moves only to a newer stable, so a 0.14 engine moves to 0.18.2. A beta moves to the newest greater release, beta or stable, so a beta becomes the stable release that follows it. After an engine update, `nrv update` also checks every installed pack that has a license and says when one has a newer version.
+An update never moves the engine to an older release. A stable engine moves only to a newer stable, so a 0.14 engine moves to 0.18.3. A beta moves to the newest greater release, beta or stable, so a beta becomes the stable release that follows it. After an engine update, `nrv update` also checks every installed pack that has a license and says when one has a newer version.
 
 ## Betas
 
@@ -218,6 +238,8 @@ For agents and power users. `nrv help` lists everything; `nrv <command> --help` 
 | `nrv config list\|get\|set\|unset\|explain` | Settings, with `--global` or `--project` |
 | `nrv update [--check]` / `nrv update <pack>` | Update the engine / a pack |
 | `nrv validate <squad\|business\|clone> <slug> [--fix]` | Admission gate for one entity |
+| `nrv team candidates\|init\|sync\|status\|remove\|flow` | A team of agents built from your library, on OpenBot, Hermes Bot Mode or Claude Code |
+| `nrv bot list\|ask\|status` | Hand a part of the work to an agent you keep in OpenBot or to a Hermes Bot |
 | `nrv glance` | Web cockpit (`--read-only` to browse only) |
 | `nrv uninstall --engine` | Remove the engine and keep your content |
 
@@ -247,4 +269,4 @@ Author: **Luiz Gustavo Vieira Rodrigues (gutomec / Prospecteezy)**. No co-author
 
 License: the Nirvana-OS Sustainable Use License (SUL) v1.0. The source is published and openly readable, and the engine is free to use. It is source-available, not an OSI-approved open-source license, and certain commercial uses require a separate commercial license. Read [LICENSE](./LICENSE) before relying on any summary, including this one.
 
-Status: beta (0.x, currently 0.18.2). The engine works today and installs in minutes. Expect the surface to keep moving until 1.0.
+Status: beta (0.x, currently 0.18.3). The engine works today and installs in minutes. Expect the surface to keep moving until 1.0.

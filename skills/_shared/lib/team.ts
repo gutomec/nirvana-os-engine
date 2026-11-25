@@ -212,7 +212,7 @@ export function teamSkeleton(slug: string, purpose: string): string {
 // Compiling a member's instructions
 // ─────────────────────────────────────────────────────────────────────
 
-export type TeamHost = "neutral" | "openbot" | "claude-code";
+export type TeamHost = "neutral" | "openbot" | "claude-code" | "hermes";
 
 export interface CompileContext {
   host: TeamHost;
@@ -272,7 +272,9 @@ export function sharedRules(spec: TeamSpec, host: TeamHost): string[] {
     ? "- Talk to teammates only through `send_message`. A request or a task goes with `expectsReply` true; your answer to a task replies to its message (`replyToMessageId`)."
     : host === "claude-code"
       ? "- You are called for one task and answer once: your answer is all the caller sees of your work."
-      : "- Talk to teammates only through the host's own messaging; a task expects one answer, sent to whoever asked.";
+      : host === "hermes"
+        ? "- Talk to teammates by their handle. In your Bot Chat, use `message_agent` (target: the handle, with what you expect back); its answer comes later as a notification, so go on with what does not depend on it. When that tool is not in the session, run `hermes -p <the handle without the @> -z \"<the task>\"` in the project folder and read the answer from its output."
+        : "- Talk to teammates only through the host's own messaging; a task expects one answer, sent to whoever asked.";
   return [
     `## Rules for everyone in ${spec.display_name}`,
     `- Every project has one folder under \`${spec.output_root}\`. Write your files there, in your area's subfolder, and pass **paths** in messages, never pasted documents.`,

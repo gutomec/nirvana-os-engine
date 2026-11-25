@@ -6,7 +6,16 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que os instaladores de uma linha e os setups de pack consomem.
 
-## Não lançado
+## 0.18.3 — 2026-11-25
+
+### Seu time como Bots do Hermes Agent
+
+- **`nrv team sync --host hermes` transforma um time em Bots.** O [Hermes Agent](https://github.com/NousResearch/hermes-agent), da Nous Research, tem o Bot Mode: cada perfil é um Bot com nome, papel, modelo, memória e skills próprios. Um time montado a partir das suas empresas agora vai para lá, um Bot por membro, com as instruções do membro no `SOUL.md` do Bot e o nome e o papel dele na lista. Peça ao seu agente: "monte esse time como bots no meu Hermes".
+- **Você fica sabendo antes de qualquer coisa ser criada.** A primeira execução diz quais Bots criaria e não cria nada. Quando você diz sim, o seu agente roda de novo com `--create` e o engine cria cada um com o comando do próprio Hermes. Um Bot nunca é apagado: `nrv team remove` tira as instruções e deixa o perfil.
+- **Um Bot novo funciona com o seu modelo e as suas chaves,** no Hermes atual e nos mais antigos, em que um perfil novo vinha sem provedor nenhum.
+- **Chame um Bot do Hermes de qualquer runtime.** Peça ao agente com quem você está falando: "use o meu bot do Hermes para o texto desta página". Por baixo, `nrv bot list` agora mostra os Bots da lista do seu Hermes ao lado dos seus agentes do OpenBot, e `nrv bot ask "<bot>" "<tarefa>" --out <pasta>` entrega uma tarefa a um deles e espera a resposta.
+- **Os READMEs dizem o que pedir.** Uma seção nova, "Seus bots e times", nos seis idiomas: o que dizer ao seu agente para montar um time, transformá-lo em bots, rodar um squad como fluxo ou entregar uma parte do trabalho a um bot. A referência da CLI ganhou `nrv team` e `nrv bot`.
+- Medido no macOS com o Hermes 0.20.5: um time de três membros foi criado com um comando, e o orquestrador dele, que recebeu o pedido de um post de LinkedIn, acionou o redator e o revisor e entregou em 96 segundos. Um Bot sozinho respondeu a uma chamada em 6 segundos. A lista de Bots e as mensagens entre eles dentro do Hermes Desktop foram lidas no código-fonte da 0.23.4 e não executadas.
 
 ### Os runtimes mudaram, e os registros acompanham
 

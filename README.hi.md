@@ -51,7 +51,7 @@ Nirvana-OS एक Bun-नेटिव, रनटाइम-अज्ञेय म
 
 ## इंस्टॉल
 
-यह README 0.18.2 के बारे में है, जो मौजूदा **स्टेबल** release है और जिसे इस पेज के ऊपर दी गई एक-लाइन कमांड इंस्टॉल करती है। Node की ज़रूरत नहीं है। अगर [Bun](https://bun.sh) नहीं है, तो दोनों में से कोई भी इंस्टॉलर उसे बिना sudo और बिना एडमिन अधिकारों के आपके यूज़र फ़ोल्डर (`~/.bun`) में रख देता है और आगे बढ़ता है।
+यह README 0.18.3 के बारे में है, जो मौजूदा **स्टेबल** release है और जिसे इस पेज के ऊपर दी गई एक-लाइन कमांड इंस्टॉल करती है। Node की ज़रूरत नहीं है। अगर [Bun](https://bun.sh) नहीं है, तो दोनों में से कोई भी इंस्टॉलर उसे बिना sudo और बिना एडमिन अधिकारों के आपके यूज़र फ़ोल्डर (`~/.bun`) में रख देता है और आगे बढ़ता है।
 
 चलाने से पहले:
 
@@ -68,7 +68,7 @@ Nirvana-OS एक Bun-नेटिव, रनटाइम-अज्ञेय म
 - Claude Code, Antigravity और Codex में ऑडिट hooks;
 - खाली कंटेंट फ़ोल्डर `~/squads`, `~/businesses` और `~/businesses/_library/dna`।
 
-इसे दोबारा चलाना सुरक्षित है। **टर्मिनल बंद करें और नया खोलें** ताकि `nrv` आपके PATH पर हो, और `nrv --version` से जाँचें; यह `0.18.2` दिखाता है। फिर अपने एजेंट से कहें: *"जाँचो कि Nirvana-OS सही तरह से इंस्टॉल हुआ है।"* वह `nrv doctor` चलाता है। Exit 1 का मतलब सिर्फ़ चेतावनियाँ है; exit 2 बताता है कि क्या फ़ेल हुआ।
+इसे दोबारा चलाना सुरक्षित है। **टर्मिनल बंद करें और नया खोलें** ताकि `nrv` आपके PATH पर हो, और `nrv --version` से जाँचें; यह `0.18.3` दिखाता है। फिर अपने एजेंट से कहें: *"जाँचो कि Nirvana-OS सही तरह से इंस्टॉल हुआ है।"* वह `nrv doctor` चलाता है। Exit 1 का मतलब सिर्फ़ चेतावनियाँ है; exit 2 बताता है कि क्या फ़ेल हुआ।
 
 `curl | bash` के ज़रिए इंस्टॉलर कोई सवाल नहीं पूछता। इंस्टॉल के समय परफ़ॉर्मेंस प्रोफ़ाइल चुनने के लिए उसे आगे पास करें: आख़िरी `bash` की जगह `bash -s -- --profile=balanced` लिखें। आप इसे बाद में अपने एजेंट से कहकर भी सेट कर सकते हैं ([सेटिंग्स](#सेटिंग्स) देखें)।
 
@@ -126,9 +126,29 @@ Nirvana-OS का उपयोग करके एक लॉन्च पैक�
   <img src="./docs/assets/nirvana-promo-en-readme.gif" alt="एक गद्य आदेश अंदर, एक पूरा AI समूह जुड़ता है और डिलिवर करता है" width="100%">
 </div>
 
+## आपके बॉट और टीमें
+
+अगर आप अपने एजेंट किसी बॉट होस्ट में रखते हैं, तो Nirvana-OS वहाँ भी काम करता है: Nightly Labs का [OpenBot](https://github.com/nightly-labs/openbot), [Hermes Agent](https://github.com/NousResearch/hermes-agent) का Bot Mode, Orca और OpenMausBot। आपको कुछ सेट नहीं करना और कोई कमांड नहीं लिखनी: आप बॉट से अपने शब्दों में कहते हैं। बॉट सबसे पहले आपका है। वह Nirvana-OS का उपयोग तब करता है जब आप Nirvana का नाम लेते हैं, अपने किसी बिज़नेस, squad या mind-clone का नाम लेते हैं, या टीम माँगते हैं। बाकी हर अनुरोध का जवाब वह पहले की तरह देता है।
+
+| आप कहते हैं | क्या होता है |
+|---|---|
+| "मेरे बिज़नेस से इस प्रोजेक्ट के लिए टीम बनाओ।" | आपका एजेंट भूमिकाएँ चुनता है, बताता है कि वह कौन से एजेंट बनाएगा, और हर भूमिका के लिए एक एजेंट बनाता है, हर एक अपने mind-clone के साथ। OpenBot और Hermes में आप हर एक को काम करते देखते हैं। |
+| "इस टीम को मेरे Hermes में बॉट के रूप में बनाओ।" | हर सदस्य के लिए एक Bot, जिसका नाम और भूमिका Hermes की सूची में होती है। आप अनुरोध ऑर्केस्ट्रेटर को भेजते हैं और वह बाकी के साथ प्रोजेक्ट चलाता है। |
+| "मैं इस squad को यहाँ वर्कफ़्लो के रूप में चलते देखना चाहता हूँ।" | OpenBot में squad के चरण एक वर्कफ़्लो बन जाते हैं, जो नतीजा देने से पहले आपकी मंज़ूरी का इंतज़ार करता है। आप इसे शेड्यूल कर सकते हैं। |
+| "इस पेज की तस्वीरों के लिए मेरा इमेज बॉट इस्तेमाल करो।" | जिस एजेंट से आप बात कर रहे हैं, वह किसी भी runtime पर यह हिस्सा OpenBot या Hermes के आपके बॉट को सौंपता है और फ़ाइलें वापस लाता है। |
+| "मैं चाहता हूँ कि मेरे सभी बॉट हमेशा Nirvana का उपयोग करें।" | हर बॉट अपनी हर डिलिवरी Nirvana-OS से होकर भेजता है। "सिर्फ़ जब मैं कहूँ" कहने पर पहले जैसा हो जाता है। |
+
+दो बातें आपके हाथ में रहती हैं। OpenBot का एजेंट दूसरे एजेंटों को तभी जवाब देता है जब आप उसके लिए **Local scripts** चालू करते हैं (Agent settings → Rules → Permissions); कोई एजेंट इसे आपके लिए चालू नहीं कर सकता। और किसी भी एजेंट के बनने से पहले आपको बताया जाता है कि कौन से एजेंट बनेंगे।
+
 ## Packs
 
-Packs क्यूरेट की गई कंपनियाँ, squads और mind-clones हैं, जो [squads.sh](https://squads.sh/pt/packs) पर बिकते हैं। फ़्लैगशिप [Genesis Circle](https://squads.sh/pt/nirvana-os) है।
+Packs क्यूरेट की गई कंपनियाँ, squads और mind-clones हैं, जो [squads.sh](https://squads.sh/pt/packs) पर बिकते हैं।
+
+**संस्थापक बंडल [Genesis Circle](https://squads.sh/pt/nirvana-os) बिक चुका है।** जिन्होंने इसे ख़रीदा है, वे इसे डाउनलोड और अपडेट करते रह सकते हैं। बिक्री पर उपलब्ध packs:
+
+[Starter](https://squads.sh/pt/packs/starter) · [Marketing & Growth](https://squads.sh/pt/packs/marketing-growth) · [Creative Studio](https://squads.sh/pt/packs/creative-studio) · [Web Design](https://squads.sh/pt/packs/web-design) · [Motion Design Genius](https://squads.sh/pt/packs/motion-design-genius) · [Masterpiece](https://squads.sh/pt/packs/masterpiece) · [Creators](https://squads.sh/pt/packs/creators) · [Publishing & Knowledge](https://squads.sh/pt/packs/publishing-knowledge) · [Research & Intelligence](https://squads.sh/pt/packs/research-intelligence) · [Engineering & DevOps](https://squads.sh/pt/packs/engineering-devops) · [Game Development](https://squads.sh/pt/packs/game-development) · [Legal & Compliance](https://squads.sh/pt/packs/legal-compliance) · [Accounting & Consulting](https://squads.sh/pt/packs/accounting-consulting) · [Commerce & Backoffice](https://squads.sh/pt/packs/commerce-backoffice) · [Fintech & Crypto](https://squads.sh/pt/packs/fintech-crypto) · [Health Management](https://squads.sh/pt/packs/health-management) · [Education](https://squads.sh/pt/packs/education) · [Food & Hospitality](https://squads.sh/pt/packs/food-hospitality) · [Real Estate & Construction](https://squads.sh/pt/packs/realestate-construction)
+
+स्टोर में हमेशा कुछ नया होता है: फ़्लैश सेल अक्सर आती हैं, और विशेष packs सीमित समय के लिए बिकते हैं। [packs पेज](https://squads.sh/pt/packs) दिखाता है कि आज क्या खुला है।
 
 1. squads.sh पर pack ख़रीदें और अपने डैशबोर्ड से उसकी zip डाउनलोड करें।
 2. पूरा आर्काइव अनज़िप करें और उस फ़ोल्डर में टर्मिनल खोलें जिसमें `setup.sh` है:
@@ -150,7 +170,7 @@ Packs क्यूरेट की गई कंपनियाँ, squads औ�
 
 अपने एजेंट से Nirvana-OS अपडेट करने को कहें, या `nrv update` चलाएँ। यह पहले `~/.nirvana/skills` का बैकअप लेता है और आपकी सेटिंग्स और कंटेंट रखता है। `nrv update --check` बिना कुछ बदले बताता है कि वह कौन-सा release इंस्टॉल करेगा।
 
-अपडेट इंजन को कभी पुराने release पर नहीं ले जाता। स्टेबल इंजन सिर्फ़ नए स्टेबल पर जाता है, इसलिए 0.14 इंजन 0.18.2 पर जाता है। Beta सबसे नए बड़े release पर जाता है, beta हो या स्टेबल, इसलिए beta उसके बाद आने वाला स्टेबल बन जाता है। इंजन अपडेट के बाद `nrv update` लाइसेंस वाले हर इंस्टॉल किए गए pack की भी जाँच करता है और नया वर्ज़न होने पर बताता है।
+अपडेट इंजन को कभी पुराने release पर नहीं ले जाता। स्टेबल इंजन सिर्फ़ नए स्टेबल पर जाता है, इसलिए 0.14 इंजन 0.18.3 पर जाता है। Beta सबसे नए बड़े release पर जाता है, beta हो या स्टेबल, इसलिए beta उसके बाद आने वाला स्टेबल बन जाता है। इंजन अपडेट के बाद `nrv update` लाइसेंस वाले हर इंस्टॉल किए गए pack की भी जाँच करता है और नया वर्ज़न होने पर बताता है।
 
 ## Betas
 
@@ -218,6 +238,8 @@ Beta पर आने के बाद, `nrv update` और हर pack setup �
 | `nrv config list\|get\|set\|unset\|explain` | सेटिंग्स, `--global` या `--project` के साथ |
 | `nrv update [--check]` / `nrv update <pack>` | इंजन / एक pack अपडेट करता है |
 | `nrv validate <squad\|business\|clone> <slug> [--fix]` | एक एंटिटी का प्रवेश द्वार |
+| `nrv team candidates\|init\|sync\|status\|remove\|flow` | आपकी लाइब्रेरी से बनी एजेंटों की टीम, OpenBot, Hermes के Bot Mode या Claude Code पर |
+| `nrv bot list\|ask\|status` | काम का एक हिस्सा OpenBot के आपके एजेंट या Hermes के Bot को सौंपता है |
 | `nrv glance` | वेब कॉकपिट (सिर्फ़ ब्राउज़ करने के लिए `--read-only`) |
 | `nrv uninstall --engine` | इंजन हटाता है और आपका कंटेंट रखता है |
 
@@ -247,4 +269,4 @@ Beta पर आने के बाद, `nrv update` और हर pack setup �
 
 लाइसेंस: Nirvana-OS Sustainable Use License (SUL) v1.0। स्रोत प्रकाशित और खुले तौर पर पठनीय है, और इंजन उपयोग के लिए मुफ़्त है। यह source-available है, OSI-अनुमोदित ओपन-सोर्स लाइसेंस नहीं, और कुछ व्यावसायिक उपयोगों के लिए अलग व्यावसायिक लाइसेंस चाहिए। किसी भी सारांश पर, इस पर भी, भरोसा करने से पहले [LICENSE](./LICENSE) पढ़ें।
 
-स्थिति: beta (0.x, अभी 0.18.2)। इंजन आज काम करता है और मिनटों में इंस्टॉल होता है। 1.0 तक सतह के बदलते रहने की उम्मीद रखें।
+स्थिति: beta (0.x, अभी 0.18.3)। इंजन आज काम करता है और मिनटों में इंस्टॉल होता है। 1.0 तक सतह के बदलते रहने की उम्मीद रखें।

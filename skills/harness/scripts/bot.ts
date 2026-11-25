@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 // bot.ts — `nrv bot`: hand a part of the work to an agent the person keeps in
-// OpenBot (Nightly Labs). Written for an agent to run: every answer says what
+// OpenBot (Nightly Labs) or to a Bot of Hermes Agent's Bot Mode. Written for an agent to run: every answer says what
 // happened and what to do next.
 //
 //   nrv bot list                                  who can be called, and what each one is for
@@ -8,7 +8,9 @@
 //   nrv bot status <deliveryId> [--out <dir>]     pick up a call that waited for its person
 //
 // Only an agent with Local scripts on in OpenBot answers. The person turns
-// that on, per agent; the engine never does.
+// that on, per agent; the engine never does. A Hermes Bot answers through
+// `hermes -p <bot> -z`, one turn; `--host hermes` or `--host openbot` picks
+// the host when a name exists in both.
 //
 // Exit: 0 done · 1 failed, timed out or unreachable · 2 the agent waits for its
 // person · 4 wrong arguments.
@@ -18,13 +20,15 @@ import { emitAudit } from "../../_shared/lib/audit-emit.ts";
 import {
   askOpenBot, openBotReachable, openBotSpecialists, parseDuration, resumeOpenBot, type OpenBotCallResult,
 } from "../../_shared/lib/openbot-call.ts";
+import { askHermesBot, hermesBinary, hermesBots, type HermesCallResult } from "../../_shared/lib/hermes-bots.ts";
 
 const USAGE = [
   "usage: nrv bot <command>",
-  "  list                                    the OpenBot agents that can be called, with what each is for",
+  "  list                                    the OpenBot agents and Hermes Bots that can be called, with what each is for",
   '  ask "<agent>" "<task>" [--out <dir>]    send the task, wait for the answer, copy the files it made',
   "  status <deliveryId> [--out <dir>]       pick up a call that waited for its person or ran out of time",
   "  --timeout <90s|10m|2h>                  how long to wait (default 30m)   --json  machine-readable",
+  "  --host <openbot|hermes>                 where the agent lives, when the name exists in both",
 ].join("\n");
 
 const HOW_TO_OPEN = "The person opens an agent in OpenBot: Agent settings → Rules → Permissions → Local scripts. No command does it.";
@@ -78,17 +82,59 @@ function report(result: OpenBotCallResult): never {
   process.exit(code);
 }
 
+const host = typeof flags.host === "string" ? flags.host : null;
+if (host && host !== "openbot" && host !== "hermes") fail("bot: --host is openbot or hermes", EXIT.INVALID_ARGS);
+
+function reportHermes(result: HermesCallResult): never {
+  emitAudit({
+    event: "x_bot_called", host: "hermes", agent_id: result.bot?.id ?? null, agent: result.bot?.name ?? null,
+    state: result.state, delivery_id: null, files: result.files.length, seconds: result.seconds,
+  });
+  const code = result.state === "done" ? EXIT.OK : EXIT.FAILURES;
+  if (json) { console.log(JSON.stringify({ ok: result.state === "done", host: "hermes", ...result })); process.exit(code); }
+  const who = result.bot?.name ?? "The Bot";
+  if (result.state === "done") {
+    say(`${who} finished in ${result.seconds} s.`);
+    if (result.files.length) {
+      say(`Files in the folder it worked in (${result.files.length}):`);
+      for (const f of result.files) say(`  ${f}`);
+    } else {
+      say("It made no file. Its answer is all there is.");
+    }
+    say("");
+    say("Its answer:");
+    say(result.answer?.trim() || "(empty)");
+  } else if (result.state === "timed-out") {
+    say(`${who} was still working after ${result.seconds} s and was stopped. Ask again with a longer --timeout, or with a smaller task.`);
+    for (const f of result.files) say(`  left behind: ${f}`);
+  } else {
+    console.error(`bot: ${result.reason ?? "the call failed"}`);
+    if (result.answer) console.error(result.answer.trim());
+  }
+  process.exit(code);
+}
+
 if (cmd === "list") {
-  const agents = openBotSpecialists();
+  const agents = host === "hermes" ? [] : openBotSpecialists();
   const running = openBotReachable();
-  if (json) { console.log(JSON.stringify({ ok: true, reachable: running, agents })); process.exit(EXIT.OK); }
-  if (!agents.length) {
-    say("No OpenBot agent can be called from this computer.");
+  const bots = host === "openbot" ? [] : hermesBots();
+  const hermesHere = Boolean(hermesBinary());
+  if (json) { console.log(JSON.stringify({ ok: true, reachable: running, agents, hermes: { installed: hermesHere, bots } })); process.exit(EXIT.OK); }
+  if (!agents.length && !bots.length) {
+    say("No OpenBot agent and no Hermes Bot can be called from this computer.");
     say(HOW_TO_OPEN);
+    say("A Hermes profile is callable once it is a Bot in Bot Mode's roster.");
     process.exit(EXIT.OK);
   }
-  say(`OpenBot agents that can be called (${agents.length})${running ? "" : " — OpenBot is closed now, so a call will not go through until it opens"}:`);
-  for (const a of agents) say(`  "${a.name}"${a.provider ? ` (${a.provider})` : ""}: ${a.description || "no description"}`);
+  if (agents.length) {
+    say(`OpenBot agents that can be called (${agents.length})${running ? "" : " — OpenBot is closed now, so a call will not go through until it opens"}:`);
+    for (const a of agents) say(`  "${a.name}"${a.provider ? ` (${a.provider})` : ""}: ${a.description || "no description"}`);
+  }
+  if (bots.length) {
+    if (agents.length) say("");
+    say(`Hermes Bots that can be called (${bots.length})${hermesHere ? "" : " — the hermes command is not on PATH, so a call will not go through"}:`);
+    for (const b of bots) say(`  "${b.name}" (${b.id}): ${b.description || "no description"}`);
+  }
   say("");
   say('Hand one a part of the work: nrv bot ask "<name>" "<what you need>" --out <folder>');
   process.exit(EXIT.OK);
@@ -97,6 +143,14 @@ if (cmd === "list") {
 if (cmd === "ask") {
   const [reference, task] = rest;
   if (!reference || !task?.trim() || rest.length > 2) fail(USAGE, EXIT.INVALID_ARGS);
+  // OpenBot first, as before; a Hermes Bot when asked for, or when OpenBot has no agent of that name.
+  const want = reference.replace(/^@/, "").trim().toLowerCase();
+  const inOpenBot = host !== "hermes" && openBotSpecialists().some((a) => a.name.toLowerCase() === want || a.id.toLowerCase() === want);
+  const inHermes = host !== "openbot" && hermesBots().some((b) => b.id === want || b.name.toLowerCase() === want);
+  if (host === "hermes" || (!inOpenBot && inHermes)) {
+    const outDir = path.resolve(typeof flags.out === "string" ? flags.out : path.join("from-hermes", slug(reference)));
+    reportHermes(await askHermesBot(reference, task, { outDir, timeoutMs: timeoutMs() }));
+  }
   const outDir = path.resolve(typeof flags.out === "string" ? flags.out : path.join("from-openbot", slug(reference)));
   report(await askOpenBot(reference, task, { outDir, timeoutMs: timeoutMs() }));
 }

@@ -3,7 +3,7 @@
 > A team is a set of agents built from the library: each role comes from an
 > employee of an installed business, each persona from a mind-clone, and a role
 > no business has is an **expert-x**. It exists for hosts that show each agent
-> working (OpenBot) or load agents per project (Claude Code). Nothing here runs
+> working (OpenBot, Hermes Bot Mode) or load agents per project (Claude Code). Nothing here runs
 > unless someone asks for a team: `nrv dispatch` never reads one.
 >
 > Code: `_shared/lib/team.ts` (the file and what a member is told),
@@ -75,11 +75,59 @@ below. They come from a 15-agent team that ran a full project on OpenBot on
 |---|---|---|
 | Claude Code | `.claude/agents/<team>-<id>.md`, one subagent per member, loaded when the project opens. The orchestrator is the main session: `.nirvana/team/director.md` | Nobody: the files are the agents |
 | OpenBot (Nightly Labs) | One marked section in the `AGENTS.md` of the agent that carries the member's name; the generic Nirvana-OS section is taken out of it | The host's own agent, with `create_agent`: the engine only reads the app's database. `nrv team sync` names the agents to create |
+| Hermes Agent (Bot Mode) | One Bot per member: the profile `<team>-<member id>`, a marked section in its `SOUL.md`, its name and role in the roster (`profile.yaml`) | The engine, with `hermes profile create`, and only with `--create` |
 | Any other | `<team folder>/.nirvana/team/members/<id>.md`, always written | Whoever points the host at those files |
 
 On OpenBot an agent belongs to one team at a time. A member taken out of the
 file, or a removed team, has its section taken out; the agent is never deleted
 and goes back to the generic section on the engine's next run.
+
+## 4b. Hermes Agent: a team as Bots
+
+The person asks in their own words ("set this team up as bots in my Hermes",
+"monte esse time como bots no meu Hermes") and their agent runs the commands;
+nobody types them. `nrv team sync --host hermes` (the default when the command
+is run by a Hermes agent) writes the team into [Hermes Agent](https://github.com/NousResearch/hermes-agent)'s
+Bot Mode. Code: `_shared/lib/hermes-bots.ts`, `syncHermes` in `team-hosts.ts`.
+
+- **A Bot is a profile.** Each member is the profile `<team>-<member id>`
+  under the Hermes home. Its instructions are a marked section in that
+  profile's `SOUL.md`, after whatever is already there. Bot Mode's roster shows
+  a profile that carries `ui_meta["hermes-bots"]` in `profile.yaml`: the engine
+  sets the title (the member's name) and the description (its role) there and
+  keeps every other key.
+- **Two steps, so the person hears first.** Without `--create` the command
+  names the Bots it would create and makes nothing. With `--create` it runs
+  `hermes profile create <id> --no-alias --description "<role>"` for each
+  missing one.
+- **A new Bot works with the person's model and keys.** On a Hermes whose
+  create does that for a fresh profile (the `--no-credentials` opt-out is its
+  sign) the profile is fresh. On an older one a fresh profile has no provider,
+  so it is made with `--clone` and the copied `SOUL.md` is emptied.
+- **How members talk.** In a Bot Chat, `message_agent` with the teammate's
+  handle; its answer arrives later as a notification. In any other session that
+  tool does not exist, so the member runs `hermes -p <handle> -z "<task>"` in
+  the project folder and reads the answer.
+- **Sending the request.** In Hermes Desktop the person opens the
+  orchestrator's Bot Chat. From a terminal:
+  `hermes -p <team>-<orchestrator> --in <project folder> -z "<request>"`.
+
+`nrv team status` shows which members are Hermes Bots, and `nrv team remove`
+takes the section out of each; a profile is never deleted.
+
+Seen live on 2026-11-25 on macOS with Hermes 0.20.5 (an OpenRouter model): a
+three-member team was created with `--create`, and the orchestrator, asked in
+Portuguese for a LinkedIn post, called the writer and the reviewer through
+`hermes -p … -z`, each in its own session, and delivered the brief, the post,
+the review and the delivery file in 96 s. The profile format and the roster
+marker were read in the source of 0.23.4; Bot Mode's roster and `message_agent`
+were not run, because that computer has no Hermes Desktop.
+
+Not covered: the canonical Bot Chat is not created by the engine (Hermes
+Desktop pins it when the Bot is opened; headless,
+`hermes -p <bot> chat -c "Bot Chat" --create-if-missing`), the tier's model is
+printed and not set, and profiles do not sandbox anything: every Bot runs as
+the person's own user.
 
 ## 4a. A squad as a workflow: `nrv team flow`
 
