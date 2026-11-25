@@ -85,3 +85,15 @@ describe("the judge is told the field names", () => {
     expect(persona).toContain('"suggested_fix"');
   });
 });
+
+describe("the judge is told what it cannot see", () => {
+  // The brief of the withheld run asked for the post "saved as UTF-8 in the
+  // workspace" with "its full path reported", and the judge, reading only the
+  // post's text, called their absence a material defect.
+  test("delivery conditions outside the file's content are not items, one file or a batch", () => {
+    for (const persona of [__internal__.buildPersona(RUBRIC), __internal__.buildBatchPersona([RUBRIC])]) {
+      expect(persona).toContain("You see the CONTENT of each delivered file and nothing else.");
+      expect(persona).toContain("Never raise an item for one of those, at any severity");
+    }
+  });
+});

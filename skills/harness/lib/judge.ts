@@ -183,6 +183,15 @@ const SEVERITY_LINES = [
   `Not defects: professional defaults the executor declared as assumptions (for`,
   `example under an "## Assumptions" heading, in any language), anything the brief`,
   `did not ask for, and choices of method, format or length the brief left open.`,
+  // The judge reads a file's text. Asked for "the post saved as UTF-8 in the
+  // workspace, its full path reported", it called a saved 71-word post
+  // materially defective for not stating its own path (2026-11-25).
+  `You see the CONTENT of each delivered file and nothing else. What the brief asks`,
+  `of the delivery around that content (that the file is saved, where, under what`,
+  `name or encoding, that its path is reported, what the executor says in its`,
+  `reply, that other files exist) cannot be read from the content and is checked`,
+  `outside this judgment. Never raise an item for one of those, at any severity,`,
+  `and never lower a score for it: a file you are reading was saved.`,
 ];
 
 /** The fields of a verdict, spelled out for every rubric. Only prose-longform
