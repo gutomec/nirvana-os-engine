@@ -51,7 +51,7 @@ El motor viene sin contenido. Creas empresas, squads y clones pidiéndoselo a tu
 
 ## Instalación
 
-Este README describe la 0.18.3, la release **estable** actual, que instala el comando de una línea del principio de esta página. No hace falta Node. Si falta [Bun](https://bun.sh), cualquiera de los dos instaladores lo pone en tu carpeta de usuario (`~/.bun`) sin sudo ni permisos de administrador y sigue adelante.
+Este README describe la 0.18.4, la release **estable** actual, que instala el comando de una línea del principio de esta página. No hace falta Node. Si falta [Bun](https://bun.sh), cualquiera de los dos instaladores lo pone en tu carpeta de usuario (`~/.bun`) sin sudo ni permisos de administrador y sigue adelante.
 
 Antes de ejecutarlo:
 
@@ -68,7 +68,7 @@ Lo que cambia en tu máquina:
 - hooks de auditoría en Claude Code, Antigravity y Codex;
 - las carpetas de contenido vacías `~/squads`, `~/businesses` y `~/businesses/_library/dna`.
 
-Volver a ejecutarlo es seguro. **Cierra la terminal y abre una nueva** para que `nrv` esté en tu PATH, y compruébalo con `nrv --version`; muestra `0.18.3`. Después pídele a tu agente: *"Comprueba que Nirvana-OS está bien instalado."* Ejecuta `nrv doctor`. La salida 1 significa solo avisos; la salida 2 lista lo que falló.
+Volver a ejecutarlo es seguro. **Cierra la terminal y abre una nueva** para que `nrv` esté en tu PATH, y compruébalo con `nrv --version`; muestra `0.18.4`. Después pídele a tu agente: *"Comprueba que Nirvana-OS está bien instalado."* Ejecuta `nrv doctor`. La salida 1 significa solo avisos; la salida 2 lista lo que falló.
 
 Con `curl | bash` el instalador no hace preguntas. Para elegir un perfil de rendimiento al instalar, pásalo así: cambia el `bash` final por `bash -s -- --profile=balanced`. También puedes fijarlo más tarde pidiéndoselo a tu agente (ver [Configuración](#configuración)).
 
@@ -132,13 +132,13 @@ Si tienes agentes en un host de bots, Nirvana-OS funciona ahí también: [OpenBo
 
 | Tú dices | Qué ocurre |
 |---|---|
-| "Arma un equipo para este proyecto con mis empresas." | Tu agente elige los roles, te dice qué agentes va a crear y monta uno por rol, cada uno con su mind-clone. En OpenBot y en Hermes ves trabajar a cada uno. |
+| "Arma un equipo para este proyecto con mis empresas." | Tu agente elige los roles y monta un agente por rol, cada uno con su mind-clone, y luego te dice quién está en el equipo. En OpenBot y en Hermes ves trabajar a cada uno. |
 | "Monta este equipo como bots en mi Hermes." | Un Bot por miembro, con su nombre y su rol en la lista de Hermes. Envías la petición al orquestador y él lleva el proyecto con los demás. |
 | "Quiero ver este squad funcionando como flujo aquí." | En OpenBot, los pasos del squad se convierten en un flujo que espera tu aprobación antes de entregar el resultado. Puedes programarlo. |
 | "Usa mi bot de imágenes para las figuras de esta página." | El agente con el que hablas, en cualquier runtime, entrega esa parte a tu bot de OpenBot o de Hermes y trae los archivos de vuelta. |
 | "Quiero que todos mis bots usen siempre Nirvana." | Cada bot pasa cada entrega por Nirvana-OS. "Solo cuando yo lo pida" lo devuelve al valor por defecto. |
 
-Dos cosas quedan en tus manos. Un agente de OpenBot solo responde a otros agentes después de que actives **Local scripts** para él (Agent settings → Rules → Permissions); ningún agente puede activarlo por ti. Y te enteras de qué agentes se van a crear antes de que exista ninguno.
+Una cosa queda en tus manos. Un agente de OpenBot solo responde a otros agentes después de que actives **Local scripts** para él (Agent settings → Rules → Permissions); ningún agente puede activarlo por ti. El equipo en sí se crea al momento: ves quién está en él cuando queda listo y pides cualquier cambio después.
 
 ## Packs
 
@@ -170,7 +170,7 @@ Siempre hay algo nuevo en la tienda: las ofertas relámpago aparecen a menudo, y
 
 Pídele a tu agente que actualice Nirvana-OS, o ejecuta `nrv update`. Primero hace una copia de `~/.nirvana/skills` y conserva tu configuración y tu contenido. `nrv update --check` dice qué release instalaría sin cambiar nada.
 
-Una actualización nunca lleva el motor a una release más antigua. Un motor estable solo pasa a una estable más nueva, así que un motor 0.14 pasa a la 0.18.3. Una beta pasa a la release mayor más nueva, beta o estable, así que una beta se convierte en la estable que sale después de ella. Después de actualizar el motor, `nrv update` también revisa cada pack instalado que tiene licencia y avisa cuando hay una versión nueva.
+Una actualización nunca lleva el motor a una release más antigua. Un motor estable solo pasa a una estable más nueva, así que un motor 0.14 pasa a la 0.18.4. Una beta pasa a la release mayor más nueva, beta o estable, así que una beta se convierte en la estable que sale después de ella. Después de actualizar el motor, `nrv update` también revisa cada pack instalado que tiene licencia y avisa cuando hay una versión nueva.
 
 ## Betas
 
@@ -269,4 +269,4 @@ Autor: **Luiz Gustavo Vieira Rodrigues (gutomec / Prospecteezy)**. Sin coautores
 
 Licencia: la Nirvana-OS Sustainable Use License (SUL) v1.0. El código fuente está publicado y es abiertamente legible, y el motor es gratis para usar. Es source-available, no una licencia open-source aprobada por la OSI, y ciertos usos comerciales requieren una licencia comercial aparte. Lee [LICENSE](./LICENSE) antes de confiar en cualquier resumen, incluido este.
 
-Estado: beta (0.x, actualmente 0.18.3). El motor funciona hoy y se instala en minutos. Espera que la superficie siga moviéndose hasta la 1.0.
+Estado: beta (0.x, actualmente 0.18.4). El motor funciona hoy y se instala en minutos. Espera que la superficie siga moviéndose hasta la 1.0.

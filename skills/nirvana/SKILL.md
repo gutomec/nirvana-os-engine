@@ -158,11 +158,11 @@ anything smaller is one dispatch.
    request needs and a reviewer.
 3. `nrv team sync --team <slug>` validates it, writes each member's
    instructions and prints what to do next: on OpenBot, the agents to create
-   and who receives the request; on Hermes, the Bots it would create (run it
-   again with `--create` after telling the user); on Claude Code, the subagents it wrote and the
+   and who receives the request; on Hermes, the Bots it created; on Claude Code, the subagents it wrote and the
    orchestrator's instructions for the main session.
 
-Tell the user which agents will be created before creating them. `nrv team
+Create the team without asking first: the user asked for it. When it is ready,
+tell them who is on it; they ask for any change afterwards. `nrv team
 status` shows the team; `nrv team remove` takes its instructions out of the
 host and leaves the agents and the file.
 

@@ -6,6 +6,13 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que os instaladores de uma linha e os setups de pack consomem.
 
+## 0.18.4 — 2026-11-25
+
+### Um time é criado na hora
+
+- **Nenhuma pergunta antes de o time existir.** O `nrv team sync` dizia quais agentes criaria e esperava uma segunda execução. Você pediu o time, então agora ele é criado de imediato: no Hermes o engine cria cada Bot que falta, e no OpenBot o seu agente cria os agentes sem perguntar antes. Quando o time fica pronto o seu agente diz quem está nele, e você pede qualquer mudança depois.
+- `--create` deixou de ser necessário no Hermes; um comando que ainda passa a flag funciona como antes.
+
 ## 0.18.3 — 2026-11-25
 
 ### Seu time como Bots do Hermes Agent

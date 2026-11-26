@@ -75,7 +75,7 @@ below. They come from a 15-agent team that ran a full project on OpenBot on
 |---|---|---|
 | Claude Code | `.claude/agents/<team>-<id>.md`, one subagent per member, loaded when the project opens. The orchestrator is the main session: `.nirvana/team/director.md` | Nobody: the files are the agents |
 | OpenBot (Nightly Labs) | One marked section in the `AGENTS.md` of the agent that carries the member's name; the generic Nirvana-OS section is taken out of it | The host's own agent, with `create_agent`: the engine only reads the app's database. `nrv team sync` names the agents to create |
-| Hermes Agent (Bot Mode) | One Bot per member: the profile `<team>-<member id>`, a marked section in its `SOUL.md`, its name and role in the roster (`profile.yaml`) | The engine, with `hermes profile create`, and only with `--create` |
+| Hermes Agent (Bot Mode) | One Bot per member: the profile `<team>-<member id>`, a marked section in its `SOUL.md`, its name and role in the roster (`profile.yaml`) | The engine, with `hermes profile create`, as soon as the team is synced |
 | Any other | `<team folder>/.nirvana/team/members/<id>.md`, always written | Whoever points the host at those files |
 
 On OpenBot an agent belongs to one team at a time. A member taken out of the
@@ -96,10 +96,11 @@ Bot Mode. Code: `_shared/lib/hermes-bots.ts`, `syncHermes` in `team-hosts.ts`.
   a profile that carries `ui_meta["hermes-bots"]` in `profile.yaml`: the engine
   sets the title (the member's name) and the description (its role) there and
   keeps every other key.
-- **Two steps, so the person hears first.** Without `--create` the command
-  names the Bots it would create and makes nothing. With `--create` it runs
+- **Created at once.** The command runs
   `hermes profile create <id> --no-alias --description "<role>"` for each
-  missing one.
+  member with no profile, writes the instructions and says which Bots it
+  created, for the agent to tell the person. Nobody is asked first: the person
+  asked for the team, and asks for any change once it exists.
 - **A new Bot works with the person's model and keys.** On a Hermes whose
   create does that for a fresh profile (the `--no-credentials` opt-out is its
   sign) the profile is fresh. On an older one a fresh profile has no provider,
@@ -116,7 +117,7 @@ Bot Mode. Code: `_shared/lib/hermes-bots.ts`, `syncHermes` in `team-hosts.ts`.
 takes the section out of each; a profile is never deleted.
 
 Seen live on 2026-11-25 on macOS with Hermes 0.20.5 (an OpenRouter model): a
-three-member team was created with `--create`, and the orchestrator, asked in
+three-member team was created in one command, and the orchestrator, asked in
 Portuguese for a LinkedIn post, called the writer and the reviewer through
 `hermes -p … -z`, each in its own session, and delivered the brief, the post,
 the review and the delivery file in 96 s. The profile format and the roster
