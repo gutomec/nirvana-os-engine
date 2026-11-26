@@ -6,6 +6,23 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que os instaladores de uma linha e os setups de pack consomem.
 
+## 0.18.5-beta.1 — 2026-11-25
+
+Um beta: instalado só pelo link próprio (veja Betas no README), nunca pelo comando padrão.
+
+### Uma entrega que dá para conferir, do gate ao arquivo
+
+- **Um programa pode decidir um critério de aceite.** Até aqui um modelo julgava todo critério. Uma soma, um dígito verificador, um preço contra a tabela ou uma contagem de linhas não é questão de opinião, então um critério de uma capability de squad ou de um papel de empresa agora pode apontar um programa (`check: scripts/…`), e o gate roda esse programa antes de qualquer juiz. Saída 0 vale, 1 não vale, 2 não conseguiu medir.
+- **"Não medido" é uma resposta própria, e nunca conta como aprovado.** Um programa que estoura o tempo, não existe, não tem interpretador ou quebra não mediu. Um critério bloqueante que ficou sem medir sai como "entregue com ressalvas", e a ressalva diz qual foi. Uma quebra também termina com saída 1, então saída 1 sem nada a corrigir é lida como quebra: um verificador com defeito nunca é confundido com uma entrega com defeito.
+- **A correção são as palavras do próprio programa.** Cada linha que um programa reprovado imprime volta, palavra por palavra, para o worker que fez o trabalho, e o mesmo programa roda de novo. Enquanto um programa reprova, o juiz não é chamado, então uma rodada que seria refeita não custa nada em julgamento. O worker também fica sabendo de antemão quais programas vão conferi-lo e como rodar cada um.
+- **A entrega é selada.** Quando o trabalho sai, o hash de cada arquivo é gravado ao lado dele. `nrv seal check <projeto>` diz o que foi editado, removido ou acrescentado desde que o gate aprovou.
+- **Insumo desatualizado é detectado.** O selo também registra os arquivos de que o trabalho partiu. Uma revisão, ou uma execução que continua daquela entrega, fica sabendo o que mudou desde a aprovação e atualiza o trabalho sem que ninguém peça.
+- **O worker decide e registra a decisão.** Onde o trabalho poderia seguir dois caminhos, o worker escolhe, continua e registra a escolha em `_DECISIONS.md`: o que escolheu, o que descartou e por quê. Você lê depois da entrega e pede o outro caminho se preferir.
+- **`nrv performance` mostra como cada empresa e cada squad vem se saindo:** execuções, resultados, a parcela que passou no gate sem correção, média de correções, tempo e custo. Um valor que a auditoria não tem aparece como desconhecido, nunca como zero. Um achado que se repete numa entidade é avisado ao próximo worker dela antes de ele começar.
+- **`nrv evidence` separa os tipos de prova.** "Válido" costumava ser lido como "provado que funciona". Agora aparece, cada um na sua linha: a estrutura passa no gate de admissão, uma execução real foi entregue com o gate aprovando, os arquivos mudaram desde essa execução, as dependências declaradas estão presentes, e a entidade está montada num host de bots. Cada um é verificado, reprovado, desatualizado, não medido ou não se aplica.
+
+Nada aqui espera uma pessoa: toda conferência, correção e decisão acontece dentro da execução, e o que você revisa é a entrega pronta com o seu registro.
+
 ## 0.18.4 — 2026-11-25
 
 ### Um time é criado na hora

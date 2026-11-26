@@ -6,6 +6,23 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that the
 one-line installers and pack setups consume.
 
+## 0.18.5-beta.1 — 2026-11-25
+
+A beta: installed only by its own link (see Betas in the README), never by the plain one-liner.
+
+### A delivery you can check, from the gate to the file
+
+- **A program can decide an acceptance criterion.** Until now a model judged every criterion. A sum, a check digit, a price against its table or a count of rows is not a matter of opinion, so a criterion of a squad capability or of a business role may now name a program (`check: scripts/…`), and the gate runs it before any judge. Exit 0 holds, 1 does not, 2 could not measure.
+- **"Not measured" is its own answer, and never a pass.** A program that times out, is missing, has no interpreter or crashes did not measure. A blocking criterion left unmeasured ships as "delivered with reservations", and the reservation names it. A crash also ends with exit 1, so exit 1 with nothing to fix is read as a crash: a broken checker is never taken for a broken deliverable.
+- **The correction is the program's own words.** Each line a failing program prints goes back, word for word, to the worker that did the work, and the same program runs again. While a program fails, the judge is not asked, so a round that was going to be redone costs nothing in judging. The worker is also told up front which programs will check it and how to run each one.
+- **A delivery is sealed.** When work goes out, the hash of every file is recorded beside it. `nrv seal check <project>` says what was edited, removed or added since the gate approved it.
+- **Stale inputs are caught.** The seal also records the files the work was built from. A revision, or a run that continues from that delivery, is told what changed since the approval and brings the work up to date without being asked.
+- **The worker decides and writes the decision down.** Where the work could go two ways, the worker chooses, goes on, and records the choice in `_DECISIONS.md`: what it chose, what it set aside and why. You read it after the delivery and ask for the other way if you prefer it.
+- **`nrv performance` shows how each business and squad has been doing:** runs, outcomes, the share that passed the gate with no correction, mean corrections, time and cost. A value the audit does not hold prints as unknown, never as zero. A finding that keeps coming back for one entity is told to its next worker before it starts.
+- **`nrv evidence` separates the kinds of proof.** "Valid" used to be read as "proven to work". It now shows, each on its own line: the structure passes the admission gate, a real run was delivered with the gate passing, the files changed since that run, the declared dependencies are present, and the entity is set up on a bot host. Each one is verified, failed, stale, not measured or does not apply.
+
+Nothing here waits for a person: every check, correction and decision happens inside the run, and what you get to review is the finished delivery with its record.
+
 ## 0.18.4 — 2026-11-25
 
 ### A team is created at once
