@@ -6,9 +6,9 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que os instaladores de uma linha e os setups de pack consomem.
 
-## 0.18.6-beta.1 — 2026-11-25
+## 0.18.6 — 2026-11-26
 
-Um beta: instalado só pelo link próprio (veja Betas no README), nunca pelo comando padrão.
+Um aperfeiçoamento do código do próprio engine: como uma entrega é conferida, corrigida e registrada. Medido contra a 0.18.4 nos mesmos trabalhos antes do lançamento: com um modelo barato em dados difíceis, 6 de 6 entregas corretas contra 3 de 6, em 46% menos tempo; com o modelo padrão, as mesmas 10 de 10 corretas, 13% mais rápido e 6% mais barato.
 
 ### Uma entrega que dá para conferir, do gate ao arquivo
 
@@ -20,6 +20,10 @@ Um beta: instalado só pelo link próprio (veja Betas no README), nunca pelo com
 - **O worker decide e registra a decisão.** Onde o trabalho poderia seguir dois caminhos, o worker escolhe, continua e registra a escolha em `_DECISIONS.md`: o que escolheu, o que descartou e por quê. Você lê depois da entrega e pede o outro caminho se preferir.
 - **`nrv performance` mostra como cada empresa e cada squad vem se saindo:** execuções, resultados, a parcela que passou no gate sem correção, média de correções, tempo e custo. Um valor que a auditoria não tem aparece como desconhecido, nunca como zero. Um achado que se repete numa entidade é avisado ao próximo worker dela antes de ele começar.
 - **`nrv evidence` separa os tipos de prova.** "Válido" costumava ser lido como "provado que funciona". Agora aparece, cada um na sua linha: a estrutura passa no gate de admissão, uma execução real foi entregue com o gate aprovando, os arquivos mudaram desde essa execução, as dependências declaradas estão presentes, e a entidade está montada num host de bots. Cada um é verificado, reprovado, desatualizado, não medido ou não se aplica.
+- **Um juiz nunca desautoriza um programa.** O juiz é avisado de quais critérios um programa decide e não mexe neles, o worker que corrige recebe o mesmo aviso, e uma correção que quebra um critério já aprovado por programa é desfeita na rodada seguinte, sem tocar em mais nada.
+- **Uma entrega que o programa não encontra volta uma vez.** Quando o programa responde que o arquivo que ele lê não está na pasta, o motivo vai para o worker por uma rodada antes de o critério contar como não medido.
+- **Vários squads num mesmo dispatch** rodam cada um os seus verificadores na sua própria pasta.
+- **Uma empresa roda os verificadores dos squads que usa.** O worker lista em `_CAPABILITIES.md` as capabilities de squad que exerceu, e os verificadores delas rodam sobre a entrega. Uma capability que não foi usada não é conferida.
 
 Nada aqui espera uma pessoa: toda conferência, correção e decisão acontece dentro da execução, e o que você revisa é a entrega pronta com o seu registro.
 ## 0.18.5 — 2026-11-25

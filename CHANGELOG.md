@@ -6,9 +6,9 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that the
 one-line installers and pack setups consume.
 
-## 0.18.6-beta.1 — 2026-11-25
+## 0.18.6 — 2026-11-26
 
-A beta: installed only by its own link (see Betas in the README), never by the plain one-liner.
+An improvement of the engine's own code: how a delivery is checked, corrected and recorded. Measured against 0.18.4 on the same jobs before release: with a low-cost model on hard data, 6 of 6 deliveries correct against 3 of 6, in 46% less time; with the default model, the same 10 of 10 correct, 13% faster and 6% cheaper.
 
 ### A delivery you can check, from the gate to the file
 
@@ -20,6 +20,10 @@ A beta: installed only by its own link (see Betas in the README), never by the p
 - **The worker decides and writes the decision down.** Where the work could go two ways, the worker chooses, goes on, and records the choice in `_DECISIONS.md`: what it chose, what it set aside and why. You read it after the delivery and ask for the other way if you prefer it.
 - **`nrv performance` shows how each business and squad has been doing:** runs, outcomes, the share that passed the gate with no correction, mean corrections, time and cost. A value the audit does not hold prints as unknown, never as zero. A finding that keeps coming back for one entity is told to its next worker before it starts.
 - **`nrv evidence` separates the kinds of proof.** "Valid" used to be read as "proven to work". It now shows, each on its own line: the structure passes the admission gate, a real run was delivered with the gate passing, the files changed since that run, the declared dependencies are present, and the entity is set up on a bot host. Each one is verified, failed, stale, not measured or does not apply.
+- **A judge never overrules a program.** The judge is told which criteria a program decides and leaves them alone, the correcting worker is told the same, and a correction that breaks a criterion a program had approved is undone in the next round and nothing else.
+- **A deliverable the program does not find goes back once.** When a program answers that what it reads is not in the folder, its reason goes to the worker for one round before the criterion counts as not measured.
+- **Several squads in one dispatch** each run their own checks on their own folder.
+- **A business runs the checks of the squads it uses.** The worker lists the squad capabilities it worked as in `_CAPABILITIES.md`, and the checks of those capabilities run on its delivery. A capability that was not used is not checked.
 
 Nothing here waits for a person: every check, correction and decision happens inside the run, and what you get to review is the finished delivery with its record.
 ## 0.18.5 — 2026-11-25
