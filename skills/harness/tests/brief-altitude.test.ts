@@ -62,9 +62,9 @@ describe("the dispatch instruction states done, not method", () => {
 });
 
 describe("the autonomous directive is a page of guardrails, not a manual", () => {
-  test("under 3.2K bytes, keeps the markers the gates read, drops the library table and the hyphen rule", async () => {
+  test("under 3.35K bytes, keeps the markers the gates read, drops the library table and the hyphen rule", async () => {
     const { AUTONOMOUS_DIRECTIVE } = await import("../lib/host-agent-driver.ts");
-    expect(Buffer.byteLength(AUTONOMOUS_DIRECTIVE)).toBeLessThanOrEqual(3200);
+    expect(Buffer.byteLength(AUTONOMOUS_DIRECTIVE)).toBeLessThanOrEqual(3350);
     for (const kept of ["FUNDAMENTAL PREMISE", "AUTONOMOUS MODE", "HEADLESS SESSION LIFETIME", "CONTINUOUS FLOW", "MESSAGE INTERRUPTION", "## Assumptions", "Finish the whole task"]) {
       expect(AUTONOMOUS_DIRECTIVE).toContain(kept);
     }

@@ -307,7 +307,7 @@ describe("what the worker is told", () => {
   test("every worker records the choices it made alone instead of asking, the solo worker of a business too", () => {
     for (const directive of [AUTONOMOUS_DIRECTIVE, soloDirective("")]) {
       expect(directive).toContain("_DECISIONS.md");
-      expect(directive).toContain("it replaces every question you would have asked");
+      expect(directive).toContain("it stands in for the question");
     }
     expect(isRunStateFile("_DECISIONS.md")).toBe(true);
   });
