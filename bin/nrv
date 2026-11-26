@@ -278,6 +278,8 @@ case "$cmd" in
       shift; exec "$BUN_BIN" "$SKILLS/harness/scripts/audit-tail.ts" "$@"
     fi
     exec "$BUN_BIN" "$SKILLS/harness/scripts/audit-view.ts" "$@" ;;
+  seal)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/seal.ts" "$@" ;;
   search)
     exec "$BUN_BIN" "$SKILLS/harness/scripts/search.ts" "$@" ;;
   export)

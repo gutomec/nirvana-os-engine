@@ -92,6 +92,7 @@ export const COMMANDS: Command[] = [
 
   // quality of life
   { name: "audit-view", aliases: ["audit"], target: "harness/scripts/audit-view.ts", category: "qol", args: "<project>", summary: "Chronological viewer of a project's audit chain", visibility: "user" },
+  { name: "seal", target: "harness/scripts/seal.ts", category: "qol", args: "check <project> | check --dir <outputs folder>", summary: "Is a delivery still what the gate approved? Compares the files with the hashes sealed at delivery", visibility: "user" },
   { name: "search", target: "harness/scripts/search.ts", category: "qol", args: '"<query>"', summary: "Search your libraries for candidates to read", visibility: "user" },
   { name: "find", target: "harness/scripts/find.ts", category: "qol", args: '"<request>"', summary: "Shortlist the businesses and squads (with capability ids) that fit a request, no model call; you read them and decide", visibility: "user" },
   { name: "export", target: "harness/scripts/export.ts", category: "qol", args: "<project>", summary: "Bundle a project's outputs (.zip/.tgz)", visibility: "user" },

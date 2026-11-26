@@ -10,7 +10,11 @@ import { loadHarnessConfig, type HarnessConfig } from "../lib/harness-config.ts"
 import {
   businessProgramChecks, readRunChecks, runProgramChecks, squadProgramChecks, writeRunChecks, type ProgramCheck,
 } from "../lib/program-checks.ts";
-import { briefInputFiles, checkSeal, readSeal, SEAL_FILE } from "../lib/delivery-seal.ts";
+import { briefInputFiles, checkSeal, readSeal, sealChangeLines, SEAL_FILE } from "../lib/delivery-seal.ts";
+import { checkCommand, programChecksDirective } from "../lib/program-checks.ts";
+import { AUTONOMOUS_DIRECTIVE } from "../lib/host-agent-driver.ts";
+import { soloDirective } from "../lib/business-solo.ts";
+import { spawnSync } from "node:child_process";
 import { isRunStateFile } from "../../_shared/lib/run-plumbing.ts";
 import { spawnBudgetMs } from "./helpers/test-budgets.ts";
 
@@ -253,4 +257,66 @@ describe("the seal of a delivery", () => {
     const brief = `Use ${input}, e não ${path.join(tmp, "inexistente.csv")}. Saída em ${path.join(oroot, "relatorio.md")}.`;
     expect(briefInputFiles(brief, oroot)).toEqual([input]);
   });
+});
+
+describe("what moved since the approval", () => {
+  test("a worker that builds on a delivery is told which files and inputs changed; nothing is said when none did", () => {
+    const oroot = outputs("100");
+    const input = path.join(tmp, "extrato.csv");
+    fs.writeFileSync(input, "a\n");
+    runDelivery(deliveryArgs(oroot, { brief: `A partir de ${input}.` }).args);
+    expect(sealChangeLines(oroot)).toEqual([]);
+    expect(sealChangeLines(path.join(tmp, "unsealed"))).toEqual([]);
+    fs.appendFileSync(path.join(oroot, "relatorio.md"), "\nEditado à mão.\n");
+    fs.appendFileSync(input, "b\n");
+    const lines = sealChangeLines(oroot).join("\n");
+    expect(lines).toContain("edited after the approval: relatorio.md");
+    expect(lines).toContain(`inputs the work was built from that changed since: ${input}`);
+    expect(lines).toContain("without being asked");
+  }, spawnBudgetMs(3));
+
+  test("nrv seal check answers intact, then names what moved, and says so for a folder with no seal", () => {
+    const oroot = outputs("100");
+    runDelivery(deliveryArgs(oroot).args);
+    const SEAL = path.join(import.meta.dir, "..", "scripts", "seal.ts");
+    const run = (...a: string[]) => { const r = spawnSync(process.execPath, [SEAL, ...a], { encoding: "utf8" }); return { code: r.status, out: r.stdout + r.stderr }; };
+    const intact = run("check", "--dir", oroot);
+    expect([intact.code, intact.out.includes("Intact")]).toEqual([0, true]);
+    fs.appendFileSync(path.join(oroot, "relatorio.md"), "\nMais uma linha.\n");
+    const moved = run("check", "--dir", oroot);
+    expect(moved.code).toBe(1);
+    expect(moved.out).toContain("Edited after the approval (1)");
+    expect(moved.out).toContain("nrv revise");
+    expect(JSON.parse(run("check", "--dir", oroot, "--json").out)).toMatchObject({ ok: false, changed: ["relatorio.md"] });
+    expect(run("check", "--dir", path.join(tmp, "empty")).out).toContain("No seal");
+    expect(run("verify").code).toBe(4);
+  }, spawnBudgetMs(8));
+});
+
+describe("what the worker is told", () => {
+  test("the programs that will check it, with the command to run each", () => {
+    const c = check({ run: path.join(tmp, "squad", "scripts", "sum.ts") });
+    expect(programChecksDirective([], "/out")).toBe("");
+    const text = programChecksDirective([c, check({ id: "py", blocking: false, run: path.join(tmp, "squad", "scripts", "x.py"), args: ["{outputs}", "--strict"] })], path.join(tmp, "out"));
+    expect(text).toContain("PROGRAM CHECKS");
+    expect(text).toContain("- totals_match (blocking): the total equals the sum of the lines");
+    expect(text).toContain(checkCommand(c, path.join(tmp, "out")));
+    expect(text).toContain(`python3 ${path.join(tmp, "squad", "scripts", "x.py")} ${path.join(tmp, "out")} --strict`);
+  });
+
+  test("every worker records the choices it made alone instead of asking, the solo worker of a business too", () => {
+    for (const directive of [AUTONOMOUS_DIRECTIVE, soloDirective("")]) {
+      expect(directive).toContain("_DECISIONS.md");
+      expect(directive).toContain("it replaces every question you would have asked");
+    }
+    expect(isRunStateFile("_DECISIONS.md")).toBe(true);
+  });
+
+  test("a delivery whose worker recorded decisions names the file in its status", () => {
+    const oroot = outputs("100");
+    fs.writeFileSync(path.join(oroot, "_DECISIONS.md"), "- Chose a monthly cut; a weekly one was set aside: the statement is monthly.\n");
+    runDelivery(deliveryArgs(oroot).args);
+    expect(statusOf(oroot).decisions).toBe(path.join(oroot, "_DECISIONS.md"));
+    expect(readSeal(oroot)!.files.map((f) => f.path)).not.toContain("_DECISIONS.md");
+  }, spawnBudgetMs(3));
 });

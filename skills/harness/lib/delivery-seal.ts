@@ -114,3 +114,17 @@ export function briefInputFiles(brief: string, outputsRoot: string, max = 50): s
   }
   return [...out];
 }
+
+/** What moved since a delivery was approved, as lines for the worker that builds
+ *  on it; [] when the folder has no seal or nothing moved. */
+export function sealChangeLines(outputsRoot: string): string[] {
+  const c = checkSeal(outputsRoot);
+  if (!c.sealed || (!c.changed.length && !c.missing.length && !c.staleInputs.length)) return [];
+  const list = (items: string[]) => items.slice(0, 20).join(", ") + (items.length > 20 ? ` and ${items.length - 20} more` : "");
+  return [
+    `Since this work was approved (${c.sealedAt}), the files below are no longer what the gate read. Read them again before you rely on anything you remember of them:`,
+    ...(c.changed.length ? [`- edited after the approval: ${list(c.changed)}`] : []),
+    ...(c.missing.length ? [`- removed after the approval: ${list(c.missing)}`] : []),
+    ...(c.staleInputs.length ? [`- inputs the work was built from that changed since: ${list(c.staleInputs)}. Bring every part of the work that depends on them up to date, without being asked.`] : []),
+  ];
+}

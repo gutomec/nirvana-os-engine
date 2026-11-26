@@ -732,6 +732,8 @@ export interface DeliveryStatus {
   checks?: Array<{ id: string; state: CheckResult["state"]; blocking: boolean }>;
   /** True when `_SEAL.json` records the hashes of what was delivered. */
   sealed?: boolean;
+  /** `_DECISIONS.md`, when the worker recorded the choices it made alone. */
+  decisions?: string;
 }
 
 export const STATUS_FILE = "_STATUS.json";
@@ -952,6 +954,7 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
       serious: res.serious, reservations: res.reservations, exit_code: res.exitCode,
       ...(lastChecks.length ? { checks: lastChecks.map(c => ({ id: c.id, state: c.state, blocking: c.blocking })) } : {}),
       ...(sealed ? { sealed: true } : {}),
+      ...(fs.existsSync(path.join(args.outputsRoot, "_DECISIONS.md")) ? { decisions: path.join(args.outputsRoot, "_DECISIONS.md") } : {}),
     });
     return res;
   };
@@ -1378,6 +1381,8 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
       inputs: briefInputFiles(args.brief, args.outputsRoot),
     });
     sealed = !!seal;
+    // The choices the worker made alone: what the person reads to ask for another way.
+    if (fs.existsSync(path.join(args.outputsRoot, "_DECISIONS.md"))) log(`  decisions the worker made on its own: ${path.join(args.outputsRoot, "_DECISIONS.md")}`);
     if (seal) emit("x_delivery_sealed", { trace_id: args.pid, project_id: args.pid, business_slug: args.slug, files: seal.files.length, inputs: seal.inputs.length, gate: verdict });
     emit("delivered", { trace_id: args.pid, project_id: args.pid, business_slug: args.slug, files: produced.length, gate: verdict, zip: zipPath, ...(withReservations ? { reservations: true } : {}) });
     mark("delivered", {

@@ -92,6 +92,8 @@ import { sessionHome } from "../../_shared/lib/host-agent-driver.ts";
 import { parseSquadTarget, resolveSquadCapability } from "../lib/capability-resolver.ts";
 import { parseMessageTargetSpec } from "../lib/control-plane/agent-x-canary-queue.ts";
 import { runDelivery, deliverAfterRuntimeError, gateableFiles, producesForRubric, runGateOnce, QUOTA_WAIT_EXIT, type DeliveryArgs, type DeliveryResult, type RuntimeErrorOutcome } from "../lib/delivery-pipeline.ts";
+import { businessProgramChecks, programChecksDirective, squadProgramChecks, writeRunChecks } from "../lib/program-checks.ts";
+import { sealChangeLines } from "../lib/delivery-seal.ts";
 import { runBusinessPostGate } from "../lib/business-post-gate.ts";
 import { parseExecutionOptions } from "../lib/gauntlet/execution-options.ts";
 import { decideBusinessCanary, runBusinessCanaryWithRollback } from "../lib/gauntlet/business-canary.ts";
@@ -1396,6 +1398,8 @@ if (continueFrom) {
     `This brief continues project ${continueFrom.projectId}${resumable ? ", in the same session" : ""}.`
     + (prevOut ? ` Its delivery is in ${prevOut}: read it as input and leave it as it is.` : "")
     + " Write this run's deliverables where your prompt says.",
+    // The delivery this run builds on may have moved since its gate read it.
+    ...(prevOut ? sealChangeLines(prevOut).map((l, i) => (i === 0 ? `\n${l}` : l)) : []),
   ].join("\n");
   if (resumable) {
     continueSessionOnNextWorker({ sessionId: prevSid!, runtime: prevRt!, fromProject: continueFrom.projectId,
@@ -1930,6 +1934,12 @@ if (pendingCascade?.kind === "squad-only") {
   // The capability the resolver chose is what declares the acceptance contract the judge
   // reads and the `produces` slugs its rubric selector matches on.
   const squadContract = squadCapabilityRecord(squads[0], capabilityId);
+  // The criteria a program decides travel with the run (checks.json), so the
+  // gate of a later revision or recovery runs the same programs.
+  // One squad only: with several, each writes under its own subfolder and a
+  // program told "the outputs" would be reading its neighbours' work.
+  const squadChecks = squads.length === 1 ? squadProgramChecks(squadContract.squadDir ?? path.join(nirvanaPaths.SQUADS_DIR, squads[0]), capabilityId) : [];
+  writeRunChecks(projDir, squadChecks);
   const squadProduces = producesForDelivery(() => squadContract.capability?.produces ?? []);
   if (shouldRunSquadGauntlet({ squadCount: squads.length, wantExec, resolvedMode: executionOptions.resolvedMode })) {
     const squad = squads[0];
@@ -1951,7 +1961,7 @@ if (pendingCascade?.kind === "squad-only") {
       const candidate = runSquadHeadless({ squadSlug: squad, brief: candidateBrief, projectId: pid, projectDir: projDir, projectRoot,
         outputsDir: candidateRoot, runtime: rt, capabilityId, envProblems: squadEnvProblems.get(squad), suggestedClones: autoSuggestedClones,
         maxBudgetUsd: budget.candidateBudgetUsd, timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
-        rulesDirective, autonomousDirective: AUTONOMOUS_DIRECTIVE, runWithCascadeImpl: pinnedCascade,
+        rulesDirective: rulesDirective + programChecksDirective(squadChecks, candidateRoot), autonomousDirective: AUTONOMOUS_DIRECTIVE, runWithCascadeImpl: pinnedCascade,
         ledger: { runId: canonicalRunId, watchDir: candidateRoot } });
       if (candidate.sessionId) runLedger.recordSession(legacy, canonicalRunId, candidate.sessionId);
       if (candidate.sessionId) sessionRuntimes.set(candidate.sessionId, candidate.finalRuntime);
@@ -2028,7 +2038,7 @@ if (pendingCascade?.kind === "squad-only") {
       capabilityId: capabilityById.get(sq), envProblems: squadEnvProblems.get(sq), suggestedClones: autoSuggestedClones,
       maxBudgetUsd: effectiveBudgetUsd(),
       timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
-      rulesDirective, autonomousDirective: AUTONOMOUS_DIRECTIVE, runWithCascadeImpl: pinnedCascade,
+      rulesDirective: rulesDirective + programChecksDirective(squadChecks, outDir), autonomousDirective: AUTONOMOUS_DIRECTIVE, runWithCascadeImpl: pinnedCascade,
       ...(ledgerRunId ? { ledger: { runId: ledgerRunId, watchDir: outDir } } : {}),
     });
     lastSession = r.sessionId ?? lastSession;
@@ -2390,6 +2400,8 @@ const workerBriefFile: string | undefined = (() => {
   return copy;
 })();
 const bizDir = businessEntry.bizDir ?? resolveEntityDir("businesses", slug, projDir);
+const businessChecks = businessProgramChecks(bizDir);
+writeRunChecks(projDir, businessChecks);
 const briefSquads = (() => { try { return namedSquadsIn(brief, Object.keys(defaultRegistries().squads)); } catch { return []; } })();
 /** Failures of the carded squads' environments, filled before the worker runs (exec only). */
 let squadEnvProblems: Record<string, string[]> = {};
@@ -2397,7 +2409,8 @@ let squadEnvProblems: Record<string, string[]> = {};
 const soloArgs = (oroot: string, briefFileForRun?: string) => ({
   slug, bizDir, brief, ...(briefFileForRun ? { briefFile: briefFileForRun } : {}),
   projectId: pid, projectDir: projDir, projectRoot, outputsRoot: oroot, runtime: runtimeDecision.runtime,
-  mandatorySquads: autoMandatorySquads, optionalSquads: autoOptionalSquads, briefSquads, rulesDirective, squadEnvProblems,
+  mandatorySquads: autoMandatorySquads, optionalSquads: autoOptionalSquads, briefSquads,
+  rulesDirective: rulesDirective + programChecksDirective(businessChecks, oroot), squadEnvProblems,
   suggestedClones: autoSuggestedClones,
 });
 const outputPath = path.join(projDir, "agent-prompt.md");

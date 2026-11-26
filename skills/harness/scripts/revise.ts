@@ -53,6 +53,7 @@ import { findRunSessions, latestRunSession, runRoots as projectRunRoots, type Ru
 import { looksLikeMissingSession } from "../../_shared/lib/session-capture.ts";
 import { detectExecutionRuntime } from "../lib/control-plane/execution-runner.ts";
 import { GATE_FINDINGS_FILE } from "../lib/delivery-pipeline.ts";
+import { sealChangeLines } from "../lib/delivery-seal.ts";
 import { resolveCascadeRoot } from "../lib/cascade.ts";
 import { formatRulesForDirective, loadRuntimeRules } from "../lib/runtime-rules.ts";
 import { openBotSpecialistsDirective } from "../../_shared/lib/openbot-call.ts";
@@ -373,11 +374,17 @@ const rulesDirective = formatRulesForDirective(loadRuntimeRules(resolveCascadeRo
 // The folders the brief places the work in: a revision works there too, and
 // is never told to move that work under the outputs root.
 const workDirs = briefWorkDirs(brief, oroot);
+// What moved since the last approval: a person's own edits, or an input that
+// changed. The worker is told, so it neither overwrites the first nor builds on
+// a stale reading of the second.
+const sinceApproval = sealChangeLines(oroot);
+if (sinceApproval.length) appendAudit({ event: "x_revise_after_changes", trace_id: projectId, project_id: projectId, lines: sinceApproval.length - 1 }, projectRoot);
 const revisePrompt = [
   "REVISION INSTRUCTION (same session: you have the full context of what you produced):",
   "",
   change,
   "",
+  ...(sinceApproval.length ? [...sinceApproval, ""] : []),
   `Rewrite or update the deliverables in the places the brief names. ${workElsewhereRule(oroot, workDirs)}`,
   solo
     ? `Then update ${path.join(oroot, "_SUMMARY.md")} and ${path.join(oroot, "_CLAIMS.json")} so they describe the revised delivery; each claim's evidence names a file that exists under ${oroot}${workDirs.length ? ` or under ${workDirs.join(", ")}` : ""}, never a file under _work/ or _review/ (run state does not count as proof).`

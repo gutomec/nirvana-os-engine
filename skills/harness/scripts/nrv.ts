@@ -119,6 +119,7 @@ switch (cmd) {
   }
   case "update-check": runScript(join(H, "update-check.ts"), rest.length ? rest : ["--status"]);
   case "pack": runScript(join(H, "pack.ts"), rest);
+  case "seal": runScript(join(SKILLS, "harness", "scripts", "seal.ts"), rest);
   case "audit-view": case "audit": {
     if (rest[0] === "emit") runScript(join(H, "audit-emit.ts"), rest.slice(1));
     // The 0.13.0 notes said `nrv audit where` / `nrv audit tail`; the CLI only

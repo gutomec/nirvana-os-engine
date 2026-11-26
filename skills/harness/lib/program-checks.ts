@@ -212,3 +212,23 @@ export function checksBlock(results: CheckResult[]): string[] {
     "",
   ];
 }
+
+/** How a worker runs one check itself, as a command line. */
+export function checkCommand(check: ProgramCheck, outputsRoot: string): string {
+  const ext = path.extname(check.run).toLowerCase();
+  const how = ext === ".py" ? "python3" : "bun";
+  const q = (v: string) => (/[\s"]/.test(v) ? JSON.stringify(v) : v);
+  return [how, q(check.run), ...check.args.map((a) => q(a.replaceAll("{outputs}", path.resolve(outputsRoot)).replaceAll("{project}", "<the run folder>")))].join(" ");
+}
+
+/** What a worker is told about the programs that will check its work. "" when there are none. */
+export function programChecksDirective(checks: ProgramCheck[], outputsRoot: string): string {
+  if (!checks.length) return "";
+  return [
+    "",
+    "",
+    "PROGRAM CHECKS: after you finish, the engine runs these programs on your deliverables. A program decides its criterion, no reviewer does, and each line it prints on a failure comes back to you to fix. Run each one yourself before you finish and correct what it reports:",
+    ...checks.map((c) => `- ${c.id}${c.blocking ? " (blocking)" : ""}: ${c.description}\n  ${checkCommand(c, outputsRoot)}`),
+    "Exit 0 means the criterion holds, 1 that it does not, 2 that the program could not measure: when it cannot measure because something of yours is missing, produce what is missing.",
+  ].join("\n");
+}
