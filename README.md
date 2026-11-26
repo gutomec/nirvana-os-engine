@@ -51,7 +51,7 @@ The engine ships with no content. You create businesses, squads and clones by as
 
 ## Install
 
-This README describes 0.18.3, the current **stable** release, which the one-liner at the top of this page installs. Node is not needed. If [Bun](https://bun.sh) is missing, either installer puts it in your user folder (`~/.bun`) without sudo or admin rights and carries on.
+This README describes 0.18.4, the current **stable** release, which the one-liner at the top of this page installs. Node is not needed. If [Bun](https://bun.sh) is missing, either installer puts it in your user folder (`~/.bun`) without sudo or admin rights and carries on.
 
 Before you run it:
 
@@ -68,7 +68,7 @@ What it changes on your machine:
 - audit hooks in Claude Code, Antigravity and Codex;
 - the empty content folders `~/squads`, `~/businesses` and `~/businesses/_library/dna`.
 
-Running it again is safe. **Close the terminal and open a new one** so `nrv` is on your PATH, and check with `nrv --version`; it prints `0.18.3`. Then ask your agent: *"Check that Nirvana-OS is installed correctly."* It runs `nrv doctor`. Exit 1 means warnings only; exit 2 lists what failed.
+Running it again is safe. **Close the terminal and open a new one** so `nrv` is on your PATH, and check with `nrv --version`; it prints `0.18.4`. Then ask your agent: *"Check that Nirvana-OS is installed correctly."* It runs `nrv doctor`. Exit 1 means warnings only; exit 2 lists what failed.
 
 Through `curl | bash` the installer asks no questions. To pick a performance profile at install time, pass it through: replace the final `bash` with `bash -s -- --profile=balanced`. You can also set it later by asking your agent (see [Settings](#settings)).
 
@@ -132,13 +132,13 @@ If you keep agents in a bot host, Nirvana-OS works there too: [OpenBot](https://
 
 | You say | What happens |
 |---|---|
-| "Build a team for this project from my businesses." | Your agent picks the roles, tells you which agents it will create and sets up one per role, each with its mind-clone. In OpenBot and in Hermes you watch each one work. |
+| "Build a team for this project from my businesses." | Your agent picks the roles and sets up one agent per role, each with its mind-clone, then tells you who is on the team. In OpenBot and in Hermes you watch each one work. |
 | "Set this team up as bots in my Hermes." | One Bot per member, with its name and role in Hermes's roster. You send the request to the orchestrator and it runs the project with the others. |
 | "I want to see this squad running as a workflow here." | In OpenBot, the squad's steps become a workflow that waits for your approval before the result goes out. You can put it on a schedule. |
 | "Use my image bot for the pictures of this page." | The agent you are talking to, on any runtime, hands that part to your bot in OpenBot or Hermes and brings the files back. |
 | "I want all my bots to always use Nirvana." | Every bot sends each deliverable through Nirvana-OS. "Only when I ask" puts it back. |
 
-Two things stay in your hands. An OpenBot agent answers other agents only after you turn on **Local scripts** for it (Agent settings → Rules → Permissions); no agent can turn that on for you. And you hear which agents will be created before any of them exists.
+One thing stays in your hands. An OpenBot agent answers other agents only after you turn on **Local scripts** for it (Agent settings → Rules → Permissions); no agent can turn that on for you. The team itself is created at once: you see who is on it when it is ready, and ask for any change afterwards.
 
 ## Packs
 
@@ -170,7 +170,7 @@ There is always something new in the store: flash sales come up often, and speci
 
 Ask your agent to update Nirvana-OS, or run `nrv update`. It backs up `~/.nirvana/skills` first and keeps your settings and content. `nrv update --check` names the release it would install without changing anything.
 
-An update never moves the engine to an older release. A stable engine moves only to a newer stable, so a 0.14 engine moves to 0.18.3. A beta moves to the newest greater release, beta or stable, so a beta becomes the stable release that follows it. After an engine update, `nrv update` also checks every installed pack that has a license and says when one has a newer version.
+An update never moves the engine to an older release. A stable engine moves only to a newer stable, so a 0.14 engine moves to 0.18.4. A beta moves to the newest greater release, beta or stable, so a beta becomes the stable release that follows it. After an engine update, `nrv update` also checks every installed pack that has a license and says when one has a newer version.
 
 ## Betas
 
@@ -269,4 +269,4 @@ Author: **Luiz Gustavo Vieira Rodrigues (gutomec / Prospecteezy)**. No co-author
 
 License: the Nirvana-OS Sustainable Use License (SUL) v1.0. The source is published and openly readable, and the engine is free to use. It is source-available, not an OSI-approved open-source license, and certain commercial uses require a separate commercial license. Read [LICENSE](./LICENSE) before relying on any summary, including this one.
 
-Status: beta (0.x, currently 0.18.3). The engine works today and installs in minutes. Expect the surface to keep moving until 1.0.
+Status: beta (0.x, currently 0.18.4). The engine works today and installs in minutes. Expect the surface to keep moving until 1.0.
