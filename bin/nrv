@@ -325,6 +325,8 @@ case "$cmd" in
     exec "$BUN_BIN" "$SKILLS/harness/scripts/team.ts" "$@" ;;
   bot|bots)
     exec "$BUN_BIN" "$SKILLS/harness/scripts/bot.ts" "$@" ;;
+  performance|perf)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/performance.ts" "$@" ;;
 
   changes|surface)
     exec "$BUN_BIN" "$SKILLS/_shared/scripts/nirvana-changes.ts" "$@" ;;
