@@ -60,6 +60,7 @@ import { orcaHostActive, orcaRegisterProject, orcaStatus } from "../../_shared/l
 import { openMausBotAutoSetup } from "../../_shared/lib/openmausbot.ts";
 import { openBotAutoSetup } from "../../_shared/lib/openbot.ts";
 import { openBotSpecialistsDirective } from "../../_shared/lib/openbot-call.ts";
+import { recurringFindingsDirective } from "../lib/entity-performance.ts";
 import { ProjectService } from "../lib/control-plane/project-service.ts";
 import { nestedOutputsBase, runFolderOf } from "../../_shared/lib/run-workspace.ts";
 import { briefExcerpt } from "../../_shared/lib/brief-excerpt.ts";
@@ -1898,6 +1899,10 @@ if (pendingCascade?.kind === "squad-only") {
   const projectRoot = PROJECT_ROOT;
   dispatchAudit.bindProjectRoot(projectRoot);
   recordBriefRun(scaffoldRoot, pid, `squad:${squads.join(",")}`);
+  // What kept failing each squad's gate in its recent runs goes to its worker
+  // up front ("" until the audit shows a pattern).
+  const squadRules = new Map<string, string>();
+  for (const sq of squads) squadRules.set(sq, rulesDirective + await recurringFindingsDirective("squad", sq, { cwd: projectRoot }));
 
   if (scaffoldOnly) {
     printScaffoldNextStep(pid, `The brief is at ${path.join(scaffoldRoot, "brief.md")}.`);
@@ -1951,7 +1956,7 @@ if (pendingCascade?.kind === "squad-only") {
       const candidate = runSquadHeadless({ squadSlug: squad, brief: candidateBrief, projectId: pid, projectDir: projDir, projectRoot,
         outputsDir: candidateRoot, runtime: rt, capabilityId, envProblems: squadEnvProblems.get(squad), suggestedClones: autoSuggestedClones,
         maxBudgetUsd: budget.candidateBudgetUsd, timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
-        rulesDirective, autonomousDirective: AUTONOMOUS_DIRECTIVE, runWithCascadeImpl: pinnedCascade,
+        rulesDirective: squadRules.get(squad) ?? rulesDirective, autonomousDirective: AUTONOMOUS_DIRECTIVE, runWithCascadeImpl: pinnedCascade,
         ledger: { runId: canonicalRunId, watchDir: candidateRoot } });
       if (candidate.sessionId) runLedger.recordSession(legacy, canonicalRunId, candidate.sessionId);
       if (candidate.sessionId) sessionRuntimes.set(candidate.sessionId, candidate.finalRuntime);
@@ -2028,7 +2033,7 @@ if (pendingCascade?.kind === "squad-only") {
       capabilityId: capabilityById.get(sq), envProblems: squadEnvProblems.get(sq), suggestedClones: autoSuggestedClones,
       maxBudgetUsd: effectiveBudgetUsd(),
       timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
-      rulesDirective, autonomousDirective: AUTONOMOUS_DIRECTIVE, runWithCascadeImpl: pinnedCascade,
+      rulesDirective: squadRules.get(sq) ?? rulesDirective, autonomousDirective: AUTONOMOUS_DIRECTIVE, runWithCascadeImpl: pinnedCascade,
       ...(ledgerRunId ? { ledger: { runId: ledgerRunId, watchDir: outDir } } : {}),
     });
     lastSession = r.sessionId ?? lastSession;
@@ -2393,11 +2398,14 @@ const bizDir = businessEntry.bizDir ?? resolveEntityDir("businesses", slug, proj
 const briefSquads = (() => { try { return namedSquadsIn(brief, Object.keys(defaultRegistries().squads)); } catch { return []; } })();
 /** Failures of the carded squads' environments, filled before the worker runs (exec only). */
 let squadEnvProblems: Record<string, string[]> = {};
+// What kept failing this business's gate in its recent runs goes to its worker
+// up front ("" until the audit shows a pattern).
+const workerRulesDirective = rulesDirective + await recurringFindingsDirective("business", slug, { cwd: projectRoot });
 /** The solo worker's inputs for one outputs root; the run, the scaffold and the gauntlet producer share them. */
 const soloArgs = (oroot: string, briefFileForRun?: string) => ({
   slug, bizDir, brief, ...(briefFileForRun ? { briefFile: briefFileForRun } : {}),
   projectId: pid, projectDir: projDir, projectRoot, outputsRoot: oroot, runtime: runtimeDecision.runtime,
-  mandatorySquads: autoMandatorySquads, optionalSquads: autoOptionalSquads, briefSquads, rulesDirective, squadEnvProblems,
+  mandatorySquads: autoMandatorySquads, optionalSquads: autoOptionalSquads, briefSquads, rulesDirective: workerRulesDirective, squadEnvProblems,
   suggestedClones: autoSuggestedClones,
 });
 const outputPath = path.join(projDir, "agent-prompt.md");

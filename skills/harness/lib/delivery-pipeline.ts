@@ -495,6 +495,24 @@ export function seriousFindingsOf(run: GateRun, outputsRoot: string): SeriousFin
   return out;
 }
 
+/** A failure the gate names without a rubric, as `failed_rubrics` carries it. */
+export const MATERIAL_DEFECT = "material-defect";
+export const UNPROVEN_CRITERION = "unproven-blocking-criterion";
+
+/** What failed in one gate round, by name: the rubrics, a material defect, a
+ *  blocking criterion left without proof. The audit carries it as
+ *  `failed_rubrics` so a later run can be told what keeps failing
+ *  (entity-performance.ts) without the outputs folder still being there. */
+export function failedRubricNames(run: GateRun, claims: number): string[] {
+  const names = new Set<string>();
+  for (const fl of run.fails) {
+    for (const r of fl.failedRubrics) names.add(r);
+    if (fl.material) names.add(MATERIAL_DEFECT);
+  }
+  if (claims > 0) names.add(UNPROVEN_CRITERION);
+  return [...names].sort();
+}
+
 /** The SERIOUS findings of one gate run, one line each, relative to the root. */
 export function seriousGateFindings(run: GateRun, outputsRoot: string): string[] {
   return seriousFindingsOf(run, outputsRoot).map(f => f.text);
@@ -1219,7 +1237,7 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
     // "rounds" in 16 seconds withheld a delivery on 2026-10-14.
     const failure = !rr.ok ? classify(args.runtime, rr) : null;
     const notARound = !!failure && (failure.kind !== "error" || isTransportFailure([rr.error, rr.stderr].filter(Boolean).join("\n")));
-    emit("revision_auto", { trace_id: args.pid, project_id: args.pid, business_slug: args.slug, attempt: revUsed, ok: rr.ok, ...(coldRetry ? { cold_retry: true } : {}), ...(rr.resumeLost ? { resume_lost: true } : {}), ...(ev.serious.length ? { serious: ev.serious.length } : {}), ...(notARound ? { counted: false, runtime_failure: failure!.kind === "error" ? "transport" : failure!.kind } : {}) });
+    emit("revision_auto", { trace_id: args.pid, project_id: args.pid, business_slug: args.slug, attempt: revUsed, ok: rr.ok, ...(coldRetry ? { cold_retry: true } : {}), ...(rr.resumeLost ? { resume_lost: true } : {}), ...(ev.serious.length ? { serious: ev.serious.length } : {}), failed_rubrics: failedRubricNames(ev.run, ev.claims.length), ...(notARound ? { counted: false, runtime_failure: failure!.kind === "error" ? "transport" : failure!.kind } : {}) });
     if (rr.sessionId) {
       sessionId = rr.sessionId;
       args.onSession?.(rr.sessionId);
@@ -1267,7 +1285,7 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
     log(`  gate PASS (${ev.files.length} file(s)${revUsed ? `, after ${revUsed} revision(s)` : ""}, ${mode} mode)`);
     emit("gate_passed", { trace_id: args.pid, project_id: args.pid, business_slug: args.slug, files: ev.files.length, revisions: revUsed, mode, judged_files: judgedFiles });
   } else {
-    emit("gate_failed", { trace_id: args.pid, project_id: args.pid, business_slug: args.slug, files: ev.files.length, revisions: revUsed, mode, judged_files: judgedFiles, serious: ev.serious.length });
+    emit("gate_failed", { trace_id: args.pid, project_id: args.pid, business_slug: args.slug, files: ev.files.length, revisions: revUsed, mode, judged_files: judgedFiles, serious: ev.serious.length, failed_rubrics: failedRubricNames(ev.run, ev.claims.length) });
   }
 
   const withhold = (verdict: DeliveryResult["gateOutcome"], why: { ceiling?: string; serious?: string[] }): DeliveryResult => {

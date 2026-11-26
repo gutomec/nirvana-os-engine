@@ -56,6 +56,7 @@ import { GATE_FINDINGS_FILE } from "../lib/delivery-pipeline.ts";
 import { resolveCascadeRoot } from "../lib/cascade.ts";
 import { formatRulesForDirective, loadRuntimeRules } from "../lib/runtime-rules.ts";
 import { openBotSpecialistsDirective } from "../../_shared/lib/openbot-call.ts";
+import { recurringFindingsDirective } from "../lib/entity-performance.ts";
 import { paths } from "../../_shared/lib/bun-helpers.ts";
 import { runWithCascade } from "../lib/cascade-runner.ts";
 import { squadRunEnv } from "../../_shared/lib/squad-env.ts";
@@ -369,7 +370,9 @@ onLedgerStall((stall, result, opts) => {
 
 const solo = role === "solo";
 // The user's USE_* rules, as the dispatch handed them to the worker.
-const rulesDirective = formatRulesForDirective(loadRuntimeRules(resolveCascadeRoot(projectRoot || process.cwd()))) + openBotSpecialistsDirective();
+// With them, what kept failing this entity's gate in its recent runs.
+const rulesDirective = formatRulesForDirective(loadRuntimeRules(resolveCascadeRoot(projectRoot || process.cwd()))) + openBotSpecialistsDirective()
+  + (kind === "business" || kind === "squad" ? await recurringFindingsDirective(kind, slug, { cwd: projectRoot || process.cwd() }) : "");
 // The folders the brief places the work in: a revision works there too, and
 // is never told to move that work under the outputs root.
 const workDirs = briefWorkDirs(brief, oroot);
