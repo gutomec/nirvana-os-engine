@@ -882,7 +882,7 @@ describe("runDelivery — _STATUS.json and the state field", () => {
     fs.writeFileSync(path.join(oroot, "page.html"), PASSING_HTML);
     const res = runDelivery(baseArgs(oroot).args);
     expect(res.state).toBe("delivered");
-    expect(statusOf(oroot)).toEqual({ state: "delivered", gate: "pass", serious: [], reservations: null, exit_code: 0 });
+    expect(statusOf(oroot)).toEqual({ state: "delivered", gate: "pass", serious: [], reservations: null, exit_code: 0, sealed: true });
   }, spawnBudgetMs(2));
 
   test("only run state under the outputs root is NOT a delivery: exit 1, state failed, gate skipped", () => {

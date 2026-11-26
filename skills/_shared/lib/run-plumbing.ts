@@ -56,6 +56,7 @@ export function isRunPlumbingDir(name: string): boolean {
  *  wherever it lands. */
 export const RUN_STATE_FILES: ReadonlySet<string> = new Set([
   "_SUMMARY.md", "_CLAIMS.json", "_QA-RESERVATIONS.md", "_STATUS.json", "_GATE-FINDINGS.md",
+  "_SEAL.json", "_DECISIONS.md", "checks.json",
   "solo-prompt.md", "agent-prompt.md", "participation.json", "session.json",
   "HANDOFF.json", "audit.jsonl",
 ]);

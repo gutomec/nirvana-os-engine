@@ -78,6 +78,8 @@ import { isRunStatePath } from "../../_shared/lib/run-state.ts";
 import { isRunStateFile } from "../../_shared/lib/run-plumbing.ts";
 import { inBuildOutput, isDependencyDirName, isDependencyNoise } from "../../_shared/lib/deliverable-noise.ts";
 import { briefWorkDirs, workElsewhereRule } from "../../_shared/lib/brief-work-dirs.ts";
+import { checksBlock, readRunChecks, runProgramChecks, type CheckResult, type ProgramCheck } from "./program-checks.ts";
+import { briefInputFiles, writeSeal } from "./delivery-seal.ts";
 import { soloDirective } from "./business-solo.ts";
 import { claimProblems, criteriaFromBrief, SERIOUS_EXTRA_ROUNDS, type ClaimProblem } from "./solo-review.ts";
 import { runFolderOf } from "../../_shared/lib/run-workspace.ts";
@@ -662,6 +664,10 @@ export interface DeliveryArgs {
   completenessCeiling?: CompletenessCeiling | null;
   /** produces[] slugs for the judge's rubric selector (optional). */
   produces?: string[];
+  /** Acceptance criteria a program decides (program-checks.ts). Absent: the
+   *  ones the dispatch wrote beside the brief (`checks.json`), so a revision
+   *  and a supervisor recovery run the same checks as the first delivery. */
+  programChecks?: ProgramCheck[];
   config: HarnessConfig;
   ledger?: DeliveryLedger | null;
   /** Audit emitter (dispatch.ts passes its replay-aware facade). */
@@ -705,6 +711,8 @@ export interface DeliveryResult {
   stopped?: string;
   /** Set when the delivery stopped on a spent quota (state `quota_wait`). */
   quotaWait?: QuotaWait;
+  /** The last round of program checks; empty when the run declares none. */
+  checks?: CheckResult[];
 }
 
 /** What `<outputsRoot>/_STATUS.json` holds. */
@@ -720,6 +728,10 @@ export interface DeliveryStatus {
   quota_reset_at?: string;
   quota_step?: QuotaWait["step"];
   quota_hint?: string;
+  /** The program checks of the last round. `not_measured` is never a pass. */
+  checks?: Array<{ id: string; state: CheckResult["state"]; blocking: boolean }>;
+  /** True when `_SEAL.json` records the hashes of what was delivered. */
+  sealed?: boolean;
 }
 
 export const STATUS_FILE = "_STATUS.json";
@@ -915,6 +927,9 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
   let gatedFiles: string[] = [];
   let revUsed = 0;
   let gateRan = false;
+  const programChecks = args.programChecks ?? readRunChecks(args.projectDir);
+  let lastChecks: CheckResult[] = [];
+  let sealed = false;
   const reservationsOnDisk = (): string | null => {
     const file = path.join(args.outputsRoot, "_QA-RESERVATIONS.md");
     return fs.existsSync(file) ? file : null;
@@ -929,11 +944,14 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
       state: r.state, gateOutcome: r.gateOutcome, produced, gatedFiles, revisionsUsed: revUsed, sessionId,
       zipPath: r.zipPath ?? null, verifySource, ceilingApplied: r.ceilingApplied ?? null,
       serious: r.serious ?? [], reservations: r.reservations ?? null,
+      ...(lastChecks.length ? { checks: lastChecks } : {}),
     };
     writeDeliveryStatus(args.outputsRoot, {
       state: res.state,
       gate: !gateRan ? "skipped" : r.gateOutcome === "pass" ? "pass" : "fail",
       serious: res.serious, reservations: res.reservations, exit_code: res.exitCode,
+      ...(lastChecks.length ? { checks: lastChecks.map(c => ({ id: c.id, state: c.state, blocking: c.blocking })) } : {}),
+      ...(sealed ? { sealed: true } : {}),
     });
     return res;
   };
@@ -1095,22 +1113,39 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
   // The folders the brief places the work in, outside the outputs root: the
   // claims may cite files there, and every correction is told to work there.
   const workDirs = briefWorkDirs(args.brief, args.outputsRoot);
-  interface Evaluation { files: string[]; run: GateRun; claims: ClaimProblem[]; serious: string[]; seriousFindings: SeriousFinding[]; pass: boolean }
+  interface Evaluation { files: string[]; run: GateRun; claims: ClaimProblem[]; checks: CheckResult[]; serious: string[]; seriousFindings: SeriousFinding[]; pass: boolean }
   const evaluate = (): Evaluation => {
     const files = gateableFiles(args.outputsRoot, namedInBrief);
-    const run = runGateOnce(files, gateOpts);
+    // The programs first: they cost nothing and their answer is exact. While
+    // one of them fails, the judge is not asked: its opinion of a deliverable
+    // that is about to be rewritten is paid for and thrown away.
+    const checks = programChecks.length
+      ? runProgramChecks(programChecks, { outputsRoot: args.outputsRoot, projectDir: args.projectDir, env: { ...gateEnv, ...(args.env ?? {}) }, shouldStop: stopped, beforeCheck: () => renew(GATE_LEASE_SEC) })
+      : [];
+    lastChecks = checks;
+    const failedChecks = checks.filter(c => c.state === "fail");
+    if (checks.length) {
+      emit("x_program_checks", {
+        trace_id: args.pid, project_id: args.pid, business_slug: args.slug, round: revUsed,
+        passed: checks.filter(c => c.state === "pass").map(c => c.id), failed: failedChecks.map(c => c.id),
+        not_measured: checks.filter(c => c.state === "not_measured").map(c => c.id),
+      });
+    }
+    const run = runGateOnce(files, failedChecks.length ? { ...gateOpts, offline: true } : gateOpts);
     const claims = criteria.length ? claimProblems(args.outputsRoot, criteria, workDirs) : [];
     const seriousFindings = [
       ...seriousFindingsOf(run, args.outputsRoot),
       ...claims.map(c => ({ key: findingKey("criterion", c.id), text: `blocking criterion ${c.id} (${c.description}): ${c.why}`, detail: "" })),
+      ...failedChecks.filter(c => c.blocking).map(c => ({ key: findingKey("check", c.id, ...c.lines), text: `program check ${c.id} (${c.description}) failed`, detail: c.lines[0] ?? "" })),
     ];
-    return { files, run, claims, serious: seriousFindings.map(f => f.text), seriousFindings, pass: run.pass && claims.length === 0 };
+    return { files, run, claims, checks, serious: seriousFindings.map(f => f.text), seriousFindings, pass: run.pass && claims.length === 0 && failedChecks.length === 0 };
   };
   // Every round goes to _GATE-FINDINGS.md, for whoever follows the run.
   const findingsFile = path.join(args.outputsRoot, GATE_FINDINGS_FILE);
-  const recordRound = (e: Evaluation) => appendGateFindings(args.outputsRoot, gateRoundBlock({
-    round: revUsed, pass: e.pass, outputsRoot: args.outputsRoot, run: e.run, claims: e.claims, serious: e.serious.length,
-  }));
+  const recordRound = (e: Evaluation) => appendGateFindings(args.outputsRoot, [
+    gateRoundBlock({ round: revUsed, pass: e.pass, outputsRoot: args.outputsRoot, run: e.run, claims: e.claims, serious: e.serious.length }),
+    ...(e.checks.length ? ["", ...checksBlock(e.checks)] : []),
+  ].join("\n"));
 
   if (stopped()) return finishStopped("quality gate");
   let ev = evaluate();
@@ -1153,7 +1188,14 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
     previousSerious = ev.seriousFindings;
     // Full paths and the outputs root: a round that has to start cold (below)
     // has no conversation to recover them from.
+    const failedChecks = ev.checks.filter(c => c.state === "fail");
     const fixLines = [
+      // What a program found comes first: it is exact, and it is checked again
+      // by the same program after the correction.
+      ...(failedChecks.length
+        ? ["A program checked the deliverables and these points are wrong (each line is one thing to fix; the same program runs again after your correction):",
+          ...failedChecks.flatMap(c => [`  ${c.id} — ${c.description}:`, ...c.lines.map(l => `    - ${l}`)]), ""]
+        : []),
       ...ev.run.fails.flatMap(fl => [`File ${path.resolve(fl.file)}:`, ...fl.fixes.map(x => `  - ${x}`)]),
       ...(ev.claims.length
         ? ["Blocking criteria of the brief with no proof in _CLAIMS.json:", ...ev.claims.map(c => `  - ${c.id} (${c.description}): ${c.why}`)]
@@ -1293,7 +1335,19 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
     warn(`  delivery WITHHELD by the completeness ceiling: the gate (${verdict}) judges the QUALITY of what exists, not whether the set is complete, and no verified manifest proves that. The artifacts stay in ${args.outputsRoot}; a human decides.`);
     return withhold(verdict, { ceiling: reason });
   };
-  const deliver = (verdict: DeliveryResult["gateOutcome"], blocks: string[], ceilingApplied: string | null): DeliveryResult => {
+  const deliver = (verdict: DeliveryResult["gateOutcome"], given: string[], ceilingApplied: string | null): DeliveryResult => {
+    // A blocking criterion its program could not measure is not a pass: the
+    // delivery goes out, and says which criterion nobody verified.
+    const unmeasured = ev.checks.filter(c => c.state === "not_measured" && c.blocking);
+    const blocks = unmeasured.length ? [...given, [
+      "# QA reservations — criteria that were not measured",
+      "",
+      "A program decides these acceptance criteria, and it could not run to an answer. Not measured is not approved:",
+      "",
+      ...unmeasured.flatMap(c => [`- ${c.id} — ${c.description}`, ...c.lines.map(l => `  - ${l}`)]),
+      "",
+    ].join("\n")] : given;
+    if (unmeasured.length) warn(`  ${unmeasured.length} blocking criterion(s) NOT MEASURED by their program (${unmeasured.map(c => c.id).join(", ")}) — delivered with reservations`);
     let reservations: string | null = null;
     for (const block of blocks) reservations = appendReservations(args.outputsRoot, block) ?? reservations;
     if (blocks.length) {
@@ -1315,6 +1369,16 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
     }
     const zipPath = hook && typeof hook === "object" ? hook.zipPath ?? null : null;
     const withReservations = blocks.length > 0;
+    // The seal: the hash of every file that goes out under this verdict, so a
+    // later edit shows as a change to something approved (delivery-seal.ts).
+    const seal = writeSeal(args.outputsRoot, {
+      trace: args.pid, gate: verdict, state: withReservations ? "delivered_with_reservations" : "delivered",
+      // Every work file, the small ones too: a total in a four-byte file is part of what was approved.
+      files: listWorkFiles(args.outputsRoot).filter(f => { const r = path.relative(args.outputsRoot, f); return !isRunStateFile(r) && !isDependencyNoise(r, namedInBrief); }),
+      inputs: briefInputFiles(args.brief, args.outputsRoot),
+    });
+    sealed = !!seal;
+    if (seal) emit("x_delivery_sealed", { trace_id: args.pid, project_id: args.pid, business_slug: args.slug, files: seal.files.length, inputs: seal.inputs.length, gate: verdict });
     emit("delivered", { trace_id: args.pid, project_id: args.pid, business_slug: args.slug, files: produced.length, gate: verdict, zip: zipPath, ...(withReservations ? { reservations: true } : {}) });
     mark("delivered", {
       metaPatch: {
