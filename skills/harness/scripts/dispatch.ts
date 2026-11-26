@@ -93,7 +93,7 @@ import { sessionHome } from "../../_shared/lib/host-agent-driver.ts";
 import { parseSquadTarget, resolveSquadCapability } from "../lib/capability-resolver.ts";
 import { parseMessageTargetSpec } from "../lib/control-plane/agent-x-canary-queue.ts";
 import { runDelivery, deliverAfterRuntimeError, gateableFiles, producesForRubric, runGateOnce, QUOTA_WAIT_EXIT, type DeliveryArgs, type DeliveryResult, type RuntimeErrorOutcome } from "../lib/delivery-pipeline.ts";
-import { businessProgramChecks, programChecksDirective, squadProgramChecks, writeRunChecks } from "../lib/program-checks.ts";
+import { businessProgramChecks, cardedSquadProgramChecks, programChecksDirective, squadProgramChecks, writeRunChecks } from "../lib/program-checks.ts";
 import { sealChangeLines } from "../lib/delivery-seal.ts";
 import { runBusinessPostGate } from "../lib/business-post-gate.ts";
 import { parseExecutionOptions } from "../lib/gauntlet/execution-options.ts";
@@ -2407,9 +2407,16 @@ const workerBriefFile: string | undefined = (() => {
   return copy;
 })();
 const bizDir = businessEntry.bizDir ?? resolveEntityDir("businesses", slug, projDir);
-const businessChecks = businessProgramChecks(bizDir);
-writeRunChecks(projDir, businessChecks);
 const briefSquads = (() => { try { return namedSquadsIn(brief, Object.keys(defaultRegistries().squads)); } catch { return []; } })();
+// The business's own checks, then those of every squad whose card its worker
+// receives: which capability it will use is not known yet, so each of those
+// counts only when its program finds the work it measures.
+const businessChecks = [
+  ...businessProgramChecks(bizDir),
+  ...cardedSquads({ bizDir, mandatorySquads: autoMandatorySquads, optionalSquads: autoOptionalSquads, briefSquads })
+    .flatMap(q => cardedSquadProgramChecks(resolveEntityDir("squads", q, projDir), q)),
+];
+writeRunChecks(projDir, businessChecks);
 /** Failures of the carded squads' environments, filled before the worker runs (exec only). */
 let squadEnvProblems: Record<string, string[]> = {};
 // What kept failing this business's gate in its recent runs goes to its worker

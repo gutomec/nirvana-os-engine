@@ -560,7 +560,7 @@ acceptance:
 | `capability` | no | Default `quality.specification_conformance` |
 | `path` | no | Relative path of the artifact; feeds `verify-deliverable` and resolves against the outputs root |
 | `min_bytes` | no | Byte floor of the artifact at `path` |
-| `check` | no | A program inside the business folder that decides the criterion: a path, or `{ run, args, timeout_sec }`. The gate runs it on the outputs before the judge; exit 0 holds, 1 does not (each stdout line goes to the worker to fix), 2 or anything else is not measured, which is never a pass. Same rules as Squad Protocol 6.0 §29.4 |
+| `check` | no | A program inside the business folder that decides the criterion: a path, or `{ run, args, timeout_sec }`. The gate runs it on the outputs before the judge; exit 0 holds, 1 does not (each stdout line goes to the worker to fix), 2 or anything else is not measured, which is never a pass. Same rules as Squad Protocol 6.0 §29.4. The checks of the squads whose cards the business holds run as well, each one only when that squad's work is in the delivery |
 
 Unknown keys are an error.
 

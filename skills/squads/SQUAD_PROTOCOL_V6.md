@@ -896,7 +896,7 @@ acceptance:
 | Arguments | `{outputs}` and `{project}` are replaced by the outputs folder and the run folder. Default: `["{outputs}"]`. `NIRVANA_OUTPUTS_DIR` and `NIRVANA_PROJECT_DIR` are set, and the program starts in the outputs folder |
 | Exit 0 | The criterion holds |
 | Exit 1 | It does not. Each line on **stdout** is one thing to fix, and goes to the worker word for word |
-| Exit 2 | It could not measure: say why on the first line |
+| Exit 2 | It could not measure: say why on the first line. Answer 2, never 1, when the deliverable the program reads is not in the folder |
 | Anything else | Not measured: a timeout (`timeout_sec`, default 120), a missing program, no interpreter, and a crash. An uncaught error also exits 1, so exit 1 with nothing on stdout is read as a crash |
 | `blocking` | A criterion with a `check` blocks unless it says `blocking: false` |
 
@@ -907,6 +907,7 @@ What the gate does with the answer (`harness/lib/program-checks.ts`, `delivery-p
 - **Not measured is never a pass.** A blocking criterion its program could not measure caps the delivery at "delivered with reservations", and `_QA-RESERVATIONS.md` names it.
 - **The worker knows.** Its prompt lists each program with the command that runs it, so a careful worker runs them before it finishes.
 - **Several squads in one dispatch:** each squad's checks read that squad's own folder under the outputs, and carry the squad's name in their id (`<squad>:<id>`).
+- **A business that holds the squad's card runs its checks too.** Which capability the business will use is not known before the run, so the checks of every capability travel with it under the squad's name (`<squad>:<id>`), one per program. There, exit 2 means the squad was not used for this delivery: the check is not applicable, and leaves no reservation. Work that is there is measured as in a direct run.
 - **The checks travel with the run** (`checks.json` beside the brief): a revision and a supervisor recovery run the same programs as the first delivery.
 
 Write a check to read the deliverables and nothing else: no network, no model call, no write outside a temp folder. A program that needs a model is a judge, and belongs in the sentence.

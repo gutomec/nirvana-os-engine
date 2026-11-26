@@ -26,6 +26,13 @@
 // never a pass. A blocking criterion left unmeasured caps the delivery at
 // "delivered with reservations", and the reservation names it.
 //
+// A business holds the cards of squads it may use, and nobody knows before the
+// run which capability it will pick. So the checks of every capability of a
+// carded squad travel with the run, each marked `whenUsed`: for those, exit 2
+// means "the work I measure is not here", and the check is not applicable
+// rather than unmeasured. A program therefore answers 2, never 1, when the
+// deliverable it reads is absent.
+//
 // The checks of a run are written beside its brief (`checks.json`), so every
 // caller of the pipeline (dispatch, revise, the supervisor) runs the same ones.
 import * as fs from "node:fs";
@@ -46,9 +53,14 @@ export interface ProgramCheck {
    *  squads share one dispatch and each writes under its own. */
   dir?: string;
   timeoutSec: number;
+  /** Set on a check that belongs to a squad the worker MAY use (a business
+   *  holding that squad's card): the squad's name. Such a check counts only
+   *  when its program finds the work it measures; "could not measure" then
+   *  means the squad was not used for this delivery. */
+  whenUsed?: string;
 }
 
-export type CheckState = "pass" | "fail" | "not_measured";
+export type CheckState = "pass" | "fail" | "not_measured" | "not_applicable";
 
 export interface CheckResult {
   id: string;
@@ -97,6 +109,25 @@ export function squadProgramChecks(squadDir: string | null | undefined, capabili
     const cap = (Array.isArray(doc?.capabilities) ? doc.capabilities : []).find((c: any) => c?.id === capabilityId);
     return (Array.isArray(cap?.acceptance) ? cap.acceptance : []).map((a: any) => checkOf(a, squadDir)).filter((c: ProgramCheck | null): c is ProgramCheck => !!c);
   } catch { return []; }
+}
+
+/** Every program check of a squad a business may use, across its capabilities,
+ *  marked `whenUsed`. One per program and argument list: a check shared by
+ *  several capabilities runs once. */
+export function cardedSquadProgramChecks(squadDir: string | null | undefined, slug: string): ProgramCheck[] {
+  if (!squadDir) return [];
+  const out = new Map<string, ProgramCheck>();
+  try {
+    const doc = parseYaml(fs.readFileSync(path.join(squadDir, "squad.yaml"), "utf8")) as any;
+    for (const cap of Array.isArray(doc?.capabilities) ? doc.capabilities : []) {
+      for (const a of Array.isArray(cap?.acceptance) ? cap.acceptance : []) {
+        const c = checkOf(a, squadDir);
+        const key = c ? [c.run, ...c.args].join("\0") : "";
+        if (c && !out.has(key)) out.set(key, { ...c, id: `${slug}:${c.id}`, whenUsed: slug });
+      }
+    }
+  } catch { /* a squad whose manifest does not parse declares no check */ }
+  return [...out.values()];
 }
 
 /** The program checks the employees of a business declare in their `acceptance[]`. One per id. */
@@ -197,7 +228,7 @@ export function runProgramChecks(checks: ProgramCheck[], opts: RunChecksOpts): C
       results.push(unmeasured(`the program ended with exit 1 and named nothing to fix, which reads as a crash${printed[0] ? `: ${printed[0]}` : ""}`, seconds));
     } else {
       const why = r.status === 2 ? (printed[0] ?? "the program could not measure") : `the program ended with exit ${r.status ?? "?"}${printed[0] ? `: ${printed[0]}` : ""}`;
-      results.push({ ...base, state: "not_measured", lines: [why, ...(r.status === 2 ? printed.slice(1) : [])], seconds });
+      results.push({ ...base, state: r.status === 2 && check.whenUsed ? "not_applicable" : "not_measured", lines: [why, ...(r.status === 2 ? printed.slice(1) : [])], seconds });
     }
   }
   return results;
@@ -206,7 +237,7 @@ export function runProgramChecks(checks: ProgramCheck[], opts: RunChecksOpts): C
 /** The lines of `_GATE-FINDINGS.md` for one round of checks. */
 export function checksBlock(results: CheckResult[]): string[] {
   if (!results.length) return [];
-  const mark = (s: CheckState) => (s === "pass" ? "pass" : s === "fail" ? "FAIL" : "NOT MEASURED");
+  const mark = (s: CheckState) => (s === "pass" ? "pass" : s === "fail" ? "FAIL" : s === "not_applicable" ? "not applicable (squad not used)" : "NOT MEASURED");
   return [
     "### Program checks",
     ...results.flatMap((r) => [
@@ -228,12 +259,19 @@ export function checkCommand(check: ProgramCheck, outputsRoot: string): string {
 /** What a worker is told about the programs that will check its work. "" when there are none. */
 export function programChecksDirective(checks: ProgramCheck[], outputsRoot: string): string {
   if (!checks.length) return "";
+  const line = (c: ProgramCheck) => `- ${c.id}${c.blocking ? " (blocking)" : ""}: ${c.description}\n  ${checkCommand(c, outputsRoot)}`;
+  const own = checks.filter((c) => !c.whenUsed);
+  const carded = checks.filter((c) => c.whenUsed);
   return [
     "",
     "",
     "PROGRAM CHECKS: after you finish, the engine runs these programs on your deliverables. A program decides its criterion, no reviewer does, and each line it prints on a failure comes back to you to fix. Run each one yourself before you finish and correct what it reports:",
-    ...checks.map((c) => `- ${c.id}${c.blocking ? " (blocking)" : ""}: ${c.description}\n  ${checkCommand(c, outputsRoot)}`),
-    "Exit 0 means the criterion holds, 1 that it does not, 2 that the program could not measure: when it cannot measure because something of yours is missing, produce what is missing.",
+    ...own.map(line),
+    ...(own.length ? ["Exit 0 means the criterion holds, 1 that it does not, 2 that the program could not measure: when it cannot measure because something of yours is missing, produce what is missing."] : []),
+    ...(carded.length ? [
+      "The checks below belong to squads whose cards you hold. Each one applies when you did that part as that squad: it reads the files that squad's capability writes, and answers 2 when they are not in the folder, which counts as not used.",
+      ...carded.map(line),
+    ] : []),
   ].join("\n");
 }
 
