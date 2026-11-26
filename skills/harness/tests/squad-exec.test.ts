@@ -14,7 +14,7 @@ import { sessionKey, putSession } from "../lib/session-store.ts";
 import { SCOPE_GUARD_EN, scopeBoundary } from "../../_shared/lib/scope-guard.ts";
 import { LIMITS } from "../../_shared/validators/limits.ts";
 import { SUMMARY_HANDOFF_RULE } from "../lib/business-solo.ts";
-import { invalidatePathsCache } from "../../_shared/lib/bun-helpers.ts";
+import { overridePath, paths } from "../../_shared/lib/bun-helpers.ts";
 
 let tmp: string;
 const savedLogsDir = process.env.HARNESS_LOGS_DIR;
@@ -634,22 +634,25 @@ describe("runSquadHeadless", () => {
   // A squad kept in the project used to validate and scaffold, then fail here:
   // the runner looked in the global squads root only.
   describe("a squad kept in the project", () => {
-    const saved = { squads: process.env.SQUADS_DIR, scope: process.env.NIRVANA_SCOPE, root: process.env.NIRVANA_PROJECT_ROOT };
+    // The global root is resolved once per process, so an env write does not move
+    // it: the resolved path itself is pointed at a temp folder and put back after.
+    const saved = { squadsPath: paths.SQUADS_DIR, scope: process.env.NIRVANA_SCOPE, root: process.env.NIRVANA_PROJECT_ROOT };
+    let globalSquads = "";
     afterEach(() => {
-      for (const [k, v] of [["SQUADS_DIR", saved.squads], ["NIRVANA_SCOPE", saved.scope], ["NIRVANA_PROJECT_ROOT", saved.root]] as const) {
+      for (const [k, v] of [["NIRVANA_SCOPE", saved.scope], ["NIRVANA_PROJECT_ROOT", saved.root]] as const) {
         if (v === undefined) delete process.env[k]; else process.env[k] = v;
       }
-      invalidatePathsCache();
+      overridePath("SQUADS_DIR", saved.squadsPath);
     });
     function project(scope: string): string {
       const root = path.join(tmp, "project");
       fs.mkdirSync(path.join(root, ".nirvana"), { recursive: true });
       fs.writeFileSync(path.join(root, ".nirvana", "project.yaml"), JSON.stringify({ schema_version: "nirvana.project/v1alpha1", project_id: "prj_test", scope }));
-      process.env.SQUADS_DIR = path.join(tmp, "global-squads");
-      fs.mkdirSync(process.env.SQUADS_DIR, { recursive: true });
+      globalSquads = path.join(tmp, "global-squads");
+      fs.mkdirSync(globalSquads, { recursive: true });
+      overridePath("SQUADS_DIR", globalSquads);
       delete process.env.NIRVANA_SCOPE;
       process.env.NIRVANA_PROJECT_ROOT = root;
-      invalidatePathsCache();
       return root;
     }
     const run = (root: string, slug: string, seen: any[]) => runSquadHeadless({
@@ -673,7 +676,7 @@ describe("runSquadHeadless", () => {
       const root = project("merge");
       const mine = scaffoldSquad(path.join(root, ".nirvana", "squads"), "brandcraft");
       fs.appendFileSync(path.join(mine, "squad.yaml"), "PROJECT-COPY: yes\n");
-      scaffoldSquad(process.env.SQUADS_DIR!, "brandcraft");
+      scaffoldSquad(globalSquads, "brandcraft");
       const seen: any[] = [];
       expect(run(root, "brandcraft", seen).ok).toBe(true);
       expect(seen[0].prompt).toContain("PROJECT-COPY");
@@ -681,7 +684,7 @@ describe("runSquadHeadless", () => {
 
     test("a global squad still runs from a project, and a slug that leaves the root is still refused", () => {
       const root = project("merge");
-      scaffoldSquad(process.env.SQUADS_DIR!, "brandcraft");
+      scaffoldSquad(globalSquads, "brandcraft");
       const seen: any[] = [];
       expect(run(root, "brandcraft", seen).ok).toBe(true);
       expect(run(root, "..", seen).error).toBe("squad slug escapes the squads root");

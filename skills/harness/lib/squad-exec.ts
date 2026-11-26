@@ -542,7 +542,10 @@ export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
   // workspace root. Containment is checked on the RESOLVED path, so `..`,
   // an absolute slug and a symlink out of the tree all fail the same way.
   const rootReal = fs.existsSync(squadsRoot) ? fs.realpathSync(squadsRoot) : path.resolve(squadsRoot);
-  const dirResolved = fs.existsSync(squadDir) ? fs.realpathSync(squadDir) : path.resolve(squadDir);
+  // A folder that is not there has no real path of its own: it is placed under the
+  // root's real path, or a root behind a symlink (macOS /var) would read every
+  // missing squad as an escape.
+  const dirResolved = fs.existsSync(squadDir) ? fs.realpathSync(squadDir) : path.resolve(rootReal, path.relative(path.resolve(squadsRoot), path.resolve(squadDir)));
   if (dirResolved !== rootReal && !dirResolved.startsWith(rootReal + path.sep)) {
     appendAudit({ event: "squad_run_failed", project_id: args.projectId, squad_slug: args.squadSlug, reason: "squad slug escapes the squads root" }, args.projectRoot);
     return { ok: false, squadSlug: args.squadSlug, sessionId: null, finalRuntime: args.runtime, costUsd: null, durationMs: 0, outputsDir: outDir, error: "squad slug escapes the squads root" };
