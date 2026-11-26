@@ -906,6 +906,7 @@ What the gate does with the answer (`harness/lib/program-checks.ts`, `delivery-p
 - **A failure is corrected by the worker that did the work,** with the program's own lines, and the same program runs again. A blocking criterion that still fails after the corrections withholds the delivery; an advisory one ships with reservations.
 - **Not measured is never a pass.** A blocking criterion its program could not measure caps the delivery at "delivered with reservations", and `_QA-RESERVATIONS.md` names it.
 - **The worker knows.** Its prompt lists each program with the command that runs it, so a careful worker runs them before it finishes.
+- **Several squads in one dispatch:** each squad's checks read that squad's own folder under the outputs, and carry the squad's name in their id (`<squad>:<id>`).
 - **The checks travel with the run** (`checks.json` beside the brief): a revision and a supervisor recovery run the same programs as the first delivery.
 
 Write a check to read the deliverables and nothing else: no network, no model call, no write outside a temp folder. A program that needs a model is a judge, and belongs in the sentence.

@@ -125,6 +125,19 @@ describe("running a program check", () => {
   }, spawnBudgetMs(2));
 });
 
+describe("several squads in one dispatch", () => {
+  test("a check with a folder reads that squad's own outputs, not its neighbours'", () => {
+    const oroot = path.join(tmp, "out");
+    fs.mkdirSync(path.join(oroot, "one"), { recursive: true });
+    fs.mkdirSync(path.join(oroot, "two"), { recursive: true });
+    fs.writeFileSync(path.join(oroot, "one", "total.txt"), "100");
+    fs.writeFileSync(path.join(oroot, "two", "total.txt"), "90");
+    const run = program("sum.ts", SUM_CHECK);
+    const r = runProgramChecks([check({ id: "one:totals", run, dir: "one" }), check({ id: "two:totals", run, dir: "two" })], { outputsRoot: oroot, projectDir: tmp });
+    expect(r.map((x) => [x.id, x.state])).toEqual([["one:totals", "pass"], ["two:totals", "fail"]]);
+  }, spawnBudgetMs(2));
+});
+
 describe("declaring a program check", () => {
   test("a squad capability's acceptance names it; a path outside the squad is ignored", () => {
     const squad = path.join(tmp, "squad");

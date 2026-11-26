@@ -1941,9 +1941,11 @@ if (pendingCascade?.kind === "squad-only") {
   const squadContract = squadCapabilityRecord(squads[0], capabilityId);
   // The criteria a program decides travel with the run (checks.json), so the
   // gate of a later revision or recovery runs the same programs.
-  // One squad only: with several, each writes under its own subfolder and a
-  // program told "the outputs" would be reading its neighbours' work.
-  const squadChecks = squads.length === 1 ? squadProgramChecks(resolveEntityDir("squads", squads[0], PROJECT_ROOT), capabilityId) : [];
+  // With several squads each writes under its own subfolder, so each check
+  // reads that folder and carries the squad's name in its id.
+  const checksOf = (sq: string) => squadProgramChecks(resolveEntityDir("squads", sq, PROJECT_ROOT), capabilityById.get(sq))
+    .map(c => (squads.length > 1 ? { ...c, id: `${sq}:${c.id}`, dir: sq } : c));
+  const squadChecks = squads.flatMap(checksOf);
   writeRunChecks(projDir, squadChecks);
   const squadProduces = producesForDelivery(() => squadContract.capability?.produces ?? []);
   if (shouldRunSquadGauntlet({ squadCount: squads.length, wantExec, resolvedMode: executionOptions.resolvedMode })) {
@@ -2043,7 +2045,7 @@ if (pendingCascade?.kind === "squad-only") {
       capabilityId: capabilityById.get(sq), envProblems: squadEnvProblems.get(sq), suggestedClones: autoSuggestedClones,
       maxBudgetUsd: effectiveBudgetUsd(),
       timeoutMs: timeoutMin ? parseInt(timeoutMin, 10) * 60 * 1000 : undefined,
-      rulesDirective: (squadRules.get(sq) ?? rulesDirective) + programChecksDirective(squadChecks, outDir), autonomousDirective: AUTONOMOUS_DIRECTIVE, runWithCascadeImpl: pinnedCascade,
+      rulesDirective: (squadRules.get(sq) ?? rulesDirective) + programChecksDirective(checksOf(sq).map(c => ({ ...c, dir: undefined })), outDir), autonomousDirective: AUTONOMOUS_DIRECTIVE, runWithCascadeImpl: pinnedCascade,
       ...(ledgerRunId ? { ledger: { runId: ledgerRunId, watchDir: outDir } } : {}),
     });
     lastSession = r.sessionId ?? lastSession;

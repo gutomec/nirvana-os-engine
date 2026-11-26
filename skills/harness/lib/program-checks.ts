@@ -42,6 +42,9 @@ export interface ProgramCheck {
   run: string;
   /** `{outputs}` and `{project}` are replaced; default: the outputs folder. */
   args: string[];
+  /** The folder under the outputs root this check reads: set when several
+   *  squads share one dispatch and each writes under its own. */
+  dir?: string;
   timeoutSec: number;
 }
 
@@ -174,10 +177,11 @@ export function runProgramChecks(checks: ProgramCheck[], opts: RunChecksOpts): C
     const how = interpreterOf(check.run, env);
     if (!how) { results.push(unmeasured(`no interpreter on this machine for ${path.basename(check.run)}`)); continue; }
     opts.beforeCheck?.(check);
-    const args = check.args.map((a) => a.replaceAll("{outputs}", path.resolve(opts.outputsRoot)).replaceAll("{project}", path.resolve(opts.projectDir)));
+    const outputs = path.resolve(opts.outputsRoot, check.dir ?? "");
+    const args = check.args.map((a) => a.replaceAll("{outputs}", outputs).replaceAll("{project}", path.resolve(opts.projectDir)));
     const started = Date.now();
     const r = spawnSync(how.command, [...how.pre, check.run, ...args], {
-      cwd: opts.outputsRoot, env, encoding: "utf8", windowsHide: true, timeout: check.timeoutSec * 1000, maxBuffer: 8 * 1024 * 1024,
+      cwd: fs.existsSync(outputs) ? outputs : opts.outputsRoot, env: { ...env, NIRVANA_OUTPUTS_DIR: outputs }, encoding: "utf8", windowsHide: true, timeout: check.timeoutSec * 1000, maxBuffer: 8 * 1024 * 1024,
     });
     const seconds = Math.round((Date.now() - started) / 100) / 10;
     const found = linesOf(r.stdout ?? "");
