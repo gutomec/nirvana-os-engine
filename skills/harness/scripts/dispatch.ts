@@ -1931,7 +1931,7 @@ if (pendingCascade?.kind === "squad-only") {
   // prepared here, on demand: milliseconds when nothing changed, an install
   // when its declared packages did. A failure is printed and handed to that
   // squad's worker; the dispatch goes on.
-  const squadEnvProblems = prepareSquadEnvs(squads.map(sq => ({ slug: sq, dir: path.join(nirvanaPaths.SQUADS_DIR, sq) })));
+  const squadEnvProblems = prepareSquadEnvs(squads.map(sq => ({ slug: sq, dir: resolveEntityDir("squads", sq, PROJECT_ROOT) })));
   // What a revision round resumes is the LAST squad's worker: its packages and
   // Python come first (squadRunEnv resolves a name to the first squad that has it).
   const squadRunVars = squadRunEnv([...squads].reverse());
@@ -1943,7 +1943,7 @@ if (pendingCascade?.kind === "squad-only") {
   // gate of a later revision or recovery runs the same programs.
   // One squad only: with several, each writes under its own subfolder and a
   // program told "the outputs" would be reading its neighbours' work.
-  const squadChecks = squads.length === 1 ? squadProgramChecks(squadContract.squadDir ?? path.join(nirvanaPaths.SQUADS_DIR, squads[0]), capabilityId) : [];
+  const squadChecks = squads.length === 1 ? squadProgramChecks(resolveEntityDir("squads", squads[0], PROJECT_ROOT), capabilityId) : [];
   writeRunChecks(projDir, squadChecks);
   const squadProduces = producesForDelivery(() => squadContract.capability?.produces ?? []);
   if (shouldRunSquadGauntlet({ squadCount: squads.length, wantExec, resolvedMode: executionOptions.resolvedMode })) {

@@ -128,6 +128,15 @@ ${lines.join("\n")}`;
  * describes is worse than granting none — the agent gets the map of one tree and
  * the key to another.
  */
+/** The folder the scope gives a slug (the project's copy first under `merge`), or null
+ *  when the scope does not list it. A listed folder is a real entry of a library root,
+ *  never a path built from the slug, so it needs no containment check. */
+export function scopedEntityDir(kind: "businesses" | "squads", slug: string, projectDir: string): string | null {
+  try {
+    return enumerate(resolveScope({ cwd: projectDir }), kind).find(e => e.slug === slug && !e.overridden)?.dir ?? null;
+  } catch { return null; }
+}
+
 export function resolveEntityDir(kind: "businesses" | "squads", slug: string, projectDir: string): string {
   try {
     const hit = enumerate(resolveScope({ cwd: projectDir }), kind).find(e => e.slug === slug && !e.overridden);

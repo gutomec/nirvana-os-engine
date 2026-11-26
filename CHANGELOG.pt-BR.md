@@ -6,7 +6,7 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que os instaladores de uma linha e os setups de pack consomem.
 
-## 0.18.5-beta.1 — 2026-11-25
+## 0.18.6-beta.1 — 2026-11-25
 
 Um beta: instalado só pelo link próprio (veja Betas no README), nunca pelo comando padrão.
 
@@ -22,6 +22,12 @@ Um beta: instalado só pelo link próprio (veja Betas no README), nunca pelo com
 - **`nrv evidence` separa os tipos de prova.** "Válido" costumava ser lido como "provado que funciona". Agora aparece, cada um na sua linha: a estrutura passa no gate de admissão, uma execução real foi entregue com o gate aprovando, os arquivos mudaram desde essa execução, as dependências declaradas estão presentes, e a entidade está montada num host de bots. Cada um é verificado, reprovado, desatualizado, não medido ou não se aplica.
 
 Nada aqui espera uma pessoa: toda conferência, correção e decisão acontece dentro da execução, e o que você revisa é a entrega pronta com o seu registro.
+## 0.18.5 — 2026-11-25
+
+### Um squad guardado no projeto executa
+
+- **`nrv dispatch --squad` encontra um squad que mora no projeto.** Um squad na pasta `.nirvana/squads` do próprio projeto passava no `nrv validate` e na preparação, e parava em menos de um segundo com "squad dir not found": a etapa que o executa olhava só a biblioteca global. Agora ela resolve a pasta pelo escopo do projeto, como todas as etapas anteriores, então o squad do projeto executa, e em `merge` a cópia do projeto vence um squad global de mesmo nome.
+- O ambiente do squad e um `nrv revise` posterior usam a mesma pasta.
 
 ## 0.18.4 — 2026-11-25
 

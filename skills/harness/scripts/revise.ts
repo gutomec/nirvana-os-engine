@@ -54,6 +54,7 @@ import { looksLikeMissingSession } from "../../_shared/lib/session-capture.ts";
 import { detectExecutionRuntime } from "../lib/control-plane/execution-runner.ts";
 import { GATE_FINDINGS_FILE } from "../lib/delivery-pipeline.ts";
 import { sealChangeLines } from "../lib/delivery-seal.ts";
+import { resolveEntityDir } from "../../_shared/lib/entity-resource-map.ts";
 import { resolveCascadeRoot } from "../lib/cascade.ts";
 import { formatRulesForDirective, loadRuntimeRules } from "../lib/runtime-rules.ts";
 import { openBotSpecialistsDirective } from "../../_shared/lib/openbot-call.ts";
@@ -287,7 +288,8 @@ const brief = readBrief();
 /** The squad's own folder, as squad-exec granted it to the run; none for a business or agent-x. */
 function squadDirs(): string[] {
   if (kind !== "squad") return [];
-  const dir = path.join(paths.SQUADS_DIR, slug);
+  // Through the scope, as the run found it: a squad kept in the project lives under it.
+  const dir = resolveEntityDir("squads", slug, projectRoot);
   return fs.existsSync(dir) ? [dir] : [];
 }
 
