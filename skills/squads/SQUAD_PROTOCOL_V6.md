@@ -872,6 +872,43 @@ Schema (`CapabilitySchema.acceptance`, `.strict()`, **at most 12 entries**):
 | `minimumScore` | number from 0 to 1, optional |
 | `path` | optional: a file the criterion promises, relative to the output directory |
 | `min_bytes` | optional: integer ≥ 0, the size below which the promised file is a stub |
+| `check` | optional: a program that decides the criterion (§29.4) |
+
+### 29.4 A criterion a program decides
+
+A criterion is a sentence, and a model judges it. Some criteria are not a matter of judgment: a sum, a check digit, a price against its table, a schema, a count of rows. Name a program for those, and the gate runs it instead of asking.
+
+```yaml
+acceptance:
+  - id: totals_match
+    description: "every statement line is paired or listed as pending"
+    check: scripts/check-reconciliation.ts
+  - id: rows_sorted
+    description: "rows are in date order"
+    blocking: false
+    check: { run: scripts/check-order.py, args: ["{outputs}", "--by", "date"], timeout_sec: 60 }
+```
+
+| Rule | Detail |
+|---|---|
+| Where it lives | A file inside the squad. A path that leaves the squad is ignored |
+| Language | `.ts`, `.js`, `.mjs`, `.cjs` run on Bun; `.py` on the squad's own Python, else the machine's. Another extension is never run |
+| Arguments | `{outputs}` and `{project}` are replaced by the outputs folder and the run folder. Default: `["{outputs}"]`. `NIRVANA_OUTPUTS_DIR` and `NIRVANA_PROJECT_DIR` are set, and the program starts in the outputs folder |
+| Exit 0 | The criterion holds |
+| Exit 1 | It does not. Each line on **stdout** is one thing to fix, and goes to the worker word for word |
+| Exit 2 | It could not measure: say why on the first line |
+| Anything else | Not measured: a timeout (`timeout_sec`, default 120), a missing program, no interpreter, and a crash. An uncaught error also exits 1, so exit 1 with nothing on stdout is read as a crash |
+| `blocking` | A criterion with a `check` blocks unless it says `blocking: false` |
+
+What the gate does with the answer (`harness/lib/program-checks.ts`, `delivery-pipeline.ts`):
+
+- **The programs run first, every round.** While one fails, the judge is not asked: its opinion of a deliverable about to be rewritten is paid for and thrown away.
+- **A failure is corrected by the worker that did the work,** with the program's own lines, and the same program runs again. A blocking criterion that still fails after the corrections withholds the delivery; an advisory one ships with reservations.
+- **Not measured is never a pass.** A blocking criterion its program could not measure caps the delivery at "delivered with reservations", and `_QA-RESERVATIONS.md` names it.
+- **The worker knows.** Its prompt lists each program with the command that runs it, so a careful worker runs them before it finishes.
+- **The checks travel with the run** (`checks.json` beside the brief): a revision and a supervisor recovery run the same programs as the first delivery.
+
+Write a check to read the deliverables and nothing else: no network, no model call, no write outside a temp folder. A program that needs a model is a judge, and belongs in the sentence.
 
 ### 29.2 Why 12
 
