@@ -6,6 +6,13 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que os instaladores de uma linha e os setups de pack consomem.
 
+## 0.18.5 — 2026-11-25
+
+### Um squad guardado no projeto executa
+
+- **`nrv dispatch --squad` encontra um squad que mora no projeto.** Um squad na pasta `.nirvana/squads` do próprio projeto passava no `nrv validate` e na preparação, e parava em menos de um segundo com "squad dir not found": a etapa que o executa olhava só a biblioteca global. Agora ela resolve a pasta pelo escopo do projeto, como todas as etapas anteriores, então o squad do projeto executa, e em `merge` a cópia do projeto vence um squad global de mesmo nome.
+- O ambiente do squad e um `nrv revise` posterior usam a mesma pasta.
+
 ## 0.18.4 — 2026-11-25
 
 ### Um time é criado na hora

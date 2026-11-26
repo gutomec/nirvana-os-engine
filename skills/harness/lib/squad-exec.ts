@@ -33,7 +33,7 @@ import { cloneNamesOf } from "./clone-names.ts";
 import { SUMMARY_HANDOFF_RULE, summaryFileOf } from "./business-solo.ts";
 import { paths } from "../../_shared/lib/bun-helpers.ts";
 import { scopeBoundary, scopeGuard } from "../../_shared/lib/scope-guard.ts";
-import { renderResourceMap } from "../../_shared/lib/entity-resource-map.ts";
+import { renderResourceMap, scopedEntityDir } from "../../_shared/lib/entity-resource-map.ts";
 import { resolveSetting } from "../../_shared/lib/settings.ts";
 import { altitudeMethodSentence, briefAltitude, type BriefAltitude } from "./brief-altitude.ts";
 import { briefWithRequest } from "./work-brief.ts";
@@ -524,8 +524,12 @@ Files in the directory above, then \`${summaryFileOf(outDir)}\`: one page at mos
 export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
   // paths.SQUADS_DIR honours SQUADS_DIR and NIRVANA_HOME; os.homedir() ignored both and, on Windows,
   // reads USERPROFILE, so a squad installed under a redirected HOME was "not found".
-  const squadsRoot = args.squadsRoot ?? paths.SQUADS_DIR;
-  const squadDir = path.join(squadsRoot, args.squadSlug);
+  // The scope first: a squad kept in the project (`.nirvana/squads`) is listed there, and
+  // under `merge` it overrides the global one. This lookup used to go straight to the global
+  // root, so a project's own squad validated and scaffolded, then died here as "not found".
+  const scoped = args.squadsRoot ? null : scopedEntityDir("squads", args.squadSlug, args.projectRoot);
+  const squadsRoot = args.squadsRoot ?? (scoped ? path.dirname(scoped) : paths.SQUADS_DIR);
+  const squadDir = scoped ?? path.join(squadsRoot, args.squadSlug);
   const outDir = args.outputsDir;
   fs.mkdirSync(outDir, { recursive: true });
 
@@ -562,7 +566,7 @@ export function runSquadHeadless(args: SquadExecArgs): SquadExecResult {
 
   const cloneInj = squadCloneInjection(args.brief, args.projectDir, {
     suggested: args.suggestedClones,
-    extraQuery: squadContext(path.join(args.squadsRoot ?? paths.SQUADS_DIR, args.squadSlug)),
+    extraQuery: squadContext(squadDir),
   });
   for (const slug of cloneInj.missingClones) {
     appendAudit({

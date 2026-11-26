@@ -1922,7 +1922,7 @@ if (pendingCascade?.kind === "squad-only") {
   // prepared here, on demand: milliseconds when nothing changed, an install
   // when its declared packages did. A failure is printed and handed to that
   // squad's worker; the dispatch goes on.
-  const squadEnvProblems = prepareSquadEnvs(squads.map(sq => ({ slug: sq, dir: path.join(nirvanaPaths.SQUADS_DIR, sq) })));
+  const squadEnvProblems = prepareSquadEnvs(squads.map(sq => ({ slug: sq, dir: resolveEntityDir("squads", sq, PROJECT_ROOT) })));
   // What a revision round resumes is the LAST squad's worker: its packages and
   // Python come first (squadRunEnv resolves a name to the first squad that has it).
   const squadRunVars = squadRunEnv([...squads].reverse());
