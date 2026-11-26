@@ -1145,7 +1145,9 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
       ? runProgramChecks(programChecks, { outputsRoot: args.outputsRoot, projectDir: args.projectDir, env: { ...gateEnv, ...(args.env ?? {}) }, shouldStop: stopped, beforeCheck: () => renew(GATE_LEASE_SEC) })
       : [];
     lastChecks = checks;
-    const failedChecks = checks.filter(c => c.state === "fail");
+    // A program that found nothing to read in a direct run: the worker gets one
+    // round to produce it. After that round it is "not measured", as any other.
+    const failedChecks = checks.filter(c => c.state === "fail" || (c.absent && revUsed === 0));
     if (checks.length) {
       emit("x_program_checks", {
         trace_id: args.pid, project_id: args.pid, business_slug: args.slug, round: revUsed,
@@ -1212,7 +1214,7 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
     previousSerious = ev.seriousFindings;
     // Full paths and the outputs root: a round that has to start cold (below)
     // has no conversation to recover them from.
-    const failedChecks = ev.checks.filter(c => c.state === "fail");
+    const failedChecks = ev.checks.filter(c => c.state === "fail" || (c.absent && revUsed === 1));
     // A criterion a program had approved now fails: the last correction broke
     // it while answering another finding. This round undoes that and nothing
     // else, or the two kinds of finding take turns until the rounds run out.

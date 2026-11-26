@@ -28,10 +28,16 @@
 //
 // A business holds the cards of squads it may use, and nobody knows before the
 // run which capability it will pick. So the checks of every capability of a
-// carded squad travel with the run, each marked `whenUsed`: for those, exit 2
-// means "the work I measure is not here", and the check is not applicable
-// rather than unmeasured. A program therefore answers 2, never 1, when the
-// deliverable it reads is absent.
+// carded squad travel with the run, each marked `whenUsed`, and the worker
+// writes the capabilities it did use in `_CAPABILITIES.md`, one
+// `<squad>:<capability id>` per line. A check runs when its capability is
+// there and is "not applicable" otherwise: two capabilities of one squad often
+// write the same file under different rules, and a rule of the capability that
+// was not used would fail correct work.
+//
+// A program answers 2, never 1, when the deliverable it reads is absent. In a
+// run where the capability is known to be in use, that answer goes back to the
+// worker once, to produce what is missing.
 //
 // The checks of a run are written beside its brief (`checks.json`), so every
 // caller of the pipeline (dispatch, revise, the supervisor) runs the same ones.
@@ -54,9 +60,8 @@ export interface ProgramCheck {
   dir?: string;
   timeoutSec: number;
   /** Set on a check that belongs to a squad the worker MAY use (a business
-   *  holding that squad's card): the squad's name. Such a check counts only
-   *  when its program finds the work it measures; "could not measure" then
-   *  means the squad was not used for this delivery. */
+   *  holding that squad's card): `<squad>:<capability id>`. Such a check runs
+   *  only when the worker declared that capability in `_CAPABILITIES.md`. */
   whenUsed?: string;
 }
 
@@ -70,9 +75,22 @@ export interface CheckResult {
   /** What the program printed: the things to fix on a fail, the reason on a not-measured. */
   lines: string[];
   seconds: number;
+  /** The program itself answered 2 in a direct run: what it reads is not in the
+   *  folder. The worker gets one round to produce it before it counts as unmeasured. */
+  absent?: boolean;
 }
 
 export const RUN_CHECKS_FILE = "checks.json";
+/** Where a worker that holds squad cards lists the capabilities it used. */
+export const CAPABILITIES_FILE = "_CAPABILITIES.md";
+
+/** The `<squad>:<capability id>` entries a worker declared, read leniently:
+ *  a list marker, backticks and trailing words around an entry do not matter. */
+export function declaredCapabilities(outputsRoot: string): Set<string> {
+  try {
+    return new Set(fs.readFileSync(path.join(outputsRoot, CAPABILITIES_FILE), "utf8").match(/[a-z0-9][a-z0-9_-]*:[A-Za-z0-9_.-]+/g) ?? []);
+  } catch { return new Set(); }
+}
 const DEFAULT_TIMEOUT_SEC = 120;
 const MAX_LINES = 40;
 const MAX_LINE_CHARS = 400;
@@ -112,8 +130,7 @@ export function squadProgramChecks(squadDir: string | null | undefined, capabili
 }
 
 /** Every program check of a squad a business may use, across its capabilities,
- *  marked `whenUsed`. One per program and argument list: a check shared by
- *  several capabilities runs once. */
+ *  each marked with the capability it belongs to. */
 export function cardedSquadProgramChecks(squadDir: string | null | undefined, slug: string): ProgramCheck[] {
   if (!squadDir) return [];
   const out = new Map<string, ProgramCheck>();
@@ -122,8 +139,8 @@ export function cardedSquadProgramChecks(squadDir: string | null | undefined, sl
     for (const cap of Array.isArray(doc?.capabilities) ? doc.capabilities : []) {
       for (const a of Array.isArray(cap?.acceptance) ? cap.acceptance : []) {
         const c = checkOf(a, squadDir);
-        const key = c ? [c.run, ...c.args].join("\0") : "";
-        if (c && !out.has(key)) out.set(key, { ...c, id: `${slug}:${c.id}`, whenUsed: slug });
+        const key = c ? [cap?.id, c.run, ...c.args].join("\0") : "";
+        if (c && typeof cap?.id === "string" && !out.has(key)) out.set(key, { ...c, id: `${slug}:${c.id}`, whenUsed: `${slug}:${cap.id}` });
       }
     }
   } catch { /* a squad whose manifest does not parse declares no check */ }
@@ -200,9 +217,11 @@ export interface RunChecksOpts {
 export function runProgramChecks(checks: ProgramCheck[], opts: RunChecksOpts): CheckResult[] {
   const results: CheckResult[] = [];
   const env = { ...process.env, ...(opts.env ?? {}), NIRVANA_OUTPUTS_DIR: path.resolve(opts.outputsRoot), NIRVANA_PROJECT_DIR: path.resolve(opts.projectDir) };
+  const declared = declaredCapabilities(opts.outputsRoot);
   for (const check of checks) {
     const base = { id: check.id, description: check.description, blocking: check.blocking };
     const unmeasured = (why: string, seconds = 0): CheckResult => ({ ...base, state: "not_measured", lines: [why], seconds });
+    if (check.whenUsed && !declared.has(check.whenUsed)) { results.push({ ...base, state: "not_applicable", lines: [`${check.whenUsed} is not listed in ${CAPABILITIES_FILE}`], seconds: 0 }); continue; }
     if (opts.shouldStop?.()) { results.push(unmeasured("the run was stopped before this check")); continue; }
     if (!fs.existsSync(check.run)) { results.push(unmeasured(`the program is not there: ${check.run}`)); continue; }
     const how = interpreterOf(check.run, env);
@@ -228,7 +247,7 @@ export function runProgramChecks(checks: ProgramCheck[], opts: RunChecksOpts): C
       results.push(unmeasured(`the program ended with exit 1 and named nothing to fix, which reads as a crash${printed[0] ? `: ${printed[0]}` : ""}`, seconds));
     } else {
       const why = r.status === 2 ? (printed[0] ?? "the program could not measure") : `the program ended with exit ${r.status ?? "?"}${printed[0] ? `: ${printed[0]}` : ""}`;
-      results.push({ ...base, state: r.status === 2 && check.whenUsed ? "not_applicable" : "not_measured", lines: [why, ...(r.status === 2 ? printed.slice(1) : [])], seconds });
+      results.push({ ...base, ...(r.status === 2 ? { absent: true } : {}), state: "not_measured", lines: [why, ...(r.status === 2 ? printed.slice(1) : [])], seconds });
     }
   }
   return results;
@@ -237,7 +256,7 @@ export function runProgramChecks(checks: ProgramCheck[], opts: RunChecksOpts): C
 /** The lines of `_GATE-FINDINGS.md` for one round of checks. */
 export function checksBlock(results: CheckResult[]): string[] {
   if (!results.length) return [];
-  const mark = (s: CheckState) => (s === "pass" ? "pass" : s === "fail" ? "FAIL" : s === "not_applicable" ? "not applicable (squad not used)" : "NOT MEASURED");
+  const mark = (s: CheckState) => (s === "pass" ? "pass" : s === "fail" ? "FAIL" : s === "not_applicable" ? "not applicable (capability not used)" : "NOT MEASURED");
   return [
     "### Program checks",
     ...results.flatMap((r) => [
@@ -269,8 +288,8 @@ export function programChecksDirective(checks: ProgramCheck[], outputsRoot: stri
     ...own.map(line),
     ...(own.length ? ["Exit 0 means the criterion holds, 1 that it does not, 2 that the program could not measure: when it cannot measure because something of yours is missing, produce what is missing."] : []),
     ...(carded.length ? [
-      "The checks below belong to squads whose cards you hold. Each one applies when you did that part as that squad: it reads the files that squad's capability writes, and answers 2 when they are not in the folder, which counts as not used.",
-      ...carded.map(line),
+      `The checks below belong to capabilities of the squads whose cards you hold. For each capability you actually worked as, write its \`<squad>:<capability id>\` on a line of ${CAPABILITIES_FILE} in the outputs folder; the engine then runs that capability's checks, and you run them first. A capability you did not use is not listed and is not checked.`,
+      ...[...new Set(carded.map((c) => c.whenUsed!))].flatMap((cap) => [`${cap}`, ...carded.filter((c) => c.whenUsed === cap).map(line)]),
     ] : []),
   ].join("\n");
 }

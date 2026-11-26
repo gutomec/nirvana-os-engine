@@ -214,8 +214,10 @@ describe("the gate with program checks", () => {
 
   test("a blocking check that could not measure is never a pass: delivered with reservations, and it says which", () => {
     const oroot = outputs(null);
-    const res = runDelivery(deliveryArgs(oroot, { programChecks: [check({ run: program("sum.ts", SUM_CHECK) })] }).args);
-    expect([res.state, res.exitCode, res.revisionsUsed]).toEqual(["delivered_with_reservations", 0, 0]);
+    // What the program reads is absent: the worker gets one round to produce it, and it does not.
+    const noFix = ((opts: any) => ({ ok: true, runtime: opts.runtime, sessionId: "s", result: "", costUsd: null, exitCode: 0, stderr: "", durationMs: 5 })) as any;
+    const res = runDelivery(deliveryArgs(oroot, { programChecks: [check({ run: program("sum.ts", SUM_CHECK) })], runHeadlessImpl: noFix }).args);
+    expect([res.state, res.exitCode, res.revisionsUsed]).toEqual(["delivered_with_reservations", 0, 1]);
     expect(statusOf(oroot).checks).toEqual([{ id: "totals_match", state: "not_measured", blocking: true }]);
     const reservations = fs.readFileSync(path.join(oroot, "_QA-RESERVATIONS.md"), "utf8");
     expect(reservations).toContain("Not measured is not approved");
@@ -234,6 +236,17 @@ describe("the gate with program checks", () => {
 describe("a judge finding against a criterion a program decides", () => {
   // Hyphen stitching fails the offline prose rubric: it stands in for a judge finding.
   const STITCHED = "# Nota\n\n" + "palavra - outra ".repeat(30) + "\n\nParágrafo final simples para dar corpo ao documento e passar de duzentos bytes com folga.\n";
+
+  test("a deliverable the program does not find goes back to the worker once, and passes when it is produced", () => {
+    const oroot = outputs(null);
+    let prompt = "";
+    const res = runDelivery(deliveryArgs(oroot, {
+      programChecks: [check({ run: program("sum.ts", SUM_CHECK) })],
+      runHeadlessImpl: ((opts: any) => { prompt = opts.prompt; fs.writeFileSync(path.join(oroot, "total.txt"), "100"); return { ok: true, runtime: opts.runtime, sessionId: "s", result: "", costUsd: null, exitCode: 0, stderr: "", durationMs: 5 }; }) as any,
+    }).args);
+    expect(prompt).toContain("total.txt is missing");
+    expect([res.state, res.revisionsUsed]).toEqual(["delivered", 1]);
+  }, spawnBudgetMs(6));
 
   test("the judge's brief and the correction both say the program's criteria are settled", () => {
     const oroot = outputs("100");
@@ -393,27 +406,29 @@ describe("the checks of a squad a business may use", () => {
     ].join("\n"), "utf8");
     return dir;
   };
+  const declare = (oroot: string, text: string) => fs.writeFileSync(path.join(oroot, "_CAPABILITIES.md"), text, "utf8");
 
-  test("every capability's checks come along, once per program, under the squad's name", () => {
+  test("every capability's checks come along, each under its squad and capability", () => {
     const checks = cardedSquadProgramChecks(cardedSquad(), "ledger");
-    expect(checks.map((c) => c.id)).toEqual(["ledger:totals_match"]);
-    expect(checks[0].whenUsed).toBe("ledger");
+    expect(checks.map((c) => [c.id, c.whenUsed])).toEqual([
+      ["ledger:totals_match", "ledger:finance.close.execute"], ["ledger:totals_match_again", "ledger:finance.close.review"],
+    ]);
     expect(cardedSquadProgramChecks(path.join(tmp, "nowhere"), "ghost")).toEqual([]);
   });
 
-  test("work that is not there means the squad was not used; work that is there is measured", () => {
+  test("only the capability the worker declared is checked", () => {
     const checks = cardedSquadProgramChecks(cardedSquad(), "ledger");
     const oroot = path.join(tmp, "out");
     fs.mkdirSync(oroot, { recursive: true });
-    const run = () => runProgramChecks(checks, { outputsRoot: oroot, projectDir: tmp })[0].state;
-    expect(run()).toBe("not_applicable");
     fs.writeFileSync(path.join(oroot, "total.txt"), "90", "utf8");
-    expect(run()).toBe("fail");
+    const states = () => runProgramChecks(checks, { outputsRoot: oroot, projectDir: tmp }).map((r) => r.state);
+    // Wrong work on disk, nothing declared: no rule of a capability nobody used fails it.
+    expect(states()).toEqual(["not_applicable", "not_applicable"]);
+    declare(oroot, "- `ledger:finance.close.execute` for the month close\n");
+    expect(states()).toEqual(["fail", "not_applicable"]);
     fs.writeFileSync(path.join(oroot, "total.txt"), "100", "utf8");
-    expect(run()).toBe("pass");
-    // The squad run directly keeps the strict reading: the same exit 2 is "not measured".
-    fs.rmSync(path.join(oroot, "total.txt"));
-    expect(runProgramChecks(squadProgramChecks(path.join(tmp, "squad"), "finance.close.execute"), { outputsRoot: oroot, projectDir: tmp })[0].state).toBe("not_measured");
+    expect(states()).toEqual(["pass", "not_applicable"]);
+    expect(isRunStateFile("_CAPABILITIES.md")).toBe(true);
   }, spawnBudgetMs(4));
 
   test("a business delivers without reservations when the squad it holds was not used", () => {
@@ -423,13 +438,14 @@ describe("the checks of a squad a business may use", () => {
     const { args } = deliveryArgs(oroot, { programChecks: cardedSquadProgramChecks(cardedSquad(), "ledger") });
     const r = runDelivery(args);
     expect(r.state).toBe("delivered");
-    expect(r.checks?.map((c) => c.state)).toEqual(["not_applicable"]);
+    expect(r.checks?.map((c) => c.state)).toEqual(["not_applicable", "not_applicable"]);
   }, spawnBudgetMs(3));
 
-  test("the worker is told which checks are its own and which depend on the squad it uses", () => {
+  test("the worker is told its own checks first, then each capability's with how to declare it", () => {
     const own: ProgramCheck = { id: "own", description: "d", blocking: true, run: path.join(tmp, "a.ts"), args: ["{outputs}"], timeoutSec: 5 };
     const text = programChecksDirective([own, ...cardedSquadProgramChecks(cardedSquad(), "ledger")], tmp);
-    expect(text.indexOf("- own")).toBeLessThan(text.indexOf("squads whose cards you hold"));
-    expect(text.indexOf("squads whose cards you hold")).toBeLessThan(text.indexOf("- ledger:totals_match"));
+    expect(text.indexOf("- own")).toBeLessThan(text.indexOf("_CAPABILITIES.md"));
+    expect(text.indexOf("ledger:finance.close.execute\n")).toBeLessThan(text.indexOf("- ledger:totals_match (blocking)"));
+    expect(text.indexOf("ledger:finance.close.review\n")).toBeGreaterThan(text.indexOf("- ledger:totals_match (blocking)"));
   });
 });
