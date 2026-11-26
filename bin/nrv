@@ -11,6 +11,7 @@
 #   nrv use-squads "<brief>"              → route forcing squad-first preference
 #   nrv find "<query>"                    → dry-run capability discovery
 #   nrv validate <kind> <slug|path>       → admission gate (squad|business|mind-clone); bare = deprecated doctor alias
+#   nrv evidence <kind> <slug> | --all    → what is proven about an entity, one kind of proof at a time (read-only)
 #   nrv migrate <slug> --to 6 [--apply]   → convert a squad to Squad Protocol 6.0 (dry-run by default)
 #   nrv index                             → re-index squads + businesses
 #   nrv deps [scan|adopt|link|install|env] → the one home every dependency installs into (~/.nirvana)
@@ -147,6 +148,8 @@ case "$cmd" in
   validate|verify)
     # the admission gate; bare `nrv validate` still runs the doctor with a deprecation notice
     exec "$BUN_BIN" "$SKILLS/_shared/scripts/verify.ts" "$@" ;;
+  evidence)
+    exec "$BUN_BIN" "$SKILLS/harness/scripts/evidence.ts" "$@" ;;
   watch|tail)
     exec "$BUN_BIN" "$SKILLS/harness/scripts/watch.ts" "$@" ;;
   watch-fs|fswatch)

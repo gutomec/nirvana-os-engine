@@ -55,6 +55,7 @@ switch (cmd) {
   case "decide": runScript(join(H, "decide.ts"), rest);
   case "find": runScript(join(H, "find.ts"), rest);
   case "validate": case "verify": runScript(join(S, "verify.ts"), rest);
+  case "evidence": runScript(join(H, "evidence.ts"), rest);
   case "watch": case "tail": runScript(join(H, "watch.ts"), rest);
   case "watch-fs": case "fswatch": runScript(join(H, "watch-fs.ts"), rest);
   case "index": runScript(join(H, "index.ts"), rest);

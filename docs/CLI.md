@@ -126,6 +126,7 @@ Hosts and their limits: [`skills/_shared/adapters/teams.md`](../skills/_shared/a
 | `nrv validate <kind> <slug\|path> [--fix] [--strict] [--json]` | Admission gate for one squad, business or mind-clone (`nrv verify` is an alias). |
 | `nrv validate <kind> --all [--record [--allow-regression]]` | Verify every installed entity of a kind; `--record` writes the debt baseline. |
 | `nrv validate --pack <content-dir> [--json]` | Verify a pack's content before it ships. |
+| `nrv evidence <squad\|business\|clone> <slug> [--json]` / `--all [--kind <k>]` | What is proven about an entity, each kind of proof on its own: structure, delivered, changed since, dependencies, on a host. Each answers verified, failed, stale, not measured or does not apply; not measured is never a pass. Read-only, exit `0`. |
 | `nrv validate-chain <project> [--strict\|--all]` | Audit-chain integrity check. |
 | `nrv migrate <slug\|path> --to 6 [--apply] [--all] [--map-refs]` | Convert a squad to Squad Protocol 6.0: canonical workflow documents, extension-less refs, acceptance from `success_indicators` (`nrv migrate-squad` is an alias). |
 | `nrv migrate <slug\|path> --rollback <ts>` | Undo a conversion from its backup, while the squad has not changed since. |
