@@ -34,7 +34,6 @@ const USAGE = [
   '  candidates "<request>"      businesses that fit the request, with their roles and clones',
   '  init <slug> ["<purpose>"]   write the team.yaml skeleton (--here: in the current project)',
   "  sync [--host <h>]           validate, compile and write the team; host: openbot, hermes, claude-code or auto",
-  "  sync --host hermes --create create the Hermes Bots the team has no profile for yet",
   "  status                      the team and where each member is",
   "  remove                      take the team's instructions out of the hosts; agents and files stay",
   "  flow <squad> [--workflow <name>]            the plan of a squad's workflow as an OpenBot workflow",
@@ -191,10 +190,11 @@ function sync(): void {
     say();
     say("Next:");
     if (r.missing.length) {
-      say("  1. Tell the person which agents you are about to create, then create them with create_agent, with exactly these names.");
+      say("  1. Create these agents now with create_agent, with exactly these names. Do not ask first: the person asked for the team.");
       say('     First task of each: "Answer only: ready."');
       for (const m of r.missing) say(`       - name "${m.name}" | title "${roleOf(m).slice(0, 80)}" | ${tierLine(spec, m)}`);
       say(`  2. Run this command again: it writes their instructions. An agent has no instructions until then.`);
+      say("  3. When the team is ready, tell the person who is on it and what each one does. They ask for any change afterwards.");
     } else if (r.taken.length || r.failed.length) {
       say("  Fix the members marked ✗ above and run this command again.");
     } else {
@@ -204,8 +204,8 @@ function sync(): void {
       say("  When the project ends, the person can hide the agents in OpenBot: a hidden agent keeps working when called.");
     }
   } else if (host === "hermes") {
-    if (flags.create && !hermesBinary()) fail("team: the hermes command is not installed, so no Bot can be created. Install Hermes Agent and run this again.");
-    const r = syncHermes(spec, lib, { create: Boolean(flags.create) });
+    // The team is created at once: the person asked for it, and reads who is on it when it is ready.
+    const r = syncHermes(spec, lib, { create: Boolean(hermesBinary()) });
     missing = r.missing.length;
     say();
     say(`Hermes: ${r.written.length} of ${spec.members.length} member(s) are Bots with their instructions.`);
@@ -215,14 +215,15 @@ function sync(): void {
     say();
     say("Next:");
     if (r.missing.length) {
-      say("  1. Tell the person which Bots are about to be created in their Hermes:");
+      say("  The hermes command is not installed on this computer, so these Bots could not be created:");
       for (const x of r.missing) say(`       - "${x.member.name}" (profile ${x.id}) | ${roleOf(x.member).slice(0, 80)} | ${tierLine(spec, x.member)}`);
-      say("  2. Run this command again with --create. Each Bot is a new Hermes profile that takes its model and keys from the person's own profile.");
+      say("  Tell the person Hermes Agent is missing. Once it is installed, run this command again.");
     } else if (r.failed.length) {
       say("  Fix the members marked ✗ above and run this command again.");
     } else {
       const id = hermesMemberId(spec, boss);
       say(`  The team is ready. The orchestrator is ${boss.name} (@${id}).`);
+      if (r.written.some((w) => w.created)) say("  Tell the person which Bots were created and what each one does. They ask for any change afterwards.");
       say("  With Hermes Desktop: the Bots are in the Bots roster; the person opens the orchestrator's Bot Chat and sends the request there.");
       say(`  From a terminal, in the folder the project should use: hermes -p ${id} -z "<the request, in the person's own words>"`);
       say("  A Bot that should use another model: hermes -p <profile> model");

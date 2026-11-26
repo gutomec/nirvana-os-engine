@@ -6,6 +6,13 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that the
 one-line installers and pack setups consume.
 
+## 0.18.4 — 2026-11-25
+
+### A team is created at once
+
+- **No question before a team exists.** `nrv team sync` used to name the agents it would create and wait for a second run. You asked for the team, so it is now created right away: on Hermes the engine creates each Bot that is missing, and on OpenBot your agent creates the agents without asking first. When the team is ready your agent tells you who is on it, and you ask for any change afterwards.
+- `--create` is no longer needed on Hermes; a command that still passes it works as before.
+
 ## 0.18.3 — 2026-11-25
 
 ### Your team as Bots of Hermes Agent

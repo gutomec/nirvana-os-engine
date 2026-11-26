@@ -110,7 +110,7 @@ Asked for in plain words: *"build a team for this project from my businesses"*, 
 |---|---|
 | `nrv team candidates "<request>"` | The businesses whose roles fit a request, with their employees and mind-clones. The agent reads the list and chooses the roles. |
 | `nrv team init <slug> ["<purpose>"] [--here]` | Write the team file, `.nirvana/team.yaml`, under `~/.nirvana/teams/<slug>` or in the current project. |
-| `nrv team sync [--team <slug>\|--dir <folder>] [--host openbot\|hermes\|claude-code] [--create]` | Validate the team and write each member where the host reads it. On OpenBot it names the agents for the host's own agent to create. On Hermes it names the Bots it would create, and creates them with `--create`. On Claude Code it writes one subagent per member. |
+| `nrv team sync [--team <slug>\|--dir <folder>] [--host openbot\|hermes\|claude-code]` | Validate the team and write each member where the host reads it. On OpenBot it names the agents for the host's own agent to create. On Hermes it creates the Bots that are missing. On Claude Code it writes one subagent per member. |
 | `nrv team status` / `nrv team remove` | Where each member is; take the team's instructions out of the hosts. Agents and profiles are never deleted. |
 | `nrv team flow <squad> [--workflow <name>]` / `--created <workflowId>` / `--list` / `--forget` | A squad's workflow as an OpenBot workflow: the plan the agent builds, and the record that tells it when to run it. |
 | `nrv bot list [--host openbot\|hermes]` | The agents that can be handed work: OpenBot agents with Local scripts on, and the Bots of the Hermes roster. |

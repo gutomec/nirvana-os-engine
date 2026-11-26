@@ -51,7 +51,7 @@ Nirvana-OS 是一个 Bun 原生、与运行时无关的多 agent 系统。它运
 
 ## 安装
 
-本 README 描述的是 0.18.3，即当前的**稳定版**，本页顶部的一行命令安装的就是它。不需要 Node。如果缺少 [Bun](https://bun.sh)，两个安装器都会在不使用 sudo、也不需要管理员权限的情况下把它装进你的用户目录（`~/.bun`），然后继续。
+本 README 描述的是 0.18.4，即当前的**稳定版**，本页顶部的一行命令安装的就是它。不需要 Node。如果缺少 [Bun](https://bun.sh)，两个安装器都会在不使用 sudo、也不需要管理员权限的情况下把它装进你的用户目录（`~/.bun`），然后继续。
 
 运行之前：
 
@@ -68,7 +68,7 @@ Nirvana-OS 是一个 Bun 原生、与运行时无关的多 agent 系统。它运
 - Claude Code、Antigravity 和 Codex 中的审计 hook；
 - 空的内容文件夹 `~/squads`、`~/businesses` 和 `~/businesses/_library/dna`。
 
-再次运行是安全的。**关闭终端并打开一个新终端**，让 `nrv` 出现在你的 PATH 上，然后用 `nrv --version` 检查；它会显示 `0.18.3`。接着对你的 agent 说：*“检查 Nirvana-OS 是否安装正确。”* 它会运行 `nrv doctor`。退出码 1 表示只有警告；退出码 2 会列出失败的项目。
+再次运行是安全的。**关闭终端并打开一个新终端**，让 `nrv` 出现在你的 PATH 上，然后用 `nrv --version` 检查；它会显示 `0.18.4`。接着对你的 agent 说：*“检查 Nirvana-OS 是否安装正确。”* 它会运行 `nrv doctor`。退出码 1 表示只有警告；退出码 2 会列出失败的项目。
 
 通过 `curl | bash` 运行时，安装器不会提问。要在安装时选择性能档位，把它传进去：把末尾的 `bash` 换成 `bash -s -- --profile=balanced`。你也可以之后让你的 agent 来设置（见[设置](#设置)）。
 
@@ -131,13 +131,13 @@ agent 负责编排，从不亲自撰写交付物。它挑选的每一家公司�
 
 | 你说 | 会发生什么 |
 |---|---|
-| “用我的企业为这个项目组一个团队。” | 你的 agent 挑选角色，告诉你它将创建哪些 agent，然后为每个角色建立一个，各自带着自己的 mind-clone。在 OpenBot 和 Hermes 里，你能看到每一个在工作。 |
+| “用我的企业为这个项目组一个团队。” | 你的 agent 挑选角色，为每个角色建立一个 agent，各自带着自己的 mind-clone，然后告诉你团队里有谁。在 OpenBot 和 Hermes 里，你能看到每一个在工作。 |
 | “把这个团队做成我 Hermes 里的 bot。” | 每个成员一个 Bot，名字和角色出现在 Hermes 的列表里。你把请求发给协调者，它带着其他成员完成项目。 |
 | “我想在这里看到这个 squad 作为工作流运行。” | 在 OpenBot 里，squad 的各个步骤变成一个工作流，交付结果之前等待你的批准。你可以给它设定时间表。 |
 | “这个页面的图片用我的图像 bot 来做。” | 无论在哪个 runtime，正在和你对话的 agent 都会把这部分交给你在 OpenBot 或 Hermes 里的 bot，再把文件带回来。 |
 | “我要我所有的 bot 始终使用 Nirvana。” | 每个 bot 的每份交付都经过 Nirvana-OS。说“只在我要求时”即可恢复默认。 |
 
-有两件事始终由你决定。OpenBot 的 agent 只有在你为它打开 **Local scripts**（Agent settings → Rules → Permissions）之后才会回应其他 agent；任何 agent 都无法替你打开它。另外，在任何 agent 被创建之前，你会先被告知将要创建哪些。
+有一件事始终由你决定。OpenBot 的 agent 只有在你为它打开 **Local scripts**（Agent settings → Rules → Permissions）之后才会回应其他 agent；任何 agent 都无法替你打开它。团队本身会立即创建：建好后你会看到成员是谁，之后再提出任何修改。
 
 ## Packs
 
@@ -169,7 +169,7 @@ Pack 是在 [squads.sh](https://squads.sh/pt/packs) 上出售的精选公司、s
 
 让你的 agent 更新 Nirvana-OS，或者运行 `nrv update`。它会先备份 `~/.nirvana/skills`，并保留你的设置和内容。`nrv update --check` 会说出它将安装哪个版本，但不做任何改动。
 
-更新永远不会把引擎降到更旧的版本。稳定版引擎只会升到更新的稳定版，所以 0.14 的引擎会升到 0.18.3。beta 版会升到最新的更高版本，无论是 beta 还是稳定版，所以 beta 会变成它之后发布的稳定版。引擎更新后，`nrv update` 还会检查每一个带许可的已安装 pack，并在有新版本时告诉你。
+更新永远不会把引擎降到更旧的版本。稳定版引擎只会升到更新的稳定版，所以 0.14 的引擎会升到 0.18.4。beta 版会升到最新的更高版本，无论是 beta 还是稳定版，所以 beta 会变成它之后发布的稳定版。引擎更新后，`nrv update` 还会检查每一个带许可的已安装 pack，并在有新版本时告诉你。
 
 ## Beta 版
 
@@ -268,4 +268,4 @@ $env:NIRVANA_ENGINE_URL='https://github.com/gutomec/nirvana-os-engine/releases/d
 
 许可：Nirvana-OS Sustainable Use License (SUL) v1.0。源码公开发布、可公开阅读，引擎可免费使用。它是 source-available，而非 OSI 批准的开源许可，某些商业用途需要单独的商业许可。在依赖任何摘要（包括这一段）之前，请先阅读 [LICENSE](./LICENSE)。
 
-状态：beta（0.x，当前为 0.18.3）。引擎今天就能用，几分钟内即可安装。在 1.0 之前，预计接口表面会持续变动。
+状态：beta（0.x，当前为 0.18.4）。引擎今天就能用，几分钟内即可安装。在 1.0 之前，预计接口表面会持续变动。
