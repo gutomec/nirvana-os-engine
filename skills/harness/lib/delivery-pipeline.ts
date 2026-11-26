@@ -78,7 +78,7 @@ import { isRunStatePath } from "../../_shared/lib/run-state.ts";
 import { isRunStateFile } from "../../_shared/lib/run-plumbing.ts";
 import { inBuildOutput, isDependencyDirName, isDependencyNoise } from "../../_shared/lib/deliverable-noise.ts";
 import { briefWorkDirs, workElsewhereRule } from "../../_shared/lib/brief-work-dirs.ts";
-import { checksBlock, readRunChecks, runProgramChecks, type CheckResult, type ProgramCheck } from "./program-checks.ts";
+import { checksBlock, readRunChecks, runProgramChecks, settledCriteriaNote, settledCriteriaRule, type CheckResult, type ProgramCheck } from "./program-checks.ts";
 import { briefInputFiles, writeSeal } from "./delivery-seal.ts";
 import { soloDirective } from "./business-solo.ts";
 import { claimProblems, criteriaFromBrief, SERIOUS_EXTRA_ROUNDS, type ClaimProblem } from "./solo-review.ts";
@@ -1098,7 +1098,8 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
   if (judgeMode && args.brief?.trim()) {
     briefFile = path.join(args.projectDir, "gate-brief.md");
     // The judge reads text: a Request given by path travels with its words.
-    try { fs.writeFileSync(briefFile, briefWithRequest(args.brief, { baseDirs: [args.projectRoot] }), "utf8"); } catch { briefFile = undefined; }
+    // The judge is told which criteria a program decides, so it does not ask for their opposite.
+    try { fs.writeFileSync(briefFile, briefWithRequest(args.brief, { baseDirs: [args.projectRoot] }) + settledCriteriaNote(programChecks), "utf8"); } catch { briefFile = undefined; }
   }
   const gateOpts: GateRunOpts = {
     gateScript, offline: !judgeMode, produces: args.produces, briefFile, env: gateEnv,
@@ -1178,6 +1179,8 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
   const solo = args.producerRole === "solo";
   // The serious findings the round before the last correction carried.
   let previousSerious: SeriousFinding[] | null = null;
+  // Ids of the program checks that passed in some earlier round of this delivery.
+  const approvedByProgram = new Set<string>();
   let noProgress = false;
   // A correction's runtime could not run at all (not a quota): the loop ends
   // and the last real round decides.
@@ -1210,7 +1213,16 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
     // Full paths and the outputs root: a round that has to start cold (below)
     // has no conversation to recover them from.
     const failedChecks = ev.checks.filter(c => c.state === "fail");
-    const fixLines = [
+    // A criterion a program had approved now fails: the last correction broke
+    // it while answering another finding. This round undoes that and nothing
+    // else, or the two kinds of finding take turns until the rounds run out.
+    const regressed = failedChecks.filter(c => approvedByProgram.has(c.id));
+    for (const c of ev.checks) { if (c.state === "pass") approvedByProgram.add(c.id); }
+    if (regressed.length) appendGateFindings(args.outputsRoot, `Round ${revUsed}: the last correction broke ${regressed.map(c => c.id).join(", ")}, which a program had approved. The next correction restores it and answers nothing else.\n`);
+    const fixLines = regressed.length ? [
+      "Your last correction broke a criterion that a program had already approved. Restore it: fix exactly the lines below and change nothing else. Whatever finding led you to that change is overruled by the program.",
+      ...regressed.flatMap(c => [`  ${c.id} — ${c.description}:`, ...c.lines.map(l => `    - ${l}`)]), "",
+    ] : [
       // What a program found comes first: it is exact, and it is checked again
       // by the same program after the correction.
       ...(failedChecks.length
@@ -1227,6 +1239,7 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
       "",
       ...fixLines,
       "",
+      ...settledCriteriaRule(programChecks),
       `The deliverables are in ${path.resolve(args.outputsRoot)}.`,
       workElsewhereRule(path.resolve(args.outputsRoot), workDirs),
       ...(ev.claims.length

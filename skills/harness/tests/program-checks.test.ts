@@ -11,7 +11,7 @@ import {
   businessProgramChecks, readRunChecks, runProgramChecks, squadProgramChecks, writeRunChecks, type ProgramCheck,
 } from "../lib/program-checks.ts";
 import { briefInputFiles, checkSeal, readSeal, sealChangeLines, SEAL_FILE } from "../lib/delivery-seal.ts";
-import { checkCommand, programChecksDirective } from "../lib/program-checks.ts";
+import { checkCommand, programChecksDirective, settledCriteriaNote } from "../lib/program-checks.ts";
 import { AUTONOMOUS_DIRECTIVE } from "../lib/host-agent-driver.ts";
 import { soloDirective } from "../lib/business-solo.ts";
 import { spawnSync } from "node:child_process";
@@ -229,6 +229,51 @@ describe("the gate with program checks", () => {
     writeRunChecks(args.projectDir, [check({ run: program("sum.ts", SUM_CHECK) })]);
     expect(runDelivery(args).checks!.map((c) => c.state)).toEqual(["pass"]);
   }, spawnBudgetMs(4));
+});
+
+describe("a judge finding against a criterion a program decides", () => {
+  // Hyphen stitching fails the offline prose rubric: it stands in for a judge finding.
+  const STITCHED = "# Nota\n\n" + "palavra - outra ".repeat(30) + "\n\nParágrafo final simples para dar corpo ao documento e passar de duzentos bytes com folga.\n";
+
+  test("the judge's brief and the correction both say the program's criteria are settled", () => {
+    const oroot = outputs("100");
+    fs.writeFileSync(path.join(oroot, "relatorio.md"), STITCHED);
+    let prompt = "";
+    const { args } = deliveryArgs(oroot, {
+      programChecks: [check({ run: program("sum.ts", SUM_CHECK) })],
+      runHeadlessImpl: ((opts: any) => { prompt = opts.prompt; fs.writeFileSync(path.join(oroot, "relatorio.md"), REPORT); return { ok: true, runtime: opts.runtime, sessionId: "s", result: "", costUsd: null, exitCode: 0, stderr: "", durationMs: 5 }; }) as any,
+    });
+    expect(runDelivery(args).state).toBe("delivered");
+    expect(prompt).toContain("Criteria a program decides are settled");
+    expect(prompt).toContain("totals_match: the total equals the sum of the lines");
+    expect(prompt).toContain("keep the program's criterion");
+    const note = settledCriteriaNote([check({ run: "x.ts" })]);
+    expect(note).toContain("## Settled by program");
+    expect(note).toContain("not yours to judge");
+    expect(settledCriteriaNote([])).toBe("");
+  }, spawnBudgetMs(6));
+
+  test("a correction that breaks what the program had approved is undone before anything else", () => {
+    const oroot = outputs("100");
+    fs.writeFileSync(path.join(oroot, "relatorio.md"), STITCHED);
+    const prompts: string[] = [];
+    const { args } = deliveryArgs(oroot, {
+      programChecks: [check({ run: program("sum.ts", SUM_CHECK) })],
+      runHeadlessImpl: ((opts: any) => {
+        prompts.push(opts.prompt);
+        // First correction: fixes the prose and breaks the total. Second: restores the total.
+        if (prompts.length === 1) { fs.writeFileSync(path.join(oroot, "relatorio.md"), REPORT); fs.writeFileSync(path.join(oroot, "total.txt"), "90"); }
+        else fs.writeFileSync(path.join(oroot, "total.txt"), "100");
+        return { ok: true, runtime: opts.runtime, sessionId: "s", result: "", costUsd: null, exitCode: 0, stderr: "", durationMs: 5 };
+      }) as any,
+    });
+    const res = runDelivery(args);
+    expect([res.state, res.revisionsUsed]).toEqual(["delivered", 2]);
+    expect(prompts[1]).toContain("Your last correction broke a criterion that a program had already approved");
+    expect(prompts[1]).toContain("total.txt says 90, the lines add up to 100");
+    expect(prompts[1]).not.toContain("relatorio.md:");
+    expect(fs.readFileSync(path.join(oroot, GATE_FINDINGS_FILE), "utf8")).toContain("the last correction broke totals_match");
+  }, spawnBudgetMs(10));
 });
 
 describe("the seal of a delivery", () => {

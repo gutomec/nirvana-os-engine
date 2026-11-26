@@ -236,3 +236,33 @@ export function programChecksDirective(checks: ProgramCheck[], outputsRoot: stri
     "Exit 0 means the criterion holds, 1 that it does not, 2 that the program could not measure: when it cannot measure because something of yours is missing, produce what is missing.",
   ].join("\n");
 }
+
+/** What a judge is told about the criteria a program decides: they are settled,
+ *  and a finding that asks for the opposite sends the worker in circles. Seen on
+ *  2026-11-26: a program approved a contact list, the judge asked for the
+ *  opposite of two of its rules, the worker obeyed, the program failed the next
+ *  round, and the two took turns for five corrections. "" when there are none. */
+export function settledCriteriaNote(checks: ProgramCheck[]): string {
+  if (!checks.length) return "";
+  return [
+    "",
+    "",
+    "## Settled by program",
+    "",
+    "A program checks the criteria below on the delivered files, with the exact rules of the work. They are not yours to judge. Do not report a finding, and do not propose a fix, that would change what these criteria fix (a value, a count, a format, a rule of acceptance or rejection): grade the rest.",
+    "",
+    ...checks.map((c) => `- ${c.id}: ${c.description}`),
+    "",
+  ].join("\n");
+}
+
+/** The same, for the worker that corrects: the program's criteria outrank any other finding. */
+export function settledCriteriaRule(checks: ProgramCheck[]): string[] {
+  if (!checks.length) return [];
+  return [
+    "Criteria a program decides are settled, and the same program runs again after your correction:",
+    ...checks.map((c) => `  - ${c.id}: ${c.description}`),
+    "Where a point above asks for something that would break one of them, keep the program's criterion, leave that point undone and say so in the summary.",
+    "",
+  ];
+}
