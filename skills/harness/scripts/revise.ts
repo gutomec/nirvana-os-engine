@@ -53,9 +53,12 @@ import { findRunSessions, latestRunSession, runRoots as projectRunRoots, type Ru
 import { looksLikeMissingSession } from "../../_shared/lib/session-capture.ts";
 import { detectExecutionRuntime } from "../lib/control-plane/execution-runner.ts";
 import { GATE_FINDINGS_FILE } from "../lib/delivery-pipeline.ts";
+import { sealChangeLines } from "../lib/delivery-seal.ts";
+import { resolveEntityDir } from "../../_shared/lib/entity-resource-map.ts";
 import { resolveCascadeRoot } from "../lib/cascade.ts";
 import { formatRulesForDirective, loadRuntimeRules } from "../lib/runtime-rules.ts";
 import { openBotSpecialistsDirective } from "../../_shared/lib/openbot-call.ts";
+import { recurringFindingsDirective } from "../lib/entity-performance.ts";
 import { paths } from "../../_shared/lib/bun-helpers.ts";
 import { runWithCascade } from "../lib/cascade-runner.ts";
 import { squadRunEnv } from "../../_shared/lib/squad-env.ts";
@@ -285,7 +288,8 @@ const brief = readBrief();
 /** The squad's own folder, as squad-exec granted it to the run; none for a business or agent-x. */
 function squadDirs(): string[] {
   if (kind !== "squad") return [];
-  const dir = path.join(paths.SQUADS_DIR, slug);
+  // Through the scope, as the run found it: a squad kept in the project lives under it.
+  const dir = resolveEntityDir("squads", slug, projectRoot);
   return fs.existsSync(dir) ? [dir] : [];
 }
 
@@ -369,15 +373,23 @@ onLedgerStall((stall, result, opts) => {
 
 const solo = role === "solo";
 // The user's USE_* rules, as the dispatch handed them to the worker.
-const rulesDirective = formatRulesForDirective(loadRuntimeRules(resolveCascadeRoot(projectRoot || process.cwd()))) + openBotSpecialistsDirective();
+// With them, what kept failing this entity's gate in its recent runs.
+const rulesDirective = formatRulesForDirective(loadRuntimeRules(resolveCascadeRoot(projectRoot || process.cwd()))) + openBotSpecialistsDirective()
+  + (kind === "business" || kind === "squad" ? await recurringFindingsDirective(kind, slug, { cwd: projectRoot || process.cwd() }) : "");
 // The folders the brief places the work in: a revision works there too, and
 // is never told to move that work under the outputs root.
 const workDirs = briefWorkDirs(brief, oroot);
+// What moved since the last approval: a person's own edits, or an input that
+// changed. The worker is told, so it neither overwrites the first nor builds on
+// a stale reading of the second.
+const sinceApproval = sealChangeLines(oroot);
+if (sinceApproval.length) appendAudit({ event: "x_revise_after_changes", trace_id: projectId, project_id: projectId, lines: sinceApproval.length - 1 }, projectRoot);
 const revisePrompt = [
   "REVISION INSTRUCTION (same session: you have the full context of what you produced):",
   "",
   change,
   "",
+  ...(sinceApproval.length ? [...sinceApproval, ""] : []),
   `Rewrite or update the deliverables in the places the brief names. ${workElsewhereRule(oroot, workDirs)}`,
   solo
     ? `Then update ${path.join(oroot, "_SUMMARY.md")} and ${path.join(oroot, "_CLAIMS.json")} so they describe the revised delivery; each claim's evidence names a file that exists under ${oroot}${workDirs.length ? ` or under ${workDirs.join(", ")}` : ""}, never a file under _work/ or _review/ (run state does not count as proof).`

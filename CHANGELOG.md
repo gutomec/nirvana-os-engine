@@ -6,6 +6,33 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that the
 one-line installers and pack setups consume.
 
+## 0.18.6 — 2026-11-26
+
+An improvement of the engine's own code: how a delivery is checked, corrected and recorded. Measured against 0.18.4 on the same jobs before release: with a low-cost model on hard data, 6 of 6 deliveries correct against 3 of 6, in 46% less time; with the default model, the same 10 of 10 correct, 13% faster and 6% cheaper.
+
+### A delivery you can check, from the gate to the file
+
+- **A program can decide an acceptance criterion.** Until now a model judged every criterion. A sum, a check digit, a price against its table or a count of rows is not a matter of opinion, so a criterion of a squad capability or of a business role may now name a program (`check: scripts/…`), and the gate runs it before any judge. Exit 0 holds, 1 does not, 2 could not measure.
+- **"Not measured" is its own answer, and never a pass.** A program that times out, is missing, has no interpreter or crashes did not measure. A blocking criterion left unmeasured ships as "delivered with reservations", and the reservation names it. A crash also ends with exit 1, so exit 1 with nothing to fix is read as a crash: a broken checker is never taken for a broken deliverable.
+- **The correction is the program's own words.** Each line a failing program prints goes back, word for word, to the worker that did the work, and the same program runs again. While a program fails, the judge is not asked, so a round that was going to be redone costs nothing in judging. The worker is also told up front which programs will check it and how to run each one.
+- **A delivery is sealed.** When work goes out, the hash of every file is recorded beside it. `nrv seal check <project>` says what was edited, removed or added since the gate approved it.
+- **Stale inputs are caught.** The seal also records the files the work was built from. A revision, or a run that continues from that delivery, is told what changed since the approval and brings the work up to date without being asked.
+- **The worker decides and writes the decision down.** Where the work could go two ways, the worker chooses, goes on, and records the choice in `_DECISIONS.md`: what it chose, what it set aside and why. You read it after the delivery and ask for the other way if you prefer it.
+- **`nrv performance` shows how each business and squad has been doing:** runs, outcomes, the share that passed the gate with no correction, mean corrections, time and cost. A value the audit does not hold prints as unknown, never as zero. A finding that keeps coming back for one entity is told to its next worker before it starts.
+- **`nrv evidence` separates the kinds of proof.** "Valid" used to be read as "proven to work". It now shows, each on its own line: the structure passes the admission gate, a real run was delivered with the gate passing, the files changed since that run, the declared dependencies are present, and the entity is set up on a bot host. Each one is verified, failed, stale, not measured or does not apply.
+- **A judge never overrules a program.** The judge is told which criteria a program decides and leaves them alone, the correcting worker is told the same, and a correction that breaks a criterion a program had approved is undone in the next round and nothing else.
+- **A deliverable the program does not find goes back once.** When a program answers that what it reads is not in the folder, its reason goes to the worker for one round before the criterion counts as not measured.
+- **Several squads in one dispatch** each run their own checks on their own folder.
+- **A business runs the checks of the squads it uses.** The worker lists the squad capabilities it worked as in `_CAPABILITIES.md`, and the checks of those capabilities run on its delivery. A capability that was not used is not checked.
+
+Nothing here waits for a person: every check, correction and decision happens inside the run, and what you get to review is the finished delivery with its record.
+## 0.18.5 — 2026-11-25
+
+### A squad kept in the project runs
+
+- **`nrv dispatch --squad` finds a squad that lives in the project.** A squad under a project's own `.nirvana/squads` passed `nrv validate` and the scaffold, then stopped in under a second with "squad dir not found": the step that runs it looked only in the global library. It now resolves the folder through the project's scope, like every step before it, so a project's own squad runs, and under `merge` the project's copy wins over a global squad of the same name.
+- The squad's environment and a later `nrv revise` use the same folder.
+
 ## 0.18.4 — 2026-11-25
 
 ### A team is created at once

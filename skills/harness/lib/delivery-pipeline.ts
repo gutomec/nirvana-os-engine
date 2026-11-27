@@ -78,6 +78,8 @@ import { isRunStatePath } from "../../_shared/lib/run-state.ts";
 import { isRunStateFile } from "../../_shared/lib/run-plumbing.ts";
 import { inBuildOutput, isDependencyDirName, isDependencyNoise } from "../../_shared/lib/deliverable-noise.ts";
 import { briefWorkDirs, workElsewhereRule } from "../../_shared/lib/brief-work-dirs.ts";
+import { checksBlock, readRunChecks, runProgramChecks, settledCriteriaNote, settledCriteriaRule, type CheckResult, type ProgramCheck } from "./program-checks.ts";
+import { briefInputFiles, writeSeal } from "./delivery-seal.ts";
 import { soloDirective } from "./business-solo.ts";
 import { claimProblems, criteriaFromBrief, SERIOUS_EXTRA_ROUNDS, type ClaimProblem } from "./solo-review.ts";
 import { runFolderOf } from "../../_shared/lib/run-workspace.ts";
@@ -495,6 +497,24 @@ export function seriousFindingsOf(run: GateRun, outputsRoot: string): SeriousFin
   return out;
 }
 
+/** A failure the gate names without a rubric, as `failed_rubrics` carries it. */
+export const MATERIAL_DEFECT = "material-defect";
+export const UNPROVEN_CRITERION = "unproven-blocking-criterion";
+
+/** What failed in one gate round, by name: the rubrics, a material defect, a
+ *  blocking criterion left without proof. The audit carries it as
+ *  `failed_rubrics` so a later run can be told what keeps failing
+ *  (entity-performance.ts) without the outputs folder still being there. */
+export function failedRubricNames(run: GateRun, claims: number): string[] {
+  const names = new Set<string>();
+  for (const fl of run.fails) {
+    for (const r of fl.failedRubrics) names.add(r);
+    if (fl.material) names.add(MATERIAL_DEFECT);
+  }
+  if (claims > 0) names.add(UNPROVEN_CRITERION);
+  return [...names].sort();
+}
+
 /** The SERIOUS findings of one gate run, one line each, relative to the root. */
 export function seriousGateFindings(run: GateRun, outputsRoot: string): string[] {
   return seriousFindingsOf(run, outputsRoot).map(f => f.text);
@@ -662,6 +682,10 @@ export interface DeliveryArgs {
   completenessCeiling?: CompletenessCeiling | null;
   /** produces[] slugs for the judge's rubric selector (optional). */
   produces?: string[];
+  /** Acceptance criteria a program decides (program-checks.ts). Absent: the
+   *  ones the dispatch wrote beside the brief (`checks.json`), so a revision
+   *  and a supervisor recovery run the same checks as the first delivery. */
+  programChecks?: ProgramCheck[];
   config: HarnessConfig;
   ledger?: DeliveryLedger | null;
   /** Audit emitter (dispatch.ts passes its replay-aware facade). */
@@ -705,6 +729,8 @@ export interface DeliveryResult {
   stopped?: string;
   /** Set when the delivery stopped on a spent quota (state `quota_wait`). */
   quotaWait?: QuotaWait;
+  /** The last round of program checks; empty when the run declares none. */
+  checks?: CheckResult[];
 }
 
 /** What `<outputsRoot>/_STATUS.json` holds. */
@@ -720,6 +746,12 @@ export interface DeliveryStatus {
   quota_reset_at?: string;
   quota_step?: QuotaWait["step"];
   quota_hint?: string;
+  /** The program checks of the last round. `not_measured` is never a pass. */
+  checks?: Array<{ id: string; state: CheckResult["state"]; blocking: boolean }>;
+  /** True when `_SEAL.json` records the hashes of what was delivered. */
+  sealed?: boolean;
+  /** `_DECISIONS.md`, when the worker recorded the choices it made alone. */
+  decisions?: string;
 }
 
 export const STATUS_FILE = "_STATUS.json";
@@ -915,6 +947,9 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
   let gatedFiles: string[] = [];
   let revUsed = 0;
   let gateRan = false;
+  const programChecks = args.programChecks ?? readRunChecks(args.projectDir);
+  let lastChecks: CheckResult[] = [];
+  let sealed = false;
   const reservationsOnDisk = (): string | null => {
     const file = path.join(args.outputsRoot, "_QA-RESERVATIONS.md");
     return fs.existsSync(file) ? file : null;
@@ -929,11 +964,15 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
       state: r.state, gateOutcome: r.gateOutcome, produced, gatedFiles, revisionsUsed: revUsed, sessionId,
       zipPath: r.zipPath ?? null, verifySource, ceilingApplied: r.ceilingApplied ?? null,
       serious: r.serious ?? [], reservations: r.reservations ?? null,
+      ...(lastChecks.length ? { checks: lastChecks } : {}),
     };
     writeDeliveryStatus(args.outputsRoot, {
       state: res.state,
       gate: !gateRan ? "skipped" : r.gateOutcome === "pass" ? "pass" : "fail",
       serious: res.serious, reservations: res.reservations, exit_code: res.exitCode,
+      ...(lastChecks.length ? { checks: lastChecks.map(c => ({ id: c.id, state: c.state, blocking: c.blocking })) } : {}),
+      ...(sealed ? { sealed: true } : {}),
+      ...(fs.existsSync(path.join(args.outputsRoot, "_DECISIONS.md")) ? { decisions: path.join(args.outputsRoot, "_DECISIONS.md") } : {}),
     });
     return res;
   };
@@ -1059,7 +1098,8 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
   if (judgeMode && args.brief?.trim()) {
     briefFile = path.join(args.projectDir, "gate-brief.md");
     // The judge reads text: a Request given by path travels with its words.
-    try { fs.writeFileSync(briefFile, briefWithRequest(args.brief, { baseDirs: [args.projectRoot] }), "utf8"); } catch { briefFile = undefined; }
+    // The judge is told which criteria a program decides, so it does not ask for their opposite.
+    try { fs.writeFileSync(briefFile, briefWithRequest(args.brief, { baseDirs: [args.projectRoot] }) + settledCriteriaNote(programChecks), "utf8"); } catch { briefFile = undefined; }
   }
   const gateOpts: GateRunOpts = {
     gateScript, offline: !judgeMode, produces: args.produces, briefFile, env: gateEnv,
@@ -1095,22 +1135,41 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
   // The folders the brief places the work in, outside the outputs root: the
   // claims may cite files there, and every correction is told to work there.
   const workDirs = briefWorkDirs(args.brief, args.outputsRoot);
-  interface Evaluation { files: string[]; run: GateRun; claims: ClaimProblem[]; serious: string[]; seriousFindings: SeriousFinding[]; pass: boolean }
+  interface Evaluation { files: string[]; run: GateRun; claims: ClaimProblem[]; checks: CheckResult[]; serious: string[]; seriousFindings: SeriousFinding[]; pass: boolean }
   const evaluate = (): Evaluation => {
     const files = gateableFiles(args.outputsRoot, namedInBrief);
-    const run = runGateOnce(files, gateOpts);
+    // The programs first: they cost nothing and their answer is exact. While
+    // one of them fails, the judge is not asked: its opinion of a deliverable
+    // that is about to be rewritten is paid for and thrown away.
+    const checks = programChecks.length
+      ? runProgramChecks(programChecks, { outputsRoot: args.outputsRoot, projectDir: args.projectDir, env: { ...gateEnv, ...(args.env ?? {}) }, shouldStop: stopped, beforeCheck: () => renew(GATE_LEASE_SEC) })
+      : [];
+    lastChecks = checks;
+    // A program that found nothing to read in a direct run: the worker gets one
+    // round to produce it. After that round it is "not measured", as any other.
+    const failedChecks = checks.filter(c => c.state === "fail" || (c.absent && revUsed === 0));
+    if (checks.length) {
+      emit("x_program_checks", {
+        trace_id: args.pid, project_id: args.pid, business_slug: args.slug, round: revUsed,
+        passed: checks.filter(c => c.state === "pass").map(c => c.id), failed: failedChecks.map(c => c.id),
+        not_measured: checks.filter(c => c.state === "not_measured").map(c => c.id),
+      });
+    }
+    const run = runGateOnce(files, failedChecks.length ? { ...gateOpts, offline: true } : gateOpts);
     const claims = criteria.length ? claimProblems(args.outputsRoot, criteria, workDirs) : [];
     const seriousFindings = [
       ...seriousFindingsOf(run, args.outputsRoot),
       ...claims.map(c => ({ key: findingKey("criterion", c.id), text: `blocking criterion ${c.id} (${c.description}): ${c.why}`, detail: "" })),
+      ...failedChecks.filter(c => c.blocking).map(c => ({ key: findingKey("check", c.id, ...c.lines), text: `program check ${c.id} (${c.description}) failed`, detail: c.lines[0] ?? "" })),
     ];
-    return { files, run, claims, serious: seriousFindings.map(f => f.text), seriousFindings, pass: run.pass && claims.length === 0 };
+    return { files, run, claims, checks, serious: seriousFindings.map(f => f.text), seriousFindings, pass: run.pass && claims.length === 0 && failedChecks.length === 0 };
   };
   // Every round goes to _GATE-FINDINGS.md, for whoever follows the run.
   const findingsFile = path.join(args.outputsRoot, GATE_FINDINGS_FILE);
-  const recordRound = (e: Evaluation) => appendGateFindings(args.outputsRoot, gateRoundBlock({
-    round: revUsed, pass: e.pass, outputsRoot: args.outputsRoot, run: e.run, claims: e.claims, serious: e.serious.length,
-  }));
+  const recordRound = (e: Evaluation) => appendGateFindings(args.outputsRoot, [
+    gateRoundBlock({ round: revUsed, pass: e.pass, outputsRoot: args.outputsRoot, run: e.run, claims: e.claims, serious: e.serious.length }),
+    ...(e.checks.length ? ["", ...checksBlock(e.checks)] : []),
+  ].join("\n"));
 
   if (stopped()) return finishStopped("quality gate");
   let ev = evaluate();
@@ -1122,6 +1181,8 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
   const solo = args.producerRole === "solo";
   // The serious findings the round before the last correction carried.
   let previousSerious: SeriousFinding[] | null = null;
+  // Ids of the program checks that passed in some earlier round of this delivery.
+  const approvedByProgram = new Set<string>();
   let noProgress = false;
   // A correction's runtime could not run at all (not a quota): the loop ends
   // and the last real round decides.
@@ -1153,7 +1214,23 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
     previousSerious = ev.seriousFindings;
     // Full paths and the outputs root: a round that has to start cold (below)
     // has no conversation to recover them from.
-    const fixLines = [
+    const failedChecks = ev.checks.filter(c => c.state === "fail" || (c.absent && revUsed === 1));
+    // A criterion a program had approved now fails: the last correction broke
+    // it while answering another finding. This round undoes that and nothing
+    // else, or the two kinds of finding take turns until the rounds run out.
+    const regressed = failedChecks.filter(c => approvedByProgram.has(c.id));
+    for (const c of ev.checks) { if (c.state === "pass") approvedByProgram.add(c.id); }
+    if (regressed.length) appendGateFindings(args.outputsRoot, `Round ${revUsed}: the last correction broke ${regressed.map(c => c.id).join(", ")}, which a program had approved. The next correction restores it and answers nothing else.\n`);
+    const fixLines = regressed.length ? [
+      "Your last correction broke a criterion that a program had already approved. Restore it: fix exactly the lines below and change nothing else. Whatever finding led you to that change is overruled by the program.",
+      ...regressed.flatMap(c => [`  ${c.id} — ${c.description}:`, ...c.lines.map(l => `    - ${l}`)]), "",
+    ] : [
+      // What a program found comes first: it is exact, and it is checked again
+      // by the same program after the correction.
+      ...(failedChecks.length
+        ? ["A program checked the deliverables and these points are wrong (each line is one thing to fix; the same program runs again after your correction):",
+          ...failedChecks.flatMap(c => [`  ${c.id} — ${c.description}:`, ...c.lines.map(l => `    - ${l}`)]), ""]
+        : []),
       ...ev.run.fails.flatMap(fl => [`File ${path.resolve(fl.file)}:`, ...fl.fixes.map(x => `  - ${x}`)]),
       ...(ev.claims.length
         ? ["Blocking criteria of the brief with no proof in _CLAIMS.json:", ...ev.claims.map(c => `  - ${c.id} (${c.description}): ${c.why}`)]
@@ -1164,6 +1241,7 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
       "",
       ...fixLines,
       "",
+      ...settledCriteriaRule(programChecks),
       `The deliverables are in ${path.resolve(args.outputsRoot)}.`,
       workElsewhereRule(path.resolve(args.outputsRoot), workDirs),
       ...(ev.claims.length
@@ -1219,7 +1297,7 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
     // "rounds" in 16 seconds withheld a delivery on 2026-10-14.
     const failure = !rr.ok ? classify(args.runtime, rr) : null;
     const notARound = !!failure && (failure.kind !== "error" || isTransportFailure([rr.error, rr.stderr].filter(Boolean).join("\n")));
-    emit("revision_auto", { trace_id: args.pid, project_id: args.pid, business_slug: args.slug, attempt: revUsed, ok: rr.ok, ...(coldRetry ? { cold_retry: true } : {}), ...(rr.resumeLost ? { resume_lost: true } : {}), ...(ev.serious.length ? { serious: ev.serious.length } : {}), ...(notARound ? { counted: false, runtime_failure: failure!.kind === "error" ? "transport" : failure!.kind } : {}) });
+    emit("revision_auto", { trace_id: args.pid, project_id: args.pid, business_slug: args.slug, attempt: revUsed, ok: rr.ok, ...(coldRetry ? { cold_retry: true } : {}), ...(rr.resumeLost ? { resume_lost: true } : {}), ...(ev.serious.length ? { serious: ev.serious.length } : {}), failed_rubrics: failedRubricNames(ev.run, ev.claims.length), ...(notARound ? { counted: false, runtime_failure: failure!.kind === "error" ? "transport" : failure!.kind } : {}) });
     if (rr.sessionId) {
       sessionId = rr.sessionId;
       args.onSession?.(rr.sessionId);
@@ -1267,7 +1345,7 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
     log(`  gate PASS (${ev.files.length} file(s)${revUsed ? `, after ${revUsed} revision(s)` : ""}, ${mode} mode)`);
     emit("gate_passed", { trace_id: args.pid, project_id: args.pid, business_slug: args.slug, files: ev.files.length, revisions: revUsed, mode, judged_files: judgedFiles });
   } else {
-    emit("gate_failed", { trace_id: args.pid, project_id: args.pid, business_slug: args.slug, files: ev.files.length, revisions: revUsed, mode, judged_files: judgedFiles, serious: ev.serious.length });
+    emit("gate_failed", { trace_id: args.pid, project_id: args.pid, business_slug: args.slug, files: ev.files.length, revisions: revUsed, mode, judged_files: judgedFiles, serious: ev.serious.length, failed_rubrics: failedRubricNames(ev.run, ev.claims.length) });
   }
 
   const withhold = (verdict: DeliveryResult["gateOutcome"], why: { ceiling?: string; serious?: string[] }): DeliveryResult => {
@@ -1293,7 +1371,19 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
     warn(`  delivery WITHHELD by the completeness ceiling: the gate (${verdict}) judges the QUALITY of what exists, not whether the set is complete, and no verified manifest proves that. The artifacts stay in ${args.outputsRoot}; a human decides.`);
     return withhold(verdict, { ceiling: reason });
   };
-  const deliver = (verdict: DeliveryResult["gateOutcome"], blocks: string[], ceilingApplied: string | null): DeliveryResult => {
+  const deliver = (verdict: DeliveryResult["gateOutcome"], given: string[], ceilingApplied: string | null): DeliveryResult => {
+    // A blocking criterion its program could not measure is not a pass: the
+    // delivery goes out, and says which criterion nobody verified.
+    const unmeasured = ev.checks.filter(c => c.state === "not_measured" && c.blocking);
+    const blocks = unmeasured.length ? [...given, [
+      "# QA reservations — criteria that were not measured",
+      "",
+      "A program decides these acceptance criteria, and it could not run to an answer. Not measured is not approved:",
+      "",
+      ...unmeasured.flatMap(c => [`- ${c.id} — ${c.description}`, ...c.lines.map(l => `  - ${l}`)]),
+      "",
+    ].join("\n")] : given;
+    if (unmeasured.length) warn(`  ${unmeasured.length} blocking criterion(s) NOT MEASURED by their program (${unmeasured.map(c => c.id).join(", ")}) — delivered with reservations`);
     let reservations: string | null = null;
     for (const block of blocks) reservations = appendReservations(args.outputsRoot, block) ?? reservations;
     if (blocks.length) {
@@ -1315,6 +1405,18 @@ export function runDelivery(args: DeliveryArgs): DeliveryResult {
     }
     const zipPath = hook && typeof hook === "object" ? hook.zipPath ?? null : null;
     const withReservations = blocks.length > 0;
+    // The seal: the hash of every file that goes out under this verdict, so a
+    // later edit shows as a change to something approved (delivery-seal.ts).
+    const seal = writeSeal(args.outputsRoot, {
+      trace: args.pid, gate: verdict, state: withReservations ? "delivered_with_reservations" : "delivered",
+      // Every work file, the small ones too: a total in a four-byte file is part of what was approved.
+      files: listWorkFiles(args.outputsRoot).filter(f => { const r = path.relative(args.outputsRoot, f); return !isRunStateFile(r) && !isDependencyNoise(r, namedInBrief); }),
+      inputs: briefInputFiles(args.brief, args.outputsRoot),
+    });
+    sealed = !!seal;
+    // The choices the worker made alone: what the person reads to ask for another way.
+    if (fs.existsSync(path.join(args.outputsRoot, "_DECISIONS.md"))) log(`  decisions the worker made on its own: ${path.join(args.outputsRoot, "_DECISIONS.md")}`);
+    if (seal) emit("x_delivery_sealed", { trace_id: args.pid, project_id: args.pid, business_slug: args.slug, files: seal.files.length, inputs: seal.inputs.length, gate: verdict });
     emit("delivered", { trace_id: args.pid, project_id: args.pid, business_slug: args.slug, files: produced.length, gate: verdict, zip: zipPath, ...(withReservations ? { reservations: true } : {}) });
     mark("delivered", {
       metaPatch: {

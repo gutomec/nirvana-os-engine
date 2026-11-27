@@ -55,6 +55,7 @@ switch (cmd) {
   case "decide": runScript(join(H, "decide.ts"), rest);
   case "find": runScript(join(H, "find.ts"), rest);
   case "validate": case "verify": runScript(join(S, "verify.ts"), rest);
+  case "evidence": runScript(join(H, "evidence.ts"), rest);
   case "watch": case "tail": runScript(join(H, "watch.ts"), rest);
   case "watch-fs": case "fswatch": runScript(join(H, "watch-fs.ts"), rest);
   case "index": runScript(join(H, "index.ts"), rest);
@@ -119,6 +120,7 @@ switch (cmd) {
   }
   case "update-check": runScript(join(H, "update-check.ts"), rest.length ? rest : ["--status"]);
   case "pack": runScript(join(H, "pack.ts"), rest);
+  case "seal": runScript(join(SKILLS, "harness", "scripts", "seal.ts"), rest);
   case "audit-view": case "audit": {
     if (rest[0] === "emit") runScript(join(H, "audit-emit.ts"), rest.slice(1));
     // The 0.13.0 notes said `nrv audit where` / `nrv audit tail`; the CLI only
@@ -148,6 +150,7 @@ switch (cmd) {
   case "find-clone": case "clone-find": case "find-mind-clone": runScript(join(S, "find-clone.ts"), rest);
   case "team": case "teams": runScript(join(SKILLS, "harness", "scripts", "team.ts"), rest);
   case "bot": case "bots": runScript(join(SKILLS, "harness", "scripts", "bot.ts"), rest);
+  case "performance": case "perf": runScript(join(H, "performance.ts"), rest);
   case "changes": case "surface": runScript(join(S, "nirvana-changes.ts"), rest);
   case "validate-starter": case "starter-validate": runScript(join(process.env.NIRVANA_PACKS_DIR ?? join(HOME, "nirvana-packs"), "scripts", "validate-starter.ts"), rest);
   case "license": case "verify-license": case "whoami": runScript(join(S, "license.ts"), rest);

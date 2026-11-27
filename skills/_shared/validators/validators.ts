@@ -167,6 +167,11 @@ export const CapabilitySchema = z.object({
     // checked against it the way employee acceptance already is (§29.1).
     path: z.string().min(1).optional(),
     min_bytes: z.number().int().min(0).optional(),
+    // A program that decides the criterion (harness/lib/program-checks.ts): a
+    // path inside the entity, or { run, args, timeout_sec }.
+    check: z.union([z.string().min(1), z.object({
+      run: z.string().min(1), args: z.array(z.string()).max(12).optional(), timeout_sec: z.number().int().min(1).max(1800).optional(),
+    }).strict()]).optional(),
   }).strict()).max(12).optional(),
   evaluator: z.object({
     scorecard: z.string().min(1),
@@ -347,6 +352,11 @@ export const EmployeeFrontmatterSchema = z.object({
     capability: z.string().optional(),
     path: z.string().optional(),
     min_bytes: z.number().int().min(0).optional(),
+    // A program that decides the criterion (harness/lib/program-checks.ts): a
+    // path inside the entity, or { run, args, timeout_sec }.
+    check: z.union([z.string().min(1), z.object({
+      run: z.string().min(1), args: z.array(z.string()).max(12).optional(), timeout_sec: z.number().int().min(1).max(1800).optional(),
+    }).strict()]).optional(),
   }).strict()).optional(),
   draws_from: z.array(z.object({
     source: z.string(),
