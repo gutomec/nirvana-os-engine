@@ -70,6 +70,15 @@ describe("readAcceptance", () => {
     expect(read.requirements).toHaveLength(ACCEPTANCE_MAX);
   });
 
+  test("when the ceiling cuts, blocking criteria are kept before advisory ones", () => {
+    const advisory = Array.from({ length: 10 }, (_, index) => `  - id: a_${index}\n    description: advisory ${index}\n    blocking: false\n`).join("");
+    const blocking = Array.from({ length: 4 }, (_, index) => `  - id: b_${index}\n    description: blocking ${index}\n`).join("");
+    const dir = business({ "a-analyst": `acceptance:\n${advisory}`, "z-lead": `acceptance:\n${blocking}` });
+    const ids = readAcceptance(dir).requirements.map(r => r.id);
+    expect(ids.slice(0, 4)).toEqual(["acceptance.b_0", "acceptance.b_1", "acceptance.b_2", "acceptance.b_3"]);
+    expect(ids).toHaveLength(ACCEPTANCE_MAX);
+  });
+
   test("businessDirFor prefers the registry, falls back to the businesses dir, and admits when it has neither", () => {
     const dir = business({ "brief-intake": "acceptance: []\n" });
     const registry = path.join(dir, "registry.json");

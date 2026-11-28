@@ -11,6 +11,7 @@ one-line installers and pack setups consume.
 ### A business seat is checked only when its work was done
 
 - **The program checks of a business employee belong to that seat.** A business run used to run every employee's checks, so a run that never touched a seat was sent back to produce that seat's file, and then shipped with a reservation for not having it. The worker now lists the seats it worked as in `_CAPABILITIES.md`, as `<business>:<employee>`, beside the squad capabilities it already lists there; a seat not listed is not applicable. Without the file every seat is checked, as before.
+- **A cut in the judge's criteria keeps the blocking ones.** The judge of a business run reads at most eleven acceptance criteria across all its roles. They used to be taken in file-name order, so a role whose name sorted early could fill the list with advisory criteria and push a blocking one out. Blocking criteria now come first.
 
 ## 0.18.6 — 2026-11-26
 

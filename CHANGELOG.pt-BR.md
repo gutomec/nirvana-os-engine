@@ -11,6 +11,7 @@ do engine que os instaladores de uma linha e os setups de pack consomem.
 ### Um cargo da empresa só é conferido quando o trabalho dele foi feito
 
 - **Os verificadores de um funcionário da empresa pertencem àquele cargo.** Uma execução da empresa rodava os verificadores de todos os funcionários, então uma execução que nunca passou por um cargo era mandada de volta para produzir o arquivo daquele cargo, e depois saía com ressalva por não tê-lo. Agora o worker lista em `_CAPABILITIES.md` os cargos que exerceu, como `<empresa>:<funcionário>`, ao lado das capabilities de squad que já lista ali; um cargo fora da lista não se aplica. Sem o arquivo, todos os cargos são conferidos, como antes.
+- **Um corte nos critérios do juiz preserva os bloqueantes.** O juiz de uma execução de empresa lê no máximo onze critérios de aceite, somando todos os cargos. Eles eram pegos pela ordem do nome do arquivo, então um cargo com nome que vinha antes podia encher a lista de critérios consultivos e empurrar um bloqueante para fora. Agora os bloqueantes vêm primeiro.
 
 ## 0.18.6 — 2026-11-26
 
