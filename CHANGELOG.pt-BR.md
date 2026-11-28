@@ -6,6 +6,12 @@ Todas as mudanças relevantes do engine Nirvana-OS. As versões correspondem às
 releases no GitHub (`nirvana-os-engine`); cada release publica o tarball completo
 do engine que os instaladores de uma linha e os setups de pack consomem.
 
+## 0.18.7 — 2026-11-27
+
+### Um cargo da empresa só é conferido quando o trabalho dele foi feito
+
+- **Os verificadores de um funcionário da empresa pertencem àquele cargo.** Uma execução da empresa rodava os verificadores de todos os funcionários, então uma execução que nunca passou por um cargo era mandada de volta para produzir o arquivo daquele cargo, e depois saía com ressalva por não tê-lo. Agora o worker lista em `_CAPABILITIES.md` os cargos que exerceu, como `<empresa>:<funcionário>`, ao lado das capabilities de squad que já lista ali; um cargo fora da lista não se aplica. Sem o arquivo, todos os cargos são conferidos, como antes.
+
 ## 0.18.6 — 2026-11-26
 
 Um aperfeiçoamento do código do próprio engine: como uma entrega é conferida, corrigida e registrada. Medido contra a 0.18.4 nos mesmos trabalhos antes do lançamento: com um modelo barato em dados difíceis, 6 de 6 entregas corretas contra 3 de 6, em 46% menos tempo; com o modelo padrão, as mesmas 10 de 10 corretas, 13% mais rápido e 6% mais barato.
