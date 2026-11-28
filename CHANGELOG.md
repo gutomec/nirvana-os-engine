@@ -6,6 +6,13 @@ All notable changes to the Nirvana-OS engine. Versions map to GitHub releases
 (`nirvana-os-engine`); each release ships the full engine tarball that the
 one-line installers and pack setups consume.
 
+## 0.18.7 — 2026-11-27
+
+### A business seat is checked only when its work was done
+
+- **The program checks of a business employee belong to that seat.** A business run used to run every employee's checks, so a run that never touched a seat was sent back to produce that seat's file, and then shipped with a reservation for not having it. The worker now lists the seats it worked as in `_CAPABILITIES.md`, as `<business>:<employee>`, beside the squad capabilities it already lists there; a seat not listed is not applicable. Without the file every seat is checked, as before.
+- **A cut in the judge's criteria keeps the blocking ones.** The judge of a business run reads at most eleven acceptance criteria across all its roles. They used to be taken in file-name order, so a role whose name sorted early could fill the list with advisory criteria and push a blocking one out. Blocking criteria now come first.
+
 ## 0.18.6 — 2026-11-26
 
 An improvement of the engine's own code: how a delivery is checked, corrected and recorded. Measured against 0.18.4 on the same jobs before release: with a low-cost model on hard data, 6 of 6 deliveries correct against 3 of 6, in 46% less time; with the default model, the same 10 of 10 correct, 13% faster and 6% cheaper.

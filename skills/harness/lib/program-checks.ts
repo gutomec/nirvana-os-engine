@@ -63,6 +63,10 @@ export interface ProgramCheck {
    *  holding that squad's card): `<squad>:<capability id>`. Such a check runs
    *  only when the worker declared that capability in `_CAPABILITIES.md`. */
   whenUsed?: string;
+  /** Set on a check a business employee declares: `<business>:<employee>`. Such a
+   *  check runs unless the worker wrote `_CAPABILITIES.md` without that seat in it,
+   *  so a run that never did that seat's work is not sent to produce it. */
+  seat?: string;
 }
 
 export type CheckState = "pass" | "fail" | "not_measured" | "not_applicable";
@@ -159,7 +163,7 @@ export function businessProgramChecks(businessDir: string | null | undefined): P
       const doc = fm ? (parseYaml(fm) as any) : null;
       for (const a of Array.isArray(doc?.acceptance) ? doc.acceptance : []) {
         const c = checkOf(a, businessDir);
-        if (c && !out.has(c.id)) out.set(c.id, c);
+        if (c && !out.has(c.id)) out.set(c.id, { ...c, seat: `${path.basename(path.resolve(businessDir))}:${f.replace(/\.md$/, "")}` });
       }
     } catch { /* an employee file that does not parse declares no check */ }
   }
@@ -218,9 +222,11 @@ export function runProgramChecks(checks: ProgramCheck[], opts: RunChecksOpts): C
   const results: CheckResult[] = [];
   const env = { ...process.env, ...(opts.env ?? {}), NIRVANA_OUTPUTS_DIR: path.resolve(opts.outputsRoot), NIRVANA_PROJECT_DIR: path.resolve(opts.projectDir) };
   const declared = declaredCapabilities(opts.outputsRoot);
+  const listed = fs.existsSync(path.join(opts.outputsRoot, CAPABILITIES_FILE));
   for (const check of checks) {
     const base = { id: check.id, description: check.description, blocking: check.blocking };
     const unmeasured = (why: string, seconds = 0): CheckResult => ({ ...base, state: "not_measured", lines: [why], seconds });
+    if (check.seat && listed && !declared.has(check.seat)) { results.push({ ...base, state: "not_applicable", lines: [`${check.seat} is not listed in ${CAPABILITIES_FILE}`], seconds: 0 }); continue; }
     if (check.whenUsed && !declared.has(check.whenUsed)) { results.push({ ...base, state: "not_applicable", lines: [`${check.whenUsed} is not listed in ${CAPABILITIES_FILE}`], seconds: 0 }); continue; }
     if (opts.shouldStop?.()) { results.push(unmeasured("the run was stopped before this check")); continue; }
     if (!fs.existsSync(check.run)) { results.push(unmeasured(`the program is not there: ${check.run}`)); continue; }
@@ -279,7 +285,8 @@ export function checkCommand(check: ProgramCheck, outputsRoot: string): string {
 export function programChecksDirective(checks: ProgramCheck[], outputsRoot: string): string {
   if (!checks.length) return "";
   const line = (c: ProgramCheck) => `- ${c.id}${c.blocking ? " (blocking)" : ""}: ${c.description}\n  ${checkCommand(c, outputsRoot)}`;
-  const own = checks.filter((c) => !c.whenUsed);
+  const own = checks.filter((c) => !c.whenUsed && !c.seat);
+  const seated = checks.filter((c) => c.seat);
   const carded = checks.filter((c) => c.whenUsed);
   return [
     "",
@@ -287,6 +294,10 @@ export function programChecksDirective(checks: ProgramCheck[], outputsRoot: stri
     "PROGRAM CHECKS: after you finish, the engine runs these programs on your deliverables. A program decides its criterion, no reviewer does, and each line it prints on a failure comes back to you to fix. Run each one yourself before you finish and correct what it reports:",
     ...own.map(line),
     ...(own.length ? ["Exit 0 means the criterion holds, 1 that it does not, 2 that the program could not measure: when it cannot measure because something of yours is missing, produce what is missing."] : []),
+    ...(seated.length ? [
+      `The checks below belong to seats of your business. List every seat whose work you did as \`<business>:<employee>\` on a line of ${CAPABILITIES_FILE} in the outputs folder: once that file exists, a seat not listed in it is not checked. Without the file, every seat below is checked.`,
+      ...[...new Set(seated.map((c) => c.seat!))].flatMap((seat) => [`${seat}`, ...seated.filter((c) => c.seat === seat).map(line)]),
+    ] : []),
     ...(carded.length ? [
       `The checks below belong to capabilities of the squads whose cards you hold. For each capability you actually worked as, write its \`<squad>:<capability id>\` on a line of ${CAPABILITIES_FILE} in the outputs folder; the engine then runs that capability's checks, and you run them first. A capability you did not use is not listed and is not checked.`,
       ...[...new Set(carded.map((c) => c.whenUsed!))].flatMap((cap) => [`${cap}`, ...carded.filter((c) => c.whenUsed === cap).map(line)]),

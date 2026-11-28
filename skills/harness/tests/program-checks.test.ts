@@ -449,3 +449,37 @@ describe("the checks of a squad a business may use", () => {
     expect(text.indexOf("ledger:finance.close.review\n")).toBeGreaterThan(text.indexOf("- ledger:totals_match (blocking)"));
   });
 });
+
+describe("the checks of a business seat", () => {
+  const business = (): string => {
+    const dir = path.join(tmp, "biz");
+    fs.mkdirSync(path.join(dir, "employees"), { recursive: true });
+    fs.mkdirSync(path.join(dir, "scripts"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "scripts", "check-sum.ts"), SUM_CHECK, "utf8");
+    fs.writeFileSync(path.join(dir, "employees", "biz-analyst.md"), [
+      "---", "id: biz-analyst", "acceptance:", "  - id: totals_match", "    description: the total is 100", "    check: scripts/check-sum.ts", "---", "", "The analyst.", "",
+    ].join("\n"), "utf8");
+    return dir;
+  };
+
+  test("a seat is checked unless the worker listed the seats it worked as and left it out", () => {
+    const checks = businessProgramChecks(business());
+    expect(checks.map((c) => c.seat)).toEqual(["biz:biz-analyst"]);
+    const oroot = path.join(tmp, "out");
+    fs.mkdirSync(oroot, { recursive: true });
+    fs.writeFileSync(path.join(oroot, "total.txt"), "90", "utf8");
+    const state = () => runProgramChecks(checks, { outputsRoot: oroot, projectDir: tmp })[0].state;
+    expect(state()).toBe("fail");
+    fs.writeFileSync(path.join(oroot, "_CAPABILITIES.md"), "- biz:biz-writer\n", "utf8");
+    expect(state()).toBe("not_applicable");
+    fs.writeFileSync(path.join(oroot, "_CAPABILITIES.md"), "- biz:biz-writer\n- biz:biz-analyst\n", "utf8");
+    expect(state()).toBe("fail");
+  }, spawnBudgetMs(4));
+
+  test("the worker is told how to list its seats", () => {
+    const text = programChecksDirective(businessProgramChecks(business()), tmp);
+    expect(text).toContain("seats of your business");
+    expect(text.indexOf("biz:biz-analyst\n")).toBeLessThan(text.indexOf("- totals_match"));
+  });
+});
+

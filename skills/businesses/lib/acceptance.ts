@@ -100,7 +100,10 @@ export function readAcceptance(bizDir: string, employees?: string[] | null,
       });
     }
   }
-  const kept = entries.slice(0, ACCEPTANCE_MAX);
+  // The judge reads at most ACCEPTANCE_MAX criteria. Blocking ones go first, in
+  // declaration order, so a cut never drops a blocking criterion while it keeps
+  // an advisory one from a role that sorts earlier by file name.
+  const kept = [...entries.filter(entry => entry.blocking), ...entries.filter(entry => !entry.blocking)].slice(0, ACCEPTANCE_MAX);
   return {
     entries,
     requirements: kept.map(entry => ({
